@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Target CRM{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% if current_user.is_authenticated %}
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a href="{{ url_for('dashboard') }}" class="brand">
+        <span class="brand-mark">T</span> Target CRM
+      </a>
+      <nav class="navlinks">
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint=='dashboard' }}">Dashboard</a>
+        <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint=='managers' }}">Menejerlar</a>
+        {% endif %}
+      </nav>
+      <div class="navuser">
+        <span>{{ current_user.full_name or current_user.username }}</span>
+        <a href="{{ url_for('logout') }}" class="logout">Chiqish</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

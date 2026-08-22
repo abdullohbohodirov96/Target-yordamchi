@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ lead.full_name or 'Lead' }} — Target CRM{% endblock %}
+{% block content %}
+<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
+<h1>{{ lead.full_name or "Ism ko'rsatilmagan" }}</h1>
+<p class="page-subtitle">{{ lead.campaign_name or '—' }} &middot; {{ lead.created_at.strftime('%d.%m.%Y %H:%M') if lead.created_at else '' }}</p>
+
+<div class="detail-grid">
+  <div class="detail-col">
+    <div class="card">
+      <h2>Ma'lumot</h2>
+      <dl style="margin:0">
+        <div class="kv"><dt>Telefon</dt><dd>{{ lead.phone or '—' }}</dd></div>
+        <div class="kv"><dt>Email</dt><dd>{{ lead.email or '—' }}</dd></div>
+        <div class="kv"><dt>Holat</dt><dd><span class="badge badge-{{ lead.status }}">{{ lead.status }}</span></dd></div>
+        <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
+        {% if lead.sale_amount %}<div class="kv"><dt>Sotuv summasi</dt><dd class="text-good-strong">${{ "%.2f"|format(lead.sale_amount) }}</dd></div>{% endif %}
+      </dl>
+    </div>
+
+    <div class="card">
+      <h2>Tarix</h2>
+      {% for n in notes %}
+      <div class="note-item">
+        <div>{{ n.text }}</div>
+        <div class="note-meta">{{ n.manager }} &middot; {{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
+      </div>
+      {% else %}
+      <p class="text-faint" style="margin:0">Hali izoh yo'q.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Holatni yangilash / izoh qo'shish</h2>
+    <form method="post">
+      <div class="field">
+        <label>Holat</label>
+        <select name="status">
+          <option value="new" {{ 'selected' if lead.status=='new' }}>Yangi</option>
+          <option value="contacted" {{ 'selected' if lead.status=='contacted' }}>Bog'lanildi</option>
+          <option value="qualified" {{ 'selected' if lead.status=='qualified' }}>Sifatli</option>
+          <option value="unqualified" {{ 'selected' if lead.status=='unqualified' }}>Sifatsiz</option>
+          <option value="sold" {{ 'selected' if lead.status=='sold' }}>Sotildi</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Sotuv summasi ($) — faqat "Sotildi" bo'lsa</label>
+        <input type="number" step="0.01" name="sale_amount" placeholder="masalan 30.00">
+      </div>
+      <div class="field">
+        <label>Izoh (ixtiyoriy)</label>
+        <textarea name="note" placeholder="Masalan: qo'ng'iroq qilindi, narx aytildi..."></textarea>
+      </div>
+      <button type="submit" class="block">Saqlash</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Kirish — Target CRM{% endblock %}
+{% block content %}
+<div class="login-shell">
+  <div class="login-card">
+    <div class="login-brand"><span class="brand-mark">T</span> Target CRM</div>
+    <p class="page-subtitle" style="margin-top:0">Kirish uchun login/parolingizni kiriting</p>
+    <form method="post">
+      <div class="field"><label>Login</label><input type="text" name="username" autofocus required></div>
+      <div class="field"><label>Parol</label><input type="password" name="password" required></div>
+      <button type="submit" class="block">Kirish</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Menejerlar — Target CRM{% endblock %}
+{% block content %}
+<h1>Menejerlar</h1>
+<p class="page-subtitle">Faqat admin yangi menejer/admin hisob qo'sha oladi</p>
+
+<div class="card" style="max-width:420px; margin-bottom:24px">
+  <h2>Yangi hisob qo'shish</h2>
+  <form method="post">
+    <div class="field"><label>Username</label><input type="text" name="username" required></div>
+    <div class="field"><label>To'liq ism</label><input type="text" name="full_name"></div>
+    <div class="field"><label>Parol</label><input type="password" name="password" required></div>
+    <div class="field">
+      <label>Rol</label>
+      <select name="role">
+        <option value="manager">Menejer</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <button type="submit" class="block">Qo'shish</button>
+  </form>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Faol</th></tr></thead>
+    <tbody>
+      {% for m in managers %}
+      <tr>
+        <td>{{ m.username }}</td>
+        <td class="text-dim">{{ m.full_name or '—' }}</td>
+        <td class="text-dim">{{ m.role }}</td>
+        <td class="text-dim">{{ 'ha' if m.is_active else 'yo\'q' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

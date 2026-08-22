@@ -1,0 +1,10 @@
+flask==3.0.3
+flask-login==0.6.3
+gunicorn==22.0.0
+requests==2.32.3
+anthropic>=0.40.0
+SQLAlchemy==2.0.32
+psycopg2-binary==2.9.9
+werkzeug==3.0.4
+APScheduler==3.10.4
+reportlab==4.2.2

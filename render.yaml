@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: target-crm
+    runtime: python
+    plan: starter
+    rootDir: app
+    buildCommand: pip install -r requirements.txt
+    # --workers 1: bot/scheduler holati bitta jarayonda saqlanishi uchun
+    # muhim (README'dagi "nega workers=1" izohiga qarang). --threads 4
+    # bir necha vaqtinchalik web so'rovni bir vaqtda ushlab turishga yetadi.
+    startCommand: gunicorn wsgi:application --workers 1 --threads 4 --timeout 120
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_AGENTS_GROUP_ID
+        sync: false
+      - key: TELEGRAM_REPORT_GROUP_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_AD_ACCOUNT_ID
+        sync: false
+      - key: META_PAGE_ID
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: TIMEZONE
+        value: Asia/Tashkent
+      - key: DATABASE_URL
+        fromDatabase:
+          name: target-crm-db
+          property: connectionString
+
+databases:
+  - name: target-crm-db
+    plan: starter
