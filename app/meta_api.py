@@ -202,7 +202,7 @@ def get_account_structure(active_only: bool = True) -> dict:
     status_filter = {"effective_status": ["ACTIVE", "PAUSED"]} if active_only else None
 
     campaign_params = {"fields": "id,name,status,objective", "limit": 100}
-    adset_params = {"fields": "id,name,status,campaign_id", "limit": 200}
+    adset_params = {"fields": "id,name,status,campaign_id,optimization_goal", "limit": 200}
     ad_params = {"fields": "id,name,status,adset_id,campaign_id", "limit": 200}
     if status_filter:
         campaign_params["filtering"] = [{"field": "effective_status", "operator": "IN", "value": status_filter["effective_status"]}]

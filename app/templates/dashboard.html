@@ -14,13 +14,26 @@
   </div>
 </div>
 
-<p class="page-subtitle" style="margin-top:-14px">
+<div class="page-head" style="margin-top:-14px; align-items:center">
+  <p class="page-subtitle" style="margin:0">
+    {% if show_all %}
+    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
+    {% else %}
+    Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti.
+    {% endif %}
+  </p>
   {% if show_all %}
-  Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham). <a href="?period={{ period }}&level={{ level }}&show_all=0" class="text-blue">Faqat yoqilganlarni ko'rsatish</a>
+  <a href="?period={{ period }}&level={{ level }}&show_all=0" class="btn toggle-all-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
+    Faqat yoqilganlarni ko'rsatish
+  </a>
   {% else %}
-  Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti. <a href="?period={{ period }}&level={{ level }}&show_all=1" class="text-blue">Hammasini ko'rsatish</a>
+  <a href="?period={{ period }}&level={{ level }}&show_all=1" class="btn toggle-all-btn toggle-all-btn-outline">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    Hammasini ko'rsatish
+  </a>
   {% endif %}
-</p>
+</div>
 
 {% if data.error %}
   <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
@@ -29,12 +42,46 @@
 {% set t = data.totals %}
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
   <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">${{ "%.2f"|format(t.revenue or 0) }}</div></div>
   <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div></div>
 </div>
+
+{% if data.goal_breakdown %}
+<div class="card" style="margin-bottom:20px">
+  <h2>Natija turlari bo'yicha taqsimot</h2>
+  <p class="page-subtitle" style="margin-top:-6px">
+    Har bir target Meta'da qanday natija uchun sozlangan bo'lsa (lid, qo'ng'iroq, xabar, havola bosish va h.k.),
+    shu turdagi haqiqiy natija soni bilan. Faqat "Lidlar (Instant Forma)" turi CRM'dagi Lidlar ustuniga ta'sir qiladi.
+  </p>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Natija turi</th>
+        <th class="num">Target soni</th>
+        <th class="num">Xarajat</th>
+        <th class="num">Natija</th>
+        <th class="num">Narxi/natija</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in data.goal_breakdown %}
+      <tr>
+        <td><span class="badge badge-color-blue">{{ g.goal_label }}</span></td>
+        <td class="num">{{ g.count }}</td>
+        <td class="num">${{ "%.2f"|format(g.spend or 0) }}</td>
+        <td class="num">{{ g.meta_result or 0 }}</td>
+        <td class="num">${{ "%.2f"|format(g.cost_per_result or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="panel">
   <div class="tabs">
@@ -55,8 +102,10 @@
     <thead>
       <tr>
         <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
+        <th>Natija turi</th>
         <th class="sortable num" data-key="spend" data-type="num">Spend</th>
-        <th class="sortable num" data-key="crm_leads_total" data-type="num">Leads</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">CRM Lead</th>
+        <th class="sortable num" data-key="meta_result" data-type="num">Meta natija</th>
         <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
         <th class="sortable num" data-key="active" data-type="num">Active</th>
         <th class="sortable num" data-key="sold" data-type="num">Won</th>
@@ -69,14 +118,17 @@
       {% for r in data.rows %}
       <tr data-name="{{ r.name|lower }}"
           data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}"
+          data-meta_result="{{ r.meta_result }}"
           data-cpl="{{ r.cpl }}" data-active="{{ r.active }}" data-sold="{{ r.sold }}"
           data-unqualified="{{ r.unqualified }}" data-qualified="{{ r.qualified }}"
           data-cost_per_won="{{ r.cost_per_won }}">
         <td>
           <span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}
         </td>
+        <td><span class="badge badge-color-{{ 'blue' if r.goal in ('LEAD_GENERATION','QUALITY_LEAD') else 'dim' }}">{{ r.goal_label }}</span></td>
         <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
         <td class="num">{{ r.crm_leads_total or 0 }}</td>
+        <td class="num">{{ r.meta_result or 0 }} <span class="text-faint" style="font-size:11px">{{ r.result_label }}</span></td>
         <td class="num">${{ "%.2f"|format(r.cpl or 0) }}</td>
         <td class="num text-blue">{{ r.active or 0 }}</td>
         <td class="num text-good-strong">{{ r.sold or 0 }}</td>
@@ -85,7 +137,7 @@
         <td class="num text-good">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="9">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>

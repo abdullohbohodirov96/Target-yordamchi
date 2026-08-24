@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ m.username }} — Tahrirlash — Target CRM{% endblock %}
+{% block content %}
+<a href="{{ url_for('managers') }}" class="back-link">&larr; Menejerlar ro'yxatiga qaytish</a>
+<h1>{{ m.full_name or m.username }}</h1>
+<p class="page-subtitle">Username, ism, rol, faollik va parolni shu yerdan o'zgartirish mumkin</p>
+
+<div class="card" style="max-width:420px">
+  <form method="post">
+    <div class="field">
+      <label>Username</label>
+      <input type="text" name="username" value="{{ m.username }}" required>
+    </div>
+    <div class="field">
+      <label>To'liq ism</label>
+      <input type="text" name="full_name" value="{{ m.full_name or '' }}">
+    </div>
+    <div class="field">
+      <label>Rol</label>
+      <select name="role">
+        <option value="manager" {{ 'selected' if m.role=='manager' }}>Menejer</option>
+        <option value="admin" {{ 'selected' if m.role=='admin' }}>Admin</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Yangi parol (ixtiyoriy — bo'sh qoldirsangiz o'zgarmaydi)</label>
+      <input type="password" name="password" placeholder="Yangi parol">
+    </div>
+    <div class="field" style="display:flex; align-items:center; gap:8px">
+      <input type="checkbox" name="is_active" id="is_active" style="width:auto" {{ 'checked' if m.is_active }}>
+      <label for="is_active" style="margin:0">Faol hisob</label>
+    </div>
+    <button type="submit" class="block">Saqlash</button>
+  </form>
+</div>
+{% endblock %}

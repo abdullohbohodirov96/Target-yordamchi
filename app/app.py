@@ -10,6 +10,7 @@ gunicorn orqali). Uch narsani birlashtiradi:
 """
 
 import os
+import re
 import json
 import logging
 import threading
@@ -334,6 +335,83 @@ def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# Web AI yordamchi (o'ng pastdagi dumaloq tugma orqali ochiladigan chat)
+#
+# HAR BIR foydalanuvchi (menejer ham, admin ham) savol-javob qila oladi --
+# bu qism DOIM arzon: METRIC (haqiqiy Meta/CRM ma'lumotidan, LLM'siz,
+# `build_admin_report` orqali) yoki GENERAL (OpenAI, `call_light_chat`)
+# yo'liga tushadi. FAQAT ADMIN uchun esa ACTION (target yoqish/o'chirish,
+# doimiy vazifa qo'shish/bekor qilish) va ANALYSIS (to'liq audit, Claude
+# Sonnet ishlatadi) ham ochiq -- xuddi Telegram botga yozgandagidek. Oddiy
+# menejer bunday buyruq yozsa, xavfsizlik uchun bajarilmaydi -- shunday
+# xabar bilan javob qaytariladi (haqiqiy Meta hisobini menejer bevosita
+# o'zgartira olmasligi kerak).
+# ---------------------------------------------------------------------------
+
+def _web_chat_history_key() -> str:
+    return f"web_chat_history:{current_user.id}"
+
+
+@app.route("/api/assistant", methods=["POST"])
+@login_required
+def api_assistant():
+    data = request.get_json(silent=True) or {}
+    user_text = (data.get("message") or "").strip()
+    if not user_text:
+        return jsonify({"error": "Xabar bo'sh."}), 400
+    user_text = user_text[:2000]
+
+    history_key = _web_chat_history_key()
+    history = kv_store.get_json(history_key, default=[])
+    is_admin = current_user.role == "admin"
+
+    try:
+        verdict, history_text = orchestrator.classify_intent(user_text, history)
+    except Exception as e:
+        logger.exception("Web yordamchi: classify_intent xatosi")
+        return jsonify({"reply": f"⚠️ Xabarni tushunishda xatolik: {e}"})
+
+    history.append({"role": "user", "content": user_text})
+
+    if not is_admin and any(k in verdict for k in ("ACTION", "ANALYSIS", "BUDGET")):
+        reply = (
+            "Bu turdagi amal (target yoqish/o'chirish, byudjet qayd etish yoki "
+            "to'liq tahlil) faqat ADMIN akkaunt uchun ochiq. Menejer sifatida "
+            "faqat ma'lumot/statistika so'rashingiz mumkin -- masalan \"bugun "
+            "necha lead keldi\" yoki \"CPL qancha\"."
+        )
+        history.append({"role": "assistant", "content": reply})
+        kv_store.set_json(history_key, history[-12:])
+        return jsonify({"reply": reply, "is_admin": is_admin})
+
+    # ADMIN uchun doimiy vazifalar (schedule_on_off/schedule_report)
+    # to'g'ri "chat"ga bog'lanishi uchun sun'iy, lekin barqaror chat_id --
+    # Telegram'ning haqiqiy ID maydoni bilan HECH QACHON to'qnashmasligi
+    # uchun ataylab juda katta MANFIY son qilib tuzilgan (Telegram foydalanuvchi
+    # ID'lari doim musbat). Web'dan yaratilgan vazifalar /settings/tasks
+    # sahifasida ko'rinadi; Telegram'ga bildirishnoma yuborilmaydi (haqiqiy
+    # Telegram chat yo'q) -- bu kutilgan holat, xato emas.
+    web_chat_id = -(9_000_000_000_000 + int(current_user.id)) if is_admin else None
+
+    try:
+        result = orchestrator.execute_intent(verdict, user_text, history_text, web_chat_id)
+    except Exception as e:
+        logger.exception("Web yordamchi: execute_intent xatosi")
+        result = f"⚠️ Buyruqni bajarishda xatolik: {e}"
+
+    if result is None:
+        try:
+            result = orchestrator.call_light_chat(KNOWLEDGE_BASE, history, max_tokens=800)
+        except Exception as e:
+            logger.exception("Web yordamchi: call_light_chat xatosi")
+            result = f"⚠️ Xatolik yuz berdi: {e}"
+
+    history.append({"role": "assistant", "content": result})
+    kv_store.set_json(history_key, history[-12:])
+    return jsonify({"reply": result, "is_admin": is_admin})
+
+
 @app.route("/api/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(silent=True) or {}
@@ -494,6 +572,312 @@ def lead_delete(lead_id):
 
 ALLOWED_IMPORT_EXTENSIONS = (".xlsx", ".xlsm", ".csv")
 
+# ---------------------------------------------------------------------------
+# Excel/CSV import -- "aqlli" ustun aniqlash (2026-08)
+#
+# Real hayotda import qilinadigan fayllar juda xilma-xil bo'ladi:
+#   1. Meta Ads Manager'ning O'ZI eksport qilgan xom CSV -- odatda UTF-16
+#      kodlash + TAB bilan ajratilgan, ustun nomlari "phone_number",
+#      "ismingizni_kiriting!" kabi FORMA SAVOLI nomiga qarab o'zgaruvchan,
+#      ID'lar "ag:"/"as:"/"c:"/"f:"/"l:" prefiks bilan, telefon esa "p:" bilan.
+#   2. Admin/menejer o'zi tuzgan Excel jadval -- ustun sarlavhasi UMUMAN
+#      YO'Q, faqat qatorlar (hudud, maydon, ism, telefon, telefon).
+#   3. Oddiy "full_name, phone, email" ustunli oddiy jadval.
+#
+# Shu funksiyalar UCHALASINI HAM avtomatik tanib, faqat CRM'ga kerakli
+# maydonlarni (ism, telefon -- ba'zan ikkitagacha, email, kampaniya
+# atributsiyasi) ajratib oladi -- boshqa ustunlar (hudud, maydon va h.k.)
+# yo'qotilmaydi, `quality_note`ga qo'shimcha kontekst sifatida yoziladi.
+# ---------------------------------------------------------------------------
+
+_NAME_HINTS = ("full_name", "full name", "ism", "fio", "f.i.o", "familiya", "имя", "фио", "name")
+_PHONE_HINTS = ("phone", "telefon", "tel", "raqam", "nomer", "номер", "тел")
+_ADDITIONAL_PHONE_HINTS = ("qoshimcha", "qo'shimcha", "additional", "extra", "second", "ikkinchi")
+_EMAIL_HINTS = ("email", "e-mail", "почта", "pochta")
+_KNOWN_HEADER_TOKENS = (
+    "phone", "email", "campaign", "adset", "ad_name", "ad name", "form",
+    "created_time", "lead_status", "ism", "full_name", "name", "telefon",
+    "kampaniya", "platform", "is_organic", "id",
+)
+
+
+def _import_norm_header(h) -> str:
+    return str(h or "").strip().lower()
+
+
+def _import_looks_like_header_row(cells) -> bool:
+    """Birinchi qator SARLAVHA (ustun nomlari) ekanligini aniqlaydi -- agar
+    kamida 2 ta ma'lum kalit so'z uchrasa VA hech bir katakda uzun (7+)
+    raqam ketma-ketligi (telefon/ID'ga o'xshash) bo'lmasa."""
+    joined = " ".join(_import_norm_header(c) for c in cells)
+    hits = sum(1 for tok in _KNOWN_HEADER_TOKENS if tok in joined)
+    has_long_digit_run = any(re.search(r"\d{7,}", str(c or "")) for c in cells)
+    return hits >= 2 and not has_long_digit_run
+
+
+def _import_clean_phone_raw(raw):
+    if raw is None:
+        return None
+    if isinstance(raw, float) and raw.is_integer():
+        raw = int(raw)
+    s = str(raw).strip()
+    if not s:
+        return None
+    # Excel/openpyxl butun sonli katakni ba'zan "900446000.0" ko'rinishida
+    # STRINGga aylantirib beradi (bizga kelguncha) -- ".0"ni olib tashlaymiz,
+    # aks holda keyingi raqam tozalashda soxta qo'shimcha "0" paydo bo'ladi.
+    if re.fullmatch(r"\d+\.0", s):
+        s = s[:-2]
+    if s.lower().startswith("p:"):
+        s = s[2:]
+    return s
+
+
+def _import_normalize_phone(raw):
+    """Turli formatdagi telefon qiymatini (xom raqam, "p:" prefiksli,
+    tire/bo'sh joy/vergul bilan yozilgan) imkon qadar "+998XXXXXXXXX"
+    ko'rinishiga keltiradi. Aniqlab bo'lmasa, faqat raqamlarni qoldirib
+    qaytaradi (yo'qotmaslik uchun)."""
+    s = _import_clean_phone_raw(raw)
+    if not s:
+        return None
+    has_plus = s.strip().startswith("+")
+    digits = re.sub(r"\D", "", s)
+    if len(digits) < 7:
+        return None
+    if has_plus:
+        return "+" + digits
+    if digits.startswith("998") and len(digits) >= 12:
+        return "+" + digits[:12]
+    if len(digits) == 9:
+        return "+998" + digits
+    if len(digits) in (12, 13) and digits.startswith("998"):
+        return "+" + digits
+    return digits
+
+
+def _import_phone_key9(normalized):
+    if not normalized:
+        return None
+    digits = re.sub(r"\D", "", normalized)
+    return digits[-9:] if len(digits) >= 9 else (digits or None)
+
+
+def _import_strip_id_prefix(raw):
+    """Meta CSV eksportidagi "ag:123", "as:123", "c:123", "f:123", "l:123"
+    prefikslarini olib tashlaydi -- shundagina bu ID'lar Meta API orqali
+    olingan haqiqiy kampaniya/adset/ad ID'lari bilan MOS TUSHADI (aks holda
+    dashboard'da bu lidlar hech qanday kampaniyaga bog'lanmay qoladi)."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    if ":" in s:
+        prefix, rest = s.split(":", 1)
+        if prefix.lower() in ("ag", "as", "c", "f", "l") and rest:
+            return rest
+    return s
+
+
+def _import_looks_phoneish(value) -> bool:
+    s = _import_clean_phone_raw(value)
+    if not s:
+        return False
+    if s.strip().startswith(("+", "p:")):
+        return True
+    digits = re.sub(r"\D", "", s)
+    return 7 <= len(digits) <= 13 and len(digits) >= len(re.sub(r"[\s]", "", s)) - 3
+
+
+def _import_looks_nameish(value) -> bool:
+    s = str(value or "").strip()
+    if not (2 <= len(s) <= 60):
+        return False
+    if _import_looks_phoneish(value):
+        return False
+    # Haqiqiy ism/familiyada deyarli hech qachon pastki chiziq, qavs yoki
+    # o'lchov belgisi bo'lmaydi -- bular ko'pincha forma javobi KATEGORIYASI
+    # (masalan "toshkent_shahri", "50-150_m²") bo'ladi, ism emas.
+    if any(ch in s for ch in ("_", "(", ")", "²", "%")):
+        return False
+    letters = sum(1 for ch in s if ch.isalpha())
+    return letters >= max(2, len(s) * 0.5)
+
+
+def _import_read_rows(file):
+    """Faylni (CSV yoki Excel) universal o'qiydi -- CSV uchun kodlashni
+    (UTF-8/UTF-16, BOM bilan yoki bo'lmasa) va ajratuvchini (tab/vergul/
+    nuqta-vergul) avtomatik aniqlaydi. Qaytaradi: list[list[str|None]]."""
+    filename = file.filename.lower()
+    if filename.endswith(".csv"):
+        raw = file.stream.read()
+        text = None
+        if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            text = raw.decode("utf-16", errors="replace")
+        else:
+            null_ratio = raw[:2000].count(0) / max(1, len(raw[:2000]))
+            if null_ratio > 0.15:  # BOM'siz UTF-16 -- ko'p 0x00 baytlar bo'ladi
+                try:
+                    text = raw.decode("utf-16-le", errors="replace")
+                except Exception:
+                    text = None
+        if text is None:
+            text = raw.decode("utf-8-sig", errors="ignore")
+
+        sample = text[:4096]
+        delimiter = "\t" if sample.count("\t") > sample.count(",") else ","
+        if sample.count(";") > sample.count(delimiter):
+            delimiter = ";"
+
+        import csv, io
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        return [list(r) for r in reader]
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(file, data_only=True)
+        ws = wb.active
+        return [[c.value for c in row] for row in ws.iter_rows()]
+
+
+def _import_resolve_columns(rows):
+    """Fayl qatorlarini tahlil qilib, har bir CRM maydoni (ism, asosiy
+    telefon, qo'shimcha telefon, email, kampaniya/adset/ad/forma, ID,
+    yaratilgan vaqt) qaysi ustun indeksida ekanligini topadi. Qaytaradi:
+    (col_map: dict, data_rows: list[list], used_header: bool)."""
+    if not rows:
+        return {}, [], False
+
+    header_cells = rows[0]
+    has_header = _import_looks_like_header_row(header_cells)
+    col_map = {}
+
+    if has_header:
+        header = [_import_norm_header(h) for h in header_cells]
+
+        def find_exact(*names):
+            for n in names:
+                if n in header:
+                    return header.index(n)
+            return None
+
+        def find_substr(hints, exclude_idx=()):
+            for i, h in enumerate(header):
+                if i in exclude_idx:
+                    continue
+                if any(hint in h for hint in hints):
+                    return i
+            return None
+
+        col_map["meta_lead_id"] = find_exact("id")
+        col_map["created_time"] = find_exact("created_time", "created time")
+        col_map["campaign"] = find_exact("campaign_name", "campaign", "kampaniya")
+        col_map["campaign_id"] = find_exact("campaign_id")
+        col_map["adset"] = find_exact("adset_name", "adset", "reklama guruhi")
+        col_map["adset_id"] = find_exact("adset_id")
+        col_map["ad"] = find_exact("ad_name", "ad")
+        col_map["ad_id"] = find_exact("ad_id")
+        col_map["form"] = find_exact("form_name")
+
+        # Ism/telefon/email'ni Meta'ning O'ZI ATTRIBUTSIYA UCHUN ishlatadigan
+        # ad_name/adset_name/campaign_name/form_name ustunlari bilan
+        # ARALASHTIRIB YUBORMASLIK uchun -- ular allaqachon band qilingan
+        # indekslarni QIDIRUVDAN chiqarib tashlaymiz ("ad_name" ichida ham
+        # "name" so'zi bor, lekin bu odam ismi emas).
+        reserved = {
+            i for i in (
+                col_map["meta_lead_id"], col_map["created_time"],
+                col_map["campaign"], col_map["campaign_id"],
+                col_map["adset"], col_map["adset_id"],
+                col_map["ad"], col_map["ad_id"], col_map["form"],
+            ) if i is not None
+        }
+
+        idx_name = find_exact("full_name", "full name") or find_substr(_NAME_HINTS, exclude_idx=reserved)
+        col_map["name"] = idx_name
+        if idx_name is not None:
+            reserved.add(idx_name)
+
+        # Asosiy telefon: aniq "phone"/"phone_number" nomli ustun ustunroq --
+        # "qo'shimcha"/"additional" so'zi bilan boshlanmagan birinchi moslik.
+        primary_phone = find_exact("phone", "phone_number", "telefon")
+        if primary_phone is None:
+            for i, h in enumerate(header):
+                if i in reserved or any(hint in h for hint in _ADDITIONAL_PHONE_HINTS):
+                    continue
+                if any(hint in h for hint in _PHONE_HINTS):
+                    primary_phone = i
+                    break
+        col_map["phone"] = primary_phone
+        if primary_phone is not None:
+            reserved.add(primary_phone)
+
+        secondary_phone = None
+        for i, h in enumerate(header):
+            if i in reserved:
+                continue
+            if any(hint in h for hint in _PHONE_HINTS):
+                secondary_phone = i
+                break
+        col_map["phone2"] = secondary_phone
+        if secondary_phone is not None:
+            reserved.add(secondary_phone)
+
+        col_map["email"] = find_substr(_EMAIL_HINTS, exclude_idx=reserved)
+        return col_map, rows[1:], True
+
+    # --- Sarlavhasiz fayl: ustunlarni QIYMATLARGA qarab taxmin qilamiz ---
+    data_rows = rows
+    sample = data_rows[:25]
+    n_cols = max((len(r) for r in sample), default=0)
+    phone_scores = []
+    phone_normalized_ratio = []
+    name_scores = []
+    for c in range(n_cols):
+        vals = [r[c] for r in sample if c < len(r) and r[c] not in (None, "")]
+        if not vals:
+            phone_scores.append(0.0)
+            phone_normalized_ratio.append(0.0)
+            name_scores.append(0.0)
+            continue
+        phone_scores.append(sum(1 for v in vals if _import_looks_phoneish(v)) / len(vals))
+        phone_normalized_ratio.append(
+            sum(1 for v in vals if str(v).strip().startswith(("+", "p:"))) / len(vals)
+        )
+        name_scores.append(sum(1 for v in vals if _import_looks_nameish(v)) / len(vals))
+
+    phone_candidates = [i for i, s in enumerate(phone_scores) if s >= 0.6]
+    phone_candidates.sort(key=lambda i: (phone_normalized_ratio[i], phone_scores[i]), reverse=True)
+    col_map["phone"] = phone_candidates[0] if phone_candidates else None
+    col_map["phone2"] = phone_candidates[1] if len(phone_candidates) > 1 else None
+
+    name_candidates = [
+        i for i, s in enumerate(name_scores)
+        if s >= 0.6 and i not in phone_candidates
+    ]
+    name_candidates.sort(key=lambda i: name_scores[i], reverse=True)
+    col_map["name"] = name_candidates[0] if name_candidates else None
+
+    for key in ("meta_lead_id", "created_time", "campaign", "campaign_id",
+                "adset", "adset_id", "ad", "ad_id", "form", "email"):
+        col_map[key] = None
+
+    col_map["_leftover_cols"] = [
+        i for i in range(n_cols)
+        if i not in (col_map["phone"], col_map["phone2"], col_map["name"])
+    ]
+    return col_map, data_rows, False
+
+
+def _import_get_cell(row, idx):
+    if idx is None or idx >= len(row):
+        return None
+    v = row[idx]
+    if v is None:
+        return None
+    v = str(v).strip()
+    return v or None
+
 
 @app.route("/leads/import", methods=["GET", "POST"])
 @login_required
@@ -504,19 +888,8 @@ def leads_import():
             flash("Fayl tanlanmadi yoki format noto'g'ri (.xlsx yoki .csv kerak).", "error")
             return redirect(url_for("leads_import"))
 
-        rows = []
         try:
-            if file.filename.lower().endswith(".csv"):
-                import csv
-                import io
-                content = file.stream.read().decode("utf-8-sig", errors="ignore")
-                reader = csv.reader(io.StringIO(content))
-                rows = list(reader)
-            else:
-                import openpyxl
-                wb = openpyxl.load_workbook(file, data_only=True)
-                ws = wb.active
-                rows = [[c.value for c in row] for row in ws.iter_rows()]
+            rows = _import_read_rows(file)
         except Exception as e:
             flash(f"Faylni o'qishda xatolik: {e}", "error")
             return redirect(url_for("leads_import"))
@@ -525,48 +898,97 @@ def leads_import():
             flash("Fayl bo'sh.", "error")
             return redirect(url_for("leads_import"))
 
-        header = [str(h or "").strip().lower() for h in rows[0]]
+        col_map, data_rows, used_header = _import_resolve_columns(rows)
 
-        def col(*names):
-            for n in names:
-                if n in header:
-                    return header.index(n)
-            return None
-
-        idx_name = col("full_name", "full name", "ism", "ism familiya", "name")
-        idx_phone = col("phone", "phone_number", "telefon", "tel")
-        idx_email = col("email", "e-mail")
-        idx_campaign = col("campaign_name", "campaign", "kampaniya")
+        if col_map.get("name") is None and col_map.get("phone") is None:
+            flash(
+                "Faylda ism yoki telefon ustunini aniqlab bo'lmadi -- fayl formatini "
+                "tekshiring yoki ustun sarlavhalarini qo'shing (masalan: Ism, Telefon).",
+                "error",
+            )
+            return redirect(url_for("leads_import"))
 
         session = get_session()
         added = 0
         skipped = 0
+        seen_keys_this_file = set()
         try:
-            for r in rows[1:]:
-                if not any(r):
+            for r in data_rows:
+                if not any(c not in (None, "") for c in r):
                     continue
 
-                def get(i):
-                    if i is None or i >= len(r):
-                        return None
-                    v = r[i]
-                    return str(v).strip() if v is not None else None
+                full_name = _import_get_cell(r, col_map.get("name"))
+                phone_raw = _import_get_cell(r, col_map.get("phone"))
+                phone2_raw = _import_get_cell(r, col_map.get("phone2"))
+                email = _import_get_cell(r, col_map.get("email"))
 
-                full_name = get(idx_name)
-                phone = get(idx_phone)
-                email = get(idx_email)
-                campaign_name = get(idx_campaign)
+                phone = _import_normalize_phone(phone_raw)
+                phone2 = _import_normalize_phone(phone2_raw)
+                key9 = _import_phone_key9(phone)
+                key9_2 = _import_phone_key9(phone2)
+
+                # Agar asosiy ustunda telefon topilmasa, lekin qo'shimcha
+                # ustunda bor bo'lsa -- shuni asosiy sifatida ishlatamiz
+                # (masalan sarlavhasiz faylda ikkinchi ustun ko'proq
+                # "p:"/"+" bilan normallashgan bo'lsa ham, birinchisida
+                # qiymat bo'lmasligi mumkin).
+                if not phone and phone2:
+                    phone, key9 = phone2, key9_2
+                    phone2, key9_2 = None, None
+
                 if not full_name and not phone:
                     skipped += 1
                     continue
-                if phone:
-                    existing = session.query(Lead).filter_by(phone=phone).first()
+
+                if key9:
+                    if key9 in seen_keys_this_file:
+                        skipped += 1
+                        continue
+                    existing = session.query(Lead).filter(Lead.phone.ilike(f"%{key9}%")).first()
                     if existing:
                         skipped += 1
                         continue
+                    seen_keys_this_file.add(key9)
+
+                meta_lead_id = _import_strip_id_prefix(_import_get_cell(r, col_map.get("meta_lead_id")))
+                if meta_lead_id:
+                    if session.query(Lead).filter_by(meta_lead_id=meta_lead_id).first():
+                        skipped += 1
+                        continue
+
+                created_time_raw = _import_get_cell(r, col_map.get("created_time"))
+                lead_created_time = None
+                if created_time_raw:
+                    try:
+                        lead_created_time = dt.datetime.strptime(created_time_raw[:19], "%Y-%m-%dT%H:%M:%S")
+                    except ValueError:
+                        lead_created_time = None
+
+                quality_note = None
+                if phone2 and key9_2 and key9_2 != key9:
+                    quality_note = f"Qo'shimcha raqam (importdan): {phone2}"
+                if not used_header:
+                    leftover = [
+                        _import_get_cell(r, i) for i in col_map.get("_leftover_cols", [])
+                    ]
+                    leftover = [v for v in leftover if v]
+                    if leftover:
+                        extra_note = "Import qo'shimcha ma'lumot: " + " | ".join(leftover[:4])
+                        quality_note = f"{quality_note}\n{extra_note}" if quality_note else extra_note
+
                 lead = Lead(
-                    full_name=full_name, phone=phone, email=email,
-                    campaign_name=campaign_name, source="import", status="new",
+                    meta_lead_id=meta_lead_id,
+                    campaign_id=_import_strip_id_prefix(_import_get_cell(r, col_map.get("campaign_id"))),
+                    campaign_name=_import_get_cell(r, col_map.get("campaign")),
+                    adset_id=_import_strip_id_prefix(_import_get_cell(r, col_map.get("adset_id"))),
+                    adset_name=_import_get_cell(r, col_map.get("adset")),
+                    ad_id=_import_strip_id_prefix(_import_get_cell(r, col_map.get("ad_id"))),
+                    ad_name=_import_get_cell(r, col_map.get("ad")),
+                    form_name=_import_get_cell(r, col_map.get("form")),
+                    full_name=full_name, phone=phone or phone_raw, email=email,
+                    quality_note=quality_note,
+                    lead_created_time=lead_created_time,
+                    source="import", status="new",
                 )
                 session.add(lead)
                 added += 1
@@ -598,6 +1020,19 @@ def lead_detail(lead_id):
             note_text = request.form.get("note", "").strip()
             sale_amount = request.form.get("sale_amount", "").strip()
 
+            # Asosiy ma'lumotlar (ism/telefon/email) ham shu formadan tahrirlanadi --
+            # bo'sh yuborilsa eskisi saqlanadi (majburiy emas, chunki ba'zi lidlarda
+            # boshidanoq email bo'lmasligi mumkin).
+            new_full_name = request.form.get("full_name", "").strip()
+            new_phone = request.form.get("phone", "").strip()
+            new_email = request.form.get("email", "").strip()
+            if "full_name" in request.form:
+                lead.full_name = new_full_name or None
+            if "phone" in request.form:
+                lead.phone = new_phone or None
+            if "email" in request.form:
+                lead.email = new_email or None
+
             if new_status in stage_by_key:
                 lead.status = new_status
                 if stage_by_key[new_status].category == "sold":
@@ -628,7 +1063,7 @@ def lead_detail(lead_id):
                 lead.assigned_manager_id = manager_row.id
             session.commit()
             flash("Saqlandi.", "success")
-            return redirect(url_for("lead_detail", lead_id=lead_id))
+            return redirect(url_for("leads_list"))
 
         notes = session.query(LeadNote).filter_by(lead_id=lead.id).order_by(LeadNote.created_at.desc()).all()
         try:
@@ -693,6 +1128,59 @@ def managers():
     finally:
         session.close()
     return render_template("managers.html", managers=rows)
+
+
+@app.route("/managers/<int:manager_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def manager_edit(manager_id):
+    session = get_session()
+    try:
+        m = session.get(Manager, manager_id)
+        if not m:
+            flash("Menejer topilmadi.", "error")
+            return redirect(url_for("managers"))
+
+        if request.method == "POST":
+            new_username = request.form.get("username", "").strip()
+            new_full_name = request.form.get("full_name", "").strip()
+            new_role = request.form.get("role", "manager")
+            new_password = request.form.get("password", "")
+            is_active = request.form.get("is_active") == "on"
+
+            if not new_username:
+                flash("Username bo'sh bo'lishi mumkin emas.", "error")
+            elif session.query(Manager).filter(Manager.username == new_username, Manager.id != m.id).first():
+                flash("Bu username boshqa hisobda band.", "error")
+            else:
+                # O'zining yagona admin hisobini nofaol qilib qo'yishning oldini
+                # olamiz -- aks holda hech kim tizimga kira olmay qoladigan
+                # holatga tushib qolishi mumkin.
+                if not is_active and m.role == "admin":
+                    other_active_admins = session.query(Manager).filter(
+                        Manager.role == "admin", Manager.is_active == True, Manager.id != m.id  # noqa: E712
+                    ).count()
+                    if other_active_admins == 0:
+                        flash("Bu yagona faol admin -- uni nofaol qilib bo'lmaydi.", "error")
+                        return render_template("manager_edit.html", m={
+                            "id": m.id, "username": m.username, "full_name": m.full_name,
+                            "role": m.role, "is_active": m.is_active,
+                        })
+
+                m.username = new_username
+                m.full_name = new_full_name or None
+                m.role = new_role
+                m.is_active = is_active
+                if new_password:
+                    m.set_password(new_password)
+                session.commit()
+                flash(f"{new_username} yangilandi.", "success")
+                return redirect(url_for("managers"))
+
+        m_view = {"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active}
+    finally:
+        session.close()
+    return render_template("manager_edit.html", m=m_view)
 
 
 # ---------------------------------------------------------------------------

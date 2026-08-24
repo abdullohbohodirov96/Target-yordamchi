@@ -23,14 +23,15 @@
 
 <div class="panel">
   <table>
-    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Faol</th></tr></thead>
+    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Faol</th><th></th></tr></thead>
     <tbody>
       {% for m in managers %}
-      <tr>
+      <tr class="rowlink" onclick="window.location='{{ url_for('manager_edit', manager_id=m.id) }}'">
         <td>{{ m.username }}</td>
         <td class="text-dim">{{ m.full_name or '—' }}</td>
         <td class="text-dim">{{ m.role }}</td>
-        <td class="text-dim">{{ 'ha' if m.is_active else 'yo\'q' }}</td>
+        <td><span class="badge {{ 'badge-color-good' if m.is_active else 'badge-color-dim' }}">{{ 'faol' if m.is_active else 'nofaol' }}</span></td>
+        <td class="num"><a href="{{ url_for('manager_edit', manager_id=m.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>
       </tr>
       {% endfor %}
     </tbody>

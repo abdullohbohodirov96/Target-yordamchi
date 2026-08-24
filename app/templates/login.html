@@ -1,12 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Kirish — Target CRM{% endblock %}
+{% block flash %}{% endblock %}
 {% block content %}
 <div class="login-shell">
   <div class="login-card">
     <div class="login-brand"><span class="brand-mark">T</span> Target CRM</div>
-    <p class="page-subtitle" style="margin-top:0">Kirish uchun login/parolingizni kiriting</p>
+    <p class="login-subtitle">Kirish uchun login/parolingizni kiriting</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+        <div class="login-error">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 8v5"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>
+          <span>{{ msg }}</span>
+        </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
     <form method="post">
-      <div class="field"><label>Login</label><input type="text" name="username" autofocus required></div>
+      <div class="field"><label>Login</label><input type="text" name="username" value="{{ request.form.get('username', '') }}" autofocus required></div>
       <div class="field"><label>Parol</label><input type="password" name="password" required></div>
       <button type="submit" class="block">Kirish</button>
     </form>

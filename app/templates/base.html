@@ -35,6 +35,7 @@
   {% endif %}
 
   <main class="container">
+    {% block flash %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, msg in messages %}
@@ -42,7 +43,115 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
+    {% endblock %}
     {% block content %}{% endblock %}
   </main>
+
+  {% if current_user.is_authenticated %}
+  <div id="ai-assistant-root">
+    <button id="ai-assistant-toggle" type="button" aria-label="AI yordamchi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <rect x="4" y="7" width="16" height="12" rx="4"/>
+        <path stroke-linecap="round" d="M12 7V4"/>
+        <circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none"/>
+        <circle cx="9" cy="13" r="1.4" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="13" r="1.4" fill="currentColor" stroke="none"/>
+        <path stroke-linecap="round" d="M9 16.5c1 .8 5 .8 6 0"/>
+      </svg>
+    </button>
+
+    <div id="ai-assistant-panel" hidden>
+      <div id="ai-assistant-header">
+        <span>AI Yordamchi</span>
+        <button id="ai-assistant-close" type="button" aria-label="Yopish">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div id="ai-assistant-messages"></div>
+      <form id="ai-assistant-form">
+        <input id="ai-assistant-input" type="text" autocomplete="off" placeholder="Savolingizni yozing..." maxlength="2000">
+        <button type="submit" aria-label="Yuborish">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12l16-8-6 8 6 8-16-8z"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var root = document.getElementById('ai-assistant-root');
+    if (!root) return;
+    var toggleBtn = document.getElementById('ai-assistant-toggle');
+    var closeBtn = document.getElementById('ai-assistant-close');
+    var panel = document.getElementById('ai-assistant-panel');
+    var messages = document.getElementById('ai-assistant-messages');
+    var form = document.getElementById('ai-assistant-form');
+    var input = document.getElementById('ai-assistant-input');
+    var greeted = false;
+
+    function addMessage(role, text) {
+      var row = document.createElement('div');
+      row.className = 'ai-msg ai-msg-' + role;
+      var bubble = document.createElement('div');
+      bubble.className = 'ai-bubble';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+      return row;
+    }
+
+    function openPanel() {
+      panel.hidden = false;
+      toggleBtn.classList.add('active');
+      if (!greeted) {
+        greeted = true;
+        addMessage('assistant', "Salom! Men AI yordamchiman. Lidlar, xarajat, natijalar haqida so'rang -- masalan \"bugun necha lead keldi\" yoki \"CPL qancha\".");
+      }
+      input.focus();
+    }
+
+    function closePanel() {
+      panel.hidden = true;
+      toggleBtn.classList.remove('active');
+    }
+
+    toggleBtn.addEventListener('click', function () {
+      if (panel.hidden) { openPanel(); } else { closePanel(); }
+    });
+    closeBtn.addEventListener('click', closePanel);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = input.value.trim();
+      if (!text) return;
+      addMessage('user', text);
+      input.value = '';
+      input.disabled = true;
+      var typingRow = addMessage('assistant', 'Yozyapti...');
+      typingRow.classList.add('ai-typing');
+
+      fetch("{{ url_for('api_assistant') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          typingRow.remove();
+          addMessage('assistant', data.reply || data.error || "Kechirasiz, javob olishda xatolik yuz berdi.");
+        })
+        .catch(function () {
+          typingRow.remove();
+          addMessage('assistant', "⚠️ Serverga ulanishda xatolik yuz berdi. Qayta urinib ko'ring.");
+        })
+        .finally(function () {
+          input.disabled = false;
+          input.focus();
+        });
+    });
+  })();
+  </script>
+  {% endif %}
 </body>
 </html>

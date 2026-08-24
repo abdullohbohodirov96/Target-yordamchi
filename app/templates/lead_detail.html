@@ -42,8 +42,22 @@
   </div>
 
   <div class="card">
-    <h2>Holatni yangilash / izoh qo'shish</h2>
+    <h2>Ma'lumot va holatni tahrirlash</h2>
     <form method="post">
+      <div class="field">
+        <label>To'liq ism</label>
+        <input type="text" name="full_name" value="{{ lead.full_name or '' }}" placeholder="Ism Familiya">
+      </div>
+      <div class="field">
+        <label>Telefon</label>
+        <input type="text" name="phone" value="{{ lead.phone or '' }}" placeholder="+998 90 123 45 67">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="text" name="email" value="{{ lead.email or '' }}" placeholder="email@example.com">
+      </div>
+
+      <div style="border-top:1px solid var(--border-light); margin:4px 0 16px; padding-top:16px">
       <div class="field">
         <label>Holat</label>
         <select name="status">
@@ -59,6 +73,7 @@
       <div class="field">
         <label>Izoh (ixtiyoriy)</label>
         <textarea name="note" placeholder="Masalan: qo'ng'iroq qilindi, narx aytildi..."></textarea>
+      </div>
       </div>
 
       {% if custom_fields %}
