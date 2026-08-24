@@ -46,18 +46,31 @@ def _report_targets() -> list[int]:
     return [chat_id] if chat_id is not None else []
 
 
-def _tg_send(chat_id: int, text: str) -> None:
+def _tg_send(chat_id: int, text: str) -> dict:
+    """Xabar yuboradi va natijani qaytaradi: {"ok": bool, "error": str|None}.
+    MUHIM (bug fix): avval Telegram'ning o'zi rad etsa (masalan "chat not
+    found" -- bot guruhga qo'shilmagan, yoki ID noto'g'ri formatda) HECH
+    QAYERDA ko'rinmasdi -- kod hech qanday exception ko'tarmasdi, shunchaki
+    jim qolardi. Endi natija chaqiruvchiga (job_admin_report va h.k.) va
+    log'ga aniq qaytariladi."""
     import requests
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if not token:
         logger.error("TELEGRAM_BOT_TOKEN yo'q -- xabar yuborilmadi")
-        return
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN yo'q"}
     api = f"https://api.telegram.org/bot{token}"
+    last_error = None
     for i in range(0, len(text), 4000):
         try:
-            requests.post(f"{api}/sendMessage", json={"chat_id": chat_id, "text": text[i:i + 4000]}, timeout=20)
-        except Exception:
-            logger.exception("Telegramga xabar yuborishda xatolik")
+            r = requests.post(f"{api}/sendMessage", json={"chat_id": chat_id, "text": text[i:i + 4000]}, timeout=20)
+            body = r.json()
+            if not body.get("ok"):
+                last_error = body.get("description", str(body))
+                logger.error("Telegram sendMessage rad etdi (chat_id=%s): %s", chat_id, body)
+        except Exception as e:
+            last_error = str(e)
+            logger.exception("Telegramga xabar yuborishda xatolik (chat_id=%s)", chat_id)
+    return {"ok": last_error is None, "error": last_error}
 
 
 def job_admin_report() -> str:
@@ -76,9 +89,10 @@ def job_admin_report() -> str:
         for cid in targets:
             _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
         return f"xato: {e}"
-    for cid in targets:
-        _tg_send(cid, report)
-    return f"yuborildi -> {targets}"
+    send_results = {cid: _tg_send(cid, report) for cid in targets}
+    if all(r["ok"] for r in send_results.values()):
+        return f"yuborildi -> {targets}"
+    return f"URINISH QILINDI, lekin ba'zilari rad etildi: {send_results}"
 
 
 def job_watch_cycle() -> str:

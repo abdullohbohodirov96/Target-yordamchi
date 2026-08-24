@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Yangi lead — Target CRM{% endblock %}
+{% block content %}
+<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
+<h1>Yangi lead qo'shish</h1>
+<p class="page-subtitle">Qo'lda kelgan (qo'ng'iroq, DM, do'kon va h.k.) leadni bu yerdan qo'shing</p>
+
+<div class="card" style="max-width:480px">
+  <form method="post">
+    <div class="field"><label>Ism familiya</label><input type="text" name="full_name" autofocus></div>
+    <div class="field"><label>Telefon</label><input type="text" name="phone" placeholder="+998..."></div>
+    <div class="field"><label>Email (ixtiyoriy)</label><input type="text" name="email"></div>
+    <div class="field"><label>Kampaniya nomi (ixtiyoriy)</label><input type="text" name="campaign_name"></div>
+    <div class="field"><label>Adset nomi (ixtiyoriy)</label><input type="text" name="adset_name"></div>
+    <div class="field"><label>Reklama / video nomi (ixtiyoriy)</label><input type="text" name="ad_name"></div>
+    <button type="submit" class="block">Qo'shish</button>
+  </form>
+</div>
+{% endblock %}

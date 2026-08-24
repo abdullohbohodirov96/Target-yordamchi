@@ -66,12 +66,20 @@ def sync_once() -> dict:
         result["errors"].append(f"Formalarni olishda xatolik: {e}")
         return result
 
-    # Kampaniya ID -> NOM xaritasi (dashboard/CRM'da o'qilishi oson bo'lishi uchun).
+    # Kampaniya/adset/ad ID -> NOM xaritalari (dashboard/CRM'da "qaysi target,
+    # qaysi video/reklamadan kelgan" to'liq ko'rinishi uchun -- ad_name ko'pincha
+    # ishlatilgan video/kreativ nomiga mos qilib qo'yiladi).
     campaign_name_by_id: dict[str, str] = {}
+    adset_name_by_id: dict[str, str] = {}
+    ad_name_by_id: dict[str, str] = {}
     try:
         structure = meta_api.get_account_structure(active_only=False)
         for c in structure.get("campaigns", []):
             campaign_name_by_id[c["id"]] = c.get("name", "")
+        for a in structure.get("adsets", []):
+            adset_name_by_id[a["id"]] = a.get("name", "")
+        for a in structure.get("ads", []):
+            ad_name_by_id[a["id"]] = a.get("name", "")
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {e}")
 
@@ -97,6 +105,8 @@ def sync_once() -> dict:
                 fd = _field_data_to_dict(raw.get("field_data"))
                 name, phone, email = _extract_name_phone_email(fd)
                 campaign_id = raw.get("campaign_id")
+                adset_id = raw.get("adset_id")
+                ad_id = raw.get("ad_id")
                 created_time = raw.get("created_time")
                 try:
                     created_dt = dt.datetime.strptime(created_time[:19], "%Y-%m-%dT%H:%M:%S") if created_time else None
@@ -107,9 +117,12 @@ def sync_once() -> dict:
                     meta_lead_id=meta_lead_id,
                     campaign_id=campaign_id,
                     campaign_name=campaign_name_by_id.get(campaign_id, ""),
-                    adset_id=raw.get("adset_id"),
-                    ad_id=raw.get("ad_id"),
+                    adset_id=adset_id,
+                    adset_name=adset_name_by_id.get(adset_id, ""),
+                    ad_id=ad_id,
+                    ad_name=ad_name_by_id.get(ad_id, ""),
                     form_name=form.get("name"),
+                    source="meta",
                     full_name=name,
                     phone=phone,
                     email=email,

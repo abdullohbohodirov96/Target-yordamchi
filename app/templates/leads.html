@@ -1,12 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Lidlar — Target CRM{% endblock %}
 {% block content %}
-<h1>Lidlar</h1>
-<p class="page-subtitle">Meta Lead Ads'dan avtomatik tortilgan lidlar (har 15 daqiqada yangilanadi)</p>
+<div class="page-head">
+  <div>
+    <h1>Lidlar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Meta Lead Ads'dan avtomatik tortilgan + qo'lda qo'shilgan/import qilingan lidlar</p>
+  </div>
+  <div style="display:flex; gap:8px">
+    <a href="{{ url_for('leads_import') }}" class="btn" style="background:#fff; color:var(--ink); border:1px solid var(--border)">Excel import</a>
+    <a href="{{ url_for('lead_new') }}" class="btn">+ Yangi lead</a>
+  </div>
+</div>
+
+<form method="get" class="searchbar" style="padding:0; margin-bottom:14px">
+  <div class="search-input-wrap" style="max-width:320px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" name="q" value="{{ search_q }}" placeholder="Ism, telefon yoki kampaniya bo'yicha qidirish...">
+  </div>
+  {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+</form>
 
 <div class="filters">
   {% for key, label in [('','Hammasi'), ('new','Yangi'), ('contacted','Bog\'lanildi'), ('qualified','Sifatli'), ('unqualified','Sifatsiz'), ('sold','Sotilgan')] %}
-  <a href="{{ url_for('leads_list', status=key) if key else url_for('leads_list') }}" class="{{ 'active' if status_filter==key }}">{{ label }}</a>
+  <a href="{{ url_for('leads_list', status=key, q=search_q) if key else url_for('leads_list', q=search_q) }}" class="{{ 'active' if status_filter==key }}">{{ label }}</a>
   {% endfor %}
 </div>
 
@@ -15,7 +31,7 @@
   <table>
     <thead>
       <tr>
-        <th>Ism</th><th>Telefon</th><th>Kampaniya</th><th>Holat</th><th>Menejer</th><th>Sana</th>
+        <th>Ism</th><th>Telefon</th><th>Target (kampaniya / adset / reklama)</th><th>Manba</th><th>Holat</th><th>Menejer</th><th>Sana</th>
       </tr>
     </thead>
     <tbody>
@@ -23,13 +39,16 @@
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
         <td>{{ l.full_name or '—' }}</td>
         <td class="text-dim">{{ l.phone or '—' }}</td>
-        <td class="text-dim">{{ l.campaign_name or '—' }}</td>
+        <td class="text-dim">
+          {{ l.campaign_name or '—' }}{% if l.adset_name %} <span class="text-faint">/ {{ l.adset_name }}</span>{% endif %}{% if l.ad_name %} <span class="text-faint">/ {{ l.ad_name }}</span>{% endif %}
+        </td>
+        <td class="text-faint">{{ {'meta':'Meta','manual':'Qo\'lda','import':'Import'}.get(l.source, l.source) }}</td>
         <td><span class="badge badge-{{ l.status }}">{{ l.status }}</span></td>
         <td class="text-dim">{{ l.assigned_manager or '—' }}</td>
         <td class="text-faint">{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="6">Hali lead yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="7">Hali lead yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>

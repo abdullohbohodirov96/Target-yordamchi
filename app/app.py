@@ -26,7 +26,7 @@ import orchestrator
 import budget_tracker
 import kv_store
 import monthly_report
-from db import init_db, get_session, Manager, Lead, LeadNote
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField
 from dashboard_data import get_kpis
 import lead_sync
 
@@ -337,21 +337,162 @@ def dashboard():
 @login_required
 def leads_list():
     status_filter = request.args.get("status", "")
+    search_q = request.args.get("q", "").strip()
     session = get_session()
     try:
         q = session.query(Lead).order_by(Lead.created_at.desc())
         if status_filter:
             q = q.filter(Lead.status == status_filter)
+        if search_q:
+            like = f"%{search_q}%"
+            q = q.filter(
+                (Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.campaign_name.ilike(like))
+            )
         leads = q.limit(300).all()
         rows = [{
             "id": l.id, "full_name": l.full_name, "phone": l.phone,
-            "campaign_name": l.campaign_name, "status": l.status,
+            "campaign_name": l.campaign_name, "adset_name": l.adset_name, "ad_name": l.ad_name,
+            "status": l.status, "source": l.source,
             "created_at": l.created_at, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else None,
             "sale_amount": l.sale_amount,
         } for l in leads]
     finally:
         session.close()
-    return render_template("leads.html", leads=rows, status_filter=status_filter)
+    return render_template("leads.html", leads=rows, status_filter=status_filter, search_q=search_q)
+
+
+@app.route("/leads/new", methods=["GET", "POST"])
+@login_required
+def lead_new():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            full_name = request.form.get("full_name", "").strip()
+            phone = request.form.get("phone", "").strip()
+            email = request.form.get("email", "").strip()
+            campaign_name = request.form.get("campaign_name", "").strip()
+            adset_name = request.form.get("adset_name", "").strip()
+            ad_name = request.form.get("ad_name", "").strip()
+            if not full_name and not phone:
+                flash("Kamida ism yoki telefon kiriting.", "error")
+            else:
+                lead = Lead(
+                    full_name=full_name or None, phone=phone or None, email=email or None,
+                    campaign_name=campaign_name or None, adset_name=adset_name or None, ad_name=ad_name or None,
+                    source="manual", status="new",
+                )
+                session.add(lead)
+                session.commit()
+                flash("Lead qo'shildi.", "success")
+                return redirect(url_for("lead_detail", lead_id=lead.id))
+    finally:
+        session.close()
+    return render_template("lead_new.html")
+
+
+@app.route("/leads/<int:lead_id>/delete", methods=["POST"])
+@login_required
+def lead_delete(lead_id):
+    session = get_session()
+    try:
+        lead = session.get(Lead, lead_id)
+        if lead:
+            session.query(LeadNote).filter_by(lead_id=lead.id).delete()
+            session.delete(lead)
+            session.commit()
+            flash("Lead o'chirildi.", "success")
+        else:
+            flash("Lead topilmadi.", "error")
+    finally:
+        session.close()
+    return redirect(url_for("leads_list"))
+
+
+ALLOWED_IMPORT_EXTENSIONS = (".xlsx", ".xlsm", ".csv")
+
+
+@app.route("/leads/import", methods=["GET", "POST"])
+@login_required
+def leads_import():
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file or not file.filename.lower().endswith(ALLOWED_IMPORT_EXTENSIONS):
+            flash("Fayl tanlanmadi yoki format noto'g'ri (.xlsx yoki .csv kerak).", "error")
+            return redirect(url_for("leads_import"))
+
+        rows = []
+        try:
+            if file.filename.lower().endswith(".csv"):
+                import csv
+                import io
+                content = file.stream.read().decode("utf-8-sig", errors="ignore")
+                reader = csv.reader(io.StringIO(content))
+                rows = list(reader)
+            else:
+                import openpyxl
+                wb = openpyxl.load_workbook(file, data_only=True)
+                ws = wb.active
+                rows = [[c.value for c in row] for row in ws.iter_rows()]
+        except Exception as e:
+            flash(f"Faylni o'qishda xatolik: {e}", "error")
+            return redirect(url_for("leads_import"))
+
+        if not rows:
+            flash("Fayl bo'sh.", "error")
+            return redirect(url_for("leads_import"))
+
+        header = [str(h or "").strip().lower() for h in rows[0]]
+
+        def col(*names):
+            for n in names:
+                if n in header:
+                    return header.index(n)
+            return None
+
+        idx_name = col("full_name", "full name", "ism", "ism familiya", "name")
+        idx_phone = col("phone", "phone_number", "telefon", "tel")
+        idx_email = col("email", "e-mail")
+        idx_campaign = col("campaign_name", "campaign", "kampaniya")
+
+        session = get_session()
+        added = 0
+        skipped = 0
+        try:
+            for r in rows[1:]:
+                if not any(r):
+                    continue
+
+                def get(i):
+                    if i is None or i >= len(r):
+                        return None
+                    v = r[i]
+                    return str(v).strip() if v is not None else None
+
+                full_name = get(idx_name)
+                phone = get(idx_phone)
+                email = get(idx_email)
+                campaign_name = get(idx_campaign)
+                if not full_name and not phone:
+                    skipped += 1
+                    continue
+                if phone:
+                    existing = session.query(Lead).filter_by(phone=phone).first()
+                    if existing:
+                        skipped += 1
+                        continue
+                lead = Lead(
+                    full_name=full_name, phone=phone, email=email,
+                    campaign_name=campaign_name, source="import", status="new",
+                )
+                session.add(lead)
+                added += 1
+            session.commit()
+        finally:
+            session.close()
+        flash(f"{added} ta lead import qilindi, {skipped} ta o'tkazib yuborildi (bo'sh yoki dublikat).", "success")
+        return redirect(url_for("leads_list"))
+
+    return render_template("leads_import.html")
 
 
 @app.route("/leads/<int:lead_id>", methods=["GET", "POST"])
@@ -363,6 +504,8 @@ def lead_detail(lead_id):
         if not lead:
             flash("Lead topilmadi.", "error")
             return redirect(url_for("leads_list"))
+
+        custom_fields = session.query(CustomField).filter_by(is_active=True).order_by(CustomField.sort_order).all()
 
         if request.method == "POST":
             new_status = request.form.get("status")
@@ -378,6 +521,20 @@ def lead_detail(lead_id):
                             lead.sale_amount = float(sale_amount)
                         except ValueError:
                             pass
+
+            if custom_fields:
+                try:
+                    extra = json.loads(lead.extra_data) if lead.extra_data else {}
+                except (TypeError, ValueError):
+                    extra = {}
+                for cf in custom_fields:
+                    val = request.form.get(f"cf_{cf.key}", "").strip()
+                    if val:
+                        extra[cf.key] = val
+                    elif cf.key in extra:
+                        extra.pop(cf.key)
+                lead.extra_data = json.dumps(extra, ensure_ascii=False)
+
             manager_row = session.query(Manager).filter_by(username=current_user.username).first()
             if note_text:
                 session.add(LeadNote(lead_id=lead.id, manager_id=manager_row.id if manager_row else None, text=note_text))
@@ -388,9 +545,19 @@ def lead_detail(lead_id):
             return redirect(url_for("lead_detail", lead_id=lead_id))
 
         notes = session.query(LeadNote).filter_by(lead_id=lead.id).order_by(LeadNote.created_at.desc()).all()
+        try:
+            extra = json.loads(lead.extra_data) if lead.extra_data else {}
+        except (TypeError, ValueError):
+            extra = {}
+        custom_fields_view = [{
+            "key": cf.key, "label": cf.label, "field_type": cf.field_type,
+            "options": [o.strip() for o in (cf.options or "").split(",") if o.strip()],
+            "value": extra.get(cf.key, ""),
+        } for cf in custom_fields]
         lead_view = {
             "id": lead.id, "full_name": lead.full_name, "phone": lead.phone,
             "email": lead.email, "campaign_name": lead.campaign_name,
+            "adset_name": lead.adset_name, "ad_name": lead.ad_name, "source": lead.source,
             "status": lead.status, "quality_note": lead.quality_note,
             "sale_amount": lead.sale_amount, "created_at": lead.created_at,
             "assigned_manager": lead.assigned_manager.full_name if lead.assigned_manager else None,
@@ -398,7 +565,7 @@ def lead_detail(lead_id):
         notes_view = [{"text": n.text, "created_at": n.created_at, "manager": n.manager.full_name if n.manager else "?"} for n in notes]
     finally:
         session.close()
-    return render_template("lead_detail.html", lead=lead_view, notes=notes_view)
+    return render_template("lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view)
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +597,52 @@ def managers():
     finally:
         session.close()
     return render_template("managers.html", managers=rows)
+
+
+# ---------------------------------------------------------------------------
+# Admin: anketa savollari (lead detail sahifasida ko'rinadigan qo'shimcha maydonlar)
+# ---------------------------------------------------------------------------
+
+@app.route("/settings/fields", methods=["GET", "POST"])
+@login_required
+@admin_required
+def custom_fields_settings():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "add":
+                label = request.form.get("label", "").strip()
+                field_type = request.form.get("field_type", "text")
+                options = request.form.get("options", "").strip()
+                if label:
+                    key = "".join(ch if ch.isalnum() else "_" for ch in label.lower()).strip("_")
+                    if session.query(CustomField).filter_by(key=key).first():
+                        key = f"{key}_{int(dt.datetime.utcnow().timestamp())}"
+                    max_order = session.query(CustomField).count()
+                    session.add(CustomField(key=key, label=label, field_type=field_type, options=options or None, sort_order=max_order))
+                    session.commit()
+                    flash("Savol qo'shildi.", "success")
+            elif action == "toggle":
+                field_id = request.form.get("field_id")
+                cf = session.get(CustomField, int(field_id)) if field_id else None
+                if cf:
+                    cf.is_active = not cf.is_active
+                    session.commit()
+            elif action == "delete":
+                field_id = request.form.get("field_id")
+                cf = session.get(CustomField, int(field_id)) if field_id else None
+                if cf:
+                    session.delete(cf)
+                    session.commit()
+                    flash("Savol o'chirildi.", "success")
+            return redirect(url_for("custom_fields_settings"))
+
+        all_fields = session.query(CustomField).order_by(CustomField.sort_order).all()
+        rows = [{"id": f.id, "label": f.label, "field_type": f.field_type, "options": f.options, "is_active": f.is_active} for f in all_fields]
+    finally:
+        session.close()
+    return render_template("custom_fields.html", fields=rows)
 
 
 # ---------------------------------------------------------------------------

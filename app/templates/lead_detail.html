@@ -2,8 +2,15 @@
 {% block title %}{{ lead.full_name or 'Lead' }} — Target CRM{% endblock %}
 {% block content %}
 <a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
-<h1>{{ lead.full_name or "Ism ko'rsatilmagan" }}</h1>
-<p class="page-subtitle">{{ lead.campaign_name or '—' }} &middot; {{ lead.created_at.strftime('%d.%m.%Y %H:%M') if lead.created_at else '' }}</p>
+<div class="page-head">
+  <div>
+    <h1>{{ lead.full_name or "Ism ko'rsatilmagan" }}</h1>
+    <p class="page-subtitle">{{ lead.created_at.strftime('%d.%m.%Y %H:%M') if lead.created_at else '' }} &middot; manba: {{ {'meta':'Meta (avtomatik)','manual':'Qo\'lda qo\'shilgan','import':'Excel import'}.get(lead.source, lead.source) }}</p>
+  </div>
+  <form method="post" action="{{ url_for('lead_delete', lead_id=lead.id) }}" onsubmit="return confirm('Bu leadni o\'chirishni tasdiqlaysizmi?');">
+    <button type="submit" style="background:var(--bad)">O'chirish</button>
+  </form>
+</div>
 
 <div class="detail-grid">
   <div class="detail-col">
@@ -12,6 +19,9 @@
       <dl style="margin:0">
         <div class="kv"><dt>Telefon</dt><dd>{{ lead.phone or '—' }}</dd></div>
         <div class="kv"><dt>Email</dt><dd>{{ lead.email or '—' }}</dd></div>
+        <div class="kv"><dt>Kampaniya</dt><dd>{{ lead.campaign_name or '—' }}</dd></div>
+        <div class="kv"><dt>Adset</dt><dd>{{ lead.adset_name or '—' }}</dd></div>
+        <div class="kv"><dt>Reklama / video</dt><dd>{{ lead.ad_name or '—' }}</dd></div>
         <div class="kv"><dt>Holat</dt><dd><span class="badge badge-{{ lead.status }}">{{ lead.status }}</span></dd></div>
         <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
         {% if lead.sale_amount %}<div class="kv"><dt>Sotuv summasi</dt><dd class="text-good-strong">${{ "%.2f"|format(lead.sale_amount) }}</dd></div>{% endif %}
@@ -52,6 +62,30 @@
         <label>Izoh (ixtiyoriy)</label>
         <textarea name="note" placeholder="Masalan: qo'ng'iroq qilindi, narx aytildi..."></textarea>
       </div>
+
+      {% if custom_fields %}
+      <div style="border-top:1px solid var(--border-light); margin:18px 0 14px; padding-top:14px">
+        <h2 style="margin-bottom:12px">Anketa</h2>
+        {% for cf in custom_fields %}
+        <div class="field">
+          <label>{{ cf.label }}</label>
+          {% if cf.field_type == 'select' %}
+          <select name="cf_{{ cf.key }}">
+            <option value="">— tanlanmagan —</option>
+            {% for opt in cf.options %}
+            <option value="{{ opt }}" {{ 'selected' if cf.value == opt }}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+          {% elif cf.field_type == 'number' %}
+          <input type="number" step="any" name="cf_{{ cf.key }}" value="{{ cf.value }}">
+          {% else %}
+          <input type="text" name="cf_{{ cf.key }}" value="{{ cf.value }}">
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <button type="submit" class="block">Saqlash</button>
     </form>
   </div>

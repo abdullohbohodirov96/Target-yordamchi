@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Anketa savollari — Target CRM{% endblock %}
+{% block content %}
+<h1>Anketa savollari</h1>
+<p class="page-subtitle">Bu yerda qo'shgan savollaringiz har bir lead sahifasida menejer to'ldirishi uchun chiqadi</p>
+
+<div class="card" style="max-width:480px; margin-bottom:24px">
+  <h2>Yangi savol qo'shish</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="add">
+    <div class="field"><label>Savol matni</label><input type="text" name="label" placeholder="Masalan: Byudjeti qancha?" required></div>
+    <div class="field">
+      <label>Turi</label>
+      <select name="field_type">
+        <option value="text">Matn</option>
+        <option value="number">Raqam</option>
+        <option value="select">Tanlov (variantlar ro'yxati)</option>
+      </select>
+    </div>
+    <div class="field"><label>Variantlar (faqat "Tanlov" turi uchun, vergul bilan)</label><input type="text" name="options" placeholder="Ha, Yo'q, Aniq emas"></div>
+    <button type="submit" class="block">Qo'shish</button>
+  </form>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Savol</th><th>Turi</th><th>Faol</th><th></th></tr></thead>
+    <tbody>
+      {% for f in fields %}
+      <tr>
+        <td>{{ f.label }}</td>
+        <td class="text-dim">{{ {'text':'Matn','number':'Raqam','select':'Tanlov'}.get(f.field_type, f.field_type) }}</td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="field_id" value="{{ f.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if f.is_active else 'O\'chirilgan' }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="field_id" value="{{ f.id }}">
+            <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="4">Hali savol qo'shilmagan.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -21,6 +21,7 @@
         <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
         {% if current_user.role == 'admin' %}
         <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint=='managers' }}">Menejerlar</a>
+        <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Anketa savollari</a>
         {% endif %}
       </nav>
       <div class="navuser">

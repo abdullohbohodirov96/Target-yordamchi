@@ -63,13 +63,17 @@ class Lead(Base):
     campaign_id = Column(String(64), nullable=True, index=True)
     campaign_name = Column(String(255), nullable=True)
     adset_id = Column(String(64), nullable=True)
+    adset_name = Column(String(255), nullable=True)
     ad_id = Column(String(64), nullable=True)
+    ad_name = Column(String(255), nullable=True)  # reklama/video nomi -- "qaysi videodan kelgan" shu orqali ko'rinadi
     form_name = Column(String(255), nullable=True)
+    source = Column(String(16), nullable=False, default="meta")  # "meta" (avtomatik) | "manual" (qo'lda) | "import" (Excel)
 
     full_name = Column(String(255), nullable=True)
     phone = Column(String(64), nullable=True)
     email = Column(String(255), nullable=True)
     raw_field_data = Column(Text, nullable=True)  # Meta'dan kelgan to'liq forma javoblari (JSON matn)
+    extra_data = Column(Text, nullable=True)  # admin belgilagan qo'shimcha anketa savollariga javoblar (JSON: {field_key: value})
 
     status = Column(String(16), nullable=False, default="new")  # new/contacted/qualified/unqualified/sold
     quality_note = Column(Text, nullable=True)
@@ -101,6 +105,23 @@ class LeadNote(Base):
 
     lead = relationship("Lead", backref="notes")
     manager = relationship("Manager")
+
+
+class CustomField(Base):
+    """Admin CRM anketa savollarini (lead'ni to'ldirishda menejer javob berishi
+    kerak bo'lgan qo'shimcha maydonlarni) o'zi qo'sha/tahrirlay oladi -- kodga
+    qattiq yozilmagan, dinamik. Har bir lead javobi Lead.extra_data (JSON)
+    ichida `key` bo'yicha saqlanadi."""
+    __tablename__ = "custom_fields"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(64), unique=True, nullable=False)  # extra_data JSON kaliti (masalan "byudjet")
+    label = Column(String(255), nullable=False)  # ko'rinadigan savol matni
+    field_type = Column(String(16), nullable=False, default="text")  # text | number | select
+    options = Column(Text, nullable=True)  # field_type="select" bo'lsa, vergul bilan ajratilgan variantlar
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class KVEntry(Base):

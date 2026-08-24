@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Excel import — Target CRM{% endblock %}
+{% block content %}
+<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
+<h1>Excel/CSV'dan lead import qilish</h1>
+<p class="page-subtitle">Meta'dan eksport qilingan yoki boshqa manbadagi lead faylini yuklang (.xlsx yoki .csv)</p>
+
+<div class="card" style="max-width:480px">
+  <form method="post" enctype="multipart/form-data">
+    <div class="field">
+      <label>Fayl</label>
+      <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+    </div>
+    <p class="text-faint" style="margin:0 0 16px; font-size:12.5px">
+      Birinchi qator sarlavha bo'lishi kerak. Tanib olinadigan ustun nomlari: <code>full_name</code>/<code>ism</code>,
+      <code>phone</code>/<code>telefon</code>, <code>email</code>, <code>campaign_name</code>/<code>kampaniya</code>.
+      Telefon raqami bo'yicha dublikatlar avtomatik o'tkazib yuboriladi.
+    </p>
+    <button type="submit" class="block">Import qilish</button>
+  </form>
+</div>
+{% endblock %}
