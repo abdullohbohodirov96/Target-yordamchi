@@ -487,6 +487,179 @@ def _execute_cancel_standing_task(action: dict, chat_id: int | None) -> dict:
         raise meta_api.MetaAPIError({"message": "Bu target uchun faol doimiy (avtomatik yoqish/o'chirish) vazifa topilmadi."})
     return {"cancelled": count, "verified": True}
 
+
+# ---------------------------------------------------------------------------
+# YENGIL (OpenAI) YO'L -- oddiy, bitta qadamli ACTION buyruqlari uchun
+# ---------------------------------------------------------------------------
+# MUHIM (foydalanuvchi so'ragan xarajat optimallashtirish): avval HAR BIR
+# ACTION turi (hatto oddiy "X'ni to'xtat"/"X'ni yoq" kabi hech qanday
+# mulohaza talab qilmaydigan buyruqlar ham) Targetolog+Marketolog (Claude,
+# ikkalasi ham) orqali o'tar edi. Bu haqiqiy MUHOKAMA/tashxis talab qiladigan
+# buyruqlar uchun (byudjet/auditoriya/kreativ qarorlari, yangi kampaniya)
+# to'g'ri, lekin oddiy to'g'ridan-to'g'ri buyruq uchun ortiqcha xarajat edi.
+# Endi bunday oddiy buyruqlar OLDIN shu YENGIL (faqat OpenAI, target nomini
+# hisob strukturasiga solishtirish esa oddiy Python orqali) yo'l bilan
+# sinab ko'riladi -- muvaffaqiyatli bo'lsa Claude UMUMAN chaqirilmaydi.
+# Har qanday noaniqlik (COMPLEX deb topilsa, target topilmasa/bir nechta
+# nomzod bo'lsa, vaqt formati xato bo'lsa, OpenAI o'zi xato bersa) -- `None`
+# qaytariladi va chaqiruvchi (`execute_intent`) avvalgidek to'liq Claude
+# asosidagi `_run_pipeline_command`ga tushadi, ya'ni hech narsa "taxmin
+# qilib" bajarilmaydi -- faqat aniq holatlarda xarajat tejaladi.
+_SIMPLE_ACTION_PROMPT = (
+    "Foydalanuvchi Telegram orqali AMALIY buyruq berdi (allaqachon ACTION turi "
+    "deb aniqlangan). Vazifangiz: bu ODDIY, TO'G'RIDAN-TO'G'RI, hech qanday "
+    "tahlil/mulohaza talab qilmaydigan buyruqmi, yoki chuqurroq tashxis/qaror "
+    "(auditoriya/byudjet/kreativ tahlili, murakkab yangi kampaniya) talab "
+    "qiladimi -- shuni aniqlang.\n\n"
+    "Faqat JSON qaytaring:\n"
+    '{"verdict": "PAUSE|RESUME|SCHEDULE_ON_OFF|SCHEDULE_REPORT|CANCEL_SCHEDULE|COMPLEX", '
+    '"target_name": "<foydalanuvchi aytgan kampaniya/adset/ad nomi, xabardan AYNAN '
+    'olingan, aks holda null>", "on_time": "HH:MM yoki null", "off_time": "HH:MM '
+    'yoki null", "report_time": "HH:MM yoki null"}\n\n'
+    "Qoidalar:\n"
+    "- PAUSE -- foydalanuvchi ANIQ bitta target nomini aytib, uni TO'G'RIDAN-TO'G'RI "
+    "to'xtatish/o'chirishni buyurgan (masalan \"X'ni to'xtat\", \"X'ni o'chir\"), "
+    "SABAB sifatida ishlash sifati/narx haqida shikoyat qilMAGAN holatda.\n"
+    "- RESUME -- xuddi shunday, lekin qayta ishga tushirish/yoqish uchun.\n"
+    "- SCHEDULE_ON_OFF -- \"har kuni soat X dan Y gacha yoqib/o'chirib tur\" kabi "
+    "DOIMIY vaqt jadvali so'ralganda -- on_time/off_time'ni ANIQ 'HH:MM' (24 "
+    "soatlik) formatda chiqaring (agar aniq soat aytilmagan bo'lsa -- COMPLEX).\n"
+    "- SCHEDULE_REPORT -- \"har kuni soat X da (qo'shimcha) hisobot ber\" kabi -- "
+    "report_time'ni 'HH:MM' formatda chiqaring, target_name kerak emas (null).\n"
+    "- CANCEL_SCHEDULE -- \"X uchun avtomatik yoqib-o'chirishni bekor qil\" kabi.\n"
+    "- COMPLEX -- QOLGAN HAMMA HOLAT: yangi kampaniya/target yaratish, byudjet "
+    "o'zgartirish, auditoriya/hudud o'zgartirish, kreativ muammosi, A/B test, "
+    "yoki buyruqda ISHLASH SIFATI/NATIJA haqida SABAB/SHIKOYAT bo'lsa (masalan "
+    "\"kam lead beryapti\", \"narxi qimmat chiqdi\", \"yaxshi ishlamayapti\", "
+    "\"tuzat\") -- bunday holatda oddiy pause/resume EMAS, mutaxassis tahlili "
+    "kerak (avval boshqa yechim ko'rib chiqilishi kerak bo'lishi mumkin), hatto "
+    "foydalanuvchi \"to'xtat\" so'zini ishlatgan bo'lsa ham.\n"
+    "- Agar target nomi/vaqt aniq bo'lmasa yoki bir nechta target'ga tegishli "
+    "bo'lishi mumkin bo'lsa -- COMPLEX qaytaring (mutaxassisga yuboriladi, u "
+    "aniqlashtiruvchi savol beradi).\n"
+    "Faqat JSON qaytaring, boshqa matn yo'q."
+)
+
+
+def _find_target_by_name(structure: dict, name_query: str | None) -> dict | None:
+    """`name_query`ni hisob strukturasidagi campaign/adset/ad nomlariga
+    solishtiradi (LLM'siz, oddiy Python). Avval ANIQ (case-insensitive) mos
+    kelish tekshiriladi; topilmasa qisman (ikki tomonlama containment) mos
+    kelish. BIRDAN ORTIQ yoki NOLTA nomzod topilsa -- `None` qaytaradi
+    (chaqiruvchi Claude yo'liga tushadi, noaniq holatda hech narsa taxmin
+    qilib bajarilmasligi uchun)."""
+    if not name_query or not name_query.strip():
+        return None
+    q = name_query.strip().lower()
+    all_objects = []
+    for level_key, level in (("ads", "ad"), ("adsets", "adset"), ("campaigns", "campaign")):
+        for o in structure.get(level_key, []) or []:
+            name = o.get("name") or ""
+            if name:
+                all_objects.append({"id": o.get("id"), "name": name, "level": level})
+
+    exact = [o for o in all_objects if o["name"].strip().lower() == q]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+
+    partial = [o for o in all_objects if q in o["name"].lower() or o["name"].lower() in q]
+    if len(partial) == 1:
+        return partial[0]
+    return None
+
+
+def _execute_simple_action(user_text: str, chat_id: int | None) -> str | None:
+    """ACTION verdikti uchun ARZON (faqat OpenAI) yo'l -- yuqoridagi izohga
+    qarang. `None` qaytarilsa, chaqiruvchi to'liq Claude pipeline'ga tushadi."""
+    try:
+        raw = call_light(_SIMPLE_ACTION_PROMPT, user_text, max_tokens=200).strip()
+    except Exception:
+        return None  # OPENAI_API_KEY yo'q/xato -- Claude yo'liga (funksional zaxira)
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    verdict = str(parsed.get("verdict", "")).strip().upper()
+    if verdict not in ("PAUSE", "RESUME", "SCHEDULE_ON_OFF", "SCHEDULE_REPORT", "CANCEL_SCHEDULE"):
+        return None  # COMPLEX yoki noma'lum javob -- Claude (Targetolog) yo'liga
+
+    if verdict == "SCHEDULE_REPORT":
+        try:
+            time_hhmm = _parse_hhmm(parsed.get("report_time"), "report_time")
+        except meta_api.MetaAPIError:
+            return None
+        try:
+            _execute_schedule_report({"params": {"time": time_hhmm}}, chat_id)
+        except meta_api.MetaAPIError as e:
+            return f"⚠️ {e}"
+        logger.info("Yengil yo'l: schedule_report time=%s chat_id=%s", time_hhmm, chat_id)
+        return f"✅ Qabul qildim — har kuni soat {time_hhmm} da qo'shimcha hisobot yuboraman."
+
+    # Qolgan to'rttasi (PAUSE/RESUME/SCHEDULE_ON_OFF/CANCEL_SCHEDULE) -- barchasi
+    # bitta aniq target'ga bog'liq, shuning uchun avval nomini hisob
+    # strukturasiga solishtirib topamiz (LLM ishlatmasdan).
+    try:
+        structure = meta_api.get_account_structure()
+    except meta_api.MetaAPIError:
+        return None
+    target = _find_target_by_name(structure, parsed.get("target_name"))
+    if target is None:
+        return None  # topilmadi yoki noaniq -- Targetolog aniqroq so'rasin
+
+    if verdict == "PAUSE":
+        try:
+            _execute_and_verify_status(target["id"], "PAUSED")
+        except meta_api.MetaAPIError as e:
+            return f"⚠️ {target['name']}: {e}"
+        logger.info("Yengil yo'l: pause object_id=%s chat_id=%s", target["id"], chat_id)
+        return f"✅ {target['name']}: to'xtatdim."
+
+    if verdict == "RESUME":
+        try:
+            _execute_and_verify_status(target["id"], "ACTIVE")
+        except meta_api.MetaAPIError as e:
+            return f"⚠️ {target['name']}: {e}"
+        logger.info("Yengil yo'l: resume object_id=%s chat_id=%s", target["id"], chat_id)
+        return f"✅ {target['name']}: qayta ishga tushirdim."
+
+    if verdict == "SCHEDULE_ON_OFF":
+        try:
+            on_time = _parse_hhmm(parsed.get("on_time"), "on_time")
+            off_time = _parse_hhmm(parsed.get("off_time"), "off_time")
+        except meta_api.MetaAPIError:
+            return None
+        try:
+            _execute_schedule_on_off(
+                {"object_id": target["id"], "object_name": target["name"],
+                 "params": {"on_time": on_time, "off_time": off_time}},
+                chat_id,
+            )
+        except meta_api.MetaAPIError as e:
+            return f"⚠️ {e}"
+        logger.info("Yengil yo'l: schedule_on_off object_id=%s chat_id=%s", target["id"], chat_id)
+        return (
+            f"✅ {target['name']}: har kuni {on_time} da yoqiladi, {off_time} da "
+            "o'chadi — endi o'zim kuzatib boraman."
+        )
+
+    if verdict == "CANCEL_SCHEDULE":
+        try:
+            _execute_cancel_standing_task({"object_id": target["id"]}, chat_id)
+        except meta_api.MetaAPIError as e:
+            return f"⚠️ {target['name']}: {e}"
+        logger.info("Yengil yo'l: cancel_standing_task object_id=%s chat_id=%s", target["id"], chat_id)
+        return f"✅ {target['name']}: avtomatik yoqish/o'chirish jadvali bekor qilindi."
+
+    return None
+
+
 # "Rejalashtirilgan/pauzadagi/hali yoqilmagan" target so'rovlarini aniqlash
 # uchun -- bunday savolda PAUSED holatidagi kampaniya/adset/ad'lar
 # (`meta_api.get_account_structure`dan, HAQIQIY status maydoni bo'yicha,
@@ -1039,6 +1212,18 @@ def execute_intent(
     if "ANALYSIS" in verdict:
         return run_analysis_cycle(dry_run=False, chat_id=chat_id)
     if "ACTION" in verdict:
+        # Avval ARZON (faqat OpenAI) yo'lni sinab ko'ramiz -- faqat oddiy,
+        # bitta qadamli, mulohaza talab qilmaydigan buyruqlar uchun ishlaydi
+        # (pause/resume/schedule_on_off/schedule_report/cancel_standing_task).
+        # Har qanday noaniqlik bo'lsa `None` qaytadi -- shunda avvalgidek
+        # to'liq Claude (Targetolog+Marketolog) pipeline'iga tushamiz.
+        try:
+            light_result = _execute_simple_action(user_text, chat_id)
+        except Exception:
+            logger.exception("Yengil buyruq yo'lida kutilmagan xato -- Claude yo'liga o'tildi.")
+            light_result = None
+        if light_result is not None:
+            return light_result
         return _run_pipeline_command(user_text, history_text, chat_id)
     if "METRIC" in verdict:
         return answer_data_question(user_text, history_text)

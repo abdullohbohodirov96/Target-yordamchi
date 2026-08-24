@@ -11,14 +11,17 @@ DATABASE_URL Render'da Postgres qo'shganda avtomatik beriladi
 """
 
 import os
+import logging
 import datetime as dt
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, Float, DateTime, Boolean,
-    ForeignKey, UniqueConstraint, Index,
+    ForeignKey, UniqueConstraint, Index, inspect as sa_inspect, text as sa_text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
+
+logger = logging.getLogger("db")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 # Render/Heroku uslubidagi "postgres://" prefiksni SQLAlchemy 2.x
@@ -220,16 +223,54 @@ class KVEntry(Base):
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
 
 
+def _migrate_add_missing_columns() -> None:
+    """MUHIM BUG FIX: `Base.metadata.create_all()` FAQAT hali mavjud bo'lmagan
+    YANGI jadvallarni yaratadi -- ALLAQACHON mavjud jadvalga keyinroq model
+    kodiga qo'shilgan yangi ustunlarni AVTOMATIK qo'shib bermaydi (bu
+    SQLAlchemy'ning o'zi shunday ishlaydi, xato emas). Aynan shu sabab
+    production'da "column leads.adset_name does not exist" xatosiga olib
+    keldi -- `Lead` modeliga `adset_name`/`ad_name`/`source`/`extra_data`
+    ustunlari kod orqali qo'shilgan edi, lekin `leads` jadvali Postgres'da
+    ALLAQACHON mavjud bo'lgani uchun `create_all()` ularni jadvalga
+    qo'shmadi, natijada har qanday SELECT xato berdi.
+
+    Bu funksiya ishga tushganda HAR BIR modeldagi ustunni haqiqiy bazadagi
+    ustunlar bilan solishtirib, YETISHMAGANLARINI o'zi `ALTER TABLE ... ADD
+    COLUMN` bilan qo'shib qo'yadi -- Alembic kabi alohida migratsiya
+    vositasisiz, oddiy MVP darajasida, lekin endi xavfsiz. Yangi ustun
+    doim NULL qabul qiladigan qilib qo'shiladi (modelda `nullable=False`
+    bo'lsa ham) -- aks holda mavjud qatorlar uchun standart qiymatsiz
+    NOT NULL ustun qo'shish xato beradi; kod bu maydonlarni allaqachon
+    bo'sh/None holatda ham to'g'ri ko'rsatadi."""
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue  # yangi jadval -- create_all() to'liq to'g'ri sxema bilan yaratgan
+            existing_cols = {c["name"] for c in inspector.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing_cols:
+                    continue
+                try:
+                    col_type = col.type.compile(dialect=engine.dialect)
+                    conn.execute(sa_text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_type}'))
+                    logger.warning("Migratsiya: %s.%s ustuni qo'shildi (%s)", table.name, col.name, col_type)
+                except Exception as e:
+                    logger.error("Migratsiya XATOSI: %s.%s qo'shib bo'lmadi -- %s", table.name, col.name, e)
+
+
 def init_db() -> None:
-    """Jadvallarni yaratadi (agar hali yo'q bo'lsa). Ilova ishga tushganda
-    bir marta chaqiriladi -- alohida migratsiya vositasisiz sodda MVP uchun
-    yetarli."""
+    """Jadvallarni yaratadi (agar hali yo'q bo'lsa) va mavjud jadvallarga
+    yetishmayotgan ustunlarni qo'shadi (`_migrate_add_missing_columns`).
+    Ilova ishga tushganda bir marta chaqiriladi."""
     if engine is None:
         raise RuntimeError(
             "DATABASE_URL o'rnatilmagan -- Render'da Postgres qo'shing "
             "(New -> PostgreSQL), keyin loyihaga ulang."
         )
     Base.metadata.create_all(engine)
+    _migrate_add_missing_columns()
     seed_default_funnel_stages()
 
 
