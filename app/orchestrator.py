@@ -33,6 +33,7 @@ import meta_api
 import budget_tracker
 import kv_store
 import monthly_report
+import db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
@@ -165,6 +166,9 @@ _ACTION_FRIENDLY_VERB = {
     "launch_campaign": "yangi kampaniya sifatida yaratdim",
     "start_ab_test": "A/B testni boshladim",
     "conclude_ab_test": "A/B testni yakunladim (g'olibni tanladim)",
+    "schedule_on_off": "kunlik avtomatik yoqish/o'chirish jadvalini qo'ydim",
+    "schedule_report": "qo'shimcha doimiy hisobot vaqtini qo'shdim",
+    "cancel_standing_task": "doimiy vazifani bekor qildim",
 }
 
 ACTION_EXECUTORS = {
@@ -371,6 +375,117 @@ def _execute_ab_test(action: dict) -> dict:
     }
 
 AUTO_EXECUTABLE_TYPES = set(ACTION_EXECUTORS.keys())
+
+# schedule_on_off/schedule_report/cancel_standing_task -- boshqa action'lardan
+# farqli, Meta'ga to'g'ridan-to'g'ri murojaat qilmaydi (shuning uchun ACTION_EXECUTORS
+# ichida emas) -- faqat bazada "vazifa" yozadi/bekor qiladi va `chat_id` talab qiladi
+# (qaysi Telegram guruh so'ragani). `_finish_pipeline` bularni alohida ishlaydi.
+SCHEDULING_ACTION_TYPES = {"schedule_on_off", "schedule_report", "cancel_standing_task"}
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _parse_hhmm(value, field_name: str) -> str:
+    v = (value or "").strip() if isinstance(value, str) else ""
+    if not _HHMM_RE.match(v):
+        raise meta_api.MetaAPIError({
+            "message": (
+                f"{field_name} noto'g'ri yoki bo'sh: {value!r}. 'HH:MM' "
+                "(24 soatlik, Toshkent vaqti, masalan '22:00') formatida "
+                "bo'lishi kerak."
+            ),
+        })
+    return v
+
+
+def _execute_schedule_on_off(action: dict, chat_id: int | None) -> dict:
+    """`schedule_on_off`: Meta'da HECH NARSA DARHOL o'zgarmaydi -- faqat
+    `db.StandingTask` yozuvini yaratadi/yangilaydi. Haqiqiy yoqish/o'chirish
+    `scheduler.py`dagi `job_standing_tasks` orqali, har ~5 daqiqada joriy
+    Toshkent vaqtiga qarab avtomatik bajariladi -- foydalanuvchi buyruqni
+    faqat BIR MARTA beradi, keyin agentning o'zi kuzatib turadi."""
+    if chat_id is None:
+        raise meta_api.MetaAPIError({
+            "message": "Doimiy vazifa yaratish uchun chat aniqlanmadi -- buyruqni Telegram guruh/chatidan qayta yuboring.",
+        })
+    object_id = _require(action, "object_id")
+    params = action.get("params") or {}
+    on_time = _parse_hhmm(params.get("on_time"), "on_time")
+    off_time = _parse_hhmm(params.get("off_time"), "off_time")
+
+    session = db.get_session()
+    try:
+        existing = session.query(db.StandingTask).filter_by(
+            chat_id=str(chat_id), object_id=object_id, is_active=True
+        ).first()
+        if existing:
+            existing.on_time = on_time
+            existing.off_time = off_time
+            existing.object_name = action.get("object_name") or existing.object_name
+            existing.created_by_text = action.get("reason", "")
+            existing.last_desired_state = None  # keyingi tekshiruvda darhol qayta baholansin
+            task_id = existing.id
+        else:
+            task = db.StandingTask(
+                chat_id=str(chat_id), object_id=object_id,
+                object_name=action.get("object_name"),
+                on_time=on_time, off_time=off_time,
+                created_by_text=action.get("reason", ""),
+            )
+            session.add(task)
+            session.flush()
+            task_id = task.id
+        session.commit()
+    finally:
+        session.close()
+    return {"standing_task_id": task_id, "on_time": on_time, "off_time": off_time, "verified": True}
+
+
+def _execute_schedule_report(action: dict, chat_id: int | None) -> dict:
+    """`schedule_report`: qo'shimcha (asosiy 09:00dan tashqari) doimiy hisobot
+    vaqtini `db.StandingReport`ga yozadi -- `scheduler.py`dagi
+    `job_standing_reports` shu vaqtda har kuni avtomatik hisobot yuboradi."""
+    if chat_id is None:
+        raise meta_api.MetaAPIError({
+            "message": "Doimiy hisobot vazifasini yaratish uchun chat aniqlanmadi -- buyruqni Telegram guruh/chatidan qayta yuboring.",
+        })
+    params = action.get("params") or {}
+    time_hhmm = _parse_hhmm(params.get("time"), "time")
+
+    session = db.get_session()
+    try:
+        existing = session.query(db.StandingReport).filter_by(
+            chat_id=str(chat_id), time_hhmm=time_hhmm, is_active=True
+        ).first()
+        if existing:
+            report_id = existing.id
+        else:
+            report = db.StandingReport(chat_id=str(chat_id), time_hhmm=time_hhmm, label=params.get("label"))
+            session.add(report)
+            session.flush()
+            report_id = report.id
+        session.commit()
+    finally:
+        session.close()
+    return {"standing_report_id": report_id, "time": time_hhmm, "verified": True}
+
+
+def _execute_cancel_standing_task(action: dict, chat_id: int | None) -> dict:
+    """`cancel_standing_task`: berilgan `object_id` uchun barcha faol
+    `schedule_on_off` vazifalarini bekor qiladi (nofaol qiladi)."""
+    object_id = _require(action, "object_id")
+    session = db.get_session()
+    try:
+        rows = session.query(db.StandingTask).filter_by(object_id=object_id, is_active=True).all()
+        for r in rows:
+            r.is_active = False
+        session.commit()
+        count = len(rows)
+    finally:
+        session.close()
+    if count == 0:
+        raise meta_api.MetaAPIError({"message": "Bu target uchun faol doimiy (avtomatik yoqish/o'chirish) vazifa topilmadi."})
+    return {"cancelled": count, "verified": True}
 
 # "Rejalashtirilgan/pauzadagi/hali yoqilmagan" target so'rovlarini aniqlash
 # uchun -- bunday savolda PAUSED holatidagi kampaniya/adset/ad'lar
@@ -590,22 +705,25 @@ def _format_json_error(e: "TargetologFormatError", stage: str = "Targetolog") ->
 _EMPTY_STATS = {"succeeded": 0, "failed": 0, "skipped": 0, "manual_suggestions": 0}
 
 
-def _run_pipeline(targetolog_user_message: str, dry_run: bool = False) -> tuple[str, dict]:
+def _run_pipeline(targetolog_user_message: str, dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
     """Targetolog -> Marketolog -> ijro zanjirining umumiy o'zagi. Buni ham
     to'liq hisob tahlili (`run_analysis_cycle`), ham Telegram'dagi erkin
     buyruqlar (`handle_chat_command`) chaqiradi — ikkalasi ham xuddi shu
     ikki bosqichli nazoratdan o'tadi. `(matn, statistika)` qaytaradi —
     statistika kunlik cron hisobotida "diqqatga loyiqmi" degan qarorni
-    matnni regex bilan tahlil qilmasdan, to'g'ridan-to'g'ri aniqlash uchun."""
+    matnni regex bilan tahlil qilmasdan, to'g'ridan-to'g'ri aniqlash uchun.
+    `chat_id` -- faqat `schedule_on_off`/`schedule_report`/`cancel_standing_task`
+    action'lari uchun kerak (qaysi Telegram chatdan buyruq kelgani), boshqa
+    action turlariga ta'sir qilmaydi."""
     logger.info("Targetolog agentga so'rov yuborilmoqda...")
     try:
         targetolog_plan = _call_agent(TARGETOLOG_SYSTEM, targetolog_user_message)
     except TargetologFormatError as e:
         return _format_json_error(e, "Targetolog"), dict(_EMPTY_STATS)
-    return _finish_pipeline(targetolog_plan, dry_run)
+    return _finish_pipeline(targetolog_plan, dry_run, chat_id)
 
 
-def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False) -> tuple[str, dict]:
+def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
     """Targetolog allaqachon tuzgan action_plan'ni Marketolog'ga tekshirtiradi
     va tasdiqlangan action'larni ijro etadi. `_run_pipeline` va geo-lookup
     ikki bosqichli oqimi (`_run_pipeline_command`) ikkalasi ham shu yerga kelib
@@ -662,7 +780,7 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False) -> tuple[str,
                 skipped.append({"action": action, "decision": decision})
                 continue
 
-            if action_type not in AUTO_EXECUTABLE_TYPES:
+            if action_type not in AUTO_EXECUTABLE_TYPES and action_type not in SCHEDULING_ACTION_TYPES:
                 # replace_creative / create_instant_form — inson tasdig'i kerak
                 skipped.append({"action": action, "decision": decision, "reason": "manual_step_required"})
                 continue
@@ -672,7 +790,14 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False) -> tuple[str,
                 final_action["params"] = {**final_action.get("params", {}), **decision["final_params"]}
 
             try:
-                result = ACTION_EXECUTORS[action_type](final_action)
+                if action_type == "schedule_on_off":
+                    result = _execute_schedule_on_off(final_action, chat_id)
+                elif action_type == "schedule_report":
+                    result = _execute_schedule_report(final_action, chat_id)
+                elif action_type == "cancel_standing_task":
+                    result = _execute_cancel_standing_task(final_action, chat_id)
+                else:
+                    result = ACTION_EXECUTORS[action_type](final_action)
                 succeeded.append({"action": final_action, "result": result})
             except meta_api.MetaAPIError as e:
                 logger.exception("Action bajarishda Meta API xatoligi: %s", action_type)
@@ -753,7 +878,7 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False) -> tuple[str,
     return text, stats
 
 
-def run_analysis_cycle_with_stats(dry_run: bool = False) -> tuple[str, dict]:
+def run_analysis_cycle_with_stats(dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
     """`run_analysis_cycle()` bilan bir xil, lekin matn bilan birga aniq
     statistikani (`{"succeeded", "failed", "skipped", "manual_suggestions"}`)
     ham qaytaradi — matnni regex bilan "tahlil qilish" shart emas."""
@@ -762,13 +887,14 @@ def run_analysis_cycle_with_stats(dry_run: bool = False) -> tuple[str, dict]:
     return _run_pipeline(
         f"Quyidagi ma'lumotlar asosida to'liq hisobni tahlil qilib action_plan tuzing:\n\n{data_json}",
         dry_run=dry_run,
+        chat_id=chat_id,
     )
 
 
-def run_analysis_cycle(dry_run: bool = False) -> str:
+def run_analysis_cycle(dry_run: bool = False, chat_id: int | None = None) -> str:
     """To'liq hisobni tahlil qiladi (barcha kampaniya/adset/ad + region breakdown).
     Telegram bot `/analyze` buyrug'i shu funksiyani chaqiradi."""
-    text, _stats = run_analysis_cycle_with_stats(dry_run=dry_run)
+    text, _stats = run_analysis_cycle_with_stats(dry_run=dry_run, chat_id=chat_id)
     return text
 
 
@@ -911,9 +1037,9 @@ def execute_intent(
     if "BUDGET" in verdict:
         return handle_budget_message(user_text, chat_id) if chat_id is not None else None
     if "ANALYSIS" in verdict:
-        return run_analysis_cycle(dry_run=False)
+        return run_analysis_cycle(dry_run=False, chat_id=chat_id)
     if "ACTION" in verdict:
-        return _run_pipeline_command(user_text, history_text)
+        return _run_pipeline_command(user_text, history_text, chat_id)
     if "METRIC" in verdict:
         return answer_data_question(user_text, history_text)
     return None
@@ -933,7 +1059,7 @@ def handle_chat_command(
     return execute_intent(verdict, user_text, history_text, chat_id)
 
 
-def _run_pipeline_command(user_text: str, history_text: str) -> str:
+def _run_pipeline_command(user_text: str, history_text: str, chat_id: int | None = None) -> str:
     # MUHIM: foydalanuvchi kampaniya/adset'ni ko'pincha NOM bilan ataydi
     # (masalan "AB | Traffic | IG"), Meta ID bilan emas. Shuning uchun har bir
     # amaliy buyruqdan oldin joriy hisob strukturasini (nom + haqiqiy ID)
@@ -1039,7 +1165,7 @@ def _run_pipeline_command(user_text: str, history_text: str) -> str:
         except TargetologFormatError as e:
             return _format_json_error(e, "Targetolog (aniqlashtirish)")
 
-    text, _stats = _finish_pipeline(targetolog_plan, dry_run=False)
+    text, _stats = _finish_pipeline(targetolog_plan, dry_run=False, chat_id=chat_id)
     return text
 
 

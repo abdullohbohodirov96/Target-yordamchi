@@ -9,10 +9,18 @@
   </div>
   <div class="pill-group">
     {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
-    <a href="?period={{ p }}&level={{ level }}" class="{{ 'active' if period==p }}">{{ label }}</a>
+    <a href="?period={{ p }}&level={{ level }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if period==p }}">{{ label }}</a>
     {% endfor %}
   </div>
 </div>
+
+<p class="page-subtitle" style="margin-top:-14px">
+  {% if show_all %}
+  Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham). <a href="?period={{ period }}&level={{ level }}&show_all=0" class="text-blue">Faqat yoqilganlarni ko'rsatish</a>
+  {% else %}
+  Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti. <a href="?period={{ period }}&level={{ level }}&show_all=1" class="text-blue">Hammasini ko'rsatish</a>
+  {% endif %}
+</p>
 
 {% if data.error %}
   <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
@@ -31,7 +39,7 @@
 <div class="panel">
   <div class="tabs">
     {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads')] %}
-    <a href="?period={{ period }}&level={{ lvl }}" class="{{ 'active' if level==lvl }}">{{ label }}</a>
+    <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if level==lvl }}">{{ label }}</a>
     {% endfor %}
   </div>
 

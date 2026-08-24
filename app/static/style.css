@@ -173,6 +173,15 @@ th.sortable[data-sorted="desc"]::after { border-top: 4px solid var(--ink); opaci
 .badge-unqualified { background: var(--bad-bg); color: var(--bad); }
 .badge-sold { background: var(--good-bg); color: var(--good); }
 
+/* Admin qo'shgan moslashuvchan voronka bosqichlari uchun (FunnelStage.color) --
+   ranglar sonini kengaytirmasdan, standart 5 tadan tashqari nom bergan
+   bosqichlar ham to'g'ri rangda ko'rinishi uchun. */
+.badge-color-blue { background: var(--blue-bg); color: var(--blue); }
+.badge-color-good { background: var(--good-bg); color: var(--good); }
+.badge-color-bad { background: var(--bad-bg); color: var(--bad); }
+.badge-color-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-color-dim { background: var(--border-light); color: var(--text-dim); }
+
 /* ---------- Forms ---------- */
 form label { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-bottom: 5px; }
 form .field { margin-bottom: 16px; }

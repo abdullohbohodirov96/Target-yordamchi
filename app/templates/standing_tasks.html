@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Doimiy vazifalar — Target CRM{% endblock %}
+{% block content %}
+<h1>Doimiy vazifalar</h1>
+<p class="page-subtitle">
+  Bular Telegram guruhida agentga berilgan DOIMIY/TAKRORLANUVCHI buyruqlar — masalan
+  "shu targetni har kuni 22:00 dan 08:00 gacha o'chirib tur" yoki "har kuni kechqurun
+  20:00 da ham hisobot ber". Agent ularni bir marta eshitib, keyin o'zi doimiy bajarib
+  turadi (har ~5 daqiqada tekshiradi). Shu yerdan ham to'xtatish/o'chirish mumkin —
+  Telegram'da <code>/vazifalar</code> va <code>/vazifa_off &lt;ID&gt;</code> buyruqlari bilan bir xil ishlaydi.
+</p>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2 style="padding:16px 16px 0">⏰ Avtomatik yoqish / o'chirish</h2>
+  <table>
+    <thead><tr><th>Target</th><th>Yoqiladi</th><th>O'chadi</th><th>Joriy holat</th><th>Faol</th><th></th></tr></thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td>{{ t.object_name }}</td>
+        <td class="num">{{ t.on_time }}</td>
+        <td class="num">{{ t.off_time }}</td>
+        <td class="text-dim">
+          {% if t.last_error %}<span class="text-bad">xato: {{ t.last_error }}</span>
+          {% elif t.last_state %}{{ 'yoqiq' if t.last_state == 'on' else 'o\'chiq' }}
+          {% else %}hali tekshirilmagan{% endif %}
+        </td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="kind" value="task">
+            <input type="hidden" name="item_id" value="{{ t.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if t.is_active else 'O\'chirilgan' }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="kind" value="task">
+            <input type="hidden" name="item_id" value="{{ t.id }}">
+            <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="6">Hozircha yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="padding:16px 16px 0">📊 Qo'shimcha doimiy hisobot vaqtlari</h2>
+  <p class="page-subtitle" style="padding:0 16px">Asosiy 09:00 dagi kunlik hisobotdan tashqari, foydalanuvchi so'ragan qo'shimcha vaqtlar.</p>
+  <table>
+    <thead><tr><th>Vaqt</th><th>Izoh</th><th>Oxirgi yuborilgan</th><th>Faol</th><th></th></tr></thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td class="num">{{ r.time_hhmm }}</td>
+        <td class="text-dim">{{ r.label or '—' }}</td>
+        <td class="text-dim">{{ r.last_sent_date or '—' }}</td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="kind" value="report">
+            <input type="hidden" name="item_id" value="{{ r.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if r.is_active else 'O\'chirilgan' }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="kind" value="report">
+            <input type="hidden" name="item_id" value="{{ r.id }}">
+            <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="5">Hozircha yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

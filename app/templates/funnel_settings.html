@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Voronka sozlamalari — Target CRM{% endblock %}
+{% block content %}
+<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
+<h1>Voronka (funnel) bosqichlari</h1>
+<p class="page-subtitle">Bu yerda qo'shgan bosqichlaringiz lidlar sahifasidagi filtr tugmalarida va har bir lead'ning "Holat" tanlovida chiqadi. Har bir bosqich 4 ta hisob-kitob toifasidan (Faol/Sifatli/Sifatsiz/Sotildi) biriga tegishli bo'lishi kerak — dashboard'dagi CPL/ROI shu toifalarga asoslanadi.</p>
+
+<div class="card" style="max-width:480px; margin-bottom:24px">
+  <h2>Yangi bosqich qo'shish</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="add">
+    <div class="field"><label>Bosqich nomi</label><input type="text" name="label" placeholder="Masalan: Uchrashuv belgilandi" required></div>
+    <div class="field">
+      <label>Hisob-kitob toifasi</label>
+      <select name="category">
+        {% for key, label in categories %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Rangi</label>
+      <select name="color">
+        {% for c in colors %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="block">Qo'shish</button>
+  </form>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Bosqich</th><th>Toifa</th><th>Rang</th><th>Faol</th><th></th></tr></thead>
+    <tbody>
+      {% for s in stages %}
+      <tr>
+        <td><span class="badge badge-color-{{ s.color }}">{{ s.label }}</span></td>
+        <td class="text-dim">{{ dict(categories).get(s.category, s.category) }}</td>
+        <td class="text-dim">{{ s.color }}</td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="stage_id" value="{{ s.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if s.is_active else 'O\'chirilgan' }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="stage_id" value="{{ s.id }}">
+            <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="5">Bosqichlar yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

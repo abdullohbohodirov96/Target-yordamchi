@@ -124,6 +124,91 @@ class CustomField(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class FunnelStage(Base):
+    """Admin CRM voronkasining (lead holatlari) bosqichlarini o'zi qo'sha/
+    nomlay/tartiblay oladi -- kodga qattiq yozilmagan. Har bir bosqich to'rtta
+    QAT'IY kategoriyadan biriga (`category`) tegishli bo'ladi -- dashboard'dagi
+    ACTIVE/QUAL/LOST/WON ustunlari va CPL/ROI hisob-kitobi shu kategoriyaga
+    asoslanadi (referens dashboard shu 4 ustunni talab qiladi), lekin bosqich
+    NOMI va nechta bosqich borligi to'liq moslashuvchan.
+
+    `key` maydoni Lead.status'da saqlanadigan qiymat -- standart 5 ta bosqich
+    (new/contacted/qualified/unqualified/sold) eski ma'lumotlar bilan mos
+    kelishi uchun aynan shu key'lar bilan urug'lantiriladi (`seed_default_funnel_stages`)."""
+    __tablename__ = "funnel_stages"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(32), unique=True, nullable=False)
+    label = Column(String(64), nullable=False)
+    category = Column(String(16), nullable=False)  # active | qualified | unqualified | sold
+    color = Column(String(16), nullable=False, default="blue")  # blue|good|bad|warn|dim (style.css badge ranglari)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+DEFAULT_FUNNEL_STAGES = [
+    # (key, label, category, color)
+    ("new", "Yangi", "active", "blue"),
+    ("contacted", "Bog'lanildi", "active", "warn"),
+    ("qualified", "Sifatli", "qualified", "blue"),
+    ("unqualified", "Sifatsiz", "unqualified", "bad"),
+    ("sold", "Sotildi", "sold", "good"),
+]
+
+
+def seed_default_funnel_stages() -> None:
+    """Birinchi ishga tushirishda (yoki jadval bo'sh bo'lsa) standart 5 ta
+    voronka bosqichini yaratadi -- eski (funnel sozlamasi qo'shilishidan
+    oldingi) lead'lar statuslari bilan mos kelishi uchun key'lar o'zgarmas."""
+    session = get_session()
+    try:
+        if session.query(FunnelStage).count() > 0:
+            return
+        for i, (key, label, category, color) in enumerate(DEFAULT_FUNNEL_STAGES):
+            session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=i))
+        session.commit()
+    finally:
+        session.close()
+
+
+class StandingTask(Base):
+    """Telegram orqali berilgan DOIMIY/TAKRORLANUVCHI on/off buyrug'i --
+    masalan "shu targetni har kuni 22:00 dan 08:00 gacha o'chirib tur".
+    Foydalanuvchi buyruqni FAQAT BIR MARTA beradi -- keyin `scheduler.py`
+    dagi `job_standing_tasks` uni har ~5 daqiqada tekshirib, joriy Toshkent
+    vaqtiga qarab avtomatik yoqadi/o'chiradi, qayta buyruq berish shart emas."""
+    __tablename__ = "standing_tasks"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String(32), nullable=False, index=True)  # buyruq qaysi Telegram chatdan kelgan
+    object_id = Column(String(64), nullable=False)  # Meta campaign/adset/ad ID
+    object_name = Column(String(255), nullable=True)
+    on_time = Column(String(5), nullable=False)   # "HH:MM" -- shu vaqtda ACTIVE qilinadi
+    off_time = Column(String(5), nullable=False)  # "HH:MM" -- shu vaqtda PAUSED qilinadi
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_desired_state = Column(String(8), nullable=True)  # "on"|"off" -- keraksiz qayta so'rovlarni oldini olish uchun
+    last_checked_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_by_text = Column(Text, nullable=True)  # asl foydalanuvchi buyrug'i/sababi (audit uchun)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+class StandingReport(Base):
+    """Foydalanuvchi so'ragan QO'SHIMCHA doimiy hisobot vaqti -- asosiy
+    09:00 dagi kunlik hisobotdan tashqari, masalan "har kuni kechqurun
+    20:00 da ham hisobot ber"."""
+    __tablename__ = "standing_reports"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String(32), nullable=False, index=True)
+    time_hhmm = Column(String(5), nullable=False)  # "HH:MM"
+    label = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_sent_date = Column(String(10), nullable=True)  # "YYYY-MM-DD" -- bir kunda ikki marta yubormaslik uchun
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
 class KVEntry(Base):
     """kv_store.py o'rniga -- Vercel KV/Upstash'ni almashtiradi. orchestrator.py
     va budget_tracker.py shu jadval orqali holatni (suhbat tarixi, byudjet
@@ -145,6 +230,7 @@ def init_db() -> None:
             "(New -> PostgreSQL), keyin loyihaga ulang."
         )
     Base.metadata.create_all(engine)
+    seed_default_funnel_stages()
 
 
 def get_session():

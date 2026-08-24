@@ -20,7 +20,7 @@ import datetime as dt
 from collections import defaultdict
 
 import meta_api
-from db import get_session, Lead
+from db import get_session, Lead, FunnelStage
 
 LEVELS = {
     "campaign": {"id_field": "campaign_id", "name_field": "campaign_name", "lead_attr": "campaign_id"},
@@ -39,7 +39,7 @@ def _extract_lead_count_from_actions(actions: list[dict] | None) -> int:
     return 0
 
 
-def get_kpis(level: str = "campaign", date_preset: str = "last_30d") -> dict:
+def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False) -> dict:
     """Qaytaradi: {"rows": [...], "totals": {...}, "generated_at": ISO, "level": level}
 
     Har bir qatorda: id, name, status, spend, impressions, meta_leads,
@@ -84,6 +84,11 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d") -> dict:
     session = get_session()
     try:
         leads = session.query(Lead).all()
+        # voronka bosqichi (key) -> kategoriya (active/qualified/unqualified/sold)
+        # xaritasi -- admin bosqichlarni o'zgartirgan/qo'shgan bo'lsa ham, dashboard
+        # to'g'ri kategoriyaga hisoblaydi (custom_fields_settings/funnel_settings'da
+        # belgilangan `category` orqali).
+        category_by_key = {fs.key: fs.category for fs in session.query(FunnelStage).all()}
     finally:
         session.close()
 
@@ -96,17 +101,25 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d") -> dict:
         oid = getattr(lead, lead_attr, None) or "unknown"
         bucket = crm_by_id[oid]
         bucket["crm_leads_total"] += 1
-        if lead.status in ("new", "contacted"):
+        category = category_by_key.get(lead.status, "active")  # noma'lum/eski status -> "active" deb hisoblanadi
+        if category == "active":
             bucket["active"] += 1
-        elif lead.status == "qualified":
+        elif category == "qualified":
             bucket["qualified"] += 1
-        elif lead.status == "unqualified":
+        elif category == "unqualified":
             bucket["unqualified"] += 1
-        elif lead.status == "sold":
+        elif category == "sold":
             bucket["sold"] += 1
             bucket["revenue"] += (lead.sale_amount or 0.0)
 
     all_ids = set(meta_by_id) | set(crm_by_id)
+    if active_only:
+        # Faqat hozir yoqilgan (ACTIVE) target'larni ko'rsatish -- pauzadagi/
+        # arxivlangan kampaniyalar va Meta'da umuman topilmagan (masalan qo'lda
+        # qo'shilgan) lead guruhlari ro'yxatdan chiqariladi. Foydalanuvchi
+        # dashboard'da "Hammasini ko'rsatish" havolasi orqali bularni ham
+        # ko'ra oladi (active_only=False holatga qaytadi).
+        all_ids = {oid for oid in all_ids if meta_by_id.get(oid, {}).get("status") == "ACTIVE"}
     rows = []
     totals = {
         "spend": 0.0, "impressions": 0, "meta_leads": 0, "crm_leads_total": 0,

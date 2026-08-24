@@ -22,7 +22,7 @@
         <div class="kv"><dt>Kampaniya</dt><dd>{{ lead.campaign_name or '—' }}</dd></div>
         <div class="kv"><dt>Adset</dt><dd>{{ lead.adset_name or '—' }}</dd></div>
         <div class="kv"><dt>Reklama / video</dt><dd>{{ lead.ad_name or '—' }}</dd></div>
-        <div class="kv"><dt>Holat</dt><dd><span class="badge badge-{{ lead.status }}">{{ lead.status }}</span></dd></div>
+        <div class="kv"><dt>Holat</dt><dd><span class="badge badge-color-{{ current_stage_color }}">{{ stages|selectattr('key','equalto',lead.status)|map(attribute='label')|first or lead.status }}</span></dd></div>
         <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
         {% if lead.sale_amount %}<div class="kv"><dt>Sotuv summasi</dt><dd class="text-good-strong">${{ "%.2f"|format(lead.sale_amount) }}</dd></div>{% endif %}
       </dl>
@@ -47,11 +47,9 @@
       <div class="field">
         <label>Holat</label>
         <select name="status">
-          <option value="new" {{ 'selected' if lead.status=='new' }}>Yangi</option>
-          <option value="contacted" {{ 'selected' if lead.status=='contacted' }}>Bog'lanildi</option>
-          <option value="qualified" {{ 'selected' if lead.status=='qualified' }}>Sifatli</option>
-          <option value="unqualified" {{ 'selected' if lead.status=='unqualified' }}>Sifatsiz</option>
-          <option value="sold" {{ 'selected' if lead.status=='sold' }}>Sotildi</option>
+          {% for s in stages %}
+          <option value="{{ s.key }}" {{ 'selected' if lead.status==s.key }}>{{ s.label }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="field">

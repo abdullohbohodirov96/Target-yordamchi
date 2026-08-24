@@ -26,7 +26,7 @@ import orchestrator
 import budget_tracker
 import kv_store
 import monthly_report
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage
 from dashboard_data import get_kpis
 import lead_sync
 
@@ -141,7 +141,11 @@ WELCOME_TEXT = (
     "Oddiy odam bilan gaplashgandek yozavering. Masalan:\n"
     "\"IELTS kursi uchun yangi target yoq, kunlik $20, Toshkent\"\n"
     "\"AB | Traffic | IG reklamani to'xtat\"\n"
-    "\"hisobim qanday ketyapti\"\n\n"
+    "\"hisobim qanday ketyapti\"\n"
+    "\"AB | Traffic | IG ni har kuni 22:00 dan 08:00 gacha o'chirib tur\" — "
+    "shunday deysiz, keyin buni har kuni o'zim eslab, avtomatik bajarib "
+    "boraman (qayta buyruq berishingiz shart emas). Ro'yxatini ko'rish uchun "
+    "/vazifalar, bekor qilish uchun /vazifa_off <ID>.\n\n"
     "Har kuni 09:00 da o'zim hisobot yuboraman, kerak bo'lsa byudjet/"
     "on-off qarorlarini o'zim qabul qilaman."
 )
@@ -262,7 +266,72 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
         except meta_api.MetaAPIError as e:
             tg_send(chat_id, f"⚠️ Xatolik: {e}")
         return
-    tg_send(chat_id, "Noma'lum buyruq. /start yozing.")
+    if cmd == "/vazifalar":
+        tg_send(chat_id, _format_standing_tasks_text())
+        return
+    if cmd == "/vazifa_off" and args:
+        _deactivate_standing_task(chat_id, args[0])
+        return
+    tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish).")
+
+
+def _format_standing_tasks_text() -> str:
+    """`/vazifalar` buyrug'iga javob -- barcha FAOL doimiy (schedule_on_off/
+    schedule_report) vazifalarni ro'yxat qiladi. MUHIM: ID'lar oldiga `T`
+    (task) yoki `R` (report) prefiksi qo'yiladi -- ikkala jadval alohida
+    o'zining ID ketma-ketligidan boshlangani uchun (masalan T1 va R1 ikki
+    XIL yozuv bo'lishi mumkin), prefikssiz bare-ID bilan `/vazifa_off`
+    qaysi jadvalga tegishli ekanini bilolmay, XATO yozuvni bekor qilib
+    qo'yishi mumkin edi -- shu bug oldini olish uchun ID'lar ENDI hech qachon
+    bare raqam sifatida ko'rsatilmaydi/qabul qilinmaydi."""
+    from db import StandingTask, StandingReport
+    session = get_session()
+    try:
+        tasks = session.query(StandingTask).filter_by(is_active=True).order_by(StandingTask.id).all()
+        reports = session.query(StandingReport).filter_by(is_active=True).order_by(StandingReport.id).all()
+        lines = ["\U0001F4CB Faol doimiy vazifalar:\n"]
+        if not tasks and not reports:
+            lines.append("Hozircha yo'q.")
+        if tasks:
+            lines.append("⏰ Avtomatik yoqish/o'chirish:")
+            for t in tasks:
+                lines.append(f"  T{t.id} — {t.object_name or t.object_id}: {t.on_time} da yoqiladi, {t.off_time} da o'chadi")
+        if reports:
+            lines.append("\n\U0001F4CA Qo'shimcha hisobot vaqtlari:")
+            for r in reports:
+                lines.append(f"  R{r.id} — har kuni soat {r.time_hhmm}" + (f" ({r.label})" if r.label else ""))
+        lines.append("\nBekor qilish uchun: /vazifa_off T1 (yoki R1) -- yuqoridagi ID bilan.")
+        return "\n".join(lines)
+    finally:
+        session.close()
+
+
+def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
+    """`raw_id` — `T<id>` (StandingTask) yoki `R<id>` (StandingReport)
+    prefiksli identifikator (`/vazifalar` chiqargani bilan bir xil). Prefikssiz
+    bare raqam qabul qilinmaydi -- ikki jadval ID'lari mos kelib qolib,
+    noto'g'ri yozuv bekor qilinishining oldini olish uchun ataylab shunday."""
+    from db import StandingTask, StandingReport
+    raw = (raw_id or "").strip().upper()
+    if len(raw) < 2 or raw[0] not in ("T", "R") or not raw[1:].isdigit():
+        tg_send(chat_id, "ID formati noto'g'ri. Masalan: /vazifa_off T3 yoki /vazifa_off R2 (aniq ID'ni /vazifalar orqali ko'ring).")
+        return
+    kind, item_id = raw[0], int(raw[1:])
+    model = StandingTask if kind == "T" else StandingReport
+    session = get_session()
+    try:
+        obj = session.get(model, item_id)
+        if not obj or not obj.is_active:
+            tg_send(chat_id, f"{raw} topilmadi yoki allaqachon bekor qilingan. /vazifalar bilan ro'yxatni tekshiring.")
+            return
+        obj.is_active = False
+        session.commit()
+        if kind == "T":
+            tg_send(chat_id, f"✅ {raw} vazifasi ({obj.object_name or obj.object_id}) bekor qilindi.")
+        else:
+            tg_send(chat_id, f"✅ {raw} qo'shimcha hisobot vazifasi bekor qilindi.")
+    finally:
+        session.close()
 
 
 @app.route("/api/webhook", methods=["POST"])
@@ -325,13 +394,21 @@ def dashboard():
     level = request.args.get("level", "campaign")
     if level not in ("campaign", "adset", "ad"):
         level = "campaign"
-    data = get_kpis(level=level, date_preset=period)
-    return render_template("dashboard.html", data=data, period=period, level=level)
+    show_all = request.args.get("show_all") == "1"
+    data = get_kpis(level=level, date_preset=period, active_only=not show_all)
+    return render_template("dashboard.html", data=data, period=period, level=level, show_all=show_all)
 
 
 # ---------------------------------------------------------------------------
 # CRM: lidlar
 # ---------------------------------------------------------------------------
+
+def _active_funnel_stages(session):
+    """Faol voronka bosqichlarini tartib bo'yicha qaytaradi -- admin
+    /settings/funnel'da qo'shgan/o'zgartirgan bosqichlar shu yerdan o'qiladi,
+    filter tugmalari va status <select> shularga qarab quriladi."""
+    return session.query(FunnelStage).filter_by(is_active=True).order_by(FunnelStage.sort_order).all()
+
 
 @app.route("/leads")
 @login_required
@@ -340,6 +417,7 @@ def leads_list():
     search_q = request.args.get("q", "").strip()
     session = get_session()
     try:
+        stages = _active_funnel_stages(session)
         q = session.query(Lead).order_by(Lead.created_at.desc())
         if status_filter:
             q = q.filter(Lead.status == status_filter)
@@ -356,9 +434,15 @@ def leads_list():
             "created_at": l.created_at, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else None,
             "sale_amount": l.sale_amount,
         } for l in leads]
+        stage_rows = [{"key": s.key, "label": s.label} for s in stages]
+        stage_color_by_key = {s.key: s.color for s in stages}
+        stage_label_by_key = {s.key: s.label for s in stages}
     finally:
         session.close()
-    return render_template("leads.html", leads=rows, status_filter=status_filter, search_q=search_q)
+    return render_template(
+        "leads.html", leads=rows, status_filter=status_filter, search_q=search_q,
+        stages=stage_rows, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
+    )
 
 
 @app.route("/leads/new", methods=["GET", "POST"])
@@ -506,15 +590,17 @@ def lead_detail(lead_id):
             return redirect(url_for("leads_list"))
 
         custom_fields = session.query(CustomField).filter_by(is_active=True).order_by(CustomField.sort_order).all()
+        stages = _active_funnel_stages(session)
+        stage_by_key = {s.key: s for s in stages}
 
         if request.method == "POST":
             new_status = request.form.get("status")
             note_text = request.form.get("note", "").strip()
             sale_amount = request.form.get("sale_amount", "").strip()
 
-            if new_status in ("new", "contacted", "qualified", "unqualified", "sold"):
+            if new_status in stage_by_key:
                 lead.status = new_status
-                if new_status == "sold":
+                if stage_by_key[new_status].category == "sold":
                     lead.sold_at = dt.datetime.utcnow()
                     if sale_amount:
                         try:
@@ -562,10 +648,20 @@ def lead_detail(lead_id):
             "sale_amount": lead.sale_amount, "created_at": lead.created_at,
             "assigned_manager": lead.assigned_manager.full_name if lead.assigned_manager else None,
         }
+        stages_view = [{"key": s.key, "label": s.label, "color": s.color} for s in stages]
+        # lead.status hozirgi faol bosqichlar ro'yxatida bo'lmasligi mumkin
+        # (masalan admin o'sha bosqichni keyinchalik o'chirgan/nofaol qilgan) --
+        # baribir badge/select'da to'g'ri ko'rinishi uchun ro'yxatga qo'shib qo'yamiz.
+        if lead.status not in {s["key"] for s in stages_view}:
+            stages_view.append({"key": lead.status, "label": lead.status, "color": "dim"})
+        current_stage_color = next((s["color"] for s in stages_view if s["key"] == lead.status), "dim")
         notes_view = [{"text": n.text, "created_at": n.created_at, "manager": n.manager.full_name if n.manager else "?"} for n in notes]
     finally:
         session.close()
-    return render_template("lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view)
+    return render_template(
+        "lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view,
+        stages=stages_view, current_stage_color=current_stage_color,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +739,107 @@ def custom_fields_settings():
     finally:
         session.close()
     return render_template("custom_fields.html", fields=rows)
+
+
+# ---------------------------------------------------------------------------
+# Admin: voronka (funnel) bosqichlari
+# ---------------------------------------------------------------------------
+
+FUNNEL_COLORS = ["blue", "good", "bad", "warn", "dim"]
+FUNNEL_CATEGORIES = [("active", "Faol (hali hal bo'lmagan)"), ("qualified", "Sifatli"), ("unqualified", "Sifatsiz"), ("sold", "Sotildi")]
+
+
+@app.route("/settings/funnel", methods=["GET", "POST"])
+@login_required
+@admin_required
+def funnel_settings():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "add":
+                label = request.form.get("label", "").strip()
+                category = request.form.get("category", "active")
+                color = request.form.get("color", "blue")
+                if label and category in dict(FUNNEL_CATEGORIES):
+                    key = "".join(ch if ch.isalnum() else "_" for ch in label.lower()).strip("_")
+                    if session.query(FunnelStage).filter_by(key=key).first():
+                        key = f"{key}_{int(dt.datetime.utcnow().timestamp())}"
+                    max_order = session.query(FunnelStage).count()
+                    session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=max_order))
+                    session.commit()
+                    flash("Bosqich qo'shildi.", "success")
+            elif action == "toggle":
+                stage_id = request.form.get("stage_id")
+                fs = session.get(FunnelStage, int(stage_id)) if stage_id else None
+                if fs:
+                    fs.is_active = not fs.is_active
+                    session.commit()
+            elif action == "delete":
+                stage_id = request.form.get("stage_id")
+                fs = session.get(FunnelStage, int(stage_id)) if stage_id else None
+                if fs:
+                    in_use = session.query(Lead).filter_by(status=fs.key).count()
+                    if in_use:
+                        flash(f"O'chirib bo'lmadi: {in_use} ta lead shu bosqichda turibdi. Avval ularni boshqa bosqichga o'tkazing yoki shunchaki 'nofaol' qiling.", "error")
+                    else:
+                        session.delete(fs)
+                        session.commit()
+                        flash("Bosqich o'chirildi.", "success")
+            return redirect(url_for("funnel_settings"))
+
+        all_stages = session.query(FunnelStage).order_by(FunnelStage.sort_order).all()
+        rows = [{"id": s.id, "key": s.key, "label": s.label, "category": s.category, "color": s.color, "is_active": s.is_active} for s in all_stages]
+    finally:
+        session.close()
+    return render_template("funnel_settings.html", stages=rows, categories=FUNNEL_CATEGORIES, colors=FUNNEL_COLORS)
+
+
+# ---------------------------------------------------------------------------
+# Admin: Telegram orqali qo'yilgan doimiy vazifalar (avtomatik yoqish/
+# o'chirish jadvali + qo'shimcha doimiy hisobot vaqtlari) -- CRM'dan ham
+# ko'rib/bekor qilib bo'lishi uchun (faqat Telegram buyrug'iga qaram bo'lmasin).
+# ---------------------------------------------------------------------------
+
+@app.route("/settings/tasks", methods=["GET", "POST"])
+@login_required
+@admin_required
+def standing_tasks_settings():
+    from db import StandingTask, StandingReport
+    session = get_session()
+    try:
+        if request.method == "POST":
+            action = request.form.get("action")
+            kind = request.form.get("kind")
+            item_id = request.form.get("item_id")
+            model = StandingTask if kind == "task" else StandingReport
+            obj = session.get(model, int(item_id)) if item_id else None
+            if obj:
+                if action == "toggle":
+                    obj.is_active = not obj.is_active
+                    session.commit()
+                elif action == "delete":
+                    session.delete(obj)
+                    session.commit()
+                    flash("Vazifa o'chirildi.", "success")
+            return redirect(url_for("standing_tasks_settings"))
+
+        tasks = session.query(StandingTask).order_by(StandingTask.created_at.desc()).all()
+        reports = session.query(StandingReport).order_by(StandingReport.created_at.desc()).all()
+        task_rows = [
+            {"id": t.id, "chat_id": t.chat_id, "object_name": t.object_name or t.object_id,
+             "on_time": t.on_time, "off_time": t.off_time, "is_active": t.is_active,
+             "last_state": t.last_desired_state, "last_error": t.last_error}
+            for t in tasks
+        ]
+        report_rows = [
+            {"id": r.id, "chat_id": r.chat_id, "time_hhmm": r.time_hhmm,
+             "label": r.label, "is_active": r.is_active, "last_sent_date": r.last_sent_date}
+            for r in reports
+        ]
+    finally:
+        session.close()
+    return render_template("standing_tasks.html", tasks=task_rows, reports=report_rows)
 
 
 # ---------------------------------------------------------------------------

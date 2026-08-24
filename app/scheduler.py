@@ -13,6 +13,9 @@ Jadval (standart, ENV orqali sozlanadi):
     Telegram'ga yuboradi.
   - Har 4 soatda -- byudjet balansi ogohlantirishi.
   - Har 15 daqiqada -- Meta Lead Ads'dan yangi lidlarni CRM bazasiga tortish.
+  - Har 5 daqiqada -- foydalanuvchi Telegram orqali qo'ygan DOIMIY vazifalarni
+    (schedule_on_off: har kuni belgilangan vaqtda avtomatik yoqish/o'chirish,
+    schedule_report: qo'shimcha doimiy hisobot vaqti) tekshiradi va bajaradi.
 """
 
 import os
@@ -25,6 +28,8 @@ from apscheduler.triggers.cron import CronTrigger
 import orchestrator
 import budget_tracker
 import lead_sync
+import meta_api
+import db
 
 logger = logging.getLogger("scheduler")
 
@@ -131,11 +136,125 @@ def job_lead_sync() -> dict:
         return {"error": str(e)}
 
 
+def _desired_state(now_hhmm: str, on_time: str, off_time: str) -> str:
+    """`on_time` dan `off_time`gacha bo'lgan oraliqda "on", qolgan vaqtda "off"
+    qaytaradi. `off_time < on_time` bo'lsa (masalan on=22:00, off=08:00 --
+    kechasi yoqiq, kunduzi o'chiq) ham to'g'ri ishlaydi -- yarim tunni kesib
+    o'tadigan oraliq alohida hisoblanadi."""
+    if on_time == off_time:
+        return "on"  # cheklovsiz holat -- doimo yoqiq deb hisoblanadi
+    if on_time < off_time:
+        return "on" if on_time <= now_hhmm < off_time else "off"
+    return "on" if now_hhmm >= on_time or now_hhmm < off_time else "off"
+
+
+def job_standing_tasks() -> str:
+    """Foydalanuvchi Telegram orqali bir marta qo'ygan `schedule_on_off`
+    vazifalarini (`db.StandingTask`) joriy Toshkent vaqtiga solishtirib,
+    kerak bo'lsa Meta'da avtomatik yoqadi/o'chiradi -- foydalanuvchi qayta
+    buyruq berishi shart emas. Faqat HOLAT O'ZGARGANDA (last_desired_state'dan
+    farqli bo'lganda) Meta API'ga murojaat qiladi -- keraksiz qayta so'rovlar
+    yubormaslik uchun."""
+    now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
+    now_hhmm = now.strftime("%H:%M")
+    session = db.get_session()
+    changes_by_chat: dict = {}
+    errors_by_chat: dict = {}
+    try:
+        tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
+        for t in tasks:
+            desired = _desired_state(now_hhmm, t.on_time, t.off_time)
+            if desired == t.last_desired_state:
+                continue
+            try:
+                (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id)
+                t.last_desired_state = desired
+                t.last_checked_at = now
+                t.last_error = None
+                changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
+            except Exception as e:
+                t.last_error = str(e)
+                logger.exception("Standing task xatosi (object_id=%s)", t.object_id)
+                errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, str(e)))
+        session.commit()
+    finally:
+        session.close()
+
+    for chat_id, changes in changes_by_chat.items():
+        lines = ["\U0001F550 Avtomatik jadval bo'yicha o'zgarish:"]
+        for name, desired in changes:
+            verb = "yoqdim" if desired == "on" else "o'chirdim"
+            lines.append(f"   🔧 {name}: {verb}")
+        try:
+            _tg_send(int(chat_id), "\n".join(lines))
+        except (TypeError, ValueError):
+            pass
+    for chat_id, errs in errors_by_chat.items():
+        lines = ["⚠️ Avtomatik jadvalda xatolik chiqdi:"]
+        for name, err in errs:
+            lines.append(f"   {name}: {err}")
+        try:
+            _tg_send(int(chat_id), "\n".join(lines))
+        except (TypeError, ValueError):
+            pass
+
+    total_changed = sum(len(v) for v in changes_by_chat.values())
+    total_errors = sum(len(v) for v in errors_by_chat.values())
+    if not total_changed and not total_errors:
+        return "o'zgarish yo'q"
+    return f"o'zgardi={total_changed}, xato={total_errors}"
+
+
+def job_standing_reports() -> str:
+    """Foydalanuvchi Telegram orqali qo'shgan QO'SHIMCHA doimiy hisobot
+    vaqtlarini (`db.StandingReport`) tekshiradi -- vaqti kelgan va bugun hali
+    yuborilmagan hisobotlarni tayyorlab yuboradi. Asosiy 09:00 dagi kunlik
+    hisobotni ALMASHTIRMAYDI, unga QO'SHIMCHA."""
+    now = dt.datetime.utcnow() + dt.timedelta(hours=5)
+    now_hhmm = now.strftime("%H:%M")
+    today_str = now.strftime("%Y-%m-%d")
+    session = db.get_session()
+    try:
+        reports = session.query(db.StandingReport).filter_by(is_active=True).all()
+        # MUHIM: aniq tenglik emas ( >= ) -- job har 5 daqiqada ishlaydi, aniq
+        # HH:MM daqiqasiga to'g'ri kelib qolmasligi mumkin. `last_sent_date`
+        # bir kunda faqat BIR MARTA yuborilishini kafolatlaydi.
+        due = [r for r in reports if now_hhmm >= r.time_hhmm and r.last_sent_date != today_str]
+        for r in due:
+            r.last_sent_date = today_str
+        session.commit()
+        due_chat_ids = [r.chat_id for r in due]
+    finally:
+        session.close()
+
+    if not due_chat_ids:
+        return "hozircha hisobot vaqti yo'q"
+
+    try:
+        report_text = orchestrator.build_admin_report(
+            now.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
+            "Qo'shimcha (foydalanuvchi so'ragan) hisobot",
+            insight_kwargs={"date_preset": "today"},
+        )
+    except Exception as e:
+        logger.exception("Qo'shimcha (standing) hisobot xatosi")
+        report_text = f"⚠️ Qo'shimcha hisobotni tayyorlashda xatolik: {e}"
+
+    for chat_id in due_chat_ids:
+        try:
+            _tg_send(int(chat_id), report_text)
+        except (TypeError, ValueError):
+            pass
+    return f"yuborildi -> {due_chat_ids}"
+
+
 JOBS = {
     "admin-report": job_admin_report,
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
+    "standing-tasks": job_standing_tasks,
+    "standing-reports": job_standing_reports,
 }
 
 _scheduler_started = False
@@ -158,5 +277,7 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_watch_cycle, CronTrigger(minute=5), id="watch")  # har soatning 5-daqiqasida
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10), id="budget")
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15"), id="lead-sync")
+    scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5"), id="standing-tasks")
+    scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5"), id="standing-reports")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)
