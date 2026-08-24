@@ -44,6 +44,8 @@ class Manager(Base):
     full_name = Column(String(128), nullable=False, default="")
     role = Column(String(16), nullable=False, default="manager")  # "admin" | "manager"
     telegram_user_id = Column(String(32), nullable=True)  # ixtiyoriy: shaxsiy bildirishnoma uchun
+    phone_number = Column(String(32), nullable=True)  # shu menejerga biriktirilgan qo'ng'iroq raqami (Mening qo'ng'iroqlarim/CallRecord bilan bog'lash uchun)
+    allowed_modules = Column(Text, nullable=True)  # JSON ro'yxat, masalan ["dashboard","leads","analytics"] -- admin uchun HAR DOIM e'tiborsiz (adminda hammasi ochiq), faqat "manager" rolidagi hisoblar uchun ishlatiladi. NULL -- standart bo'limlar (permissions.DEFAULT_MANAGER_MODULES)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -108,6 +110,33 @@ class LeadNote(Base):
 
     lead = relationship("Lead", backref="notes")
     manager = relationship("Manager")
+
+
+class CallRecord(Base):
+    """"Mening qo'ng'iroqlarim" (Moi Zvonki, moizvonki.ru) xizmatidan
+    sinxronlangan bitta qo'ng'iroq yozuvi -- menejer haqiqatan lead bilan
+    gaplashganini (necha marta, qancha davomiylikda) TEKSHIRISH uchun.
+
+    MUHIM: bu jadval hozircha BO'SH turishi mumkin -- `call_sync.py` xizmat
+    API kaliti sozlanmaguncha hech narsa yozmaydi (`/individual-tekshirish`
+    sahifasi buni foydalanuvchiga aniq tushuntiradi, bo'sh jadvalni "hech
+    kim qo'ng'iroq qilmagan" deb noto'g'ri ko'rsatmaydi)."""
+    __tablename__ = "call_records"
+
+    id = Column(Integer, primary_key=True)
+    external_id = Column(String(64), unique=True, nullable=True)  # Moi Zvonki'dagi asl qo'ng'iroq ID'i (dublikatni oldini olish)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    manager = relationship("Manager")
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True, index=True)
+    lead = relationship("Lead")
+    phone_number = Column(String(32), nullable=True, index=True)  # qo'ng'iroq qilingan/qilingan tomon raqami
+    manager_phone_number = Column(String(32), nullable=True)  # qaysi ichki/menejer raqamidan qo'ng'iroq qilingan
+    direction = Column(String(16), nullable=True)  # "outgoing" | "incoming"
+    duration_seconds = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime, nullable=True, index=True)
+    recording_url = Column(Text, nullable=True)
+    raw_data = Column(Text, nullable=True)  # xizmatdan kelgan to'liq JSON (keyinchalik kerak bo'lsa)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class CustomField(Base):

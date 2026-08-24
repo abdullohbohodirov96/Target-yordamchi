@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Analitika — Target CRM{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Analitika</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Barcha hisobotlar bir joyda: target/xarajat, menejerlar faolligi, lidlar oqimi{% if current_user.role == 'admin' %} va qo'ng'iroq statistikasi{% endif %}.</p>
+  </div>
+  <div class="pill-group">
+    {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
+    <a href="?period={{ p }}" class="{{ 'active' if period==p }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if target_data and not target_data.error %}
+{% set t = target_data.totals %}
+<div class="card" style="margin-bottom:20px">
+  <h2>Target hisoboti</h2>
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">${{ "%.2f"|format(t.revenue or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div></div>
+  </div>
+  <p class="page-subtitle" style="margin:12px 0 0"><a href="{{ url_for('dashboard') }}" class="text-blue">To'liq dashboard'ni ko'rish &rarr;</a></p>
+</div>
+{% elif target_data and target_data.error %}
+<div class="flash flash-error" style="margin-bottom:20px">Meta API'dan ma'lumot olishda xatolik: {{ target_data.error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Menejerlar hisoboti (so'nggi 30 kun)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer lidlar bo'yicha nechta izoh/harakat qilganini ko'rsatadi (holat o'zgartirish, izoh yozish va h.k.).</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Menejer</th><th class="num">Jami harakat</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun</th></tr></thead>
+    <tbody>
+      {% for m in manager_activity %}
+      <tr>
+        <td>{{ m.manager_name }}</td>
+        <td class="num">{{ m.total_actions }}</td>
+        <td class="num">{{ m.days_active }}</td>
+        <td class="num">{{ m.avg_per_day }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="4">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Lidlar oqimi (so'nggi 30 kun, jami {{ total_leads_30d }})</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Sana</th><th class="num">Kelgan lidlar</th></tr></thead>
+    <tbody>
+      {% for day, count in leads_daily %}
+      <tr><td>{{ day }}</td><td class="num">{{ count }}</td></tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="2">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Lidlar holati taqsimoti</h2>
+  <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr)">
+    {% for status, label in [('new','Yangi'), ('contacted','Bog\'lanildi'), ('qualified','Sifatli'), ('unqualified','Sifatsiz'), ('sold','Sotildi')] %}
+    <div class="kpi-card"><div class="kpi-label">{{ label }}</div><div class="kpi-value">{{ status_counts.get(status, 0) }}</div></div>
+    {% endfor %}
+  </div>
+</div>
+
+{% if current_user.role == 'admin' %}
+<div class="card">
+  <h2>Qo'ng'iroq statistikasi (Moi Zvonki)</h2>
+  {% if not call_configured %}
+  <p class="page-subtitle" style="margin:0">Moi Zvonki hali ulanmagan. Batafsil: <code>MOIZVONKI_API_ADDRESS</code> / <code>MOIZVONKI_API_KEY</code> Render sozlamalarida o'rnatilishi kerak.</p>
+  {% elif call_summary and not call_summary.has_data %}
+  <p class="page-subtitle" style="margin:0">Moi Zvonki ulangan, lekin hali qo'ng'iroq yozuvlari yo'q.</p>
+  {% elif call_summary %}
+  <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:16px">
+    <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ call_summary.total_sessions }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Shubhali</div><div class="kpi-value {{ 'bad' if call_summary.suspicious_count }}">{{ call_summary.suspicious_count }}</div></div>
+  </div>
+  <p class="page-subtitle" style="margin:0 0 12px">Batafsil tahlil: <a href="{{ url_for('individual_check') }}" class="text-blue">Individual tekshirish &rarr;</a></p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

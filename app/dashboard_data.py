@@ -275,6 +275,7 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
     totals = {
         "spend": 0.0, "impressions": 0, "reach": 0, "meta_leads": 0, "crm_leads_total": 0,
         "active": 0, "qualified": 0, "unqualified": 0, "sold": 0, "revenue": 0.0,
+        "_effective_leads": 0,
     }
     goal_totals = defaultdict(lambda: {"count": 0, "spend": 0.0, "meta_result": 0, "result_label": ""})
     for oid in all_ids:
@@ -288,7 +289,19 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
             "unqualified": 0, "sold": 0, "revenue": 0.0,
         })
         row = {**meta_part, **crm_part}
-        row["cpl"] = (row["spend"] / row["crm_leads_total"]) if row["crm_leads_total"] else 0.0
+        # CPL (lid narxi) -- ODATDA CRM'dagi HAQIQIY lead yozuvlari soniga
+        # asoslanadi. LEKIN Lead-generatsiya turidagi target uchun ba'zan
+        # Meta'da lead kelgani aniq (`meta_result`/`meta_leads` > 0), lekin
+        # CRM sinxronizatsiyasi hali ulgurmagan yoki campaign_id mos
+        # kelmagan bo'lishi mumkin -- bunday holda CPL "$0.00" ko'rsatib,
+        # "narx yo'q" degandek noto'g'ri taassurot qoldiradi. Shuning uchun
+        # CRM'da 0 bo'lsa-yu, lekin bu Lead-turi target bo'lsa, Meta'ning
+        # o'zi hisoblagan lead sonidan (meta_result yoki meta_leads,
+        # qaysi biri kattaroq bo'lsa) foydalanamiz.
+        effective_leads = row["crm_leads_total"]
+        if not effective_leads and row.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
+            effective_leads = max(row.get("meta_result") or 0, row.get("meta_leads") or 0)
+        row["cpl"] = (row["spend"] / effective_leads) if effective_leads else 0.0
         row["cost_per_won"] = (row["spend"] / row["sold"]) if row["sold"] else 0.0
         row["avg_check"] = (row["revenue"] / row["sold"]) if row["sold"] else 0.0
         row["roi_percent"] = ((row["revenue"] - row["spend"]) / row["spend"] * 100.0) if row["spend"] else 0.0
@@ -298,6 +311,7 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
         for k in ("spend", "impressions", "reach", "meta_leads", "crm_leads_total",
                    "active", "qualified", "unqualified", "sold", "revenue"):
             totals[k] += row[k]
+        totals["_effective_leads"] += effective_leads
 
         gb = goal_totals[row["goal_label"]]
         gb["count"] += 1
@@ -306,7 +320,8 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
         gb["result_label"] = row["result_label"]
 
     rows.sort(key=lambda r: r["spend"], reverse=True)
-    totals["cpl"] = (totals["spend"] / totals["crm_leads_total"]) if totals["crm_leads_total"] else 0.0
+    totals["cpl"] = (totals["spend"] / totals["_effective_leads"]) if totals["_effective_leads"] else 0.0
+    del totals["_effective_leads"]
     totals["cost_per_won"] = (totals["spend"] / totals["sold"]) if totals["sold"] else 0.0
     totals["avg_check"] = (totals["revenue"] / totals["sold"]) if totals["sold"] else 0.0
     totals["roi_percent"] = ((totals["revenue"] - totals["spend"]) / totals["spend"] * 100.0) if totals["spend"] else 0.0

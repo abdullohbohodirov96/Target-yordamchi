@@ -10,6 +10,7 @@
     <div class="field"><label>Username</label><input type="text" name="username" required></div>
     <div class="field"><label>To'liq ism</label><input type="text" name="full_name"></div>
     <div class="field"><label>Parol</label><input type="password" name="password" required></div>
+    <div class="field"><label>Telefon raqami (Moi Zvonki, ixtiyoriy)</label><input type="text" name="phone_number" placeholder="+998901234567"></div>
     <div class="field">
       <label>Rol</label>
       <select name="role">
@@ -17,24 +18,36 @@
         <option value="admin">Admin</option>
       </select>
     </div>
+    <div class="field">
+      <label>Dostup berilgan bo'limlar (menejer uchun; admin uchun har doim hammasi ochiq)</label>
+      {% for key, label in modules %}
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <input type="checkbox" name="allowed_modules" value="{{ key }}" id="new_mod_{{ key }}" style="width:auto" {{ 'checked' if key in default_modules }}>
+        <label for="new_mod_{{ key }}" style="margin:0; font-weight:400">{{ label }}</label>
+      </div>
+      {% endfor %}
+    </div>
     <button type="submit" class="block">Qo'shish</button>
   </form>
 </div>
 
 <div class="panel">
+  <div class="table-scroll">
   <table>
-    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Telefon</th><th>Faol</th><th></th></tr></thead>
     <tbody>
       {% for m in managers %}
       <tr class="rowlink" onclick="window.location='{{ url_for('manager_edit', manager_id=m.id) }}'">
         <td>{{ m.username }}</td>
         <td class="text-dim">{{ m.full_name or '—' }}</td>
         <td class="text-dim">{{ m.role }}</td>
+        <td class="text-dim">{{ m.phone_number or '—' }}</td>
         <td><span class="badge {{ 'badge-color-good' if m.is_active else 'badge-color-dim' }}">{{ 'faol' if m.is_active else 'nofaol' }}</span></td>
         <td class="num"><a href="{{ url_for('manager_edit', manager_id=m.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}

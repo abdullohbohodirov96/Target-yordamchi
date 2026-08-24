@@ -12,6 +12,7 @@
 
 <div class="panel" style="margin-bottom:24px">
   <h2 style="padding:16px 16px 0">⏰ Avtomatik yoqish / o'chirish</h2>
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Target</th><th>Yoqiladi</th><th>O'chadi</th><th>Joriy holat</th><th>Faol</th><th></th></tr></thead>
     <tbody>
@@ -47,11 +48,13 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="panel">
   <h2 style="padding:16px 16px 0">📊 Qo'shimcha doimiy hisobot vaqtlari</h2>
   <p class="page-subtitle" style="padding:0 16px">Asosiy 09:00 dagi kunlik hisobotdan tashqari, foydalanuvchi so'ragan qo'shimcha vaqtlar.</p>
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Vaqt</th><th>Izoh</th><th>Oxirgi yuborilgan</th><th>Faol</th><th></th></tr></thead>
     <tbody>
@@ -82,5 +85,6 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}

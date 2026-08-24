@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Individual tekshirish — Target CRM{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Individual tekshirish</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Moi Zvonki qo'ng'iroq yozuvlari lidlar bilan solishtirilib, menejer HAQIQATDA gaplashganmi tekshiriladi. Bu bo'lim faqat adminga ko'rinadi.</p>
+  </div>
+  <div class="pill-group">
+    {% for d, label in [(7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
+    <a href="?days={{ d }}" class="{{ 'active' if days==d }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if not configured %}
+<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
+  <h2 class="text-bad">Moi Zvonki hali ulanmagan</h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
+    Bu bo'lim ishlashi uchun Render'dagi environment variable'larga <code>MOIZVONKI_API_ADDRESS</code> va
+    <code>MOIZVONKI_API_KEY</code> qo'shilishi kerak (Moi Zvonki akkauntingizda Sozlamalar → Integratsiya bo'limidan olinadi).
+    Bu ulanmagani uchun pastdagi ro'yxat BO'SH — bu "hech kim gaplashmagan" degani EMAS, shunchaki qo'ng'iroq
+    ma'lumotlari hali CRM'ga tushmayapti degani.
+  </p>
+</div>
+{% elif not has_data %}
+<div class="card" style="margin-bottom:20px">
+  <p class="page-subtitle" style="margin:0">Moi Zvonki ulangan, lekin tanlangan davr uchun hali qo'ng'iroq yozuvlari topilmadi.</p>
+</div>
+{% endif %}
+
+<div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:20px">
+  <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ total_sessions or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shubhali (&lt;1 daqiqa)</div><div class="kpi-value {{ 'bad' if suspicious_count }}">{{ suspicious_count or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Faol menejerlar</div><div class="kpi-value">{{ manager_summary|length }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Menejerlar bo'yicha kunlik aloqa tahlili</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer kuniga o'rtacha nechta odam bilan gaplashganini ko'rsatadi (sessiya = 2 soat ichidagi qo'ng'iroqlar bittasi hisoblanadi).</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Menejer</th><th class="num">Jami sessiya</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun</th></tr></thead>
+    <tbody>
+      {% for m in manager_summary %}
+      <tr>
+        <td>{{ m.manager_name }}</td>
+        <td class="num">{{ m.total_sessions }}</td>
+        <td class="num">{{ m.days_active }}</td>
+        <td class="num">{{ m.avg_per_day }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="4">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 style="padding:16px 16px 0">Qo'ng'iroq sessiyalari</h2>
+  <p class="page-subtitle" style="padding:0 16px">Standart: bitta odam bilan o'rtacha ~1 daqiqa gaplashish kerak. Sessiya umumiy davomiyligi 60 soniyadan kam bo'lsa — "shubhali" deb belgilanadi.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th></tr></thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr class="{{ 'rowlink' if s.lead_id }}" {% if s.lead_id %}onclick="window.location='{{ url_for('lead_detail', lead_id=s.lead_id) }}'"{% endif %}>
+        <td>{{ s.phone_number or '—' }}</td>
+        <td class="text-dim">{{ s.lead_name or '—' }}</td>
+        <td>{{ s.manager_name }}</td>
+        <td class="text-dim">{{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '—' }}</td>
+        <td class="num">{{ s.call_count }}</td>
+        <td class="num">{{ (s.total_duration // 60) }} daq {{ s.total_duration % 60 }} son</td>
+        <td>
+          {% if s.is_suspicious %}
+          <span class="badge badge-color-bad">shubhali</span>
+          {% else %}
+          <span class="badge badge-color-good">normal</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="7">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

@@ -17,10 +17,18 @@
         <span class="brand-mark">T</span> Target CRM
       </a>
       <nav class="navlinks">
+        {% if has_module(current_user, 'dashboard') %}
         <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint=='dashboard' }}">Dashboard</a>
+        {% endif %}
+        {% if has_module(current_user, 'leads') %}
         <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
+        {% endif %}
+        {% if has_module(current_user, 'analytics') %}
+        <a href="{{ url_for('analytics_page') }}" class="{{ 'active' if request.endpoint=='analytics_page' }}">Analitika</a>
+        {% endif %}
         {% if current_user.role == 'admin' %}
-        <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint=='managers' }}">Menejerlar</a>
+        <a href="{{ url_for('individual_check') }}" class="{{ 'active' if request.endpoint=='individual_check' }}">Individual tekshirish</a>
+        <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint in ('managers','manager_edit') }}">Menejerlar</a>
         <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Anketa savollari</a>
         <a href="{{ url_for('funnel_settings') }}" class="{{ 'active' if request.endpoint=='funnel_settings' }}">Voronka</a>
         <a href="{{ url_for('standing_tasks_settings') }}" class="{{ 'active' if request.endpoint=='standing_tasks_settings' }}">Doimiy vazifalar</a>
@@ -106,7 +114,7 @@
       toggleBtn.classList.add('active');
       if (!greeted) {
         greeted = true;
-        addMessage('assistant', "Salom! Men AI yordamchiman. Lidlar, xarajat, natijalar haqida so'rang -- masalan \"bugun necha lead keldi\" yoki \"CPL qancha\".");
+        addMessage('assistant', "Salom! 👋 Men sizning AI yordamchingizman -- qolgan barcha narsada yordam bera olaman: lidlar, xarajat, natijalar, target holati haqida real ma'lumot beraman. Nima kerakligini yozing, masalan: \"bugun necha lead keldi\", \"CPL qancha\" yoki \"eng yaxshi target qaysi\".");
       }
       input.focus();
     }
@@ -117,6 +125,9 @@
     }
 
     toggleBtn.addEventListener('click', function () {
+      toggleBtn.classList.remove('ai-clicked');
+      void toggleBtn.offsetWidth; // reflow -- animatsiyani qayta ishga tushirish uchun
+      toggleBtn.classList.add('ai-clicked');
       if (panel.hidden) { openPanel(); } else { closePanel(); }
     });
     closeBtn.addEventListener('click', closePanel);

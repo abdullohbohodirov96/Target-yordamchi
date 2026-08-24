@@ -28,6 +28,7 @@ from apscheduler.triggers.cron import CronTrigger
 import orchestrator
 import budget_tracker
 import lead_sync
+import call_sync
 import meta_api
 import db
 
@@ -133,6 +134,20 @@ def job_lead_sync() -> dict:
         return lead_sync.sync_once()
     except Exception as e:
         logger.exception("Lead sync xatosi")
+        return {"error": str(e)}
+
+
+def job_call_sync() -> dict:
+    """Mening qo'ng'iroqlarim (Moi Zvonki) integratsiyasi -- MOIZVONKI_API_ADDRESS/
+    MOIZVONKI_API_KEY sozlanmagan bo'lsa hech narsa qilmasdan tinch qaytadi
+    (xato/log emas, chunki bu ixtiyoriy integratsiya)."""
+    try:
+        result = call_sync.sync_once()
+        if not result.get("configured"):
+            return result  # jim -- sozlanmagan, bu normal holat
+        return result
+    except Exception as e:
+        logger.exception("Qo'ng'iroq sync xatosi")
         return {"error": str(e)}
 
 
@@ -255,6 +270,7 @@ JOBS = {
     "lead-sync": job_lead_sync,
     "standing-tasks": job_standing_tasks,
     "standing-reports": job_standing_reports,
+    "call-sync": job_call_sync,
 }
 
 _scheduler_started = False
@@ -279,5 +295,6 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15"), id="lead-sync")
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5"), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5"), id="standing-reports")
+    scheduler.add_job(job_call_sync, CronTrigger(minute="*/20"), id="call-sync")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

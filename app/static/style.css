@@ -27,6 +27,11 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Xavfsizlik to'sig'i: biror element ekrandan tashqariga chiqib ketsa ham,
+   BUTUN sahifa yon tomonga siljib ketmasin (mobil'da eng ko'p uchraydigan
+   "layout ekrandan chiqib ketadi" muammosining sababi shu). */
+html { overflow-x: hidden; }
+body { overflow-x: hidden; width: 100%; }
 
 body {
   margin: 0;
@@ -50,23 +55,31 @@ a { color: inherit; text-decoration: none; }
 }
 .topbar-inner {
   max-width: 1360px; margin: 0 auto; padding: 0 24px;
-  height: 56px; display: flex; align-items: center; gap: 28px;
+  height: 56px; display: flex; align-items: center; gap: 20px;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); flex-shrink: 0; }
 .brand-mark {
   width: 24px; height: 24px; border-radius: 6px; background: var(--ink); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
 }
-.navlinks { display: flex; gap: 2px; }
+/* Ko'p bo'lim qo'shilgani sayin nav butun sahifani yon tomonga cho'zib
+   yubormasligi uchun -- sig'masa, o'zi ICHIDA gorizontal aylanadi (page
+   emas). Scrollbar ataylab yashirilgan (mobil brauzerlarda baribir
+   swipe bilan aylanadi, ko'rinishi shart emas). */
+.navlinks {
+  display: flex; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; flex-shrink: 1; min-width: 0;
+}
+.navlinks::-webkit-scrollbar { display: none; }
 .navlinks a {
   padding: 7px 12px; border-radius: 6px; font-size: 13.5px; color: var(--text-dim);
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s; white-space: nowrap; flex-shrink: 0;
 }
 .navlinks a:hover { background: var(--border-light); color: var(--ink); }
 .navlinks a.active { background: var(--border-light); color: var(--ink); font-weight: 600; }
-.navuser { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-dim); }
+.navuser { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-dim); flex-shrink: 0; }
 .navuser .logout {
-  padding: 5px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); white-space: nowrap;
 }
 .navuser .logout:hover { background: var(--border-light); }
 
@@ -105,17 +118,25 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
 .kpi-value.bad { color: var(--bad); }
 
 /* ---------- Period pills ---------- */
-.pill-group { display: inline-flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
-.pill-group a { padding: 6px 12px; border-radius: 6px; font-size: 13px; color: var(--text-dim); }
+.pill-group {
+  display: inline-flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); max-width: 100%; overflow-x: auto; scrollbar-width: none;
+}
+.pill-group::-webkit-scrollbar { display: none; }
+.pill-group a { padding: 6px 12px; border-radius: 6px; font-size: 13px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
 .pill-group a.active { background: var(--ink); color: #fff; }
 
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
 
 /* ---------- Tabs ---------- */
-.tabs { display: flex; gap: 20px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.tabs {
+  display: flex; gap: 20px; padding: 0 16px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs a {
   padding: 12px 2px; font-size: 13.5px; color: var(--text-faint); border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  margin-bottom: -1px; white-space: nowrap; flex-shrink: 0;
 }
 .tabs a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
 .tabs a:hover:not(.active) { color: var(--text); }
@@ -260,13 +281,33 @@ button.block { width: 100%; }
 #ai-assistant-toggle {
   width: 54px; height: 54px; border-radius: 50%; background: var(--ink); color: #fff;
   border: none; display: flex; align-items: center; justify-content: center; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: transform 0.15s, background 0.15s;
-  padding: 0;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: background 0.15s;
+  padding: 0; animation: ai-breathe 2.6s ease-in-out infinite;
 }
-#ai-assistant-toggle:hover { background: #1E293B; transform: scale(1.05); }
+#ai-assistant-toggle:hover { background: #1E293B; }
 #ai-assistant-toggle svg { width: 26px; height: 26px; }
-#ai-assistant-toggle.active { background: var(--blue); }
+#ai-assistant-toggle.active { background: var(--blue); animation: none; }
+#ai-assistant-toggle.ai-clicked { animation: ai-click-pop 0.35s ease-out; }
 
+@keyframes ai-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(15,23,42,0.25); }
+  50% { transform: scale(1.07); box-shadow: 0 6px 20px rgba(15,23,42,0.32); }
+}
+@keyframes ai-click-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.86); }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ai-assistant-toggle { animation: none; }
+}
+
+/* MUHIM: `hidden` atributi HAR DOIM display:none bo'lishi kerak -- pastdagi
+   `display:flex` qoidasi faqat `[hidden]` YO'Q holatda ishlaydi, aks holda
+   panel JS orqali yopib bo'lmay qolardi (ID selektor UA'ning [hidden]
+   qoidasidan kuchliroq bo'lgani uchun). */
+#ai-assistant-panel[hidden] { display: none; }
 #ai-assistant-panel {
   position: absolute; right: 0; bottom: 66px; width: 340px; max-width: calc(100vw - 44px);
   height: 460px; max-height: calc(100vh - 140px); background: #fff; border: 1px solid var(--border);
@@ -310,4 +351,36 @@ button.block { width: 100%; }
 
 @media (max-width: 480px) {
   #ai-assistant-panel { right: -6px; width: calc(100vw - 28px); }
+}
+
+/* ---------- Umumiy mobil moslashuv (telefon ekranlari) ---------- */
+@media (max-width: 640px) {
+  .container { padding: 16px 12px 48px; }
+  .topbar-inner { padding: 0 12px; gap: 10px; height: 52px; }
+  .brand { font-size: 13.5px; gap: 6px; }
+  .navuser { gap: 8px; }
+  .navuser span { display: none; }
+  .navuser .logout { padding: 5px 9px; font-size: 12.5px; }
+
+  h1 { font-size: 17px; }
+  .page-head { gap: 8px; }
+
+  .card { padding: 14px; }
+  .card[style*="max-width"] { max-width: 100% !important; }
+
+  .kpi-grid { gap: 8px; }
+  .kpi-card { padding: 11px 12px; }
+  .kpi-value { font-size: 17px; }
+
+  thead th, tbody td { padding: 9px 10px; font-size: 12.5px; }
+
+  .search-input-wrap { max-width: 100% !important; }
+
+  .login-shell { margin: -16px -12px; padding: 16px; }
+  .login-card { padding: 26px 20px 22px; }
+
+  #ai-assistant-root { right: 14px; bottom: 14px; }
+  #ai-assistant-toggle { width: 48px; height: 48px; }
+  #ai-assistant-toggle svg { width: 22px; height: 22px; }
+  #ai-assistant-panel { bottom: 58px; height: 70vh; max-height: calc(100vh - 110px); }
 }

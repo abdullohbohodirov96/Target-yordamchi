@@ -27,9 +27,12 @@ import orchestrator
 import budget_tracker
 import kv_store
 import monthly_report
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage
+import permissions
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord
 from dashboard_data import get_kpis
 import lead_sync
+import call_sync
+import call_analytics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("target-crm")
@@ -56,6 +59,8 @@ class ManagerUser(UserMixin):
         self.username = manager.username
         self.full_name = manager.full_name
         self.role = manager.role
+        self.phone_number = manager.phone_number
+        self.allowed_modules = permissions.parse_allowed_modules(manager.allowed_modules)
 
 
 @login_manager.user_loader
@@ -79,6 +84,28 @@ def admin_required(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def module_required(key: str):
+    """Berilgan bo'lim (masalan "dashboard", "analytics") uchun kirish
+    huquqini tekshiradi -- ADMIN uchun har doim ochiq, MENEJER uchun faqat
+    admin `manager_edit` sahifasida shu bo'limni yoqib qo'ygan bo'lsa."""
+    from functools import wraps
+
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not permissions.has_module(current_user, key):
+                flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
+                return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+app.jinja_env.globals["has_module"] = permissions.has_module
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +494,7 @@ def logout():
 
 @app.route("/")
 @login_required
+@module_required("dashboard")
 def dashboard():
     period = request.args.get("period", "last_30d")
     level = request.args.get("level", "campaign")
@@ -475,6 +503,92 @@ def dashboard():
     show_all = request.args.get("show_all") == "1"
     data = get_kpis(level=level, date_preset=period, active_only=not show_all)
     return render_template("dashboard.html", data=data, period=period, level=level, show_all=show_all)
+
+
+# ---------------------------------------------------------------------------
+# Analitika -- barcha hisobotlarni asta-sekin to'plab boradigan umumiy bo'lim
+# (target/xarajat, menejerlar faolligi, qo'ng'iroq statistikasi).
+# ---------------------------------------------------------------------------
+
+@app.route("/analitika")
+@login_required
+@module_required("analytics")
+def analytics_page():
+    period = request.args.get("period", "last_30d")
+    try:
+        target_data = get_kpis(level="campaign", date_preset=period, active_only=True)
+    except Exception as e:
+        logger.exception("Analitika: target ma'lumotlarini olishda xato")
+        target_data = None
+
+    session = get_session()
+    try:
+        since = dt.datetime.utcnow() - dt.timedelta(days=30)
+        managers_all = session.query(Manager).filter_by(is_active=True).all()
+        managers_by_id = {m.id: m for m in managers_all}
+
+        # Menejerlar bo'yicha kunlik faollik -- LeadNote (izoh/holat o'zgarishi
+        # yozilgan har safar "shu menejer shu kuni ish qildi" deb hisoblanadi).
+        notes = session.query(LeadNote).filter(LeadNote.created_at >= since, LeadNote.manager_id.isnot(None)).all()
+        daily_by_manager = {}
+        for n in notes:
+            mname = managers_by_id.get(n.manager_id)
+            mname = (mname.full_name or mname.username) if mname else f"ID {n.manager_id}"
+            day = n.created_at.strftime("%Y-%m-%d")
+            daily_by_manager.setdefault(mname, {}).setdefault(day, 0)
+            daily_by_manager[mname][day] += 1
+
+        manager_activity = []
+        for mname, by_day in daily_by_manager.items():
+            total = sum(by_day.values())
+            days_active = len(by_day)
+            manager_activity.append({
+                "manager_name": mname,
+                "total_actions": total,
+                "days_active": days_active,
+                "avg_per_day": round(total / days_active, 1) if days_active else 0,
+            })
+        manager_activity.sort(key=lambda m: m["total_actions"], reverse=True)
+
+        # Lidlar bo'yicha: necha nafari kuniga qanday kelgan / holat taqsimoti.
+        leads_since = session.query(Lead).filter(Lead.created_at >= since).all()
+        leads_by_day = {}
+        for l in leads_since:
+            day = (l.created_at or dt.datetime.utcnow()).strftime("%Y-%m-%d")
+            leads_by_day[day] = leads_by_day.get(day, 0) + 1
+        leads_daily = sorted(leads_by_day.items(), key=lambda kv: kv[0], reverse=True)[:14]
+
+        status_counts = {}
+        for l in leads_since:
+            status_counts[l.status] = status_counts.get(l.status, 0) + 1
+
+        # Qo'ng'iroq statistikasi (Moi Zvonki ulangan bo'lsa) -- ulanmagan
+        # bo'lsa aniq "hali ulanmagan" holati ko'rsatiladi, "hech kim
+        # gaplashmagan" deb noto'g'ri talqin qilinmasligi uchun.
+        call_configured = call_sync.is_configured()
+        call_summary = None
+        if call_configured:
+            check = call_analytics.build_individual_check(session, since)
+            call_summary = {
+                "total_sessions": check["total_sessions"],
+                "suspicious_count": check["suspicious_count"],
+                "has_data": check["has_data"],
+                "top_managers": check["manager_summary"][:5],
+            }
+    finally:
+        session.close()
+
+    return render_template(
+        "analytics.html",
+        period=period,
+        target_data=target_data,
+        manager_activity=manager_activity,
+        leads_daily=leads_daily,
+        status_counts=status_counts,
+        total_leads_30d=len(leads_since),
+        call_configured=call_configured,
+        call_summary=call_summary,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +604,7 @@ def _active_funnel_stages(session):
 
 @app.route("/leads")
 @login_required
+@module_required("leads")
 def leads_list():
     status_filter = request.args.get("status", "")
     search_q = request.args.get("q", "").strip()
@@ -525,6 +640,7 @@ def leads_list():
 
 @app.route("/leads/new", methods=["GET", "POST"])
 @login_required
+@module_required("leads")
 def lead_new():
     session = get_session()
     try:
@@ -554,6 +670,7 @@ def lead_new():
 
 @app.route("/leads/<int:lead_id>/delete", methods=["POST"])
 @login_required
+@module_required("leads")
 def lead_delete(lead_id):
     session = get_session()
     try:
@@ -881,6 +998,7 @@ def _import_get_cell(row, idx):
 
 @app.route("/leads/import", methods=["GET", "POST"])
 @login_required
+@module_required("leads")
 def leads_import():
     if request.method == "POST":
         file = request.files.get("file")
@@ -1003,6 +1121,7 @@ def leads_import():
 
 @app.route("/leads/<int:lead_id>", methods=["GET", "POST"])
 @login_required
+@module_required("leads")
 def lead_detail(lead_id):
     session = get_session()
     try:
@@ -1114,20 +1233,24 @@ def managers():
             password = request.form.get("password", "")
             full_name = request.form.get("full_name", "").strip()
             role = request.form.get("role", "manager")
+            phone_number = request.form.get("phone_number", "").strip()
+            modules = request.form.getlist("allowed_modules")
             if username and password:
                 if session.query(Manager).filter_by(username=username).first():
                     flash("Bu username allaqachon mavjud.", "error")
                 else:
                     m = Manager(username=username, full_name=full_name, role=role)
                     m.set_password(password)
+                    m.phone_number = phone_number or None
+                    m.allowed_modules = permissions.serialize_allowed_modules(modules)
                     session.add(m)
                     session.commit()
                     flash(f"{username} qo'shildi.", "success")
         all_managers = session.query(Manager).order_by(Manager.created_at).all()
-        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active} for m in all_managers]
+        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number} for m in all_managers]
     finally:
         session.close()
-    return render_template("managers.html", managers=rows)
+    return render_template("managers.html", managers=rows, modules=permissions.MODULES, default_modules=permissions.DEFAULT_MANAGER_MODULES)
 
 
 @app.route("/managers/<int:manager_id>/edit", methods=["GET", "POST"])
@@ -1146,6 +1269,8 @@ def manager_edit(manager_id):
             new_full_name = request.form.get("full_name", "").strip()
             new_role = request.form.get("role", "manager")
             new_password = request.form.get("password", "")
+            new_phone = request.form.get("phone_number", "").strip()
+            new_modules = request.form.getlist("allowed_modules")
             is_active = request.form.get("is_active") == "on"
 
             if not new_username:
@@ -1164,23 +1289,60 @@ def manager_edit(manager_id):
                         flash("Bu yagona faol admin -- uni nofaol qilib bo'lmaydi.", "error")
                         return render_template("manager_edit.html", m={
                             "id": m.id, "username": m.username, "full_name": m.full_name,
-                            "role": m.role, "is_active": m.is_active,
-                        })
+                            "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
+                            "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
+                        }, modules=permissions.MODULES)
 
                 m.username = new_username
                 m.full_name = new_full_name or None
                 m.role = new_role
                 m.is_active = is_active
+                m.phone_number = new_phone or None
+                m.allowed_modules = permissions.serialize_allowed_modules(new_modules)
                 if new_password:
                     m.set_password(new_password)
                 session.commit()
                 flash(f"{new_username} yangilandi.", "success")
                 return redirect(url_for("managers"))
 
-        m_view = {"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active}
+        m_view = {
+            "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
+            "phone_number": m.phone_number, "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
+        }
     finally:
         session.close()
-    return render_template("manager_edit.html", m=m_view)
+    return render_template("manager_edit.html", m=m_view, modules=permissions.MODULES)
+
+
+# ---------------------------------------------------------------------------
+# Individual tekshirish -- Moi Zvonki qo'ng'iroq yozuvlarini lidlar bilan
+# solishtirib, menejer HAQIQATDA gaplashdimi tekshiradi. QAT'IY admin-only --
+# `module_required()` orqali emas, menejerga hech qachon berilmaydi.
+# ---------------------------------------------------------------------------
+
+@app.route("/individual-tekshirish")
+@login_required
+@admin_required
+def individual_check():
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(90, int(days)))
+    except (TypeError, ValueError):
+        days = 30
+    since = dt.datetime.utcnow() - dt.timedelta(days=days)
+
+    session = get_session()
+    try:
+        check = call_analytics.build_individual_check(session, since)
+    finally:
+        session.close()
+
+    return render_template(
+        "individual_check.html",
+        days=days,
+        configured=call_sync.is_configured(),
+        **check,
+    )
 
 
 # ---------------------------------------------------------------------------

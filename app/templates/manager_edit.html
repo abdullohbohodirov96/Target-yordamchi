@@ -16,6 +16,10 @@
       <input type="text" name="full_name" value="{{ m.full_name or '' }}">
     </div>
     <div class="field">
+      <label>Telefon raqami (Moi Zvonki, ixtiyoriy)</label>
+      <input type="text" name="phone_number" value="{{ m.phone_number or '' }}" placeholder="+998901234567">
+    </div>
+    <div class="field">
       <label>Rol</label>
       <select name="role">
         <option value="manager" {{ 'selected' if m.role=='manager' }}>Menejer</option>
@@ -25,6 +29,15 @@
     <div class="field">
       <label>Yangi parol (ixtiyoriy — bo'sh qoldirsangiz o'zgarmaydi)</label>
       <input type="password" name="password" placeholder="Yangi parol">
+    </div>
+    <div class="field">
+      <label>Dostup berilgan bo'limlar (menejer uchun; admin uchun har doim hammasi ochiq)</label>
+      {% for key, label in modules %}
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <input type="checkbox" name="allowed_modules" value="{{ key }}" id="mod_{{ key }}" style="width:auto" {{ 'checked' if key in m.allowed_modules }}>
+        <label for="mod_{{ key }}" style="margin:0; font-weight:400">{{ label }}</label>
+      </div>
+      {% endfor %}
     </div>
     <div class="field" style="display:flex; align-items:center; gap:8px">
       <input type="checkbox" name="is_active" id="is_active" style="width:auto" {{ 'checked' if m.is_active }}>
