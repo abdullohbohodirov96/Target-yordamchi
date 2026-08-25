@@ -80,7 +80,7 @@
 </div>
 
 {% if current_user.role == 'admin' %}
-<div class="card">
+<div class="card" style="margin-bottom:20px">
   <h2>Qo'ng'iroq statistikasi (Moi Zvonki)</h2>
   {% if not call_configured %}
   <p class="page-subtitle" style="margin:0">Moi Zvonki hali ulanmagan. Batafsil: <code>MOIZVONKI_API_ADDRESS</code> / <code>MOIZVONKI_API_KEY</code> Render sozlamalarida o'rnatilishi kerak.</p>
@@ -92,6 +92,113 @@
     <div class="kpi-card"><div class="kpi-label">Shubhali</div><div class="kpi-value {{ 'bad' if call_summary.suspicious_count }}">{{ call_summary.suspicious_count }}</div></div>
   </div>
   <p class="page-subtitle" style="margin:0 0 12px">Batafsil tahlil: <a href="{{ url_for('individual_check') }}" class="text-blue">Individual tekshirish &rarr;</a></p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Lead-sync holati (Instant Form &rarr; CRM)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Meta'dan lidlarni avtomatik tortib olish jarayonining oxirgi ishga tushishi -- "lead kelgan, lekin CRM'da yo'q" holatini shu yerdan tekshiring.</p>
+  {% if not lead_sync_status %}
+  <p class="text-faint" style="margin:0">Hali birorta sinxronizatsiya ishga tushmagan (server hozirgina qayta ishga tushgan bo'lishi mumkin -- 15 daqiqada avtomatik ishlaydi).</p>
+  {% else %}
+  <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:14px">
+    <div class="kpi-card"><div class="kpi-label">Oxirgi tekshiruv</div><div class="kpi-value" style="font-size:14px">{{ lead_sync_status.last_run_at[:16].replace('T',' ') if lead_sync_status.last_run_at else '—' }} UTC</div></div>
+    <div class="kpi-card"><div class="kpi-label">Yangi lidlar (oxirgi safar)</div><div class="kpi-value {{ 'good' if lead_sync_status.new_leads }}">{{ lead_sync_status.new_leads }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tekshirilgan formalar</div><div class="kpi-value">{{ lead_sync_status.forms_checked }}</div></div>
+  </div>
+  {% if lead_sync_status.errors %}
+  <div class="flash flash-error" style="margin-bottom:14px">
+    {% for e in lead_sync_status.errors %}<div>{{ e }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% if lead_sync_status.form_diagnostics %}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Forma</th><th class="num">Meta'da jami</th><th class="num">Bazada (shu forma)</th><th></th></tr></thead>
+    <tbody>
+      {% for f in lead_sync_status.form_diagnostics %}
+      <tr>
+        <td>{{ f.form_name or f.form_id }}</td>
+        <td class="num">{{ f.meta_leads_count if f.meta_leads_count is not none else '—' }}</td>
+        <td class="num">{{ f.db_leads_count if f.db_leads_count is not none else '—' }}</td>
+        <td>{% if f.warning %}<span class="badge badge-color-bad">{{ f.warning }}</span>{% elif f.error %}<span class="badge badge-color-bad">{{ f.error }}</span>{% else %}<span class="badge badge-color-good">OK</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Menejerlar oylik KPI / bonus hisoboti</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Fiks oylik + mijozni faollashtirish + progressiv sotuv + oborot bonuslari -- "KPI va bonus tizimi" qoidalari asosida. Faqat 500 000 so'mdan katta, qaytarilmagan sotuvlar hisoblanadi.</p>
+  <form method="get" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px">
+    <input type="hidden" name="period" value="{{ period }}">
+    <div class="field" style="margin:0">
+      <label>Oy</label>
+      <input type="month" name="kpi_month" value="{{ kpi_month }}">
+    </div>
+    <div class="field" style="margin:0; min-width:220px">
+      <label>Menejer</label>
+      <select name="kpi_manager">
+        <option value="all" {{ 'selected' if kpi_selected_manager=='all' }}>Barcha menejerlar</option>
+        {% for m in sales_managers %}
+        <option value="{{ m.id }}" {{ 'selected' if kpi_selected_manager==m.id|string }}>{{ m.full_name or m.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Ko'rsatish</button>
+  </form>
+
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Menejer</th>
+        <th class="num">Sotuvlar</th>
+        <th class="num">Oborot</th>
+        <th class="num">Oklad</th>
+        <th class="num">Faollashtirish bonusi</th>
+        <th class="num">Progressiv bonus</th>
+        <th class="num">Oborot bonusi</th>
+        <th class="num">Jami</th>
+        <th>75-sotuv chegarasi</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in kpi_reports %}
+      <tr>
+        <td>{{ r.manager_name }}</td>
+        <td class="num">{{ r.sales_count }}</td>
+        <td class="num">{{ r.turnover|som }}</td>
+        <td class="num">{{ r.oklad|som }}</td>
+        <td class="num">{{ r.bonus_a|som }}</td>
+        <td class="num">{{ r.bonus_b|som }}{% if r.progressive_rate %} <span class="text-faint" style="font-size:11px">({{ r.progressive_rate|som }}/sotuv)</span>{% endif %}</td>
+        <td class="num">{{ r.bonus_c|som }}</td>
+        <td class="num text-good-strong">{{ r.jami|som }}</td>
+        <td>{% if r.survival_ok %}<span class="badge badge-color-good">bajarildi ({{ r.sales_count }}/{{ r.survival_min }})</span>{% else %}<span class="badge badge-color-bad">{{ r.sales_count }}/{{ r.survival_min }}</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="9">Bu oy uchun ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if kpi_selected_manager != 'all' and kpi_reports and kpi_reports[0].daily %}
+  <h2 style="margin-top:20px">Kun bo'yicha taqsimot -- {{ kpi_reports[0].manager_name }}</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Sana</th><th class="num">Sotuvlar</th><th class="num">Oborot</th></tr></thead>
+    <tbody>
+      {% for day, d in kpi_reports[0].daily.items()|sort(reverse=true) %}
+      <tr><td>{{ day }}</td><td class="num">{{ d.sales_count }}</td><td class="num">{{ d.turnover|som }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
   {% endif %}
 </div>
 {% endif %}

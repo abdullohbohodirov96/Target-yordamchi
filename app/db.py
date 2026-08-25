@@ -71,6 +71,7 @@ class Lead(Base):
     adset_name = Column(String(255), nullable=True)
     ad_id = Column(String(64), nullable=True)
     ad_name = Column(String(255), nullable=True)  # reklama/video nomi -- "qaysi videodan kelgan" shu orqali ko'rinadi
+    form_id = Column(String(64), nullable=True, index=True)  # Meta Instant Form ID -- lead-sync diagnostikasi uchun (forma nechta lead berdi vs bazada nechtasi bor)
     form_name = Column(String(255), nullable=True)
     source = Column(String(16), nullable=False, default="meta")  # "meta" (avtomatik) | "manual" (qo'lda) | "import" (Excel)
 
@@ -82,6 +83,14 @@ class Lead(Base):
 
     status = Column(String(16), nullable=False, default="new")  # new/contacted/qualified/unqualified/sold
     quality_note = Column(Text, nullable=True)
+    # MUHIM: bitta lead endi bir nechta sotuvga ega bo'lishi mumkin (1-sotuv,
+    # 2-sotuv, ...) -- haqiqiy tafsilotlar `Sale` jadvalida saqlanadi.
+    # `sale_amount`/`sold_at` shu yerda ESKI kodlar (dashboard revenue hisobi
+    # va h.k.) o'zgarishsiz ishlashi uchun QAYTA HISOBLANGAN KESH sifatida
+    # qoldirilgan: sale_amount = shu leadning barcha QAYTARILMAGAN sotuvlari
+    # YIG'INDISI, sold_at = birinchi (eng qadimgi) sotuv vaqti. Har safar Sale
+    # qo'shilganda/qaytarilgan deb belgilanganda `_recompute_lead_sale_total()`
+    # orqali yangilanadi (app.py).
     sale_amount = Column(Float, nullable=True)
     sold_at = Column(DateTime, nullable=True)
 
@@ -96,6 +105,32 @@ class Lead(Base):
         Index("ix_leads_status", "status"),
         Index("ix_leads_campaign", "campaign_id"),
     )
+
+
+class Sale(Base):
+    """Bitta lead (mijoz)ning HAR BIR alohida sotuvi -- bitta odam bir necha
+    marta xarid qilishi mumkin (1-sotuv, 2-sotuv, 3-sotuv, ...), KPI/bonus
+    tizimi (`kpi_bonus.py`) aynan shu jadvaldan hisoblanadi: qaysi menejer,
+    qachon, qancha summaga, shu mijozning nechinchi xaridi ekanini bilish
+    kerak (masalan "mijozni faollashtirish bonusi" faqat 1- va 2-sotuvga,
+    15 kun ichida bo'lsa, tegadi)."""
+    __tablename__ = "sales"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    lead = relationship("Lead", backref="sales")
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    manager = relationship("Manager")
+
+    sale_number = Column(Integer, nullable=False, default=1)  # shu LEAD uchun nechinchi sotuv (1,2,3...) -- lifetime tartib
+    amount = Column(Float, nullable=False)
+    sold_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+
+    is_returned = Column(Boolean, nullable=False, default=False)  # vozvrat -- KPI/bonus hisobidan chiqarib tashlanadi
+    returned_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class LeadNote(Base):

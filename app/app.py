@@ -28,11 +28,12 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale
 from dashboard_data import get_kpis
 import lead_sync
 import call_sync
 import call_analytics
+import kpi_bonus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("target-crm")
@@ -106,6 +107,21 @@ def module_required(key: str):
 
 
 app.jinja_env.globals["has_module"] = permissions.has_module
+
+
+def _format_som(value) -> str:
+    """Pul miqdorini "4 000 000 so'm" ko'rinishida formatlaydi (KPI/bonus va
+    sotuv summalari SO'M da -- Meta reklama xarajati/CPL esa hisob valyutasi
+    bo'yicha $ da qoladi, bular ikki xil narsa)."""
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return str(value)
+    sign = "-" if n < 0 else ""
+    return f"{sign}{abs(n):,.0f}".replace(",", " ") + " so'm"
+
+
+app.jinja_env.filters["som"] = _format_som
 
 
 # ---------------------------------------------------------------------------
@@ -575,6 +591,30 @@ def analytics_page():
                 "has_data": check["has_data"],
                 "top_managers": check["manager_summary"][:5],
             }
+
+        # --- KPI/bonus hisobot (oylik, kun/menejer bo'yicha tanlash) -- faqat
+        # admin ko'radi, chunki bu maosh/bonus ma'lumoti. ---
+        kpi_reports = None
+        kpi_month_str = None
+        kpi_selected_manager = request.args.get("kpi_manager", "all")
+        sales_managers = []
+        lead_sync_status = None
+        if current_user.role == "admin":
+            sales_managers = session.query(Manager).filter_by(role="manager", is_active=True).order_by(Manager.full_name).all()
+            now = dt.datetime.utcnow()
+            kpi_month_str = request.args.get("kpi_month") or now.strftime("%Y-%m")
+            try:
+                kpi_year, kpi_month_num = (int(x) for x in kpi_month_str.split("-"))
+            except (ValueError, TypeError):
+                kpi_year, kpi_month_num = now.year, now.month
+                kpi_month_str = now.strftime("%Y-%m")
+
+            target_managers = sales_managers
+            if kpi_selected_manager != "all":
+                target_managers = [m for m in sales_managers if str(m.id) == kpi_selected_manager]
+            kpi_reports = [_build_manager_kpi_report(session, m, kpi_year, kpi_month_num) for m in target_managers]
+
+            lead_sync_status = lead_sync.get_last_status()
     finally:
         session.close()
 
@@ -588,6 +628,11 @@ def analytics_page():
         total_leads_30d=len(leads_since),
         call_configured=call_configured,
         call_summary=call_summary,
+        kpi_reports=kpi_reports,
+        kpi_month=kpi_month_str,
+        kpi_selected_manager=kpi_selected_manager,
+        sales_managers=sales_managers,
+        lead_sync_status=lead_sync_status,
     )
 
 
@@ -600,6 +645,67 @@ def _active_funnel_stages(session):
     /settings/funnel'da qo'shgan/o'zgartirgan bosqichlar shu yerdan o'qiladi,
     filter tugmalari va status <select> shularga qarab quriladi."""
     return session.query(FunnelStage).filter_by(is_active=True).order_by(FunnelStage.sort_order).all()
+
+
+def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
+    """Bitta menejer uchun bitta oylik KPI/bonus hisobotini yig'adi
+    (`kpi_bonus.compute_manager_report()`ga uzatiladigan xom ma'lumotni
+    bazadan o'qiydi -- minimal chek va vozvrat filtri shu yerda qo'llanadi)."""
+    start, end = kpi_bonus.month_bounds(year, month)
+    sales = (
+        session.query(Sale)
+        .filter(
+            Sale.manager_id == manager.id,
+            Sale.is_returned == False,  # noqa: E712
+            Sale.amount >= kpi_bonus.MIN_SALE_AMOUNT,
+            Sale.sold_at >= start, Sale.sold_at < end,
+        )
+        .order_by(Sale.sold_at.asc())
+        .all()
+    )
+    valid_sales = []
+    for s in sales:
+        days_since_first = None
+        if s.sale_number == 2:
+            first = session.query(Sale).filter_by(lead_id=s.lead_id, sale_number=1).first()
+            if first and first.sold_at and s.sold_at:
+                days_since_first = (s.sold_at - first.sold_at).total_seconds() / 86400.0
+        valid_sales.append({
+            "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
+            "days_since_first_sale": days_since_first, "lead_id": s.lead_id,
+        })
+    report = kpi_bonus.compute_manager_report(valid_sales)
+    report["manager_id"] = manager.id
+    report["manager_name"] = manager.full_name or manager.username
+    return report
+
+
+def _recompute_lead_sale_total(session, lead) -> None:
+    """`Lead.sale_amount`/`sold_at`ni shu leadning barcha QAYTARILMAGAN
+    `Sale` yozuvlaridan qayta hisoblaydi -- dashboard/eski kod bular orqali
+    ishlashda davom etadi, haqiqiy tafsilot esa `Sale` jadvalida saqlanadi."""
+    valid_sales = (
+        session.query(Sale)
+        .filter(Sale.lead_id == lead.id, Sale.is_returned == False)  # noqa: E712
+        .order_by(Sale.sold_at.asc())
+        .all()
+    )
+    if valid_sales:
+        lead.sale_amount = sum(s.amount for s in valid_sales)
+        lead.sold_at = valid_sales[0].sold_at
+    else:
+        lead.sale_amount = None
+        lead.sold_at = None
+
+
+def _sold_stage_key(stages) -> str | None:
+    """Voronkadagi "sold" (sotildi) kategoriyasiga tegishli birinchi
+    bosqich kalitini qaytaradi -- sotuv qo'shilganda lead statusi avtomatik
+    shu bosqichga o'tkaziladi (agar hali sotilgan deb belgilanmagan bo'lsa)."""
+    for s in stages:
+        if s.category == "sold":
+            return s.key
+    return None
 
 
 @app.route("/leads")
@@ -1135,6 +1241,61 @@ def lead_detail(lead_id):
         stage_by_key = {s.key: s for s in stages}
 
         if request.method == "POST":
+            form_action = request.form.get("form_action", "update")
+            manager_row = session.query(Manager).filter_by(username=current_user.username).first()
+
+            # --- Yangi sotuv qo'shish (1-sotuv, 2-sotuv, ...) -- lead allaqachon
+            # "sotildi" bosqichida bo'lsa ham, keyingi xaridlarni alohida
+            # qo'shish uchun mustaqil kichik forma. ---
+            if form_action == "add_sale":
+                amount_raw = request.form.get("amount", "").strip()
+                try:
+                    amount = float(amount_raw)
+                except ValueError:
+                    amount = None
+                if not amount or amount <= 0:
+                    flash("Sotuv summasini to'g'ri kiriting.", "error")
+                else:
+                    existing_count = session.query(Sale).filter_by(lead_id=lead.id).count()
+                    session.add(Sale(
+                        lead_id=lead.id,
+                        manager_id=(manager_row.id if manager_row else lead.assigned_manager_id),
+                        sale_number=existing_count + 1,
+                        amount=amount,
+                        sold_at=dt.datetime.utcnow(),
+                    ))
+                    sold_key = _sold_stage_key(stages)
+                    current_category = stage_by_key[lead.status].category if lead.status in stage_by_key else None
+                    if sold_key and current_category != "sold":
+                        lead.status = sold_key
+                    if manager_row and not lead.assigned_manager_id:
+                        lead.assigned_manager_id = manager_row.id
+                    session.flush()
+                    _recompute_lead_sale_total(session, lead)
+                    session.commit()
+                    flash(f"{existing_count + 1}-sotuv qo'shildi.", "success")
+                return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
+
+            # --- Sotuvni "qaytarilgan" (vozvrat) deb belgilash -- faqat admin,
+            # chunki bu KPI/bonus hisobidan sotuvni butunlay chiqarib tashlaydi. ---
+            if form_action == "mark_returned":
+                if current_user.role != "admin":
+                    flash("Faqat admin sotuvni qaytarilgan deb belgilay oladi.", "error")
+                else:
+                    sale_id = request.form.get("sale_id", "")
+                    sale = session.get(Sale, int(sale_id)) if sale_id.isdigit() else None
+                    if sale and sale.lead_id == lead.id:
+                        sale.is_returned = True
+                        sale.returned_at = dt.datetime.utcnow()
+                        session.flush()
+                        _recompute_lead_sale_total(session, lead)
+                        session.commit()
+                        flash("Sotuv qaytarilgan deb belgilandi -- KPI/bonus hisobidan chiqarildi.", "success")
+                    else:
+                        flash("Sotuv topilmadi.", "error")
+                return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
+
+            # --- Asosiy forma: status/izoh/ism-familiya/anketa ---
             new_status = request.form.get("status")
             note_text = request.form.get("note", "").strip()
             sale_amount = request.form.get("sale_amount", "").strip()
@@ -1154,13 +1315,20 @@ def lead_detail(lead_id):
 
             if new_status in stage_by_key:
                 lead.status = new_status
-                if stage_by_key[new_status].category == "sold":
-                    lead.sold_at = dt.datetime.utcnow()
-                    if sale_amount:
-                        try:
-                            lead.sale_amount = float(sale_amount)
-                        except ValueError:
-                            pass
+                if stage_by_key[new_status].category == "sold" and sale_amount:
+                    try:
+                        amount = float(sale_amount)
+                    except ValueError:
+                        amount = None
+                    if amount and amount > 0:
+                        existing_count = session.query(Sale).filter_by(lead_id=lead.id).count()
+                        session.add(Sale(
+                            lead_id=lead.id,
+                            manager_id=(manager_row.id if manager_row else lead.assigned_manager_id),
+                            sale_number=existing_count + 1,
+                            amount=amount,
+                            sold_at=dt.datetime.utcnow(),
+                        ))
 
             if custom_fields:
                 try:
@@ -1175,15 +1343,21 @@ def lead_detail(lead_id):
                         extra.pop(cf.key)
                 lead.extra_data = json.dumps(extra, ensure_ascii=False)
 
-            manager_row = session.query(Manager).filter_by(username=current_user.username).first()
             if note_text:
                 session.add(LeadNote(lead_id=lead.id, manager_id=manager_row.id if manager_row else None, text=note_text))
             if manager_row and not lead.assigned_manager_id:
                 lead.assigned_manager_id = manager_row.id
+            session.flush()
+            _recompute_lead_sale_total(session, lead)
             session.commit()
             flash("Saqlandi.", "success")
             return redirect(url_for("leads_list"))
 
+        sales = session.query(Sale).filter_by(lead_id=lead.id).order_by(Sale.sale_number.asc()).all()
+        sales_view = [{
+            "id": s.id, "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
+            "is_returned": s.is_returned, "manager": (s.manager.full_name or s.manager.username) if s.manager else "—",
+        } for s in sales]
         notes = session.query(LeadNote).filter_by(lead_id=lead.id).order_by(LeadNote.created_at.desc()).all()
         try:
             extra = json.loads(lead.extra_data) if lead.extra_data else {}
@@ -1214,7 +1388,7 @@ def lead_detail(lead_id):
         session.close()
     return render_template(
         "lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view,
-        stages=stages_view, current_stage_color=current_stage_color,
+        stages=stages_view, current_stage_color=current_stage_color, sales=sales_view,
     )
 
 

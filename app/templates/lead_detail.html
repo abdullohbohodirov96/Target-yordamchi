@@ -24,8 +24,42 @@
         <div class="kv"><dt>Reklama / video</dt><dd>{{ lead.ad_name or '—' }}</dd></div>
         <div class="kv"><dt>Holat</dt><dd><span class="badge badge-color-{{ current_stage_color }}">{{ stages|selectattr('key','equalto',lead.status)|map(attribute='label')|first or lead.status }}</span></dd></div>
         <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
-        {% if lead.sale_amount %}<div class="kv"><dt>Sotuv summasi</dt><dd class="text-good-strong">${{ "%.2f"|format(lead.sale_amount) }}</dd></div>{% endif %}
+        {% if lead.sale_amount %}<div class="kv"><dt>Jami sotuv summasi</dt><dd class="text-good-strong">{{ lead.sale_amount|som }}</dd></div>{% endif %}
       </dl>
+    </div>
+
+    <div class="card" id="sales">
+      <h2>Sotuvlar</h2>
+      <p class="page-subtitle" style="margin-top:-6px">Shu mijozning har bir alohida xaridi -- 1-sotuv, 2-sotuv va h.k. KPI/bonus hisobi shu ro'yxatdan olinadi.</p>
+      {% for s in sales %}
+      <div class="note-item" style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+        <div>
+          <div>
+            <strong>{{ s.sale_number }}-sotuv</strong> &mdash; {{ s.amount|som }}
+            {% if s.is_returned %}<span class="badge badge-color-bad">qaytarilgan</span>{% endif %}
+          </div>
+          <div class="note-meta">{{ s.manager }} &middot; {{ s.sold_at.strftime('%d.%m.%Y %H:%M') if s.sold_at else '' }}</div>
+        </div>
+        {% if current_user.role == 'admin' and not s.is_returned %}
+        <form method="post" onsubmit="return confirm('Bu sotuvni QAYTARILGAN deb belgilaysizmi? KPI/bonus hisobidan chiqarib tashlanadi.');" style="margin:0">
+          <input type="hidden" name="form_action" value="mark_returned">
+          <input type="hidden" name="sale_id" value="{{ s.id }}">
+          <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px; font-size:12px">Qaytarilgan deb belgilash</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="text-faint" style="margin:0 0 14px">Hali sotuv qo'shilmagan.</p>
+      {% endfor %}
+
+      <form method="post" style="display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border-light); padding-top:14px">
+        <input type="hidden" name="form_action" value="add_sale">
+        <div class="field" style="flex:1; margin-bottom:0">
+          <label>Yangi sotuv summasi (so'm)</label>
+          <input type="number" step="1" min="0" name="amount" placeholder="masalan 750000" required>
+        </div>
+        <button type="submit">Sotuv qo'shish</button>
+      </form>
     </div>
 
     <div class="card">
@@ -67,8 +101,8 @@
         </select>
       </div>
       <div class="field">
-        <label>Sotuv summasi ($) — faqat "Sotildi" bo'lsa</label>
-        <input type="number" step="0.01" name="sale_amount" placeholder="masalan 30.00">
+        <label>Birinchi sotuv summasi (so'm) — faqat "Sotildi"ga o'tkazganda, 1-sotuvni shu yerdan ham kiritish mumkin</label>
+        <input type="number" step="1" min="0" name="sale_amount" placeholder="masalan 750000">
       </div>
       <div class="field">
         <label>Izoh (ixtiyoriy)</label>

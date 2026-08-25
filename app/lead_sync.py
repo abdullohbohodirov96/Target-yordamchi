@@ -15,16 +15,54 @@ Oqim:
      (`meta_api.get_account_structure`dan keshlangan xarita) biriktiradi.
   4. `meta_lead_id` bo'yicha dublikatni tekshirib, faqat YANGI lidlarni
      `leads` jadvaliga yozadi (status="new").
+
+DIAGNOSTIKA (2026-08): "target yonib turibdi, lead kelgan, lekin CRM'ga
+tushmayapti" kabi shikoyatlarni tekshirish oson bo'lishi uchun, har bir
+sinxronizatsiya Meta'ning O'ZI qaytargan `leads_count` (shu forma UMUMAN
+qancha lead olgan) bilan bizning bazamizdagi shu forma bo'yicha yozuvlar
+sonini SOLISHTIRADI va natijaga qo'shadi (`form_diagnostics`). Katta farq
+bo'lsa -- token/ruxsat muammosi yoki noto'g'ri META_PAGE_ID ehtimoli baland.
+Oxirgi sinxronizatsiya natijasi `kv_store`ga ("lead_sync_status" kaliti)
+yoziladi -- admin buni Analitika sahifasida ko'ra oladi, cron ishlab-
+ishlamayotganini bilish uchun endi Render loglariga qarash shart emas.
 """
 
 import json
 import logging
+import re
 import datetime as dt
 
 import meta_api
+import kv_store
 from db import get_session, Lead
+from phone_utils import normalize_phone, clean_phone_raw
 
 logger = logging.getLogger("lead_sync")
+
+# Meta forma savollari ko'pincha standart ingliz kalitlari bilan keladi
+# (full_name, phone_number, email), lekin ADMIN o'zi qo'shgan maxsus savol
+# bo'lsa, kalit o'sha savol matnidan avtomatik generatsiya qilinadi (masalan
+# "Ismingizni kiriting?" -> "ismingizni_kiriting") -- shuning uchun keng
+# ro'yxat + fallback qidiruv kerak.
+_NAME_KEYS = (
+    "full_name", "name", "your_name", "customer_name",
+    "ism", "ismi", "ism_familiya", "ismingiz", "ismingizni_kiriting",
+    "toliq_ism", "to'liq_ism", "familiya", "fio", "имя", "фио",
+)
+_PHONE_KEYS = (
+    "phone_number", "phone", "mobile", "contact_number",
+    "telefon", "telefon_raqami", "telefon_raqamingiz", "raqam", "raqamingiz",
+    "nomer", "nomeringiz", "telefon_raqamingizni_kiriting", "телефон", "номер",
+)
+_EMAIL_KEYS = ("email", "e-mail", "email_address", "pochta", "elektron_pochta", "почта")
+
+# Bu kalitlar hech qachon ism/telefon/email BO'LMAYDI -- fallback qidiruvda
+# ularni chetlab o'tish uchun (aks holda "campaign_name" kabi maydonlar
+# ism sifatida noto'g'ri o'qilishi mumkin).
+_NEVER_NAME_OR_PHONE_KEYS = {
+    "campaign_name", "campaign_id", "adset_name", "adset_id", "ad_name", "ad_id",
+    "form_id", "form_name", "created_time", "platform", "is_organic", "lead_status",
+}
 
 
 def _field_data_to_dict(field_data: list[dict]) -> dict:
@@ -39,31 +77,101 @@ def _field_data_to_dict(field_data: list[dict]) -> dict:
     return out
 
 
+def _looks_phoneish(value) -> bool:
+    s = clean_phone_raw(value)
+    if not s:
+        return False
+    digits = re.sub(r"\D", "", s)
+    return 7 <= len(digits) <= 13
+
+
+def _looks_nameish(value) -> bool:
+    s = str(value or "").strip()
+    if not (2 <= len(s) <= 80) or _looks_phoneish(value):
+        return False
+    if any(ch in s for ch in ("_", "(", ")", "²", "%", "@")):
+        return False
+    letters = sum(1 for ch in s if ch.isalpha())
+    return letters >= max(2, len(s) * 0.5)
+
+
+def _find_by_keys(fd: dict, keys: tuple) -> str | None:
+    for k in keys:
+        if k in fd and fd[k]:
+            return fd[k]
+    # Substring moslik -- Meta ba'zan kalitga qo'shimcha so'z qo'shib
+    # yuboradi (masalan "phone_number_1").
+    for fk, v in fd.items():
+        if v and any(k in fk for k in keys):
+            return v
+    return None
+
+
 def _extract_name_phone_email(fd: dict) -> tuple[str | None, str | None, str | None]:
-    name = fd.get("full_name") or fd.get("name")
+    name = _find_by_keys(fd, _NAME_KEYS)
     if not name:
         first = fd.get("first_name", "")
         last = fd.get("last_name", "")
         name = f"{first} {last}".strip() or None
-    phone = fd.get("phone_number") or fd.get("phone")
-    email = fd.get("email")
+    phone = _find_by_keys(fd, _PHONE_KEYS)
+    email = _find_by_keys(fd, _EMAIL_KEYS)
+
+    # Fallback: agar standart/keng tarqalgan kalitlar orasida topilmasa,
+    # QOLGAN barcha maydonlarni skanerlab, telefon/ism'ga O'XSHAGANINI
+    # taxmin qilamiz -- bu aynan Excel import'da ishlagan mantiq bilan bir xil
+    # (localised savol matnidan generatsiya qilingan g'alati kalitlar uchun).
+    if not phone or not name:
+        for k, v in fd.items():
+            if k in _NEVER_NAME_OR_PHONE_KEYS or not v:
+                continue
+            if not phone and _looks_phoneish(v):
+                phone = v
+                continue
+            if not name and _looks_nameish(v):
+                name = v
+
+    if phone:
+        normalized = normalize_phone(phone)
+        if normalized:
+            phone = normalized
+    if isinstance(email, str) and "@" not in email:
+        # Ba'zan email deb nomlangan maydonga aslida boshqa narsa tushadi --
+        # shubhali bo'lsa, email sifatida saqlamaymiz (bo'sh qoldiramiz).
+        email = None
     return name, phone, email
 
 
 def sync_once() -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
-    {"new_leads": N, "forms_checked": N, "errors": [...]}"""
+    {"new_leads": N, "forms_checked": N, "errors": [...], "form_diagnostics": [...]}
+    Natija HAR DOIM `kv_store`ga ("lead_sync_status") yoziladi -- muvaffaqiyatli
+    yoki xatolik bilan tugaganidan qat'iy nazar."""
     page_id = meta_api.PAGE_ID
-    result = {"new_leads": 0, "forms_checked": 0, "errors": []}
+    result = {"new_leads": 0, "forms_checked": 0, "errors": [], "form_diagnostics": []}
 
     if not page_id:
         result["errors"].append("META_PAGE_ID sozlanmagan -- lead sync o'tkazib yuborildi.")
+        _save_status(result)
         return result
 
     try:
         forms = meta_api.get_lead_forms(page_id)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Formalarni olishda xatolik: {e}")
+        _save_status(result)
+        return result
+
+    if not forms:
+        # Bu ENG KO'P uchraydigan "lead kelmayapti" sababi bo'lishi mumkin --
+        # META_PAGE_ID noto'g'ri sahifaga ko'rsatayotgan bo'lishi ehtimoli
+        # baland (masalan reklama boshqa Page/Instagram orqali yuritilsa).
+        # Bu holda davom etishning hojati yo'q -- tortib olinadigan lead yo'q.
+        result["errors"].append(
+            "Bu META_PAGE_ID uchun BIRORTA HAM Instant Form topilmadi. "
+            "Agar target ishlayotgan bo'lsa-yu lead kelmasa, ehtimol META_PAGE_ID "
+            "noto'g'ri sahifaga ko'rsatib turibdi yoki forma boshqa Page'da."
+        )
+        _save_status(result)
         return result
 
     # Kampaniya/adset/ad ID -> NOM xaritalari (dashboard/CRM'da "qaysi target,
@@ -91,9 +199,15 @@ def sync_once() -> dict:
             try:
                 leads = meta_api.get_leads(form_id)
             except meta_api.MetaAPIError as e:
-                result["errors"].append(f"Forma {form_id} lidlarini olishda xatolik: {e}")
+                result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {e}")
+                result["form_diagnostics"].append({
+                    "form_id": form_id, "form_name": form.get("name"),
+                    "meta_leads_count": form.get("leads_count"), "db_leads_count": None,
+                    "error": str(e),
+                })
                 continue
 
+            new_for_this_form = 0
             for raw in leads:
                 meta_lead_id = raw.get("id")
                 if not meta_lead_id:
@@ -121,6 +235,7 @@ def sync_once() -> dict:
                     adset_name=adset_name_by_id.get(adset_id, ""),
                     ad_id=ad_id,
                     ad_name=ad_name_by_id.get(ad_id, ""),
+                    form_id=form_id,
                     form_name=form.get("name"),
                     source="meta",
                     full_name=name,
@@ -132,12 +247,43 @@ def sync_once() -> dict:
                 )
                 session.add(lead)
                 result["new_leads"] += 1
+                new_for_this_form += 1
 
             session.commit()
+
+            db_count_for_form = session.query(Lead).filter_by(form_id=form_id).count()
+            meta_count = form.get("leads_count")
+            diag = {
+                "form_id": form_id, "form_name": form.get("name"),
+                "meta_leads_count": meta_count, "db_leads_count": db_count_for_form,
+                "new_this_run": new_for_this_form,
+            }
+            # Meta "leads_count" -- shu forma umr bo'yi olgan lead soni; bizning
+            # bazamizda esa faqat form_id TO'LDIRILGAN (shu tuzatishdan keyingi)
+            # yozuvlar bor -- shuning uchun katta farq FAQAT ikkalasi ham
+            # nolga yaqin bo'lmaganda ma'noli signal beradi.
+            if isinstance(meta_count, int) and meta_count > 0 and db_count_for_form == 0:
+                diag["warning"] = "Meta'da bu formada lidlar bor, lekin bazada BITTASI HAM yo'q -- token/ruxsat yoki sync muammosi bo'lishi mumkin."
+            result["form_diagnostics"].append(diag)
     finally:
         session.close()
 
+    _save_status(result)
     return result
+
+
+def _save_status(result: dict) -> None:
+    try:
+        kv_store.set_json("lead_sync_status", {
+            **result,
+            "last_run_at": dt.datetime.utcnow().isoformat(),
+        })
+    except Exception:
+        logger.exception("lead_sync_status'ni kv_store'ga yozishda xato (o'zi kritik emas)")
+
+
+def get_last_status() -> dict | None:
+    return kv_store.get_json("lead_sync_status", default=None)
 
 
 if __name__ == "__main__":
