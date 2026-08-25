@@ -183,6 +183,20 @@ def sync_once() -> dict:
     result = {"new_leads": 0, "forms_checked": 0, "errors": [], "notices": [], "form_diagnostics": []}
     sync_started_at = dt.datetime.utcnow()
 
+    # MUHIM (2026-08 tuzatish): `_BACKLOG_CUTOFF_KEY` avvalroq FAQAT pastdagi
+    # "since_unix hali yo'q" shoxobchasi ICHIDA o'rnatilar edi -- lekin agar
+    # `_SINCE_CURSOR_KEY` ALLAQACHON boshqa (oldingi) deploy'da o'rnatilgan
+    # bo'lsa, o'sha shoxobcha UMUMAN ishga tushmaydi va cutoff HECH QACHON
+    # yozilmay qoladi (`cleanup_backlog_leads()` doim "cursor o'rnatilmagan"
+    # deb xato qaytaveradi). Shuning uchun endi cutoff'ni since_unix holatidan
+    # MUSTAQIL, HAR safar tekshirib, agar hali yo'q bo'lsa -- "hozir"ga
+    # o'rnatamiz. Bu xavfsiz: chunki cutoff yo'q ekan, demak since-cursor
+    # filtri bilan ishlagan hech bir sync haqiqiy yangi lead topmagan
+    # bo'lishi kerak (aks holda backlog muammosi allaqachon ko'rinardi) --
+    # ya'ni "hozirgacha" bazadagi barcha meta-lead'lar hali ham eski backlog.
+    if kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None) is None:
+        kv_store.set_json(_BACKLOG_CUTOFF_KEY, int(sync_started_at.timestamp()))
+
     since_unix = kv_store.get_json(_SINCE_CURSOR_KEY, default=None)
     if since_unix is None:
         # Cursor hali o'rnatilmagan (birinchi marta ishga tushish yoki qo'lda
@@ -193,8 +207,6 @@ def sync_once() -> dict:
         # normal tortiladi.
         cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
         kv_store.set_json(_SINCE_CURSOR_KEY, cursor)
-        if kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None) is None:
-            kv_store.set_json(_BACKLOG_CUTOFF_KEY, cursor)
         result["notices"].append(
             "Lead-sync uchun boshlang'ich chegara o'rnatildi -- eski tarixiy "
             "lidlarni tortib olishning oldini olish uchun bu safar hech qanday "
