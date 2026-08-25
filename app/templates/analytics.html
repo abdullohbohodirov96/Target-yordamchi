@@ -111,6 +111,11 @@
     {% for e in lead_sync_status.errors %}<div>{{ e }}</div>{% endfor %}
   </div>
   {% endif %}
+  {% if lead_sync_status.notices %}
+  <div class="flash flash-info" style="margin-bottom:14px">
+    {% for n in lead_sync_status.notices %}<div>{{ n }}</div>{% endfor %}
+  </div>
+  {% endif %}
   {% if lead_sync_status.form_diagnostics %}
   <div class="table-scroll">
   <table>

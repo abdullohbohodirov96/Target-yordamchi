@@ -25,6 +25,22 @@ bo'lsa -- token/ruxsat muammosi yoki noto'g'ri META_PAGE_ID ehtimoli baland.
 Oxirgi sinxronizatsiya natijasi `kv_store`ga ("lead_sync_status" kaliti)
 yoziladi -- admin buni Analitika sahifasida ko'ra oladi, cron ishlab-
 ishlamayotganini bilish uchun endi Render loglariga qarash shart emas.
+
+"FAQAT YANGI LIDLAR" CURSOR (2026-08): oldin `meta_api.get_leads()` HAR
+SAFAR forma bo'yicha BUTUN tarixiy lead ro'yxatini so'rar edi (Meta'ning
+o'zi shunday qaytaradi, `since` filtri berilmasa) -- bazadagi dublikatni
+tekshirish faqat `meta_lead_id` bo'yicha bo'lgani uchun bu odatda muammo
+bermas edi. LEKIN (#190) Page Access Token xatoligi tuzatilgandan keyin
+BIRINCHI muvaffaqiyatli sync butun tarixiy backlog'ni "yangi" deb bazaga
+yozib yubordi. Shuni oldini olish uchun endi `kv_store`da
+("lead_sync_since_unix" kaliti) OXIRGI muvaffaqiyatli tekshiruv vaqti
+(unix timestamp, kichik overlap bilan) saqlanadi va har safar
+`meta_api.get_leads(form_id, since=...)`ga uzatiladi -- shunday qilib har
+bir sync FAQAT o'sha vaqtdan keyin yaratilgan lidlarni so'raydi. Agar bu
+kalit hali mavjud bo'lmasa (birinchi marta ishga tushish yoki qo'lda
+tozalangan holat), ESKI TARIXni tortib olmaslik uchun bu safar HECH QANDAY
+lead so'ralmaydi -- faqat cursor "hozir"ga o'rnatiladi, keyingi
+tekshiruvdan boshlab ENDI yaratiladigan lidlar tortiladi.
 """
 
 import json
@@ -38,6 +54,14 @@ from db import get_session, Lead
 from phone_utils import normalize_phone, clean_phone_raw
 
 logger = logging.getLogger("lead_sync")
+
+# Cursor'ni oldinga surganda shuncha soniyaga orqaga chekinamiz -- soat
+# farqi yoki Meta'ning lead'ni indekslashdagi kechikishi tufayli chegara
+# atrofidagi lead yo'qolib qolmasligi uchun (meta_lead_id dublikat
+# tekshiruvi bor, shuning uchun overlap xavfsiz -- eng ko'pi bilan bir xil
+# lead ikki marta tekshiriladi, lekin ikki marta YOZILMAYDI).
+_SYNC_OVERLAP_SECONDS = 600
+_SINCE_CURSOR_KEY = "lead_sync_since_unix"
 
 # Meta forma savollari ko'pincha standart ingliz kalitlari bilan keladi
 # (full_name, phone_number, email), lekin ADMIN o'zi qo'shgan maxsus savol
@@ -143,11 +167,33 @@ def _extract_name_phone_email(fd: dict) -> tuple[str | None, str | None, str | N
 
 def sync_once() -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
-    {"new_leads": N, "forms_checked": N, "errors": [...], "form_diagnostics": [...]}
+    {"new_leads": N, "forms_checked": N, "errors": [...], "notices": [...], "form_diagnostics": [...]}
+    ("errors" -- muammo, qizil ko'rsatiladi; "notices" -- oddiy ma'lumot, masalan
+    cursor birinchi marta o'rnatilgani, sariq/neytral ko'rsatiladi.)
     Natija HAR DOIM `kv_store`ga ("lead_sync_status") yoziladi -- muvaffaqiyatli
     yoki xatolik bilan tugaganidan qat'iy nazar."""
     page_id = meta_api.PAGE_ID
-    result = {"new_leads": 0, "forms_checked": 0, "errors": [], "form_diagnostics": []}
+    result = {"new_leads": 0, "forms_checked": 0, "errors": [], "notices": [], "form_diagnostics": []}
+    sync_started_at = dt.datetime.utcnow()
+
+    since_unix = kv_store.get_json(_SINCE_CURSOR_KEY, default=None)
+    if since_unix is None:
+        # Cursor hali o'rnatilmagan (birinchi marta ishga tushish yoki qo'lda
+        # tozalangan holat) -- ESKI TARIXIY lidlarni ommaviy tortib olishning
+        # oldini olish uchun bu safar hech qanday lead so'ramaymiz, faqat
+        # "shu vaqtdan keyingilarini kuzataman" degan boshlang'ich chegarani
+        # qo'yamiz. Keyingi tekshiruvdan boshlab ENDI yaratiladigan lidlar
+        # normal tortiladi.
+        cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
+        kv_store.set_json(_SINCE_CURSOR_KEY, cursor)
+        result["notices"].append(
+            "Lead-sync uchun boshlang'ich chegara o'rnatildi -- eski tarixiy "
+            "lidlarni tortib olishning oldini olish uchun bu safar hech qanday "
+            "lead so'ralmadi. Keyingi tekshiruvdan (odatda 15 daqiqadan keyin) "
+            "boshlab FAQAT shu vaqtdan keyin yaratiladigan yangi lidlar tortiladi."
+        )
+        _save_status(result)
+        return result
 
     if not page_id:
         result["errors"].append("META_PAGE_ID sozlanmagan -- lead sync o'tkazib yuborildi.")
@@ -197,7 +243,7 @@ def sync_once() -> dict:
             form_id = form["id"]
             result["forms_checked"] += 1
             try:
-                leads = meta_api.get_leads(form_id)
+                leads = meta_api.get_leads(form_id, since=since_unix)
             except meta_api.MetaAPIError as e:
                 result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {e}")
                 result["form_diagnostics"].append({
@@ -267,6 +313,15 @@ def sync_once() -> dict:
             result["form_diagnostics"].append(diag)
     finally:
         session.close()
+
+    # Cursor'ni oldinga suramiz -- keyingi tekshiruv endi shu safargi
+    # boshlanish vaqtidan (kichik overlap bilan) keyingi lidlarnigina so'raydi.
+    # Muvaffaqiyatsiz bo'lgan alohida formalar (yuqorida "continue" bo'lgan)
+    # keyingi safar YANA shu (yangi) cursor bilan tekshiriladi -- agar ular
+    # orasida chegaraga to'g'ri kelib qolgan lead bo'lsa, bu holatda
+    # qo'lda `/api/trigger/lead-sync`ni qayta ishga tushirish kifoya.
+    new_cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
+    kv_store.set_json(_SINCE_CURSOR_KEY, new_cursor)
 
     _save_status(result)
     return result
