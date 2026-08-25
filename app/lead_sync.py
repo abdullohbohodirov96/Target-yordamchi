@@ -404,17 +404,26 @@ def cleanup_backlog_leads() -> dict:
         # DIAGNOSTIKA (2026-08): kutilganidan kam/nol natija chiqsa sababini
         # ko'rish uchun -- cutoff qanday qiymatga o'rnatilgani va umuman
         # nechta source="meta" lead borligini ko'rsatadi.
+        from sqlalchemy import func
         stats["_debug_cutoff_iso"] = cutoff_dt.isoformat()
         stats["_debug_total_meta_leads"] = session.query(Lead).filter(Lead.source == "meta").count()
+        stats["_debug_source_counts"] = dict(
+            session.query(Lead.source, func.count(Lead.id)).group_by(Lead.source).all()
+        )
         sample = (
-            session.query(Lead.id, Lead.created_at, Lead.source)
-            .filter(Lead.source == "meta")
-            .order_by(Lead.created_at.asc().nullsfirst())
-            .limit(3)
+            session.query(Lead.id, Lead.created_at, Lead.source, Lead.form_id, Lead.meta_lead_id)
+            .filter(Lead.form_id == "1367597571983190")
+            .limit(5)
             .all()
         )
-        stats["_debug_earliest_sample"] = [
-            {"id": s.id, "created_at": s.created_at.isoformat() if s.created_at else None, "source": s.source}
+        stats["_debug_sample_form_188"] = [
+            {
+                "id": s.id,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "source": s.source,
+                "form_id": s.form_id,
+                "meta_lead_id": s.meta_lead_id,
+            }
             for s in sample
         ]
 
