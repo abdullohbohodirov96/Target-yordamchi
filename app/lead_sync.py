@@ -62,6 +62,13 @@ logger = logging.getLogger("lead_sync")
 # lead ikki marta tekshiriladi, lekin ikki marta YOZILMAYDI).
 _SYNC_OVERLAP_SECONDS = 600
 _SINCE_CURSOR_KEY = "lead_sync_since_unix"
+# Cursor birinchi marta o'rnatilgan ANIQ vaqt -- keyinchalik `_SINCE_CURSOR_KEY`
+# har sync'da OLDINGA suriladi, lekin bu qiymat O'ZGARMAS qoladi (faqat bir
+# marta yoziladi). `cleanup_backlog_leads()` shu chegaradan FOYDALANIB, faqat
+# tuzatishdan OLDIN (ya'ni buzilgan birinchi sync paytida) yozilgan eski
+# lidlarnigina o'chiradi -- tuzatishdan KEYIN kelgan haqiqiy yangi lidlarga
+# HECH QACHON tegmaydi, cleanup qachon bosilishidan qat'iy nazar.
+_BACKLOG_CUTOFF_KEY = "lead_sync_backlog_cutoff_unix"
 
 # Meta forma savollari ko'pincha standart ingliz kalitlari bilan keladi
 # (full_name, phone_number, email), lekin ADMIN o'zi qo'shgan maxsus savol
@@ -186,6 +193,8 @@ def sync_once() -> dict:
         # normal tortiladi.
         cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
         kv_store.set_json(_SINCE_CURSOR_KEY, cursor)
+        if kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None) is None:
+            kv_store.set_json(_BACKLOG_CUTOFF_KEY, cursor)
         result["notices"].append(
             "Lead-sync uchun boshlang'ich chegara o'rnatildi -- eski tarixiy "
             "lidlarni tortib olishning oldini olish uchun bu safar hech qanday "
@@ -339,6 +348,68 @@ def _save_status(result: dict) -> None:
 
 def get_last_status() -> dict | None:
     return kv_store.get_json("lead_sync_status", default=None)
+
+
+def cleanup_backlog_leads() -> dict:
+    """FOYDALANUVCHI ANIQ SO'ROVI bilan (2026-08) BIR MARTALIK ishga
+    tushiriladigan tozalash -- (#190) tuzatilgandan keyingi BIRINCHI
+    (buzilgan) sync butun tarixiy Meta lead arxivini "yangi" deb bazaga
+    yozib yuborgan edi (yuqoridagi "FAQAT YANGI LIDLAR" CURSOR izohiga
+    qarang). Bu funksiya O'SHA eski backlog'ni bazadan o'chiradi:
+
+      - FAQAT `source == "meta"` bo'lgan va `created_at` `_BACKLOG_CUTOFF_KEY`
+        chegarasidan OLDIN yozilgan lead'lar nomzod hisoblanadi -- tuzatishdan
+        KEYIN (haqiqiy since-cursor bilan) kelgan yangi lidlarga HECH QACHON
+        tegilmaydi, cleanup necha marta yoki qachon ishga tushirilishidan
+        qat'iy nazar.
+      - Agar lead'ga HAQIQIY SOTUV (`Sale`) biriktirilgan bo'lsa -- bu pul/KPI
+        yozuvi, HECH QACHON avtomatik o'chirilmaydi, shunchaki o'tkazib
+        yuboriladi ("kept_has_sale" hisoblanadi).
+      - O'chirilayotgan lead'ning izohlari (`LeadNote`) birga o'chadi;
+        unga bog'langan qo'ng'iroq yozuvlari (`CallRecord`) esa O'CHIRILMAYDI
+        -- faqat `lead_id` NULL qilinadi (qo'ng'iroq tarixi/statistikasi
+        saqlanib qoladi).
+
+    Qaytaradi: {"deleted": N, "kept_has_sale": N, "notes_deleted": N,
+    "calls_unlinked": N} yoki cursor hali o'rnatilmagan bo'lsa {"error": "..."}."""
+    from db import Sale, LeadNote, CallRecord
+
+    cutoff_unix = kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None)
+    if cutoff_unix is None:
+        return {
+            "error": (
+                "Hali birorta ham tuzatilgan lead-sync ishga tushmagan (cursor "
+                "o'rnatilmagan) -- avval yangi kodni deploy qiling va kamida bir "
+                "marta sync (avtomatik yoki /api/trigger/lead-sync) ishlashini "
+                "kuting, keyin bu tozalashni ishga tushiring."
+            )
+        }
+    cutoff_dt = dt.datetime.utcfromtimestamp(cutoff_unix)
+
+    session = get_session()
+    try:
+        stats = {"deleted": 0, "kept_has_sale": 0, "notes_deleted": 0, "calls_unlinked": 0}
+        candidates = (
+            session.query(Lead)
+            .filter(Lead.source == "meta")
+            .filter((Lead.created_at < cutoff_dt) | (Lead.created_at.is_(None)))
+            .all()
+        )
+        for lead in candidates:
+            has_sale = session.query(Sale).filter_by(lead_id=lead.id).first() is not None
+            if has_sale:
+                stats["kept_has_sale"] += 1
+                continue
+            stats["notes_deleted"] += session.query(LeadNote).filter_by(lead_id=lead.id).delete()
+            stats["calls_unlinked"] += (
+                session.query(CallRecord).filter_by(lead_id=lead.id).update({"lead_id": None})
+            )
+            session.delete(lead)
+            stats["deleted"] += 1
+        session.commit()
+        return stats
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":

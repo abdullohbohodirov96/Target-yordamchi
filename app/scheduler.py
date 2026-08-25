@@ -163,6 +163,19 @@ def job_call_sync() -> dict:
         return {"error": str(e)}
 
 
+def job_lead_cleanup() -> dict:
+    """FOYDALANUVCHI ANIQ SO'ROVI bilan (2026-08) qo'lda ishga tushiriladigan
+    BIR MARTALIK tozalash -- (#190) tuzatilgandan keyingi birinchi (buzilgan)
+    lead-sync butun tarixiy Meta lead arxivini "yangi" deb bazaga yozib
+    yuborgan edi. Bu job o'sha eski backlog'ni o'chiradi (haqiqiy sotuvi
+    bo'lgan lead'larga tegmaydi) -- `/api/trigger/lead-cleanup`."""
+    try:
+        return lead_sync.cleanup_backlog_leads()
+    except Exception as e:
+        logger.exception("Lead backlog tozalashda xatolik")
+        return {"error": str(e)}
+
+
 def job_call_cleanup() -> dict:
     """Mavjud `CallRecord`larni DARHOL qayta tekshiradi/tozalaydi --
     foydalanuvchi Menejerlar sahifasida telefon raqamini to'g'irlagandan
@@ -370,6 +383,7 @@ JOBS = {
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
+    "lead-cleanup": job_lead_cleanup,
     "standing-tasks": job_standing_tasks,
     "standing-reports": job_standing_reports,
     "call-sync": job_call_sync,
