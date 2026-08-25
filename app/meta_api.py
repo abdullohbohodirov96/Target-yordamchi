@@ -37,12 +37,12 @@ class MetaAPIError(Exception):
     pass
 
 
-def _get(path: str, params: dict | None = None) -> dict:
+def _get(path: str, params: dict | None = None, token: str | None = None) -> dict:
     params = {
         k: (json.dumps(v) if isinstance(v, (dict, list)) else v)
         for k, v in (params or {}).items()
     }
-    params["access_token"] = ACCESS_TOKEN
+    params["access_token"] = token or ACCESS_TOKEN
     r = requests.get(f"{GRAPH_URL}/{path}", params=params, timeout=30)
     data = r.json()
     if "error" in data:
@@ -50,7 +50,7 @@ def _get(path: str, params: dict | None = None) -> dict:
     return data
 
 
-def _post(path: str, data: dict) -> dict:
+def _post(path: str, data: dict, token: str | None = None) -> dict:
     # Graph API forma-encoded POST so'rovlarida object/array parametrlar
     # (targeting, creative, rename_options va h.k.) JSON-string ko'rinishida
     # yuborilishi kerak — shuning uchun dict/list qiymatlarni avtomatik
@@ -59,12 +59,56 @@ def _post(path: str, data: dict) -> dict:
         k: (json.dumps(v) if isinstance(v, (dict, list)) else v)
         for k, v in data.items()
     }
-    payload["access_token"] = ACCESS_TOKEN
+    payload["access_token"] = token or ACCESS_TOKEN
     r = requests.post(f"{GRAPH_URL}/{path}", data=payload, timeout=30)
     result = r.json()
     if isinstance(result, dict) and "error" in result:
         raise MetaAPIError(result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Page Access Token -- Instant Form (Lead Ads) bilan bog'liq endpointlar
+# (leadgen_forms yaratish/o'qish, forma leadlarini o'qish) Facebook
+# tomonidan MAJBURIY ravishda alohida "Page Access Token" talab qiladi --
+# oddiy System User/foydalanuvchi token bilan chaqirilsa "(#190) This
+# method must be called with a Page Access Token" xatosi qaytadi (aynan
+# shu xato "Lead-sync holati" kartochkasida ko'ringan).
+#
+# YECHIM: Render'da YANGI environment variable/token QO'SHISH SHART EMAS --
+# allaqachon sozlangan META_ACCESS_TOKEN shu Page'ga administrator/
+# muharrir sifatida ulangan bo'lsa (Business Manager -> Sahifalar), Page
+# Access Token'ni O'ZI so'rab, keshlab, keyingi barcha Page-darajasidagi
+# chaqiruvlarda ishlatadi (`GET /{page-id}?fields=access_token`).
+# ---------------------------------------------------------------------------
+
+_page_token_cache: dict[str, str | None] = {"token": None}
+
+
+def _get_page_access_token() -> str:
+    if _page_token_cache["token"]:
+        return _page_token_cache["token"]
+    if not PAGE_ID:
+        raise MetaAPIError({"message": "META_PAGE_ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
+    r = requests.get(
+        f"{GRAPH_URL}/{PAGE_ID}",
+        params={"fields": "access_token", "access_token": ACCESS_TOKEN},
+        timeout=30,
+    )
+    data = r.json()
+    if "error" in data:
+        raise MetaAPIError(data["error"])
+    token = data.get("access_token")
+    if not token:
+        raise MetaAPIError({
+            "message": (
+                "Page Access Token olinmadi -- META_ACCESS_TOKEN shu Page'ga "
+                "(Business Manager -> Sahifalar) administrator/muharrir sifatida "
+                "ulanganini tekshiring."
+            )
+        })
+    _page_token_cache["token"] = token
+    return token
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +493,7 @@ def create_lead_form(page_id: str, form_config: dict) -> dict:
         "thank_you_page": {"title": "Rahmat!", "body": "Tez orada bog'lanamiz."},
     }
     """
-    return _post(f"{page_id}/leadgen_forms", form_config)
+    return _post(f"{page_id}/leadgen_forms", form_config, token=_get_page_access_token())
 
 
 def get_leads(form_id: str, since: str | None = None) -> list[dict]:
@@ -468,7 +512,7 @@ def get_leads(form_id: str, since: str | None = None) -> list[dict]:
     }
     if since:
         params["filtering"] = [{"field": "time_created", "operator": "GREATER_THAN", "value": since}]
-    data = _get(f"{form_id}/leads", params)
+    data = _get(f"{form_id}/leads", params, token=_get_page_access_token())
     leads = list(data.get("data", []))
     # Sahifalash (pagination) -- forma bo'yicha 100 dan ko'p yangi lead
     # bo'lishi kamdan-kam, lekin xavfsizlik uchun keyingi sahifalarni ham olamiz.
@@ -487,5 +531,5 @@ def get_lead_forms(page_id: str) -> list[dict]:
     qaytaradi -- CRM lead-sync job'i har bir forma bo'yicha `get_leads()`ni
     alohida chaqiradi (Meta API'da "hisobdagi barcha lidlar" degan yagona
     endpoint yo'q, forma orqali so'raladi)."""
-    data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200})
+    data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=_get_page_access_token())
     return data.get("data", [])
