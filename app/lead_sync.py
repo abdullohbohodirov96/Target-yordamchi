@@ -401,12 +401,30 @@ def cleanup_backlog_leads() -> dict:
     session = get_session()
     try:
         stats = {"deleted": 0, "kept_has_sale": 0, "notes_deleted": 0, "calls_unlinked": 0}
+        # DIAGNOSTIKA (2026-08): kutilganidan kam/nol natija chiqsa sababini
+        # ko'rish uchun -- cutoff qanday qiymatga o'rnatilgani va umuman
+        # nechta source="meta" lead borligini ko'rsatadi.
+        stats["_debug_cutoff_iso"] = cutoff_dt.isoformat()
+        stats["_debug_total_meta_leads"] = session.query(Lead).filter(Lead.source == "meta").count()
+        sample = (
+            session.query(Lead.id, Lead.created_at, Lead.source)
+            .filter(Lead.source == "meta")
+            .order_by(Lead.created_at.asc().nullsfirst())
+            .limit(3)
+            .all()
+        )
+        stats["_debug_earliest_sample"] = [
+            {"id": s.id, "created_at": s.created_at.isoformat() if s.created_at else None, "source": s.source}
+            for s in sample
+        ]
+
         candidates = (
             session.query(Lead)
             .filter(Lead.source == "meta")
             .filter((Lead.created_at < cutoff_dt) | (Lead.created_at.is_(None)))
             .all()
         )
+        stats["_debug_candidates_matched"] = len(candidates)
         for lead in candidates:
             has_sale = session.query(Sale).filter_by(lead_id=lead.id).first() is not None
             if has_sale:
