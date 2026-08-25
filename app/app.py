@@ -1883,6 +1883,7 @@ def health():
         "meta_page_id_set": bool(os.environ.get("META_PAGE_ID")),
         "database_configured": bool(os.environ.get("DATABASE_URL")),
         "cron_secret_set": bool(CRON_SECRET),
+        "moizvonki_configured": call_sync.is_configured(),
     })
 
 
