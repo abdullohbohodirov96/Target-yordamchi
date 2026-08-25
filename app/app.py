@@ -1594,6 +1594,7 @@ def managers():
             full_name = request.form.get("full_name", "").strip()
             role = request.form.get("role", "manager")
             phone_number = request.form.get("phone_number", "").strip()
+            moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
             hire_date_str = request.form.get("hire_date", "").strip()
             modules = request.form.getlist("allowed_modules")
             if username and password:
@@ -1603,6 +1604,7 @@ def managers():
                     m = Manager(username=username, full_name=full_name, role=role)
                     m.set_password(password)
                     m.phone_number = phone_number or None
+                    m.moizvonki_login = moizvonki_login or None
                     if hire_date_str:
                         try:
                             m.hire_date = dt.datetime.strptime(hire_date_str, "%Y-%m-%d")
@@ -1613,7 +1615,7 @@ def managers():
                     session.commit()
                     flash(f"{username} qo'shildi.", "success")
         all_managers = session.query(Manager).order_by(Manager.created_at).all()
-        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "hire_date": m.hire_date} for m in all_managers]
+        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date} for m in all_managers]
     finally:
         session.close()
     return render_template("managers.html", managers=rows, modules=permissions.MODULES, default_modules=permissions.DEFAULT_MANAGER_MODULES)
@@ -1636,6 +1638,7 @@ def manager_edit(manager_id):
             new_role = request.form.get("role", "manager")
             new_password = request.form.get("password", "")
             new_phone = request.form.get("phone_number", "").strip()
+            new_moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
             new_hire_date_str = request.form.get("hire_date", "").strip()
             new_modules = request.form.getlist("allowed_modules")
             is_active = request.form.get("is_active") == "on"
@@ -1657,7 +1660,7 @@ def manager_edit(manager_id):
                         return render_template("manager_edit.html", m={
                             "id": m.id, "username": m.username, "full_name": m.full_name,
                             "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
-                            "hire_date": m.hire_date,
+                            "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date,
                             "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
                         }, modules=permissions.MODULES)
 
@@ -1666,6 +1669,7 @@ def manager_edit(manager_id):
                 m.role = new_role
                 m.is_active = is_active
                 m.phone_number = new_phone or None
+                m.moizvonki_login = new_moizvonki_login or None
                 if new_hire_date_str:
                     try:
                         m.hire_date = dt.datetime.strptime(new_hire_date_str, "%Y-%m-%d")
@@ -1682,7 +1686,7 @@ def manager_edit(manager_id):
 
         m_view = {
             "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
-            "phone_number": m.phone_number, "hire_date": m.hire_date,
+            "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date,
             "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
         }
     finally:

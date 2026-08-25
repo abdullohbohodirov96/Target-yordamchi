@@ -7,28 +7,41 @@ davomiylikda) faqat menejerning o'zi yozgan izohidan bilib bo'lmaydi --
 u "gaplashdim" deb yozib qo'yishi mumkin, aslida qo'ng'iroq umuman
 bo'lmagan yoki 5 soniyada tashlab yuborgan bo'lishi mumkin. Shuning uchun
 haqiqiy TELEFON qo'ng'iroq yozuvlari (davomiylik, vaqt) kerak --
-"Individual tekshirish" bo'limi (`app.py`) shu ma'lumotdan lead'ning
-telefon raqami bilan mos keladigan qo'ng'iroqlarni topib, 2 soat ichidagi
-bir nechta qo'ng'iroqni BITTA "gaplashuv sessiyasi" deb hisoblab, umumiy
-davomiylik va necha marta gaplashilganini ko'rsatadi.
+"Individual tekshirish" bo'limi va Analitika/Dashboard'dagi kunlik
+gaplashuv KPI shu ma'lumotdan foydalanadi.
 
-MUHIM -- HOZIRGI HOLAT (2026-08): Moi Zvonki'ning ochiq (public) API
-hujjatlari yo'q -- API manzili ("company.moizvonki.ru" ko'rinishida) va
-kaliti FAQAT sizning shu xizmatdagi shaxsiy kabinetingizda (Sozlamalar ->
-Integratsiya bo'limida) ko'rsatiladi. Shuning uchun bu fayl HOZIRCHA:
-  1. Agar MOIZVONKI_API_ADDRESS / MOIZVONKI_API_KEY sozlanmagan bo'lsa --
-     hech narsa qilmaydi, aniq xabar bilan qaytadi (xato bermaydi).
-  2. Agar sozlangan bo'lsa -- eng keng tarqalgan REST naqshiga asoslanib
-     (`{address}/api/calls?...`) so'rov yuborishga HARAKAT qiladi, lekin
-     bu ENDPOINT ANIQ TASDIQLANMAGAN -- xizmat kabinetidagi haqiqiy
-     hujjat/misol javobga qarab moslashtirish kerak bo'lishi mumkin. Xato
-     bo'lsa ilova YIQILMAYDI, faqat aniq xatolik matni bilan qaytadi
-     ("Individual tekshirish" sahifasida ko'rinadi).
+RASMIY API (2026-08, foydalanuvchi Moi Zvonki kabinetidan yuborgan
+https://www.moizvonki.ru/guide/api/ hujjati asosida -- ILGARI bu fayl
+tasdiqlanmagan taxmin bilan yozilgan edi, ENDI aniq kontrakt):
 
-Bu bo'lim to'liq ishlashi uchun quyidagilar kerak: (a) Moi Zvonki
-kabinetidagi API manzil+kalit, (b) bitta haqiqiy qo'ng'iroq javobi
-namunasi (JSON) -- shular asosida quyidagi `_map_raw_call()` funksiyasi
-aniq maydonlarga moslashtiriladi.
+  * So'rov: POST https://{domain}/api/v1, forma-kodlangan tana
+    `request_data=<JSON matn>` (hujjatdagi jQuery misoliga mos).
+  * HAR bir so'rovda UCHTA autentifikatsiya maydoni kerak:
+      - user_name -- akkauntning LOGIN email'i (ADMINISTRATOR bo'lishi
+        kerak, aks holda supervised=1 butun kompaniya emas faqat shu
+        foydalanuvchining o'z qo'ng'iroqlarini qaytaradi)
+      - api_key   -- Sozlamalar -> Integratsiya'dagi API kalit
+      - action    -- chaqirilayotgan metod nomi (masalan "calls.list")
+  * Qo'ng'iroqlar ro'yxati: action="calls.list", `supervised=1` bilan
+    BARCHA xodimlarning qo'ng'irog'ini qaytaradi (aks holda faqat
+    user_name'ning o'zinikini). Javobda HAR BIR qo'ng'iroq egasi
+    "user_account" (email) orqali aniqlanadi -- TELEFON RAQAMI ORQALI
+    EMAS. Shuning uchun `Manager.moizvonki_login` (har bir menejerning
+    Moi Zvonki login-email'i) admin tomonidan qo'lda to'ldirilishi kerak
+    -- aks holda qo'ng'iroq hech qaysi menejerga biriktirilmaydi (lekin
+    baribir bazaga yoziladi, keyin admin login'ni to'g'irlasa qayta
+    ishlov berish shart emas -- yangi qo'ng'iroqlar to'g'ri biriktiriladi).
+  * Sahifalash: `results_remains`/`results_next_offset` orqali (0 bo'lsa
+    tugagan).
+  * `start_time`/`answer_time`/`end_time` -- UNIX timestamp (UTC), STRING
+    SANA EMAS (ilgarigi taxmin xato edi).
+
+Ishlashi uchun kerak (barchasi Render environment variables, HECH QACHON
+kodga yozilmaydi):
+  - MOIZVONKI_API_ADDRESS -- masalan "https://kompaniya.moizvonki.ru"
+  - MOIZVONKI_API_KEY     -- Sozlamalar -> Integratsiya
+  - MOIZVONKI_USER_NAME   -- akkauntga ADMIN sifatida kiradigan login
+    (email) -- supervised=1 uchun shart
 """
 
 import os
@@ -45,55 +58,101 @@ logger = logging.getLogger("call_sync")
 
 API_ADDRESS = os.environ.get("MOIZVONKI_API_ADDRESS", "").strip().rstrip("/")
 API_KEY = os.environ.get("MOIZVONKI_API_KEY", "").strip()
+API_USER_NAME = os.environ.get("MOIZVONKI_USER_NAME", "").strip()
+
+_MAX_PAGES = 50  # xavfsizlik cheklovi -- server noto'g'ri offset qaytarsa ham cheksiz tsiklga tushib qolmaslik uchun
+
+
+class MoiZvonkiError(Exception):
+    pass
 
 
 def is_configured() -> bool:
-    return bool(API_ADDRESS and API_KEY)
+    return bool(API_ADDRESS and API_KEY and API_USER_NAME)
+
+
+def _call_api(action: str, **params) -> dict:
+    """Moi Zvonki REST API'ga bitta so'rov yuboradi
+    (https://www.moizvonki.ru/guide/api/#rest)."""
+    payload = {"user_name": API_USER_NAME, "api_key": API_KEY, "action": action}
+    payload.update(params)
+    url = f"{API_ADDRESS}/api/v1"
+    r = requests.post(url, data={"request_data": json.dumps(payload, ensure_ascii=False)}, timeout=30)
+    if r.status_code != 200:
+        raise MoiZvonkiError(f"{action}: HTTP {r.status_code} -- {r.text[:300]}")
+    try:
+        return r.json()
+    except ValueError:
+        raise MoiZvonkiError(f"{action}: JSON bo'lmagan javob -- {r.text[:300]}")
+
+
+def _fetch_calls(since: dt.datetime) -> list[dict]:
+    """`calls.list` metodini chaqirib, `since`dan keyingi BARCHA (butun
+    kompaniya, supervised=1) qo'ng'iroqlarni sahifalab yig'ib qaytaradi."""
+    from_date = int(since.replace(tzinfo=dt.timezone.utc).timestamp())
+    all_results: list[dict] = []
+    offset = 0
+    for _ in range(_MAX_PAGES):
+        data = _call_api(
+            "calls.list",
+            from_date=from_date,
+            max_results=100,
+            from_offset=offset,
+            supervised=1,
+        )
+        results = data.get("results") or []
+        all_results.extend(results)
+        remains = data.get("results_remains") or 0
+        next_offset = data.get("results_next_offset")
+        if not remains or next_offset is None or next_offset <= offset:
+            break
+        offset = next_offset
+    return all_results
 
 
 def _map_raw_call(raw: dict) -> dict:
-    """Xizmatdan kelgan xom JSON'ni CallRecord maydonlariga moslaydi.
-    ESLATMA: quyidagi kalit nomlari ("id"/"phone"/"duration"/"date"/...)
-    ENG KENG TARQALGAN naqsh asosida taxminiy tanlangan -- haqiqiy javob
-    boshqacha bo'lsa, shu funksiyani real namunaga qarab yangilash kerak."""
+    """Moi Zvonki `calls.list` javobidagi bitta yozuvni CallRecord
+    maydonlariga moslaydi (rasmiy hujjat asosida)."""
+    direction_raw = raw.get("direction")
+    direction = "outgoing" if direction_raw == 1 else "incoming" if direction_raw == 0 else None
+
+    started_at = None
+    st = raw.get("start_time")
+    if st:
+        try:
+            started_at = dt.datetime.utcfromtimestamp(int(st))
+        except (TypeError, ValueError, OSError, OverflowError):
+            started_at = None
+
+    login = (raw.get("user_account") or "").strip().lower() or None
+
     return {
-        "external_id": str(raw.get("id") or raw.get("call_id") or raw.get("uuid") or ""),
-        "phone_number": normalize_phone(raw.get("phone") or raw.get("client_phone") or raw.get("from")),
-        "manager_phone_number": normalize_phone(raw.get("employee_phone") or raw.get("internal_number") or raw.get("to")),
-        "direction": raw.get("direction") or raw.get("type"),
-        "duration_seconds": int(raw.get("duration") or raw.get("talk_duration") or 0),
-        "started_at_raw": raw.get("date") or raw.get("started_at") or raw.get("created_at"),
-        "recording_url": raw.get("record_url") or raw.get("recording") or raw.get("audio_url"),
+        "external_id": str(raw.get("db_call_id") or raw.get("event_pbx_call_id") or ""),
+        "phone_number": normalize_phone(raw.get("client_number")),
+        "moizvonki_login": login,
+        "direction": direction,
+        "duration_seconds": int(raw.get("duration") or 0),
+        "started_at": started_at,
+        "recording_url": raw.get("recording") or None,
     }
-
-
-def _fetch_calls(since: dt.datetime | None = None) -> list[dict]:
-    """Moi Zvonki API'dan qo'ng'iroqlar ro'yxatini so'raydi. Aniq endpoint
-    tasdiqlangach shu funksiya yangilanadi -- hozircha eng ehtimolli REST
-    naqsh (`GET {address}/api/calls`, `?key=`) bilan sinaydi."""
-    params = {"key": API_KEY, "limit": 200}
-    if since:
-        params["date_from"] = since.strftime("%Y-%m-%d %H:%M:%S")
-    r = requests.get(f"{API_ADDRESS}/api/calls", params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    if isinstance(data, dict):
-        return data.get("data") or data.get("calls") or data.get("items") or []
-    if isinstance(data, list):
-        return data
-    return []
 
 
 def sync_once(since: dt.datetime | None = None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
-    {"configured": bool, "new_calls": N, "errors": [...]}"""
-    result = {"configured": is_configured(), "new_calls": 0, "errors": []}
+    {"configured": bool, "new_calls": N, "unmatched_manager_calls": N, "errors": [...]}"""
+    result = {"configured": is_configured(), "new_calls": 0, "unmatched_manager_calls": 0, "errors": []}
     if not result["configured"]:
+        missing = [
+            name for name, val in (
+                ("MOIZVONKI_API_ADDRESS", API_ADDRESS),
+                ("MOIZVONKI_API_KEY", API_KEY),
+                ("MOIZVONKI_USER_NAME", API_USER_NAME),
+            ) if not val
+        ]
         result["errors"].append(
-            "MOIZVONKI_API_ADDRESS / MOIZVONKI_API_KEY sozlanmagan -- "
-            "Mening qo'ng'iroqlarim kabinetingizdagi Sozlamalar -> "
-            "Integratsiya bo'limidan oling va Render environment "
-            "o'zgaruvchilariga qo'shing."
+            f"Sozlanmagan: {', '.join(missing)} -- Mening qo'ng'iroqlarim kabinetidagi "
+            "Sozlamalar -> Integratsiya bo'limidan manzil+kalitni, va akkauntga ADMIN "
+            "sifatida kiradigan login(email)ni Render environment o'zgaruvchilariga qo'shing."
         )
         return result
 
@@ -109,11 +168,11 @@ def sync_once(since: dt.datetime | None = None) -> dict:
 
     session = get_session()
     try:
-        managers_by_phone = {}
-        for m in session.query(Manager).filter(Manager.phone_number.isnot(None)).all():
-            key = phone_key9(m.phone_number)
+        managers_by_login = {}
+        for m in session.query(Manager).filter(Manager.moizvonki_login.isnot(None)).all():
+            key = (m.moizvonki_login or "").strip().lower()
             if key:
-                managers_by_phone[key] = m.id
+                managers_by_login[key] = m.id
 
         for raw in raw_calls:
             try:
@@ -126,16 +185,6 @@ def sync_once(since: dt.datetime | None = None) -> dict:
             if external_id and session.query(CallRecord).filter_by(external_id=external_id).first():
                 continue  # allaqachon bazada bor
 
-            started_at = None
-            raw_dt = mapped.get("started_at_raw")
-            if raw_dt:
-                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-                    try:
-                        started_at = dt.datetime.strptime(str(raw_dt)[:19], fmt)
-                        break
-                    except ValueError:
-                        continue
-
             phone_key = phone_key9(mapped["phone_number"])
             lead_id = None
             if phone_key:
@@ -143,23 +192,31 @@ def sync_once(since: dt.datetime | None = None) -> dict:
                 if lead:
                     lead_id = lead.id
 
-            manager_key = phone_key9(mapped["manager_phone_number"])
-            manager_id = managers_by_phone.get(manager_key) if manager_key else None
+            manager_id = managers_by_login.get(mapped["moizvonki_login"]) if mapped["moizvonki_login"] else None
+            if mapped["moizvonki_login"] and not manager_id:
+                result["unmatched_manager_calls"] += 1
 
             record = CallRecord(
                 external_id=external_id or None,
                 manager_id=manager_id,
                 lead_id=lead_id,
                 phone_number=mapped["phone_number"],
-                manager_phone_number=mapped["manager_phone_number"],
+                manager_phone_number=None,
                 direction=mapped["direction"],
                 duration_seconds=mapped["duration_seconds"],
-                started_at=started_at,
+                started_at=mapped["started_at"],
                 recording_url=mapped["recording_url"],
                 raw_data=json.dumps(raw, ensure_ascii=False)[:8000],
             )
             session.add(record)
             result["new_calls"] += 1
+
+        if result["unmatched_manager_calls"]:
+            result["errors"].append(
+                f"{result['unmatched_manager_calls']} ta qo'ng'iroq hech qaysi menejerga "
+                "biriktirilmadi -- Menejerlar sahifasida shu qo'ng'iroqlar egasining Moi "
+                "Zvonki login(email)ini 'moizvonki_login' maydoniga kiritish kerak."
+            )
 
         session.commit()
     finally:

@@ -44,7 +44,8 @@ class Manager(Base):
     full_name = Column(String(128), nullable=False, default="")
     role = Column(String(16), nullable=False, default="manager")  # "admin" | "manager"
     telegram_user_id = Column(String(32), nullable=True)  # ixtiyoriy: shaxsiy bildirishnoma uchun
-    phone_number = Column(String(32), nullable=True)  # shu menejerga biriktirilgan qo'ng'iroq raqami (Mening qo'ng'iroqlarim/CallRecord bilan bog'lash uchun)
+    phone_number = Column(String(32), nullable=True)  # shu menejerning telefon raqami (ma'lumot uchun -- Moi Zvonki qo'ng'iroqlarini bog'lash ENDI `moizvonki_login` orqali, chunki rasmiy API javobida telefon emas, login/email qaytadi)
+    moizvonki_login = Column(String(128), nullable=True)  # Moi Zvonki (moizvonki.ru) tizimidagi shu menejerning shaxsiy LOGIN(email)i -- calls.list javobidagi "user_account" maydoniga mos kelishi kerak, aks holda qo'ng'iroq HECH KIMGA biriktirilmaydi (call_sync.py)
     allowed_modules = Column(Text, nullable=True)  # JSON ro'yxat, masalan ["dashboard","leads","analytics"] -- admin uchun HAR DOIM e'tiborsiz (adminda hammasi ochiq), faqat "manager" rolidagi hisoblar uchun ishlatiladi. NULL -- standart bo'limlar (permissions.DEFAULT_MANAGER_MODULES)
     hire_date = Column(DateTime, nullable=True)  # ish boshlagan sana -- KPI/bonus oylik rejasi (75 sotuv, oborot bosqichlari) shu oy ichida necha kun ishlaganiga qarab PRORATSIYA qilinadi (kpi_bonus.py). NULL -- to'liq oy ishlagan deb hisoblanadi.
     is_active = Column(Boolean, nullable=False, default=True)
