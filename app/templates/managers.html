@@ -12,6 +12,7 @@
     <div class="field"><label>Parol</label><input type="password" name="password" required></div>
     <div class="field"><label>Telefon raqami (ixtiyoriy)</label><input type="text" name="phone_number" placeholder="+998901234567"></div>
     <div class="field"><label>Moi Zvonki login/email (ixtiyoriy) — qo'ng'iroqlarni shu menejerga bog'lash uchun</label><input type="text" name="moizvonki_login" placeholder="menejer@pochta.uz"></div>
+    <div class="field"><label>Telegram ID (ixtiyoriy) — qayta aloqa eslatmasi shaxsan shu yerga yuboriladi</label><input type="text" name="telegram_user_id" placeholder="masalan 123456789"></div>
     <div class="field"><label>Ish boshlagan sana (ixtiyoriy, KPI rejasini oy o'rtasidan proratsiya qilish uchun)</label><input type="date" name="hire_date"></div>
     <div class="field">
       <label>Rol</label>
@@ -36,7 +37,7 @@
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Telefon</th><th>Moi Zvonki login</th><th>Ish boshlagan</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Telefon</th><th>Moi Zvonki login</th><th>Telegram ID</th><th>Ish boshlagan</th><th>Faol</th><th></th></tr></thead>
     <tbody>
       {% for m in managers %}
       <tr class="rowlink" onclick="window.location='{{ url_for('manager_edit', manager_id=m.id) }}'">
@@ -45,6 +46,7 @@
         <td class="text-dim">{{ m.role }}</td>
         <td class="text-dim">{{ m.phone_number or '—' }}</td>
         <td class="text-dim">{{ m.moizvonki_login or '—' }}</td>
+        <td class="text-dim">{{ m.telegram_user_id or '—' }}</td>
         <td class="text-dim">{{ m.hire_date.strftime('%d.%m.%Y') if m.hire_date else '—' }}</td>
         <td><span class="badge {{ 'badge-color-good' if m.is_active else 'badge-color-dim' }}">{{ 'faol' if m.is_active else 'nofaol' }}</span></td>
         <td class="num"><a href="{{ url_for('manager_edit', manager_id=m.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>

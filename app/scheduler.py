@@ -16,6 +16,10 @@ Jadval (standart, ENV orqali sozlanadi):
   - Har 5 daqiqada -- foydalanuvchi Telegram orqali qo'ygan DOIMIY vazifalarni
     (schedule_on_off: har kuni belgilangan vaqtda avtomatik yoqish/o'chirish,
     schedule_report: qo'shimcha doimiy hisobot vaqti) tekshiradi va bajaradi.
+  - 08:30 Toshkent -- "Qayta aloqa" (follow-up) eslatmasi: bugun yoki
+    muddati o'tgan `Lead.next_contact_at`ga ega lidlar haqida shaxsiy
+    Telegram xabari (menejerga, `Manager.telegram_user_id` bo'lsa) va
+    adminlarga umumiy xulosa.
 """
 
 import os
@@ -151,6 +155,84 @@ def job_call_sync() -> dict:
         return {"error": str(e)}
 
 
+def job_followup_reminders() -> dict:
+    """"Qayta aloqa" (follow-up) eslatmasi -- har kuni ertalab, `Lead.next_contact_at`
+    BUGUN yoki undan OLDINROQ (kechiktirilgan) bo'lgan har bir lead uchun:
+      - shu leadga biriktirilgan menejerga (agar `Manager.telegram_user_id`
+        to'ldirilgan bo'lsa) SHAXSIY Telegram xabar -- "bugun kimlar bilan
+        qayta bog'lanish kerak" ro'yxati (eng ko'p kechikkani birinchi).
+      - adminlar guruhiga (_report_targets()) UMUMIY qisqa xulosa -- nechta
+        lead kechikkan/bugungi, va biriktirilmagan (egasiz) qayta aloqalar
+        bo'lsa alohida ogohlantirish (ular hech kimga yuborilmaydi, chunki
+        egasi yo'q -- admin o'zi ko'rib biriktirishi kerak).
+    CRM'dagi "/qayta-aloqa" sahifasi bilan BIR XIL mantiq (`app.py:
+    followups_list`)."""
+    session = db.get_session()
+    try:
+        now = dt.datetime.utcnow()
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        due = (
+            session.query(db.Lead)
+            .filter(db.Lead.next_contact_at.isnot(None), db.Lead.next_contact_at <= today_end)
+            .order_by(db.Lead.next_contact_at.asc())
+            .all()
+        )
+        if not due:
+            return {"due_count": 0, "sent_to_managers": 0}
+
+        by_manager: dict[int, list] = {}
+        unassigned = []
+        for lead in due:
+            if lead.assigned_manager_id:
+                by_manager.setdefault(lead.assigned_manager_id, []).append(lead)
+            else:
+                unassigned.append(lead)
+
+        def _line(lead) -> str:
+            days_late = (now.date() - lead.next_contact_at.date()).days
+            when = "BUGUN" if days_late == 0 else f"{days_late} kun KECHIKDI"
+            name = lead.full_name or "Noma'lum"
+            phone = lead.phone or "-"
+            note = f" -- {lead.next_contact_note}" if lead.next_contact_note else ""
+            return f"  • {name} ({phone}) [{when}]{note}"
+
+        sent_to_managers = 0
+        if by_manager:
+            managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys())).all()
+            for m in managers:
+                if not m.telegram_user_id:
+                    continue
+                leads = by_manager.get(m.id, [])
+                if not leads:
+                    continue
+                text = f"\U0001F4DE Bugungi qayta aloqalar ({len(leads)} ta):\n\n" + "\n".join(_line(l) for l in leads)
+                result = _tg_send(int(m.telegram_user_id), text)
+                if result["ok"]:
+                    sent_to_managers += 1
+                else:
+                    logger.warning("Qayta aloqa eslatmasi menejer %s (telegram_user_id=%s)ga yuborilmadi: %s", m.username, m.telegram_user_id, result["error"])
+
+        targets = _report_targets()
+        if targets:
+            overdue_count = sum(1 for l in due if l.next_contact_at.date() < now.date())
+            today_count = len(due) - overdue_count
+            summary = (
+                f"\U0001F514 Qayta aloqa xulosasi: bugun {today_count} ta, kechikkan {overdue_count} ta "
+                f"(jami {len(due)} ta)."
+            )
+            if unassigned:
+                summary += f"\n⚠️ {len(unassigned)} ta lead HECH KIMGA biriktirilmagan -- egasiz qoldi:\n" + "\n".join(_line(l) for l in unassigned[:10])
+            for cid in targets:
+                _tg_send(cid, summary)
+
+        return {"due_count": len(due), "overdue_count": sum(1 for l in due if l.next_contact_at.date() < now.date()), "sent_to_managers": sent_to_managers, "unassigned": len(unassigned)}
+    except Exception as e:
+        logger.exception("Qayta aloqa eslatmasida xatolik")
+        return {"error": str(e)}
+    finally:
+        session.close()
+
+
 def _desired_state(now_hhmm: str, on_time: str, off_time: str) -> str:
     """`on_time` dan `off_time`gacha bo'lgan oraliqda "on", qolgan vaqtda "off"
     qaytaradi. `off_time < on_time` bo'lsa (masalan on=22:00, off=08:00 --
@@ -271,6 +353,7 @@ JOBS = {
     "standing-tasks": job_standing_tasks,
     "standing-reports": job_standing_reports,
     "call-sync": job_call_sync,
+    "followup-reminders": job_followup_reminders,
 }
 
 _scheduler_started = False
@@ -296,5 +379,6 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5"), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5"), id="standing-reports")
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20"), id="call-sync")
+    scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30), id="followup-reminders")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

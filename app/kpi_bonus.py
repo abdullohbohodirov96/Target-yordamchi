@@ -174,6 +174,32 @@ def turnover_bonus_for_amount(total_turnover: float, factor: float = 1.0) -> flo
     return 2_000_000.0 + extra_steps * 500_000.0
 
 
+def _next_turnover_milestone(turnover: float, factor: float) -> tuple[float, float] | None:
+    """Oborot bo'yicha KEYINGI bonus bosqichi (pog'ona) qiymatini va shu
+    bosqichga yetganda olinadigan bonus (C)ni qaytaradi -- 400mlndan
+    yuqorida ham (cheksiz, har 100mln uchun +500ming) ishlaydi, shuning
+    uchun har doim "keyingi qadam" bo'ladi (agar factor>0 bo'lsa)."""
+    if factor <= 0:
+        return None
+    b1 = 75_000_000 * factor
+    b2 = 150_000_000 * factor
+    b3 = 300_000_000 * factor
+    b4 = 400_000_000 * factor
+    step = 100_000_000 * factor
+    if turnover < b1:
+        milestone = b1
+    elif turnover < b2:
+        milestone = b2
+    elif turnover < b3:
+        milestone = b3
+    elif turnover < b4:
+        milestone = b4
+    else:
+        steps_done = math.floor((turnover - b4) / step) if step else 0
+        milestone = b4 + (steps_done + 1) * step
+    return milestone, turnover_bonus_for_amount(milestone, factor)
+
+
 def month_bounds(year: int, month: int) -> tuple[dt.datetime, dt.datetime]:
     """[oy boshi, keyingi oy boshi) -- yarim ochiq oraliq sifatida qaytaradi."""
     start = dt.datetime(year, month, 1)
@@ -236,6 +262,33 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
     turnover_to_next_tier = (next_turnover_tier["min"] - turnover) if next_turnover_tier else 0
     sales_to_survival = max(0, survival_min - sales_count) if survival_min else 0
 
+    # --- Dashboard uchun: "hozirgi oladigan pul" va "keyingi qadamga borsa
+    # nechpul oladi" ko'rsatkichlari. Svex (B) bonusi uchun keyingi bosqich
+    # STAVKASI o'zgarganda (75/150/300 chegarasi) TO'LIQ hisoblanadi (rate x
+    # shu bosqich boshlanish soni); oborot (C) bonusi uchun keyingi pog'ona
+    # 400mlndan yuqorida ham cheksiz davom etadi. Bonus (A) va boshqa
+    # komponentlar joriy holatda QOLDIRILADI (taxminiy proyeksiya --
+    # kelajakdagi sotuvlar summasi noma'lum).
+    bonus_total = round(bonus_a + bonus_b + bonus_c)
+
+    if next_progressive_tier:
+        projected_bonus_b_at_next_sales_tier = next_progressive_tier["rate"] * next_progressive_tier["min"]
+        projected_total_at_next_sales_tier = round(oklad + bonus_a + projected_bonus_b_at_next_sales_tier + bonus_c)
+    else:
+        projected_bonus_b_at_next_sales_tier = None
+        projected_total_at_next_sales_tier = None
+
+    milestone = _next_turnover_milestone(turnover, factor)
+    if milestone:
+        next_turnover_milestone_amount, next_turnover_milestone_bonus = milestone
+        turnover_to_next_milestone = max(0.0, next_turnover_milestone_amount - turnover)
+        projected_total_at_next_turnover_milestone = round(oklad + bonus_a + bonus_b + next_turnover_milestone_bonus)
+    else:
+        next_turnover_milestone_amount = None
+        next_turnover_milestone_bonus = None
+        turnover_to_next_milestone = None
+        projected_total_at_next_turnover_milestone = None
+
     return {
         "oklad": oklad,
         "bonus_a": round(bonus_a),
@@ -261,4 +314,13 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
         "next_turnover_tier": next_turnover_tier,
         "turnover_to_next_tier": turnover_to_next_tier,
         "sales_to_survival": sales_to_survival,
+        "bonus_total": bonus_total,
+        "projected_bonus_b_at_next_sales_tier": (
+            round(projected_bonus_b_at_next_sales_tier) if projected_bonus_b_at_next_sales_tier is not None else None
+        ),
+        "projected_total_at_next_sales_tier": projected_total_at_next_sales_tier,
+        "next_turnover_milestone_amount": next_turnover_milestone_amount,
+        "next_turnover_milestone_bonus": next_turnover_milestone_bonus,
+        "turnover_to_next_milestone": turnover_to_next_milestone,
+        "projected_total_at_next_turnover_milestone": projected_total_at_next_turnover_milestone,
     }

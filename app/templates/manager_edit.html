@@ -24,6 +24,10 @@
       <input type="text" name="moizvonki_login" value="{{ m.moizvonki_login or '' }}" placeholder="menejer@pochta.uz">
     </div>
     <div class="field">
+      <label>Telegram ID (ixtiyoriy) — qayta aloqa eslatmasi shaxsan shu yerga yuboriladi</label>
+      <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789">
+    </div>
+    <div class="field">
       <label>Ish boshlagan sana (ixtiyoriy, KPI rejasini oy o'rtasidan proratsiya qilish uchun)</label>
       <input type="date" name="hire_date" value="{{ m.hire_date.strftime('%Y-%m-%d') if m.hire_date else '' }}">
     </div>

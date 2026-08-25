@@ -13,6 +13,29 @@
   </div>
 </div>
 
+{% if o.followups_overdue or o.followups_today %}
+<div class="panel" style="margin-bottom:20px; border-left:3px solid var(--bad); padding:14px 16px">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+    <div>
+      <strong>Qayta aloqa eslatmasi:</strong>
+      {% if o.followups_overdue %}<span class="badge badge-color-bad">{{ o.followups_overdue }} ta muddati o'tgan</span>{% endif %}
+      {% if o.followups_today %}<span class="badge badge-color-warn">{{ o.followups_today }} ta bugun</span>{% endif %}
+    </div>
+    <a href="{{ url_for('followups_list') }}" class="btn toggle-all-btn-outline">Barchasini ko'rish</a>
+  </div>
+  {% if o.followups_preview %}
+  <div style="margin-top:10px; display:flex; flex-direction:column; gap:4px">
+    {% for f in o.followups_preview %}
+    <a href="{{ url_for('lead_detail', lead_id=f.id) }}" class="text-dim" style="font-size:13.5px">
+      {{ f.full_name }} ({{ f.phone or '—' }}) &middot; {{ f.assigned_manager }} &middot;
+      <span class="{{ 'text-bad' if f.is_overdue else '' }}">{{ f.next_contact_at.strftime('%d.%m.%Y') }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">Jami lidlar</div><div class="kpi-value">{{ o.total_leads }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Shu oy yangi lidlar</div><div class="kpi-value">{{ o.leads_this_month }}</div></div>
@@ -20,6 +43,68 @@
   <div class="kpi-card"><div class="kpi-label">Shu oy oborot</div><div class="kpi-value">{{ o.turnover_month|som }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Konversiya (sotildi)</div><div class="kpi-value {{ 'good' if o.conversion_pct >= 10 else '' }}">{{ o.conversion_pct }}%</div></div>
   <div class="kpi-card"><div class="kpi-label">Shu oy jami bonus</div><div class="kpi-value">{{ o.total_bonus_month|som }}</div></div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <div class="kpidash-card-head" style="padding:16px 16px 0">
+    <div class="kpidash-card-title">Menejerlar KPI progressi <span class="text-faint" style="font-weight:400; font-size:12px">(shu oy &middot; keyingi bosqichgacha qancha qoldi)</span></div>
+  </div>
+  {% if o.leaderboard %}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Menejer</th>
+        <th class="num">Shu oy sotuv</th>
+        <th class="num">Keyingi bosqichgacha sotuv</th>
+        <th class="num">Hozirgi oylik (oklad+bonus)</th>
+        <th class="num">Keyingi bosqichda (sotuv soni oshsa)</th>
+        <th class="num">Keyingi oborot pog'onasigacha</th>
+        <th class="num">Shu pog'onada oylik</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in o.leaderboard %}
+      <tr>
+        <td>{{ l.manager_name }}</td>
+        <td class="num">{{ l.sales_count }}</td>
+        <td class="num">
+          {% if l.next_progressive_tier %}
+            {{ l.sales_to_next_tier }} ta <span class="text-dim">({{ l.next_progressive_tier.label }})</span>
+          {% else %}
+            <span class="badge badge-color-good">eng yuqori bosqichda</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ l.jami|som }}</td>
+        <td class="num">
+          {% if l.projected_total_at_next_sales_tier %}
+            {{ l.projected_total_at_next_sales_tier|som }}
+          {% else %}
+            <span class="text-dim">—</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if l.turnover_to_next_milestone %}
+            {{ l.turnover_to_next_milestone|som }} <span class="text-dim">({{ l.next_turnover_milestone_amount|som }}gacha)</span>
+          {% else %}
+            <span class="text-dim">—</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if l.projected_total_at_next_turnover_milestone %}
+            {{ l.projected_total_at_next_turnover_milestone|som }}
+          {% else %}
+            <span class="text-dim">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="kpidash-empty" style="padding:16px">Hali faol menejer yoki sotuv yo'q.</div>
+  {% endif %}
 </div>
 
 <div class="kpidash">

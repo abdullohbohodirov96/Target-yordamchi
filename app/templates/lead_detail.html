@@ -25,6 +25,23 @@
         <div class="kv"><dt>Holat</dt><dd><span class="badge badge-color-{{ current_stage_color }}">{{ stages|selectattr('key','equalto',lead.status)|map(attribute='label')|first or lead.status }}</span></dd></div>
         <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
         {% if lead.sale_amount %}<div class="kv"><dt>Jami sotuv summasi</dt><dd class="text-good-strong">{{ lead.sale_amount|som }}</dd></div>{% endif %}
+        {% if lead.next_contact_at %}
+        <div class="kv">
+          <dt>Qayta aloqa</dt>
+          <dd>
+            {{ lead.next_contact_at.strftime('%d.%m.%Y') }}
+            {% set days_diff = (lead.next_contact_at.date() - now_date).days %}
+            {% if days_diff < 0 %}
+            <span class="badge badge-color-bad">{{ -days_diff }} kun kechikdi</span>
+            {% elif days_diff == 0 %}
+            <span class="badge badge-color-warn">bugun</span>
+            {% else %}
+            <span class="badge badge-color-dim">{{ days_diff }} kundan keyin</span>
+            {% endif %}
+            {% if lead.next_contact_note %}<div class="text-dim" style="margin-top:2px; font-size:13px">{{ lead.next_contact_note }}</div>{% endif %}
+          </dd>
+        </div>
+        {% endif %}
       </dl>
     </div>
 
@@ -128,6 +145,20 @@
       <div class="field">
         <label>Izoh (ixtiyoriy)</label>
         <textarea name="note" placeholder="Masalan: qo'ng'iroq qilindi, narx aytildi..."></textarea>
+      </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border-light); margin:4px 0 16px; padding-top:16px">
+      <h2 style="margin-bottom:2px">Qayta aloqa</h2>
+      <p class="page-subtitle" style="margin-top:2px">Mijoz bilan gaplashib bo'lgach, keyingi safar qachon bog'lanish kerakligini shu yerda belgilang -- o'sha kun kelganda "Qayta aloqa" bo'limida va Telegram orqali eslatiladi.</p>
+      <div class="field">
+        <label>Qayta aloqa sanasi</label>
+        <input type="date" name="next_contact_date" value="{{ lead.next_contact_at.strftime('%Y-%m-%d') if lead.next_contact_at else '' }}">
+        <p class="page-subtitle" style="margin:6px 0 0">Bo'sh qoldirib saqlasangiz, qayta aloqa bekor qilinadi.</p>
+      </div>
+      <div class="field">
+        <label>Nima haqida (ixtiyoriy)</label>
+        <input type="text" name="next_contact_note" value="{{ lead.next_contact_note or '' }}" placeholder="Masalan: narx bo'yicha o'ylab ko'rmoqchi, oyoxirida qayta qo'ng'iroq qilish kerak">
       </div>
       </div>
 

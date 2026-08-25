@@ -23,6 +23,7 @@
         {% endif %}
         {% if has_module(current_user, 'leads') %}
         <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
+        <a href="{{ url_for('followups_list') }}" class="{{ 'active' if request.endpoint=='followups_list' }}">Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</a>
         {% endif %}
         {% if has_module(current_user, 'analytics') %}
         <a href="{{ url_for('analytics_page') }}" class="{{ 'active' if request.endpoint=='analytics_page' }}">Analitika</a>

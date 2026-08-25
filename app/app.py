@@ -317,7 +317,17 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
     if cmd == "/vazifa_off" and args:
         _deactivate_standing_task(chat_id, args[0])
         return
-    tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish).")
+    if cmd == "/id":
+        tg_send(
+            chat_id,
+            f"Sizning Telegram ID'ingiz: {chat_id}\n\n"
+            "Buni CRM'dagi \"Menejerlar\" bo'limida shu hisobingizning "
+            "\"Telegram ID\" maydoniga kiritib qo'ying (admin ham kiritib "
+            "berishi mumkin) -- shundan keyin \"Qayta aloqa\" eslatmalari "
+            "har kuni shaxsan shu yerga yuboriladi.",
+        )
+        return
+    tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish).")
 
 
 def _format_standing_tasks_text() -> str:
@@ -590,8 +600,14 @@ def _build_dashboard_overview(session) -> dict:
         bonus_total = r["bonus_a"] + r["bonus_b"] + r["bonus_c"]
         total_bonus_month += bonus_total
         leaderboard.append({
-            "manager_name": r["manager_name"], "sales_count": r["sales_count"],
+            "manager_id": r["manager_id"], "manager_name": r["manager_name"], "sales_count": r["sales_count"],
             "turnover": r["turnover"], "bonus_total": bonus_total, "jami": r["jami"],
+            "sales_to_next_tier": r["sales_to_next_tier"],
+            "next_progressive_tier": r["next_progressive_tier"],
+            "projected_total_at_next_sales_tier": r["projected_total_at_next_sales_tier"],
+            "turnover_to_next_milestone": r["turnover_to_next_milestone"],
+            "next_turnover_milestone_amount": r["next_turnover_milestone_amount"],
+            "projected_total_at_next_turnover_milestone": r["projected_total_at_next_turnover_milestone"],
         })
     leaderboard.sort(key=lambda x: x["turnover"], reverse=True)
     max_leaderboard_turnover = max((l["turnover"] for l in leaderboard), default=0) or 1
@@ -601,6 +617,25 @@ def _build_dashboard_overview(session) -> dict:
         session, month_start, dt.datetime.strptime(today_key, "%Y-%m-%d") + dt.timedelta(days=1),
         norm_per_manager=kpi_bonus.DAILY_CALLS_NORM,
     )
+
+    # 5) Qayta aloqa (follow-up) -- bugun va muddati o'tgan, ENG YAQINLARI
+    # tepada -- Dashboard'da darhol ko'rinishi uchun ("agent o'zi eslatib
+    # tursin" talabi shu kartochka + navbar belgisi orqali qoplanadi).
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    due_followups = (
+        session.query(Lead)
+        .filter(Lead.next_contact_at.isnot(None), Lead.next_contact_at <= today_end)
+        .order_by(Lead.next_contact_at.asc())
+        .all()
+    )
+    followups_overdue = sum(1 for l in due_followups if l.next_contact_at.date() < now.date())
+    followups_today = sum(1 for l in due_followups if l.next_contact_at.date() == now.date())
+    followups_preview = [{
+        "id": l.id, "full_name": l.full_name or "Noma'lum", "phone": l.phone,
+        "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else "—",
+        "next_contact_at": l.next_contact_at,
+        "is_overdue": l.next_contact_at.date() < now.date(),
+    } for l in due_followups[:6]]
 
     return {
         "generated_at": now.isoformat(),
@@ -616,6 +651,9 @@ def _build_dashboard_overview(session) -> dict:
         "max_leaderboard_turnover": max_leaderboard_turnover,
         "total_bonus_month": round(total_bonus_month),
         "calls_overview": calls_overview,
+        "followups_overdue": followups_overdue,
+        "followups_today": followups_today,
+        "followups_preview": followups_preview,
     }
 
 
@@ -1516,6 +1554,21 @@ def lead_detail(lead_id):
             if new_status in stage_by_key:
                 lead.status = new_status
 
+            # --- Qayta aloqa (follow-up) -- menejer shu lead bilan
+            # gaplashganda "qachon yana bog'lanish kerak"ni shu yerda
+            # belgilaydi. Sana maydoni bo'sh yuborilsa -- qayta aloqa
+            # bekor qilinadi (rejalashtirilmagan holatga qaytadi). ---
+            if "next_contact_date" in request.form:
+                next_contact_raw = request.form.get("next_contact_date", "").strip()
+                if next_contact_raw:
+                    try:
+                        lead.next_contact_at = dt.datetime.strptime(next_contact_raw, "%Y-%m-%d")
+                    except ValueError:
+                        flash("Qayta aloqa sanasi noto'g'ri formatda -- saqlanmadi.", "error")
+                else:
+                    lead.next_contact_at = None
+                lead.next_contact_note = request.form.get("next_contact_note", "").strip() or None
+
             if custom_fields:
                 try:
                     extra = json.loads(lead.extra_data) if lead.extra_data else {}
@@ -1561,6 +1614,7 @@ def lead_detail(lead_id):
             "status": lead.status, "quality_note": lead.quality_note,
             "sale_amount": lead.sale_amount, "created_at": lead.created_at,
             "assigned_manager": lead.assigned_manager.full_name if lead.assigned_manager else None,
+            "next_contact_at": lead.next_contact_at, "next_contact_note": lead.next_contact_note,
         }
         stages_view = [{"key": s.key, "label": s.label, "color": s.color} for s in stages]
         # lead.status hozirgi faol bosqichlar ro'yxatida bo'lmasligi mumkin
@@ -1575,6 +1629,96 @@ def lead_detail(lead_id):
     return render_template(
         "lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view,
         stages=stages_view, current_stage_color=current_stage_color, sales=sales_view,
+        now_date=dt.datetime.utcnow().date(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Qayta aloqa (follow-up) -- "next_contact_at" belgilangan barcha lidlarni
+# YAQINLASHGAN/O'TIB KETGAN tartibda ko'rsatadi, shu kunda yoki muddati
+# o'tgan aloqalar ENG YUQORIDA turadi ("birinchi o'rinda"). Menejer o'ziga
+# biriktirilganlarni, admin BARCHASINI ko'radi. Kunlik Telegram eslatmasi
+# `scheduler.py`dagi `job_followup_reminders()` orqali (shu yerdagi
+# `_due_followups_query()` bilan bir xil mantiqda) yuboriladi.
+# ---------------------------------------------------------------------------
+
+def _followups_due_count(session, manager_id: int | None = None) -> int:
+    """Bugun yoki muddati o'tgan ("kechiktirilgan") qayta aloqalar soni --
+    navbar'dagi belgi (badge) va Dashboard kartochkasi uchun. `manager_id`
+    berilsa faqat shu menejerga biriktirilgan lidlar hisoblanadi."""
+    today_end = dt.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0)
+    q = session.query(Lead).filter(Lead.next_contact_at.isnot(None), Lead.next_contact_at <= today_end)
+    if manager_id is not None:
+        q = q.filter(Lead.assigned_manager_id == manager_id)
+    return q.count()
+
+
+@app.context_processor
+def _inject_followups_badge():
+    """Har bir sahifada navbar'dagi "Qayta aloqa" havolasiga qizil raqamli
+    belgi (badge) qo'shish uchun -- foydalanuvchi biror sahifani ochganda
+    ham "bugun kimga qo'ng'iroq qilish kerak"ligi darhol ko'zga tashlanadi
+    (alohida Qayta aloqa sahifasiga kirmasdan ham)."""
+    if not (current_user.is_authenticated and permissions.has_module(current_user, "leads")):
+        return {}
+    session = get_session()
+    try:
+        manager_id = None
+        if current_user.role != "admin":
+            m = session.query(Manager).filter_by(username=current_user.username).first()
+            manager_id = m.id if m else None
+        return {"followups_due_count": _followups_due_count(session, manager_id)}
+    except Exception:
+        logger.exception("Qayta aloqa belgisini hisoblashda xatolik")
+        return {}
+    finally:
+        session.close()
+
+
+@app.route("/qayta-aloqa")
+@login_required
+@module_required("leads")
+def followups_list():
+    session = get_session()
+    try:
+        manager_row = None
+        if current_user.role != "admin":
+            manager_row = session.query(Manager).filter_by(username=current_user.username).first()
+
+        q = session.query(Lead).filter(Lead.next_contact_at.isnot(None))
+        if manager_row:
+            q = q.filter(Lead.assigned_manager_id == manager_row.id)
+        leads = q.order_by(Lead.next_contact_at.asc()).all()
+
+        now = dt.datetime.utcnow()
+        today_date = now.date()
+        rows = []
+        for l in leads:
+            due_date = l.next_contact_at.date()
+            days_diff = (due_date - today_date).days
+            if days_diff < 0:
+                urgency = "overdue"
+            elif days_diff == 0:
+                urgency = "today"
+            else:
+                urgency = "upcoming"
+            rows.append({
+                "id": l.id, "full_name": l.full_name, "phone": l.phone,
+                "status": l.status, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else "—",
+                "next_contact_at": l.next_contact_at, "next_contact_note": l.next_contact_note,
+                "days_diff": days_diff, "urgency": urgency,
+            })
+        # Ichida ENG avval "overdue" (eng ko'p kechikkani tepada), keyin
+        # "today", keyin "upcoming" (eng yaqini tepada) -- shunchaki sana
+        # bo'yicha o'sish tartibi (asc) buni ALLAQACHON to'g'ri beradi,
+        # chunki o'tib ketgan sanalar har doim eng kichik.
+        overdue_count = sum(1 for r in rows if r["urgency"] == "overdue")
+        today_count = sum(1 for r in rows if r["urgency"] == "today")
+    finally:
+        session.close()
+    return render_template(
+        "followups.html", rows=rows, overdue_count=overdue_count, today_count=today_count,
+        is_admin=(current_user.role == "admin"),
     )
 
 
@@ -1595,6 +1739,7 @@ def managers():
             role = request.form.get("role", "manager")
             phone_number = request.form.get("phone_number", "").strip()
             moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
+            telegram_user_id = request.form.get("telegram_user_id", "").strip()
             hire_date_str = request.form.get("hire_date", "").strip()
             modules = request.form.getlist("allowed_modules")
             if username and password:
@@ -1605,6 +1750,7 @@ def managers():
                     m.set_password(password)
                     m.phone_number = phone_number or None
                     m.moizvonki_login = moizvonki_login or None
+                    m.telegram_user_id = telegram_user_id or None
                     if hire_date_str:
                         try:
                             m.hire_date = dt.datetime.strptime(hire_date_str, "%Y-%m-%d")
@@ -1615,7 +1761,7 @@ def managers():
                     session.commit()
                     flash(f"{username} qo'shildi.", "success")
         all_managers = session.query(Manager).order_by(Manager.created_at).all()
-        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date} for m in all_managers]
+        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date} for m in all_managers]
     finally:
         session.close()
     return render_template("managers.html", managers=rows, modules=permissions.MODULES, default_modules=permissions.DEFAULT_MANAGER_MODULES)
@@ -1639,6 +1785,7 @@ def manager_edit(manager_id):
             new_password = request.form.get("password", "")
             new_phone = request.form.get("phone_number", "").strip()
             new_moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
+            new_telegram_user_id = request.form.get("telegram_user_id", "").strip()
             new_hire_date_str = request.form.get("hire_date", "").strip()
             new_modules = request.form.getlist("allowed_modules")
             is_active = request.form.get("is_active") == "on"
@@ -1660,7 +1807,7 @@ def manager_edit(manager_id):
                         return render_template("manager_edit.html", m={
                             "id": m.id, "username": m.username, "full_name": m.full_name,
                             "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
-                            "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date,
+                            "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
                             "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
                         }, modules=permissions.MODULES)
 
@@ -1670,6 +1817,7 @@ def manager_edit(manager_id):
                 m.is_active = is_active
                 m.phone_number = new_phone or None
                 m.moizvonki_login = new_moizvonki_login or None
+                m.telegram_user_id = new_telegram_user_id or None
                 if new_hire_date_str:
                     try:
                         m.hire_date = dt.datetime.strptime(new_hire_date_str, "%Y-%m-%d")
@@ -1686,7 +1834,7 @@ def manager_edit(manager_id):
 
         m_view = {
             "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
-            "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "hire_date": m.hire_date,
+            "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
             "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
         }
     finally:

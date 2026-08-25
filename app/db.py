@@ -99,6 +99,14 @@ class Lead(Base):
     assigned_manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
     assigned_manager = relationship("Manager")
 
+    # "Qayta aloqa" (follow-up) -- menejer lead bilan gaplashganda "qachon
+    # yana bog'lanish kerak"ni shu yerga belgilaydi. `next_contact_at` sana
+    # kelganda (yoki o'tib ketganda) lead "/qayta-aloqa" ro'yxatida va
+    # kunlik Telegram eslatmasida (scheduler.py: job_followup_reminders)
+    # ko'rinadi. NULL -- hech qanday qayta aloqa rejalashtirilmagan.
+    next_contact_at = Column(DateTime, nullable=True)
+    next_contact_note = Column(Text, nullable=True)  # nima haqida qayta bog'lanish kerak (ixtiyoriy)
+
     lead_created_time = Column(DateTime, nullable=True)  # Meta'da lead yaratilgan vaqt
     created_at = Column(DateTime, default=dt.datetime.utcnow)
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
@@ -106,6 +114,7 @@ class Lead(Base):
     __table_args__ = (
         Index("ix_leads_status", "status"),
         Index("ix_leads_campaign", "campaign_id"),
+        Index("ix_leads_next_contact", "next_contact_at"),
     )
 
 
