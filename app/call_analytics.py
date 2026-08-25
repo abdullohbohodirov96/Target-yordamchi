@@ -100,8 +100,13 @@ def build_individual_check(session, since: dt.datetime) -> dict:
         })
     rows.sort(key=lambda r: r["started_at"] or dt.datetime.min, reverse=True)
 
-    # Menejerlar bo'yicha kunlik aloqa soni (sessiya = 1 aloqa, sana bo'yicha guruhlangan)
+    # Menejerlar bo'yicha kunlik aloqa soni (sessiya = 1 aloqa, sana bo'yicha
+    # guruhlangan) VA sessiya davomiyligi (o'rtacha necha soniya/daqiqa
+    # gaplashgani -- foydalanuvchi so'rovi: "kuniga nechta odam bn
+    # gaplashvoti ortacha nechi sec/min").
     daily_by_manager = defaultdict(lambda: defaultdict(int))
+    duration_sum_by_manager = defaultdict(float)
+    duration_count_by_manager = defaultdict(int)
     for s in all_sessions:
         if not s["manager_id"] or not s["started_at"]:
             continue
@@ -109,16 +114,24 @@ def build_individual_check(session, since: dt.datetime) -> dict:
         mname = (manager.full_name or manager.username) if manager else f"ID {s['manager_id']}"
         day = s["started_at"].strftime("%Y-%m-%d")
         daily_by_manager[mname][day] += 1
+        duration_sum_by_manager[mname] += s["total_duration"] or 0
+        duration_count_by_manager[mname] += 1
 
     manager_summary = []
     for mname, by_day in daily_by_manager.items():
         total = sum(by_day.values())
         days_active = len(by_day)
+        avg_duration_seconds = (
+            round(duration_sum_by_manager[mname] / duration_count_by_manager[mname])
+            if duration_count_by_manager[mname] else 0
+        )
         manager_summary.append({
             "manager_name": mname,
             "total_sessions": total,
             "days_active": days_active,
             "avg_per_day": round(total / days_active, 1) if days_active else 0,
+            "avg_duration_seconds": avg_duration_seconds,
+            "avg_duration_label": f"{avg_duration_seconds // 60} daq {avg_duration_seconds % 60} son",
         })
     manager_summary.sort(key=lambda m: m["total_sessions"], reverse=True)
 

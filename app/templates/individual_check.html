@@ -41,7 +41,7 @@
   <p class="page-subtitle" style="margin-top:-6px">Har bir menejer kuniga o'rtacha nechta odam bilan gaplashganini ko'rsatadi (sessiya = 2 soat ichidagi qo'ng'iroqlar bittasi hisoblanadi).</p>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Menejer</th><th class="num">Jami sessiya</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun</th></tr></thead>
+    <thead><tr><th>Menejer</th><th class="num">Jami sessiya</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun (odam)</th><th class="num">O'rtacha davomiylik</th></tr></thead>
     <tbody>
       {% for m in manager_summary %}
       <tr>
@@ -49,9 +49,10 @@
         <td class="num">{{ m.total_sessions }}</td>
         <td class="num">{{ m.days_active }}</td>
         <td class="num">{{ m.avg_per_day }}</td>
+        <td class="num">{{ m.avg_duration_label }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="4">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="5">Ma'lumot yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>

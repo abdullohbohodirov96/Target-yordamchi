@@ -24,17 +24,27 @@ tasdiqlanmagan taxmin bilan yozilgan edi, ENDI aniq kontrakt):
       - action    -- chaqirilayotgan metod nomi (masalan "calls.list")
   * Qo'ng'iroqlar ro'yxati: action="calls.list", `supervised=1` bilan
     BARCHA xodimlarning qo'ng'irog'ini qaytaradi (aks holda faqat
-    user_name'ning o'zinikini). Javobda HAR BIR qo'ng'iroq egasi
-    "user_account" (email) orqali aniqlanadi -- TELEFON RAQAMI ORQALI
-    EMAS. Shuning uchun `Manager.moizvonki_login` (har bir menejerning
-    Moi Zvonki login-email'i) admin tomonidan qo'lda to'ldirilishi kerak
-    -- aks holda qo'ng'iroq hech qaysi menejerga biriktirilmaydi (lekin
-    baribir bazaga yoziladi, keyin admin login'ni to'g'irlasa qayta
-    ishlov berish shart emas -- yangi qo'ng'iroqlar to'g'ri biriktiriladi).
-  * Sahifalash: `results_remains`/`results_next_offset` orqali (0 bo'lsa
-    tugagan).
+    user_name'ning o'zinikini). Sahifalash: `results_remains`/
+    `results_next_offset` orqali (0 bo'lsa tugagan).
   * `start_time`/`answer_time`/`end_time` -- UNIX timestamp (UTC), STRING
     SANA EMAS (ilgarigi taxmin xato edi).
+
+MENEJERGA BIRIKTIRISH (2026-08, foydalanuvchi so'rovi bo'yicha
+YANGILANDI -- ILGARI faqat "user_account" (email) orqali edi, ENDI
+IKKI USUL, TELEFON RAQAM BIRINCHI NAVBATDA):
+  1. TELEFON RAQAM (asosiy) -- har bir xodimga Moi Zvonki tomonida
+     shaxsiy SIM/raqam biriktirilgan bo'lsa, javobdagi "src_number"
+     maydoni O'SHA qo'ng'iroqni qilgan/qabul qilgan xodimning
+     raqami -- shu `Manager.phone_number`ga (oxirgi 9 xonasi bo'yicha,
+     `phone_utils.phone_key9`) solishtiriladi.
+  2. LOGIN/EMAIL (fallback, agar (1) mos kelmasa) -- "user_account"
+     (email) `Manager.moizvonki_login`ga solishtiriladi.
+  HECH QAYSI USUL bilan menejer topilmasa -- bu qo'ng'iroq BAZAGA
+  YOZILMAYDI (foydalanuvchi so'rovi: "hammasini tortmasin, faqat
+  menejerlarga tegishlilarini" -- butun kompaniyaning 1000+ qo'ng'irog'i
+  emas, faqat CRM'dagi menejerlarga tegishli qo'ng'iroqlar saqlanadi).
+  Skip qilinganlar soni `sync_once()` natijasida "skipped_unmatched"
+  sifatida qaytariladi (diagnostika uchun, bazaga yozilmaydi).
 
 Ishlashi uchun kerak (barchasi Render environment variables, HECH QACHON
 kodga yozilmaydi):
@@ -42,6 +52,12 @@ kodga yozilmaydi):
   - MOIZVONKI_API_KEY     -- Sozlamalar -> Integratsiya
   - MOIZVONKI_USER_NAME   -- akkauntga ADMIN sifatida kiradigan login
     (email) -- supervised=1 uchun shart
+
+VA CRM ichida har bir menejer uchun (Menejerlar sahifasi):
+  - Telefon raqami -- Moi Zvonki'da shu xodimga biriktirilgan SIM raqami
+    bilan BIR XIL bo'lishi kerak (asosiy moslashtirish usuli)
+  - Moi Zvonki login/email -- ixtiyoriy zaxira, agar telefon
+    moslashmasa
 """
 
 import os
@@ -125,11 +141,16 @@ def _map_raw_call(raw: dict) -> dict:
             started_at = None
 
     login = (raw.get("user_account") or "").strip().lower() or None
+    # "src_number" -- shu qo'ng'iroqni qilgan/qabul qilgan XODIMNING o'z
+    # SIM raqami (mijozning "client_number"idan FARQLI) -- menejerga
+    # birinchi navbatda shu orqali biriktiramiz (pastga qarang).
+    employee_number = normalize_phone(raw.get("src_number"))
 
     return {
         "external_id": str(raw.get("db_call_id") or raw.get("event_pbx_call_id") or ""),
         "phone_number": normalize_phone(raw.get("client_number")),
         "moizvonki_login": login,
+        "employee_number": employee_number,
         "direction": direction,
         "duration_seconds": int(raw.get("duration") or 0),
         "started_at": started_at,
@@ -139,8 +160,12 @@ def _map_raw_call(raw: dict) -> dict:
 
 def sync_once(since: dt.datetime | None = None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
-    {"configured": bool, "new_calls": N, "unmatched_manager_calls": N, "errors": [...]}"""
-    result = {"configured": is_configured(), "new_calls": 0, "unmatched_manager_calls": 0, "errors": []}
+    {"configured": bool, "new_calls": N, "skipped_unmatched": N, "errors": [...]}
+    `skipped_unmatched` -- API'dan kelgan, lekin HECH QAYSI menejerga
+    (telefon ham, login ham) biriktirilmagani uchun BAZAGA YOZILMAGAN
+    qo'ng'iroqlar soni (butun kompaniyaning egasiz qo'ng'iroqlari CRM'ga
+    tushmasligi uchun -- foydalanuvchi so'rovi)."""
+    result = {"configured": is_configured(), "new_calls": 0, "skipped_unmatched": 0, "errors": []}
     if not result["configured"]:
         missing = [
             name for name, val in (
@@ -169,10 +194,14 @@ def sync_once(since: dt.datetime | None = None) -> dict:
     session = get_session()
     try:
         managers_by_login = {}
-        for m in session.query(Manager).filter(Manager.moizvonki_login.isnot(None)).all():
-            key = (m.moizvonki_login or "").strip().lower()
-            if key:
-                managers_by_login[key] = m.id
+        managers_by_phone = {}
+        for m in session.query(Manager).filter(Manager.is_active == True).all():  # noqa: E712
+            login_key = (m.moizvonki_login or "").strip().lower()
+            if login_key:
+                managers_by_login[login_key] = m.id
+            phone_key = phone_key9(m.phone_number)
+            if phone_key:
+                managers_by_phone[phone_key] = m.id
 
         for raw in raw_calls:
             try:
@@ -185,6 +214,17 @@ def sync_once(since: dt.datetime | None = None) -> dict:
             if external_id and session.query(CallRecord).filter_by(external_id=external_id).first():
                 continue  # allaqachon bazada bor
 
+            # --- Menejerga biriktirish: 1) TELEFON (xodimning SIM raqami --
+            # "src_number") 2) login/email (fallback). Hech biri mos
+            # kelmasa -- bu qo'ng'iroq BAZAGA UMUMAN YOZILMAYDI (faqat CRM
+            # menejerlariga tegishli qo'ng'iroqlar saqlanadi). ---
+            manager_id = managers_by_phone.get(phone_key9(mapped["employee_number"])) if mapped["employee_number"] else None
+            if not manager_id and mapped["moizvonki_login"]:
+                manager_id = managers_by_login.get(mapped["moizvonki_login"])
+            if not manager_id:
+                result["skipped_unmatched"] += 1
+                continue
+
             phone_key = phone_key9(mapped["phone_number"])
             lead_id = None
             if phone_key:
@@ -192,16 +232,12 @@ def sync_once(since: dt.datetime | None = None) -> dict:
                 if lead:
                     lead_id = lead.id
 
-            manager_id = managers_by_login.get(mapped["moizvonki_login"]) if mapped["moizvonki_login"] else None
-            if mapped["moizvonki_login"] and not manager_id:
-                result["unmatched_manager_calls"] += 1
-
             record = CallRecord(
                 external_id=external_id or None,
                 manager_id=manager_id,
                 lead_id=lead_id,
                 phone_number=mapped["phone_number"],
-                manager_phone_number=None,
+                manager_phone_number=mapped["employee_number"],
                 direction=mapped["direction"],
                 duration_seconds=mapped["duration_seconds"],
                 started_at=mapped["started_at"],
@@ -211,11 +247,12 @@ def sync_once(since: dt.datetime | None = None) -> dict:
             session.add(record)
             result["new_calls"] += 1
 
-        if result["unmatched_manager_calls"]:
+        if result["skipped_unmatched"]:
             result["errors"].append(
-                f"{result['unmatched_manager_calls']} ta qo'ng'iroq hech qaysi menejerga "
-                "biriktirilmadi -- Menejerlar sahifasida shu qo'ng'iroqlar egasining Moi "
-                "Zvonki login(email)ini 'moizvonki_login' maydoniga kiritish kerak."
+                f"{result['skipped_unmatched']} ta qo'ng'iroq hech qaysi menejerga mos kelmagani "
+                "uchun bazaga yozilmadi -- Menejerlar sahifasida shu xodimning Moi Zvonki'dagi "
+                "SIM raqamini 'Telefon raqami' maydoniga (yoki login/email'ini 'Moi Zvonki "
+                "login' maydoniga) kiritib qo'ying."
             )
 
         session.commit()

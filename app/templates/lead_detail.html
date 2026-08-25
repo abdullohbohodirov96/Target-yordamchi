@@ -25,24 +25,24 @@
         <div class="kv"><dt>Holat</dt><dd><span class="badge badge-color-{{ current_stage_color }}">{{ stages|selectattr('key','equalto',lead.status)|map(attribute='label')|first or lead.status }}</span></dd></div>
         <div class="kv"><dt>Mas'ul menejer</dt><dd>{{ lead.assigned_manager or '—' }}</dd></div>
         {% if lead.sale_amount %}<div class="kv"><dt>Jami sotuv summasi</dt><dd class="text-good-strong">{{ lead.sale_amount|som }}</dd></div>{% endif %}
-        {% if lead.next_contact_at %}
-        <div class="kv">
-          <dt>Qayta aloqa</dt>
-          <dd>
-            {{ lead.next_contact_at.strftime('%d.%m.%Y') }}
-            {% set days_diff = (lead.next_contact_at.date() - now_date).days %}
-            {% if days_diff < 0 %}
-            <span class="badge badge-color-bad">{{ -days_diff }} kun kechikdi</span>
-            {% elif days_diff == 0 %}
-            <span class="badge badge-color-warn">bugun</span>
-            {% else %}
-            <span class="badge badge-color-dim">{{ days_diff }} kundan keyin</span>
-            {% endif %}
-            {% if lead.next_contact_note %}<div class="text-dim" style="margin-top:2px; font-size:13px">{{ lead.next_contact_note }}</div>{% endif %}
-          </dd>
-        </div>
-        {% endif %}
       </dl>
+      {% if lead.next_contact_at %}
+      {% set days_diff = (lead.next_contact_at.date() - now_date).days %}
+      <div class="kv-block">
+        <div class="kv-block-label">Qayta aloqa</div>
+        <div class="kv-block-value">
+          <strong>{{ lead.next_contact_at.strftime('%d.%m.%Y') }}</strong>
+          {% if days_diff < 0 %}
+          <span class="badge badge-color-bad">{{ -days_diff }} kun kechikdi</span>
+          {% elif days_diff == 0 %}
+          <span class="badge badge-color-warn">bugun</span>
+          {% else %}
+          <span class="badge badge-color-dim">{{ days_diff }} kundan keyin</span>
+          {% endif %}
+          {% if lead.next_contact_note %}<div class="kv-block-note">{{ lead.next_contact_note }}</div>{% endif %}
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <div class="card" id="sales">
