@@ -144,14 +144,34 @@ def job_lead_sync() -> dict:
 def job_call_sync() -> dict:
     """Mening qo'ng'iroqlarim (Moi Zvonki) integratsiyasi -- MOIZVONKI_API_ADDRESS/
     MOIZVONKI_API_KEY sozlanmagan bo'lsa hech narsa qilmasdan tinch qaytadi
-    (xato/log emas, chunki bu ixtiyoriy integratsiya)."""
+    (xato/log emas, chunki bu ixtiyoriy integratsiya). Har safar yangi
+    qo'ng'iroqlarni tortib olgandan keyin `reconcile_existing_records()`
+    ham chaqiriladi -- shu bilan menejer telefon raqami keyinroq
+    o'zgartirilsa/to'ldirilsa ham, bazadagi ESKI yozuvlar avtomatik
+    to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas)."""
     try:
         result = call_sync.sync_once()
         if not result.get("configured"):
             return result  # jim -- sozlanmagan, bu normal holat
+        try:
+            result["reconcile"] = call_sync.reconcile_existing_records()
+        except Exception:
+            logger.exception("Qo'ng'iroq yozuvlarini tozalashda xatolik")
         return result
     except Exception as e:
         logger.exception("Qo'ng'iroq sync xatosi")
+        return {"error": str(e)}
+
+
+def job_call_cleanup() -> dict:
+    """Mavjud `CallRecord`larni DARHOL qayta tekshiradi/tozalaydi --
+    foydalanuvchi Menejerlar sahifasida telefon raqamini to'g'irlagandan
+    keyin 20 daqiqa (keyingi avtomatik call-sync) kutmasdan darhol natija
+    ko'rish uchun (`/api/trigger/call-cleanup`)."""
+    try:
+        return call_sync.reconcile_existing_records()
+    except Exception as e:
+        logger.exception("Qo'ng'iroq yozuvlarini tozalashda xatolik")
         return {"error": str(e)}
 
 
@@ -353,6 +373,7 @@ JOBS = {
     "standing-tasks": job_standing_tasks,
     "standing-reports": job_standing_reports,
     "call-sync": job_call_sync,
+    "call-cleanup": job_call_cleanup,
     "followup-reminders": job_followup_reminders,
 }
 

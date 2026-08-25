@@ -29,22 +29,33 @@ tasdiqlanmagan taxmin bilan yozilgan edi, ENDI aniq kontrakt):
   * `start_time`/`answer_time`/`end_time` -- UNIX timestamp (UTC), STRING
     SANA EMAS (ilgarigi taxmin xato edi).
 
-MENEJERGA BIRIKTIRISH (2026-08, foydalanuvchi so'rovi bo'yicha
-YANGILANDI -- ILGARI faqat "user_account" (email) orqali edi, ENDI
-IKKI USUL, TELEFON RAQAM BIRINCHI NAVBATDA):
-  1. TELEFON RAQAM (asosiy) -- har bir xodimga Moi Zvonki tomonida
-     shaxsiy SIM/raqam biriktirilgan bo'lsa, javobdagi "src_number"
-     maydoni O'SHA qo'ng'iroqni qilgan/qabul qilgan xodimning
-     raqami -- shu `Manager.phone_number`ga (oxirgi 9 xonasi bo'yicha,
-     `phone_utils.phone_key9`) solishtiriladi.
-  2. LOGIN/EMAIL (fallback, agar (1) mos kelmasa) -- "user_account"
-     (email) `Manager.moizvonki_login`ga solishtiriladi.
-  HECH QAYSI USUL bilan menejer topilmasa -- bu qo'ng'iroq BAZAGA
-  YOZILMAYDI (foydalanuvchi so'rovi: "hammasini tortmasin, faqat
-  menejerlarga tegishlilarini" -- butun kompaniyaning 1000+ qo'ng'irog'i
-  emas, faqat CRM'dagi menejerlarga tegishli qo'ng'iroqlar saqlanadi).
+MENEJERGA BIRIKTIRISH (2026-08, foydalanuvchi so'rovi bo'yicha YANA
+QATTIQLASHTIRILDI): oldin telefon+login IKKALASI ishlatilgan edi, lekin
+login/email orqali moslashtirish kompaniyaning BOSHQA (menejerlarga
+aloqasi yo'q) raqamlarini ham noto'g'ri tortib kelayotgani aniqlandi
+(supervised=1 admin nomidan BUTUN akkauntni qaytaradi, ko'p hollarda
+user_account maydoni ishonchli emas). Shuning uchun ENDI FAQAT BITTA
+USUL qoldirildi:
+
+  TELEFON RAQAM (yagona usul) -- javobdagi "src_number" maydoni shu
+  qo'ng'iroqni qilgan/qabul qilgan XODIMNING o'z SIM raqami -- shu
+  `Manager.phone_number`ga (oxirgi 9 xonasi bo'yicha,
+  `phone_utils.phone_key9`) solishtiriladi. Mos kelmasa (yoki
+  `Manager.phone_number` umuman to'ldirilmagan bo'lsa) -- bu qo'ng'iroq
+  BAZAGA YOZILMAYDI (foydalanuvchi so'rovi: "faqat menejerga saqlangan
+  raqam bilan gaplashgan odamlarni hisoblasin, boshqa raqamlarni
+  tortmasin"). `Manager.moizvonki_login` maydoni ENDI qo'ng'iroq
+  moslashtirish uchun ISHLATILMAYDI (faqat tarixiy/ma'lumot uchun
+  qoldirilgan).
+
   Skip qilinganlar soni `sync_once()` natijasida "skipped_unmatched"
   sifatida qaytariladi (diagnostika uchun, bazaga yozilmaydi).
+
+  ESKI (fix'dan OLDIN, login orqali yoki umuman filtrsiz) yozilgan
+  noto'g'ri/begona qo'ng'iroqlarni bazadan tozalash uchun
+  `reconcile_existing_records()` bor -- joriy menejerlar telefon
+  raqamlariga qayta tekshirib, mos kelmaganlarini O'CHIRADI. Manual
+  trigger: `/api/trigger/call-cleanup?secret=...`.
 
 Ishlashi uchun kerak (barchasi Render environment variables, HECH QACHON
 kodga yozilmaydi):
@@ -55,9 +66,8 @@ kodga yozilmaydi):
 
 VA CRM ichida har bir menejer uchun (Menejerlar sahifasi):
   - Telefon raqami -- Moi Zvonki'da shu xodimga biriktirilgan SIM raqami
-    bilan BIR XIL bo'lishi kerak (asosiy moslashtirish usuli)
-  - Moi Zvonki login/email -- ixtiyoriy zaxira, agar telefon
-    moslashmasa
+    bilan BIR XIL bo'lishi SHART (yagona moslashtirish usuli -- bo'sh
+    qoldirilsa shu menejerning HECH QANDAY qo'ng'irog'i tortilmaydi)
 """
 
 import os
@@ -158,6 +168,56 @@ def _map_raw_call(raw: dict) -> dict:
     }
 
 
+def _build_managers_by_phone(session) -> dict:
+    """{telefon_kaliti (oxirgi 9 xona): manager_id} -- FAOL menejerlarning
+    `phone_number`i to'ldirilganlari uchun. Bu qo'ng'iroqni menejerga
+    biriktirishning YAGONA usuli (pastga qarang)."""
+    managers_by_phone = {}
+    for m in session.query(Manager).filter(Manager.is_active == True).all():  # noqa: E712
+        key = phone_key9(m.phone_number)
+        if key:
+            managers_by_phone[key] = m.id
+    return managers_by_phone
+
+
+def reconcile_existing_records() -> dict:
+    """Bazadagi BARCHA mavjud `CallRecord`larni joriy menejerlar telefon
+    raqamlariga qayta tekshiradi -- bu fix'dan OLDIN (login/email orqali
+    yoki umuman filtrsiz) yozilgan, menejerlarga aloqasi yo'q "begona"
+    qo'ng'iroqlarni bazadan TOZALASH uchun (foydalanuvchi so'rovi: faqat
+    menejerga saqlangan raqam bilan bog'liqlari qolsin).
+
+    Har bir yozuv uchun:
+      - `manager_phone_number` (saqlangan SIM raqami) joriy biror
+        menejerning `phone_number`iga mos kelsa -- `manager_id` shunga
+        TENGLASHTIRILADI (agar noto'g'ri/eskirgan bo'lsa ham tuzatiladi).
+      - Mos kelmasa (yoki `manager_phone_number` umuman yo'q -- juda eski
+        yozuv, ushbu ustun qo'shilishidan oldingi) -- yozuv O'CHIRILADI.
+
+    Qaytaradi: {"total": N, "reassigned": N, "deleted": N, "kept": N}."""
+    session = get_session()
+    try:
+        managers_by_phone = _build_managers_by_phone(session)
+        records = session.query(CallRecord).all()
+        stats = {"total": len(records), "reassigned": 0, "deleted": 0, "kept": 0}
+        for r in records:
+            key = phone_key9(r.manager_phone_number)
+            manager_id = managers_by_phone.get(key) if key else None
+            if manager_id is None:
+                session.delete(r)
+                stats["deleted"] += 1
+            elif r.manager_id != manager_id:
+                r.manager_id = manager_id
+                stats["reassigned"] += 1
+                stats["kept"] += 1
+            else:
+                stats["kept"] += 1
+        session.commit()
+        return stats
+    finally:
+        session.close()
+
+
 def sync_once(since: dt.datetime | None = None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
     {"configured": bool, "new_calls": N, "skipped_unmatched": N, "errors": [...]}
@@ -193,15 +253,7 @@ def sync_once(since: dt.datetime | None = None) -> dict:
 
     session = get_session()
     try:
-        managers_by_login = {}
-        managers_by_phone = {}
-        for m in session.query(Manager).filter(Manager.is_active == True).all():  # noqa: E712
-            login_key = (m.moizvonki_login or "").strip().lower()
-            if login_key:
-                managers_by_login[login_key] = m.id
-            phone_key = phone_key9(m.phone_number)
-            if phone_key:
-                managers_by_phone[phone_key] = m.id
+        managers_by_phone = _build_managers_by_phone(session)
 
         for raw in raw_calls:
             try:
@@ -214,13 +266,12 @@ def sync_once(since: dt.datetime | None = None) -> dict:
             if external_id and session.query(CallRecord).filter_by(external_id=external_id).first():
                 continue  # allaqachon bazada bor
 
-            # --- Menejerga biriktirish: 1) TELEFON (xodimning SIM raqami --
-            # "src_number") 2) login/email (fallback). Hech biri mos
-            # kelmasa -- bu qo'ng'iroq BAZAGA UMUMAN YOZILMAYDI (faqat CRM
-            # menejerlariga tegishli qo'ng'iroqlar saqlanadi). ---
+            # --- Menejerga biriktirish: FAQAT telefon raqami (xodimning
+            # SIM raqami -- "src_number") orqali. Mos kelmasa -- bu
+            # qo'ng'iroq BAZAGA UMUMAN YOZILMAYDI (foydalanuvchi so'rovi:
+            # faqat menejerga saqlangan raqam bilan bog'liq qo'ng'iroqlar
+            # hisoblansin, boshqa raqamlar tortilmasin). ---
             manager_id = managers_by_phone.get(phone_key9(mapped["employee_number"])) if mapped["employee_number"] else None
-            if not manager_id and mapped["moizvonki_login"]:
-                manager_id = managers_by_login.get(mapped["moizvonki_login"])
             if not manager_id:
                 result["skipped_unmatched"] += 1
                 continue
@@ -249,10 +300,10 @@ def sync_once(since: dt.datetime | None = None) -> dict:
 
         if result["skipped_unmatched"]:
             result["errors"].append(
-                f"{result['skipped_unmatched']} ta qo'ng'iroq hech qaysi menejerga mos kelmagani "
-                "uchun bazaga yozilmadi -- Menejerlar sahifasida shu xodimning Moi Zvonki'dagi "
-                "SIM raqamini 'Telefon raqami' maydoniga (yoki login/email'ini 'Moi Zvonki "
-                "login' maydoniga) kiritib qo'ying."
+                f"{result['skipped_unmatched']} ta qo'ng'iroq hech qaysi menejerning telefon "
+                "raqamiga mos kelmagani uchun bazaga yozilmadi -- Menejerlar sahifasida shu "
+                "xodimning Moi Zvonki'dagi SIM raqamini 'Telefon raqami' maydoniga aynan bir "
+                "xil qilib kiritib qo'ying."
             )
 
         session.commit()
