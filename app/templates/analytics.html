@@ -187,17 +187,163 @@
   </table>
   </div>
 
-  {% if kpi_selected_manager != 'all' and kpi_reports and kpi_reports[0].daily %}
-  <h2 style="margin-top:20px">Kun bo'yicha taqsimot -- {{ kpi_reports[0].manager_name }}</h2>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Sana</th><th class="num">Sotuvlar</th><th class="num">Oborot</th></tr></thead>
-    <tbody>
-      {% for day, d in kpi_reports[0].daily.items()|sort(reverse=true) %}
-      <tr><td>{{ day }}</td><td class="num">{{ d.sales_count }}</td><td class="num">{{ d.turnover|som }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {% if kpi_selected_manager != 'all' and kpi_reports %}
+  {% set r = kpi_reports[0] %}
+  <h2 style="margin-top:24px">{{ r.manager_name }} -- batafsil KPI dashboard</h2>
+  <div class="kpidash">
+
+    <!-- 1) Kunlik gaplashuv KPI -->
+    <div class="kpidash-card span-2">
+      <div class="kpidash-card-head">
+        <div class="kpidash-card-title"><span class="kpidash-card-num">1</span> Kunlik gaplashuv KPI <span class="text-faint" style="font-weight:400; font-size:12px">(kuniga {{ r.daily_calls.norm }} kishi bilan gaplashish rejasi)</span></div>
+        {% if r.daily_calls.configured %}
+        <span class="kpidash-badge {{ 'good' if r.daily_calls.days_met == r.daily_calls.days_total and r.daily_calls.days_total else '' }}">{{ r.daily_calls.days_met }}/{{ r.daily_calls.days_total }} KUN BAJARILGAN</span>
+        {% endif %}
+      </div>
+      {% if not r.daily_calls.configured %}
+        <div class="kpidash-empty">Moi Zvonki hali ulanmagan -- kunlik qo'ng'iroq statistikasi ko'rinishi uchun API sozlanishi kerak (Render environment variables).</div>
+      {% else %}
+        <div class="daystrip">
+          {% for d in r.daily_calls.days %}
+          <div class="daystrip-cell {{ d.status }}">
+            <div class="d-date">{{ d.date[8:10] }}.{{ d.date[5:7] }}</div>
+            <div class="d-count">{{ d.count }}</div>
+            <div class="d-pct">{% if d.status != 'off' %}{{ d.pct }}%{% else %}dam{% endif %}</div>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- 2) Sotuv soni KPI -->
+    <div class="kpidash-card">
+      <div class="kpidash-card-head">
+        <div class="kpidash-card-title"><span class="kpidash-card-num">2</span> Sotuv soni KPI</div>
+      </div>
+      <div class="kpidash-bignum">{{ r.sales_count }} <span class="text-faint" style="font-size:14px; font-weight:500">ta sotuv</span></div>
+      <div class="kpidash-subtext">
+        Prorata reja: <strong>{{ r.survival_min }} ta</strong>
+        {% if r.is_prorated %}<span class="text-faint">({{ r.work_days }}/{{ r.days_in_month }} kun ishlagan holda proratsiya qilingan)</span>{% endif %}
+      </div>
+      <div class="kpi-progress-wrap">
+        <div class="kpi-progress-track"><div class="kpi-progress-fill {{ 'full' if r.survival_ok }}" style="width: {{ [(r.sales_count / r.survival_min * 100) if r.survival_min else 100, 100]|min }}%"></div></div>
+        <div class="kpi-progress-label"><span>{{ r.sales_count }} / {{ r.survival_min }}</span><span>{{ 'bajarildi' if r.survival_ok else (r.sales_to_survival ~ ' ta qoldi') }}</span></div>
+      </div>
+      <div class="tier-grid">
+        <div class="tier-box {{ 'current' if r.sales_count < r.progressive_tiers[0].min else 'achieved' }}">
+          <div class="t-label">0 - {{ r.progressive_tiers[0].min - 1 }} ta</div>
+          <div class="t-rate">bonus yo'q</div>
+        </div>
+        {% for t in r.progressive_tiers %}
+        <div class="tier-box {{ 'current' if t.is_current else ('achieved' if r.sales_count > (t.max or 999999) else '') }}">
+          <div class="t-label">{{ t.label }}</div>
+          <div class="t-rate">{{ t.rate|som }}/sotuv</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% if r.next_progressive_tier %}
+      <div class="hint-box">Keyingi bosqichgacha ({{ r.next_progressive_tier.label }}, {{ r.next_progressive_tier.rate|som }}/sotuv) yetishi uchun <strong>{{ r.sales_to_next_tier }} ta</strong> sotuv qoldi.</div>
+      {% elif r.progressive_rate %}
+      <div class="hint-box good">Eng yuqori bosqichga yetdi -- har bir sotuv uchun {{ r.progressive_rate|som }} bonus.</div>
+      {% endif %}
+    </div>
+
+    <!-- 4) Savdo summasi KPI (batafsil) -- 3-chi ustunda joylashadi, lekin raqami hujjatdagi tartibga mos 4 -->
+    <div class="kpidash-card">
+      <div class="kpidash-card-head">
+        <div class="kpidash-card-title"><span class="kpidash-card-num">4</span> Savdo summasi KPI (batafsil)</div>
+      </div>
+      <div class="kpidash-bignum som">{{ r.turnover|som }}</div>
+      <div class="kpidash-subtext">
+        Prorata reja (400 mln bosqichi): <strong>{{ (400000000 * r.prorate_factor)|round|int|som }}</strong>
+      </div>
+      <div class="stat-box-row" style="margin-top:12px">
+        <div class="stat-box"><div class="s-label">Oborot</div><div class="s-val">{{ r.turnover|som }}</div></div>
+        <div class="stat-box"><div class="s-label">Kunlik reja</div><div class="s-val">{{ r.daily_turnover_target|som }}</div></div>
+        <div class="stat-box"><div class="s-label">Oborot bonusi</div><div class="s-val">{{ r.bonus_c|som }}</div></div>
+      </div>
+      <div class="table-scroll">
+      <table class="tier-table" style="font-size:12.5px">
+        <thead><tr><th>Bosqich</th><th class="num">Bonus</th><th>Holat</th><th class="num">Yetishi uchun kerak</th></tr></thead>
+        <tbody>
+          {% for t in r.turnover_tiers %}
+          <tr>
+            <td>{{ t.label }}</td>
+            <td class="num">{{ t.bonus|som }}</td>
+            <td class="{{ 'check-yes' if r.turnover >= t.min else 'check-no' }}">{{ '✓ erishildi' if r.turnover >= t.min else ('joriy' if t.is_current else '—') }}</td>
+            <td class="num">{{ (t.min - r.turnover)|round|int|som if r.turnover < t.min else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- 3) Qayta sotuv KPI (batafsil) -->
+    <div class="kpidash-card span-2">
+      <div class="kpidash-card-head">
+        <div class="kpidash-card-title"><span class="kpidash-card-num">3</span> Qayta sotuv KPI (batafsil) <span class="text-faint" style="font-weight:400; font-size:12px">(15 kun ichida 2-marta xarid qilgan mijozlar)</span></div>
+      </div>
+      {% if not r.repeat_customers.customers %}
+        <div class="kpidash-empty">Bu oyda 15 kun ichida qayta xarid qilgan mijoz topilmadi.</div>
+      {% else %}
+      <div class="table-scroll">
+      <table style="font-size:12.5px">
+        <thead>
+          <tr><th>Mijoz</th><th>Telefon</th><th>Buyurtma</th><th>Sana</th><th class="num">Summa</th><th>Turi</th><th class="num">Fixed</th><th class="num">0.5%</th><th class="num">Jami</th></tr>
+        </thead>
+        <tbody>
+          {% for c in r.repeat_customers.customers %}
+            {% for s in c.sales %}
+            <tr>
+              {% if loop.first %}<td rowspan="{{ c.sales|length + 1 }}">{{ c.lead_name }}</td><td rowspan="{{ c.sales|length + 1 }}">{{ c.phone or '—' }}</td>{% endif %}
+              <td class="num">#{{ s.sale_number }}</td>
+              <td>{{ s.sold_at.strftime('%d.%m.%Y') if s.sold_at else '—' }}</td>
+              <td class="num">{{ s.amount|som }}</td>
+              <td><span class="badge {{ 'badge-color-blue' if s.sale_number == 1 else 'badge-color-good' }}">{{ '1-chi' if s.sale_number == 1 else '2-chi' }}</span></td>
+              <td class="num">{{ s.fixed|som }}</td>
+              <td class="num">{{ s.pct|round|int|som }}</td>
+              <td class="num">{{ s.total|round|int|som }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="subtotal-row"><td colspan="6">Jami ({{ c.lead_name }})</td><td class="num">{{ c.customer_total|round|int|som }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <div class="kpidash-subtext" style="margin-top:10px">Barcha qayta sotuvlar bo'yicha jami bonus: <strong>{{ r.repeat_customers.total|round|int|som }}</strong></div>
+      {% endif %}
+    </div>
+
+    <!-- Kunlik savdo jadvali -->
+    <div class="kpidash-card span-2">
+      <div class="kpidash-card-head">
+        <div class="kpidash-card-title">Kunlik savdo -- reja vs bajarilish</div>
+      </div>
+      {% if not r.daily %}
+        <div class="kpidash-empty">Bu oyda hali sotuv qayd etilmagan.</div>
+      {% else %}
+      <div class="table-scroll">
+      <table style="font-size:12.5px">
+        <thead><tr><th>Sana</th><th class="num">Zakaz</th><th class="num">Savdo</th><th class="num">Reja</th><th class="num">%</th><th>Holat</th></tr></thead>
+        <tbody>
+          {% for day, d in r.daily.items()|sort(reverse=true) %}
+          {% set pct = ((d.turnover / r.daily_turnover_target * 100) if r.daily_turnover_target else 0) %}
+          <tr>
+            <td>{{ day }}</td>
+            <td class="num">{{ d.sales_count }}</td>
+            <td class="num">{{ d.turnover|som }}</td>
+            <td class="num">{{ r.daily_turnover_target|som }}</td>
+            <td class="num">{{ pct|round|int }}%</td>
+            <td>{% if d.turnover >= r.daily_turnover_target %}<span class="status-icon good">✓</span>{% else %}<span class="status-icon bad">✕</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% endif %}
+    </div>
+
   </div>
   {% endif %}
 </div>

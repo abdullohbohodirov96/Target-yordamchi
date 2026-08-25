@@ -20,6 +20,10 @@
       <input type="text" name="phone_number" value="{{ m.phone_number or '' }}" placeholder="+998901234567">
     </div>
     <div class="field">
+      <label>Ish boshlagan sana (ixtiyoriy, KPI rejasini oy o'rtasidan proratsiya qilish uchun)</label>
+      <input type="date" name="hire_date" value="{{ m.hire_date.strftime('%Y-%m-%d') if m.hire_date else '' }}">
+    </div>
+    <div class="field">
       <label>Rol</label>
       <select name="role">
         <option value="manager" {{ 'selected' if m.role=='manager' }}>Menejer</option>

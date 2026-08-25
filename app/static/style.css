@@ -353,6 +353,72 @@ button.block { width: 100%; }
   #ai-assistant-panel { right: -6px; width: calc(100vw - 28px); }
 }
 
+/* ---------- KPI / bonus dashboard kartalari (Analitika) ---------- */
+.kpidash { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+@media (max-width: 1000px) { .kpidash { grid-template-columns: 1fr; } }
+
+.kpidash-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
+.kpidash-card.span-2 { grid-column: 1 / -1; }
+.kpidash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.kpidash-card-title { font-size: 14px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.kpidash-card-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.kpidash-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.03em; padding: 4px 10px; border-radius: 999px; background: var(--blue-bg); color: var(--blue); white-space: nowrap; }
+.kpidash-badge.good { background: var(--good-bg); color: var(--good); }
+.kpidash-badge.bad { background: var(--bad-bg); color: var(--bad); }
+.kpidash-empty { color: var(--text-faint); font-size: 13px; padding: 20px 4px; text-align: center; }
+
+.kpidash-bignum { font-size: 30px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.kpidash-bignum.som { font-size: 22px; }
+.kpidash-subtext { font-size: 12.5px; color: var(--text-dim); margin-top: 4px; }
+
+/* Kunlik gaplashuv strip -- har kun 1 katakcha, rang holatga qarab */
+.daystrip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.daystrip-cell {
+  flex: 1 1 40px; min-width: 40px; max-width: 64px; border-radius: 8px; padding: 7px 4px 6px; text-align: center;
+  border: 1px solid transparent;
+}
+.daystrip-cell .d-date { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; opacity: 0.75; }
+.daystrip-cell .d-count { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.daystrip-cell .d-pct { font-size: 9.5px; font-weight: 600; margin-top: 1px; opacity: 0.85; }
+.daystrip-cell.met { background: var(--good-bg); color: var(--good); border-color: #A7F3D0; }
+.daystrip-cell.missed { background: var(--bad-bg); color: var(--bad); border-color: #FCA5A5; }
+.daystrip-cell.off { background: var(--border-light); color: var(--text-faint); }
+
+/* Progress bar -- reja bajarilishi */
+.kpi-progress-wrap { margin-top: 10px; }
+.kpi-progress-track { width: 100%; height: 10px; border-radius: 999px; background: var(--border-light); overflow: hidden; }
+.kpi-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--blue) 0%, var(--good) 100%); transition: width 0.3s ease; }
+.kpi-progress-fill.full { background: var(--good); }
+.kpi-progress-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-dim); margin-top: 5px; }
+
+/* Bosqich (tier) katakchalari */
+.tier-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+@media (max-width: 560px) { .tier-grid { grid-template-columns: repeat(2, 1fr); } }
+.tier-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 8px; text-align: center; background: var(--bg); }
+.tier-box.current { border-color: var(--blue); background: var(--blue-bg); }
+.tier-box.achieved { border-color: #A7F3D0; background: var(--good-bg); }
+.tier-box .t-label { font-size: 10.5px; color: var(--text-dim); font-weight: 600; }
+.tier-box.current .t-label { color: var(--blue); }
+.tier-box.achieved .t-label { color: var(--good); }
+.tier-box .t-rate { font-size: 13px; font-weight: 700; color: var(--ink); margin-top: 3px; }
+
+.hint-box { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius); font-size: 12.5px; background: var(--warn-bg); color: var(--warn); }
+.hint-box.good { background: var(--good-bg); color: var(--good); }
+
+.stat-box-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 560px) { .stat-box-row { grid-template-columns: 1fr; } }
+.stat-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--bg); }
+.stat-box .s-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); font-weight: 600; }
+.stat-box .s-val { font-size: 16px; font-weight: 700; color: var(--ink); margin-top: 3px; font-variant-numeric: tabular-nums; }
+
+.status-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; font-weight: 700; }
+.status-icon.good { background: var(--good-bg); color: var(--good); }
+.status-icon.bad { background: var(--bad-bg); color: var(--bad); }
+
+.subtotal-row td { font-weight: 700; background: var(--border-light); }
+.tier-table td.check-yes { color: var(--good); font-weight: 700; }
+.tier-table td.check-no { color: var(--text-faint); }
+
 /* ---------- Umumiy mobil moslashuv (telefon ekranlari) ---------- */
 @media (max-width: 640px) {
   .container { padding: 16px 12px 48px; }
@@ -383,4 +449,12 @@ button.block { width: 100%; }
   #ai-assistant-toggle { width: 48px; height: 48px; }
   #ai-assistant-toggle svg { width: 22px; height: 22px; }
   #ai-assistant-panel { bottom: 58px; height: 70vh; max-height: calc(100vh - 110px); }
+
+  .kpidash { gap: 10px; margin-top: 12px; }
+  .kpidash-card { padding: 13px 14px; }
+  .kpidash-bignum { font-size: 24px; }
+  .kpidash-bignum.som { font-size: 17px; }
+  .daystrip-cell { flex-basis: 30%; min-width: 30%; max-width: none; }
+  .tier-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-box-row { grid-template-columns: 1fr 1fr; }
 }

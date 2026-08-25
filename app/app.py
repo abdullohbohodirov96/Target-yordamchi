@@ -674,10 +674,86 @@ def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
             "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
             "days_since_first_sale": days_since_first, "lead_id": s.lead_id,
         })
-    report = kpi_bonus.compute_manager_report(valid_sales)
+    report = kpi_bonus.compute_manager_report(valid_sales, year, month, manager.hire_date)
     report["manager_id"] = manager.id
     report["manager_name"] = manager.full_name or manager.username
+    report["repeat_customers"] = _build_repeat_customer_breakdown(session, manager.id, valid_sales)
+    report["daily_calls"] = call_analytics.build_daily_call_counts(
+        session, manager.id, start, end, norm=kpi_bonus.DAILY_CALLS_NORM
+    )
     return report
+
+
+def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list) -> dict:
+    """"Qayta sotuv KPI (batafsil)" kartochkasi uchun -- shu oyda 15 kun
+    ICHIDA 2-marta xarid qilgan (ya'ni "mijozni faollashtirish" bonusining
+    2-xarid shartiga to'g'ri kelgan) har bir mijoz uchun 1- va 2-xarid
+    qatorlarini, har birining Fixed/0.5%/Jami bonus tafsilotini yig'adi."""
+    qualifying_lead_ids = {
+        s["lead_id"] for s in valid_sales
+        if s["sale_number"] == 2 and s.get("days_since_first_sale") is not None
+        and s["days_since_first_sale"] <= kpi_bonus.REPEAT_WINDOW_DAYS
+    }
+    if not qualifying_lead_ids:
+        return {"customers": [], "total": 0.0}
+
+    leads_by_id = {
+        l.id: l for l in session.query(Lead).filter(Lead.id.in_(qualifying_lead_ids)).all()
+    }
+
+    customers = []
+    grand_total = 0.0
+    for lead_id in qualifying_lead_ids:
+        lead_sales = (
+            session.query(Sale)
+            .filter(
+                Sale.lead_id == lead_id,
+                Sale.manager_id == manager_id,
+                Sale.is_returned == False,  # noqa: E712
+                Sale.sale_number.in_([1, 2]),
+            )
+            .order_by(Sale.sale_number.asc())
+            .all()
+        )
+        lead = leads_by_id.get(lead_id)
+        rows = []
+        customer_total = 0.0
+        first_sold_at = None
+        for s in lead_sales:
+            if s.sale_number == 1:
+                fixed, first_sold_at = 10_000.0, s.sold_at
+            else:
+                days_since_first = None
+                if first_sold_at and s.sold_at:
+                    days_since_first = (s.sold_at - first_sold_at).total_seconds() / 86400.0
+                elif s.sale_number == 2:
+                    first = next((x for x in lead_sales if x.sale_number == 1), None)
+                    if first and first.sold_at and s.sold_at:
+                        days_since_first = (s.sold_at - first.sold_at).total_seconds() / 86400.0
+                if days_since_first is not None and days_since_first <= kpi_bonus.REPEAT_WINDOW_DAYS:
+                    fixed = 20_000.0
+                else:
+                    fixed = 0.0
+            pct = s.amount * 0.005
+            total = fixed + pct
+            customer_total += total
+            rows.append({
+                "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
+                "fixed": fixed, "pct": pct, "total": total,
+            })
+        if not rows:
+            continue
+        grand_total += customer_total
+        customers.append({
+            "lead_id": lead_id,
+            "lead_name": (lead.full_name if lead else None) or "Noma'lum",
+            "phone": lead.phone if lead else None,
+            "sales": rows,
+            "customer_total": customer_total,
+        })
+
+    customers.sort(key=lambda c: c["sales"][0]["sold_at"] or dt.datetime.min)
+    return {"customers": customers, "total": grand_total}
 
 
 def _recompute_lead_sale_total(session, lead) -> None:
@@ -1408,6 +1484,7 @@ def managers():
             full_name = request.form.get("full_name", "").strip()
             role = request.form.get("role", "manager")
             phone_number = request.form.get("phone_number", "").strip()
+            hire_date_str = request.form.get("hire_date", "").strip()
             modules = request.form.getlist("allowed_modules")
             if username and password:
                 if session.query(Manager).filter_by(username=username).first():
@@ -1416,12 +1493,17 @@ def managers():
                     m = Manager(username=username, full_name=full_name, role=role)
                     m.set_password(password)
                     m.phone_number = phone_number or None
+                    if hire_date_str:
+                        try:
+                            m.hire_date = dt.datetime.strptime(hire_date_str, "%Y-%m-%d")
+                        except ValueError:
+                            pass
                     m.allowed_modules = permissions.serialize_allowed_modules(modules)
                     session.add(m)
                     session.commit()
                     flash(f"{username} qo'shildi.", "success")
         all_managers = session.query(Manager).order_by(Manager.created_at).all()
-        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number} for m in all_managers]
+        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "hire_date": m.hire_date} for m in all_managers]
     finally:
         session.close()
     return render_template("managers.html", managers=rows, modules=permissions.MODULES, default_modules=permissions.DEFAULT_MANAGER_MODULES)
@@ -1444,6 +1526,7 @@ def manager_edit(manager_id):
             new_role = request.form.get("role", "manager")
             new_password = request.form.get("password", "")
             new_phone = request.form.get("phone_number", "").strip()
+            new_hire_date_str = request.form.get("hire_date", "").strip()
             new_modules = request.form.getlist("allowed_modules")
             is_active = request.form.get("is_active") == "on"
 
@@ -1464,6 +1547,7 @@ def manager_edit(manager_id):
                         return render_template("manager_edit.html", m={
                             "id": m.id, "username": m.username, "full_name": m.full_name,
                             "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
+                            "hire_date": m.hire_date,
                             "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
                         }, modules=permissions.MODULES)
 
@@ -1472,6 +1556,13 @@ def manager_edit(manager_id):
                 m.role = new_role
                 m.is_active = is_active
                 m.phone_number = new_phone or None
+                if new_hire_date_str:
+                    try:
+                        m.hire_date = dt.datetime.strptime(new_hire_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        pass
+                else:
+                    m.hire_date = None
                 m.allowed_modules = permissions.serialize_allowed_modules(new_modules)
                 if new_password:
                     m.set_password(new_password)
@@ -1481,7 +1572,8 @@ def manager_edit(manager_id):
 
         m_view = {
             "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
-            "phone_number": m.phone_number, "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
+            "phone_number": m.phone_number, "hire_date": m.hire_date,
+            "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
         }
     finally:
         session.close()
