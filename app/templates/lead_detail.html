@@ -78,6 +78,30 @@
   <div class="card">
     <h2>Ma'lumot va holatni tahrirlash</h2>
     <form method="post">
+      {% if custom_fields %}
+      <div style="margin:0 0 18px; padding-bottom:16px; border-bottom:1px solid var(--border-light)">
+        <h2 style="margin-bottom:2px">Kvalifikatsiya</h2>
+        <p class="page-subtitle" style="margin-top:2px">Qo'ng'iroq qilib mijoz bilan gaplashgandan keyin shu yerni to'ldiring</p>
+        {% for cf in custom_fields %}
+        <div class="field">
+          <label>{{ cf.label }}</label>
+          {% if cf.field_type == 'select' %}
+          <select name="cf_{{ cf.key }}">
+            <option value="">— tanlanmagan —</option>
+            {% for opt in cf.options %}
+            <option value="{{ opt }}" {{ 'selected' if cf.value == opt }}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+          {% elif cf.field_type == 'number' %}
+          <input type="number" step="any" name="cf_{{ cf.key }}" value="{{ cf.value }}">
+          {% else %}
+          <input type="text" name="cf_{{ cf.key }}" value="{{ cf.value }}">
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <div class="field">
         <label>To'liq ism</label>
         <input type="text" name="full_name" value="{{ lead.full_name or '' }}" placeholder="Ism Familiya">
@@ -99,39 +123,13 @@
           <option value="{{ s.key }}" {{ 'selected' if lead.status==s.key }}>{{ s.label }}</option>
           {% endfor %}
         </select>
-      </div>
-      <div class="field">
-        <label>Birinchi sotuv summasi (so'm) — faqat "Sotildi"ga o'tkazganda, 1-sotuvni shu yerdan ham kiritish mumkin</label>
-        <input type="number" step="1" min="0" name="sale_amount" placeholder="masalan 750000">
+        <p class="page-subtitle" style="margin:6px 0 0">Sotuv summasini kiritish uchun yuqoridagi "Sotuvlar" bo'limidan foydalaning -- holatni "Sotildi"ga o'zgartirish shu yerda, sotuv summasi alohida qo'shiladi.</p>
       </div>
       <div class="field">
         <label>Izoh (ixtiyoriy)</label>
         <textarea name="note" placeholder="Masalan: qo'ng'iroq qilindi, narx aytildi..."></textarea>
       </div>
       </div>
-
-      {% if custom_fields %}
-      <div style="border-top:1px solid var(--border-light); margin:18px 0 14px; padding-top:14px">
-        <h2 style="margin-bottom:12px">Anketa</h2>
-        {% for cf in custom_fields %}
-        <div class="field">
-          <label>{{ cf.label }}</label>
-          {% if cf.field_type == 'select' %}
-          <select name="cf_{{ cf.key }}">
-            <option value="">— tanlanmagan —</option>
-            {% for opt in cf.options %}
-            <option value="{{ opt }}" {{ 'selected' if cf.value == opt }}>{{ opt }}</option>
-            {% endfor %}
-          </select>
-          {% elif cf.field_type == 'number' %}
-          <input type="number" step="any" name="cf_{{ cf.key }}" value="{{ cf.value }}">
-          {% else %}
-          <input type="text" name="cf_{{ cf.key }}" value="{{ cf.value }}">
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
 
       <button type="submit" class="block">Saqlash</button>
     </form>

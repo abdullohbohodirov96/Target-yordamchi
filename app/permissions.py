@@ -18,7 +18,7 @@ import json
 # (key, ko'rinadigan nom) -- tartib shu yerda ko'rsatilgan tartibda,
 # manager_edit.html'dagi checkbox ro'yxati va navbar shu tartibni ishlatadi.
 MODULES = [
-    ("dashboard", "Dashboard (target/xarajat statistikasi)"),
+    ("dashboard", "Dashboard va Target (umumiy ko'rinish + reklama xarajat statistikasi)"),
     ("leads", "Lidlar"),
     ("analytics", "Analitika (hisobotlar)"),
 ]

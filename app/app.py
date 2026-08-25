@@ -15,6 +15,7 @@ import json
 import logging
 import threading
 import datetime as dt
+from collections import defaultdict
 
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 from flask_login import (
@@ -505,20 +506,140 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# Dashboard
+# Dashboard -- kompaniya bo'yicha UMUMIY KO'RINISH (lidlar holati, shu oy
+# sotuv/oborot, menejerlar reytingi, qo'ng'iroq faolligi). Meta target/
+# xarajat statistikasi endi ALOHIDA "/target" sahifasida (`target_page`).
 # ---------------------------------------------------------------------------
 
 @app.route("/")
 @login_required
 @module_required("dashboard")
 def dashboard():
+    session = get_session()
+    try:
+        overview = _build_dashboard_overview(session)
+    finally:
+        session.close()
+    return render_template("dashboard.html", o=overview)
+
+
+def _build_dashboard_overview(session) -> dict:
+    """Bosh sahifa ("Dashboard") uchun butun kompaniya bo'yicha umumiy
+    ko'rinishni yig'adi -- lidlar holati (voronka taqsimoti), shu oydagi
+    sotuv/oborot kunlik taqsimoti, menejerlar reytingi (KPI/bonus) va
+    qo'ng'iroq faolligi (Moi Zvonki ulangan bo'lsa). `dashboard.html`
+    shundan Chart.js diagrammalarini quradi."""
+    now = dt.datetime.utcnow()
+    year, month = now.year, now.month
+    month_start, month_end = kpi_bonus.month_bounds(year, month)
+
+    # 1) Lidlar holati -- voronka bosqichlari bo'yicha taqsimot
+    stages = _active_funnel_stages(session)
+    color_hex = {"blue": "#2563EB", "good": "#059669", "bad": "#DC2626", "warn": "#D97706", "dim": "#94A3B8"}
+    all_leads = session.query(Lead.id, Lead.status, Lead.created_at).all()
+    total_leads = len(all_leads)
+    leads_this_month = sum(1 for l in all_leads if l.created_at and month_start <= l.created_at < month_end)
+    status_raw_counts: dict[str, int] = defaultdict(int)
+    for l in all_leads:
+        status_raw_counts[l.status] += 1
+    status_breakdown = [
+        {
+            "key": s.key, "label": s.label, "count": status_raw_counts.get(s.key, 0),
+            "color": color_hex.get(s.color, "#94A3B8"),
+        }
+        for s in stages
+    ]
+
+    sold_key = _sold_stage_key(stages)
+    sold_total = status_raw_counts.get(sold_key, 0) if sold_key else 0
+    conversion_pct = round((sold_total / total_leads) * 100, 1) if total_leads else 0.0
+
+    # 2) Shu oydagi sotuvlar -- barcha menejerlar, kunlik taqsimot
+    sales_this_month = (
+        session.query(Sale)
+        .filter(
+            Sale.is_returned == False,  # noqa: E712
+            Sale.amount >= kpi_bonus.MIN_SALE_AMOUNT,
+            Sale.sold_at >= month_start, Sale.sold_at < month_end,
+        )
+        .all()
+    )
+    sales_count_month = len(sales_this_month)
+    turnover_month = sum(s.amount for s in sales_this_month)
+
+    daily_turnover: dict[str, float] = defaultdict(float)
+    for s in sales_this_month:
+        if s.sold_at:
+            daily_turnover[s.sold_at.strftime("%Y-%m-%d")] += s.amount
+    today_key = now.strftime("%Y-%m-%d")
+    sales_trend = []
+    cur = month_start
+    while cur < month_end:
+        key = cur.strftime("%Y-%m-%d")
+        if key > today_key:
+            break
+        sales_trend.append({"date": key, "day_label": cur.strftime("%d.%m"), "turnover": daily_turnover.get(key, 0.0)})
+        cur += dt.timedelta(days=1)
+
+    # 3) Menejerlar reytingi -- shu oy KPI/bonus
+    managers_all = session.query(Manager).filter_by(role="manager", is_active=True).all()
+    leaderboard = []
+    total_bonus_month = 0.0
+    for m in managers_all:
+        r = _build_manager_kpi_report(session, m, year, month)
+        bonus_total = r["bonus_a"] + r["bonus_b"] + r["bonus_c"]
+        total_bonus_month += bonus_total
+        leaderboard.append({
+            "manager_name": r["manager_name"], "sales_count": r["sales_count"],
+            "turnover": r["turnover"], "bonus_total": bonus_total, "jami": r["jami"],
+        })
+    leaderboard.sort(key=lambda x: x["turnover"], reverse=True)
+    max_leaderboard_turnover = max((l["turnover"] for l in leaderboard), default=0) or 1
+
+    # 4) Qo'ng'iroq faolligi -- shu oy, butun jamoa (Moi Zvonki ulangan bo'lsa)
+    calls_overview = call_analytics.build_team_daily_call_counts(
+        session, month_start, dt.datetime.strptime(today_key, "%Y-%m-%d") + dt.timedelta(days=1),
+        norm_per_manager=kpi_bonus.DAILY_CALLS_NORM,
+    )
+
+    return {
+        "generated_at": now.isoformat(),
+        "total_leads": total_leads,
+        "leads_this_month": leads_this_month,
+        "status_breakdown": status_breakdown,
+        "sold_total": sold_total,
+        "conversion_pct": conversion_pct,
+        "sales_count_month": sales_count_month,
+        "turnover_month": turnover_month,
+        "sales_trend": sales_trend,
+        "leaderboard": leaderboard,
+        "max_leaderboard_turnover": max_leaderboard_turnover,
+        "total_bonus_month": round(total_bonus_month),
+        "calls_overview": calls_overview,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Target -- Meta reklama target/xarajat statistikasi (Campaigns/Ad sets/Ads
+# jadvali). Ilgari shu sahifa "/" (Dashboard) edi -- endi alohida, chunki
+# "Dashboard" endi butun kompaniya bo'yicha umumiy ko'rinish bo'ldi.
+# ---------------------------------------------------------------------------
+
+@app.route("/target")
+@login_required
+@module_required("dashboard")
+def target_page():
     period = request.args.get("period", "last_30d")
     level = request.args.get("level", "campaign")
     if level not in ("campaign", "adset", "ad"):
         level = "campaign"
     show_all = request.args.get("show_all") == "1"
-    data = get_kpis(level=level, date_preset=period, active_only=not show_all)
-    return render_template("dashboard.html", data=data, period=period, level=level, show_all=show_all)
+    try:
+        data = get_kpis(level=level, date_preset=period, active_only=not show_all)
+    except Exception as e:
+        logger.exception("Target: Meta ma'lumotlarini olishda xato")
+        data = {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
+    return render_template("target.html", data=data, period=period, level=level, show_all=show_all)
 
 
 # ---------------------------------------------------------------------------
@@ -1371,10 +1492,13 @@ def lead_detail(lead_id):
                         flash("Sotuv topilmadi.", "error")
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
 
-            # --- Asosiy forma: status/izoh/ism-familiya/anketa ---
+            # --- Asosiy forma: status/izoh/ism-familiya/kvalifikatsiya ---
+            # ESLATMA: sotuv summasi bu yerdan ENDI kiritilmaydi (avval "Birinchi
+            # sotuv summasi" maydoni shu yerda ham bor edi, "Sotuvlar" bo'limidagi
+            # forma bilan ikkilanib, chalkashlik keltirib chiqargan -- endi sotuv
+            # FAQAT "Sotuvlar" bo'limidagi `add_sale` formasi orqali qo'shiladi).
             new_status = request.form.get("status")
             note_text = request.form.get("note", "").strip()
-            sale_amount = request.form.get("sale_amount", "").strip()
 
             # Asosiy ma'lumotlar (ism/telefon/email) ham shu formadan tahrirlanadi --
             # bo'sh yuborilsa eskisi saqlanadi (majburiy emas, chunki ba'zi lidlarda
@@ -1391,20 +1515,6 @@ def lead_detail(lead_id):
 
             if new_status in stage_by_key:
                 lead.status = new_status
-                if stage_by_key[new_status].category == "sold" and sale_amount:
-                    try:
-                        amount = float(sale_amount)
-                    except ValueError:
-                        amount = None
-                    if amount and amount > 0:
-                        existing_count = session.query(Sale).filter_by(lead_id=lead.id).count()
-                        session.add(Sale(
-                            lead_id=lead.id,
-                            manager_id=(manager_row.id if manager_row else lead.assigned_manager_id),
-                            sale_number=existing_count + 1,
-                            amount=amount,
-                            sold_at=dt.datetime.utcnow(),
-                        ))
 
             if custom_fields:
                 try:

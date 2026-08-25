@@ -5,180 +5,170 @@
 <div class="page-head">
   <div>
     <h1>Dashboard</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Yangilangan {{ data.generated_at[:16].replace('T',' ') }} UTC</p>
+    <p class="page-subtitle" style="margin-bottom:0">Butun kompaniya bo'yicha umumiy ko'rinish &middot; Yangilangan {{ o.generated_at[:16].replace('T',' ') }} UTC</p>
   </div>
-  <div class="pill-group">
-    {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
-    <a href="?period={{ p }}&level={{ level }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if period==p }}">{{ label }}</a>
-    {% endfor %}
+  <div style="display:flex; gap:8px">
+    <a href="{{ url_for('target_page') }}" class="btn toggle-all-btn-outline">Target (reklama)</a>
+    <a href="{{ url_for('analytics_page') }}" class="btn toggle-all-btn-outline">Batafsil Analitika</a>
   </div>
 </div>
 
-<div class="page-head" style="margin-top:-14px; align-items:center">
-  <p class="page-subtitle" style="margin:0">
-    {% if show_all %}
-    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
-    {% else %}
-    Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti.
-    {% endif %}
-  </p>
-  {% if show_all %}
-  <a href="?period={{ period }}&level={{ level }}&show_all=0" class="btn toggle-all-btn">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
-    Faqat yoqilganlarni ko'rsatish
-  </a>
-  {% else %}
-  <a href="?period={{ period }}&level={{ level }}&show_all=1" class="btn toggle-all-btn toggle-all-btn-outline">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-    Hammasini ko'rsatish
-  </a>
-  {% endif %}
-</div>
-
-{% if data.error %}
-  <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
-{% endif %}
-
-{% set t = data.totals %}
 <div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">${{ "%.2f"|format(t.revenue or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">Jami lidlar</div><div class="kpi-value">{{ o.total_leads }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shu oy yangi lidlar</div><div class="kpi-value">{{ o.leads_this_month }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shu oy sotuvlar</div><div class="kpi-value good">{{ o.sales_count_month }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shu oy oborot</div><div class="kpi-value">{{ o.turnover_month|som }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Konversiya (sotildi)</div><div class="kpi-value {{ 'good' if o.conversion_pct >= 10 else '' }}">{{ o.conversion_pct }}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shu oy jami bonus</div><div class="kpi-value">{{ o.total_bonus_month|som }}</div></div>
 </div>
 
-{% if data.goal_breakdown %}
-<div class="card" style="margin-bottom:20px">
-  <h2>Natija turlari bo'yicha taqsimot</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    Har bir target Meta'da qanday natija uchun sozlangan bo'lsa (lid, qo'ng'iroq, xabar, havola bosish va h.k.),
-    shu turdagi haqiqiy natija soni bilan. Faqat "Lidlar (Instant Forma)" turi CRM'dagi Lidlar ustuniga ta'sir qiladi.
-  </p>
-  <div class="table-scroll">
-  <table>
-    <thead>
-      <tr>
-        <th>Natija turi</th>
-        <th class="num">Target soni</th>
-        <th class="num">Xarajat</th>
-        <th class="num">Natija</th>
-        <th class="num">Narxi/natija</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for g in data.goal_breakdown %}
-      <tr>
-        <td><span class="badge badge-color-blue">{{ g.goal_label }}</span></td>
-        <td class="num">{{ g.count }}</td>
-        <td class="num">${{ "%.2f"|format(g.spend or 0) }}</td>
-        <td class="num">{{ g.meta_result or 0 }}</td>
-        <td class="num">${{ "%.2f"|format(g.cost_per_result or 0) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-{% endif %}
+<div class="kpidash">
 
-<div class="panel">
-  <div class="tabs">
-    {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads')] %}
-    <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if level==lvl }}">{{ label }}</a>
-    {% endfor %}
-  </div>
-
-  <div class="searchbar">
-    <div class="search-input-wrap">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
-      <input id="search" type="text" placeholder="Qidirish...">
+  <!-- Lidlar holati -->
+  <div class="kpidash-card">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Lidlar holati</div>
     </div>
+    {% if o.total_leads %}
+    <div style="position:relative; height:240px"><canvas id="chart-status"></canvas></div>
+    {% else %}
+    <div class="kpidash-empty">Hali lidlar yo'q.</div>
+    {% endif %}
   </div>
 
-  <div class="table-scroll">
-  <table id="kpi-table">
-    <thead>
-      <tr>
-        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
-        <th>Natija turi</th>
-        <th class="sortable num" data-key="spend" data-type="num">Spend</th>
-        <th class="sortable num" data-key="crm_leads_total" data-type="num">CRM Lead</th>
-        <th class="sortable num" data-key="meta_result" data-type="num">Meta natija</th>
-        <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
-        <th class="sortable num" data-key="active" data-type="num">Active</th>
-        <th class="sortable num" data-key="sold" data-type="num">Won</th>
-        <th class="sortable num" data-key="unqualified" data-type="num">Lost</th>
-        <th class="sortable num" data-key="qualified" data-type="num">Qual</th>
-        <th class="sortable num" data-key="cost_per_won" data-type="num">Cost/Won</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in data.rows %}
-      <tr data-name="{{ r.name|lower }}"
-          data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}"
-          data-meta_result="{{ r.meta_result }}"
-          data-cpl="{{ r.cpl }}" data-active="{{ r.active }}" data-sold="{{ r.sold }}"
-          data-unqualified="{{ r.unqualified }}" data-qualified="{{ r.qualified }}"
-          data-cost_per_won="{{ r.cost_per_won }}">
-        <td>
-          <span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}
-        </td>
-        <td><span class="badge badge-color-{{ 'blue' if r.goal in ('LEAD_GENERATION','QUALITY_LEAD') else 'dim' }}">{{ r.goal_label }}</span></td>
-        <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
-        <td class="num">{{ r.crm_leads_total or 0 }}</td>
-        <td class="num">{{ r.meta_result or 0 }} <span class="text-faint" style="font-size:11px">{{ r.result_label }}</span></td>
-        <td class="num">${{ "%.2f"|format(r.cpl or 0) }}</td>
-        <td class="num text-blue">{{ r.active or 0 }}</td>
-        <td class="num text-good-strong">{{ r.sold or 0 }}</td>
-        <td class="num text-bad">{{ r.unqualified or 0 }}</td>
-        <td class="num text-blue">{{ r.qualified or 0 }}</td>
-        <td class="num text-good">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <!-- Menejerlar reytingi -->
+  <div class="kpidash-card">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Menejerlar reytingi <span class="text-faint" style="font-weight:400; font-size:12px">(shu oy, oborot bo'yicha)</span></div>
+    </div>
+    {% if o.leaderboard %}
+    <div style="position:relative; height:240px"><canvas id="chart-leaderboard"></canvas></div>
+    {% else %}
+    <div class="kpidash-empty">Hali faol menejer yoki sotuv yo'q.</div>
+    {% endif %}
   </div>
+
+  <!-- Sotuvlar dinamikasi -->
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Sotuvlar dinamikasi <span class="text-faint" style="font-weight:400; font-size:12px">(shu oy, kunlik oborot)</span></div>
+    </div>
+    {% if o.sales_trend %}
+    <div style="position:relative; height:260px"><canvas id="chart-sales-trend"></canvas></div>
+    {% else %}
+    <div class="kpidash-empty">Bu oyda hali sotuv qayd etilmagan.</div>
+    {% endif %}
+  </div>
+
+  <!-- Jamoa qo'ng'iroq faolligi -->
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Jamoa gaplashuv faolligi <span class="text-faint" style="font-weight:400; font-size:12px">(shu oy, kuniga {{ o.calls_overview.team_daily_target }} kishi -- jamoa rejasi)</span></div>
+    </div>
+    {% if not o.calls_overview.configured %}
+    <div class="kpidash-empty">Moi Zvonki hali ulanmagan -- jamoa gaplashuv faolligi diagrammasi ko'rinishi uchun API sozlanishi kerak (Render environment variables).</div>
+    {% else %}
+    <div style="position:relative; height:260px"><canvas id="chart-calls"></canvas></div>
+    {% endif %}
+  </div>
+
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 (function () {
-  const table = document.getElementById('kpi-table');
-  const tbody = table.querySelector('tbody');
-  const search = document.getElementById('search');
-  let sortState = { key: null, dir: 1 };
+  if (typeof Chart === 'undefined') return;
 
-  search.addEventListener('input', () => {
-    const q = search.value.trim().toLowerCase();
-    [...tbody.rows].forEach(row => {
-      const name = row.dataset.name;
-      if (name === undefined) return;
-      row.style.display = name.includes(q) ? '' : 'none';
-    });
+  Chart.defaults.font.family = "'IBM Plex Sans', -apple-system, sans-serif";
+  Chart.defaults.color = '#64748B';
+
+  function fmtSom(v) {
+    return Math.round(v).toLocaleString('ru-RU').replace(/,/g, ' ') + " so'm";
+  }
+
+  {% if o.total_leads %}
+  new Chart(document.getElementById('chart-status'), {
+    type: 'doughnut',
+    data: {
+      labels: {{ o.status_breakdown|map(attribute='label')|list|tojson }},
+      datasets: [{
+        data: {{ o.status_breakdown|map(attribute='count')|list|tojson }},
+        backgroundColor: {{ o.status_breakdown|map(attribute='color')|list|tojson }},
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11.5 } } } },
+    }
   });
+  {% endif %}
 
-  table.querySelectorAll('th.sortable').forEach(th => {
-    th.addEventListener('click', () => {
-      const key = th.dataset.key;
-      const type = th.dataset.type;
-      sortState.dir = sortState.key === key ? -sortState.dir : 1;
-      sortState.key = key;
-
-      const rows = [...tbody.rows].filter(r => r.dataset.name !== undefined);
-      rows.sort((a, b) => {
-        let va = a.dataset[key], vb = b.dataset[key];
-        if (type === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
-        return va > vb ? sortState.dir : va < vb ? -sortState.dir : 0;
-      });
-      rows.forEach(r => tbody.appendChild(r));
-
-      table.querySelectorAll('th.sortable').forEach(h => h.removeAttribute('data-sorted'));
-      th.dataset.sorted = sortState.dir === 1 ? 'asc' : 'desc';
-    });
+  {% if o.leaderboard %}
+  new Chart(document.getElementById('chart-leaderboard'), {
+    type: 'bar',
+    data: {
+      labels: {{ o.leaderboard|map(attribute='manager_name')|list|tojson }},
+      datasets: [{
+        label: 'Oborot',
+        data: {{ o.leaderboard|map(attribute='turnover')|list|tojson }},
+        backgroundColor: '#2563EB',
+        borderRadius: 5,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmtSom(ctx.parsed.x) } } },
+      scales: { x: { ticks: { callback: (v) => fmtSom(v) } } },
+    }
   });
+  {% endif %}
+
+  {% if o.sales_trend %}
+  new Chart(document.getElementById('chart-sales-trend'), {
+    type: 'bar',
+    data: {
+      labels: {{ o.sales_trend|map(attribute='day_label')|list|tojson }},
+      datasets: [{
+        label: 'Kunlik oborot',
+        data: {{ o.sales_trend|map(attribute='turnover')|list|tojson }},
+        backgroundColor: '#059669',
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmtSom(ctx.parsed.y) } } },
+      scales: { y: { ticks: { callback: (v) => fmtSom(v) } } },
+    }
+  });
+  {% endif %}
+
+  {% if o.calls_overview.configured %}
+  new Chart(document.getElementById('chart-calls'), {
+    data: {
+      labels: {{ o.calls_overview.days|map(attribute='day_label')|list|tojson }},
+      datasets: [
+        {
+          type: 'bar', label: 'Haqiqiy gaplashuvlar',
+          data: {{ o.calls_overview.days|map(attribute='count')|list|tojson }},
+          backgroundColor: '#2563EB', borderRadius: 4,
+        },
+        {
+          type: 'line', label: 'Jamoa rejasi',
+          data: {{ o.calls_overview.team_daily_target_series|tojson }},
+          borderColor: '#D97706', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11.5 } } } },
+    }
+  });
+  {% endif %}
 })();
 </script>
 {% endblock %}

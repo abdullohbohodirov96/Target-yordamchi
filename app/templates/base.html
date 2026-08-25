@@ -19,6 +19,7 @@
       <nav class="navlinks">
         {% if has_module(current_user, 'dashboard') %}
         <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint=='dashboard' }}">Dashboard</a>
+        <a href="{{ url_for('target_page') }}" class="{{ 'active' if request.endpoint=='target_page' }}">Target</a>
         {% endif %}
         {% if has_module(current_user, 'leads') %}
         <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
@@ -29,7 +30,7 @@
         {% if current_user.role == 'admin' %}
         <a href="{{ url_for('individual_check') }}" class="{{ 'active' if request.endpoint=='individual_check' }}">Individual tekshirish</a>
         <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint in ('managers','manager_edit') }}">Menejerlar</a>
-        <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Anketa savollari</a>
+        <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Kvalifikatsiya savollari</a>
         <a href="{{ url_for('funnel_settings') }}" class="{{ 'active' if request.endpoint=='funnel_settings' }}">Voronka</a>
         <a href="{{ url_for('standing_tasks_settings') }}" class="{{ 'active' if request.endpoint=='standing_tasks_settings' }}">Doimiy vazifalar</a>
         {% endif %}

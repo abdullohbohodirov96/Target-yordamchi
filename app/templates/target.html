@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Target — Target CRM{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Target</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Meta reklama target/xarajat statistikasi &middot; Yangilangan {{ data.generated_at[:16].replace('T',' ') }} UTC</p>
+  </div>
+  <div class="pill-group">
+    {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
+    <a href="?period={{ p }}&level={{ level }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if period==p }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="page-head" style="margin-top:-14px; align-items:center">
+  <p class="page-subtitle" style="margin:0">
+    {% if show_all %}
+    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
+    {% else %}
+    Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti.
+    {% endif %}
+  </p>
+  {% if show_all %}
+  <a href="?period={{ period }}&level={{ level }}&show_all=0" class="btn toggle-all-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
+    Faqat yoqilganlarni ko'rsatish
+  </a>
+  {% else %}
+  <a href="?period={{ period }}&level={{ level }}&show_all=1" class="btn toggle-all-btn toggle-all-btn-outline">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    Hammasini ko'rsatish
+  </a>
+  {% endif %}
+</div>
+
+{% if data.error %}
+  <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
+{% endif %}
+
+{% set t = data.totals %}
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">${{ "%.2f"|format(t.revenue or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div></div>
+</div>
+
+{% if data.goal_breakdown %}
+<div class="card" style="margin-bottom:20px">
+  <h2>Natija turlari bo'yicha taqsimot</h2>
+  <p class="page-subtitle" style="margin-top:-6px">
+    Har bir target Meta'da qanday natija uchun sozlangan bo'lsa (lid, qo'ng'iroq, xabar, havola bosish va h.k.),
+    shu turdagi haqiqiy natija soni bilan. Faqat "Lidlar (Instant Forma)" turi CRM'dagi Lidlar ustuniga ta'sir qiladi.
+  </p>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Natija turi</th>
+        <th class="num">Target soni</th>
+        <th class="num">Xarajat</th>
+        <th class="num">Natija</th>
+        <th class="num">Narxi/natija</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in data.goal_breakdown %}
+      <tr>
+        <td><span class="badge badge-color-blue">{{ g.goal_label }}</span></td>
+        <td class="num">{{ g.count }}</td>
+        <td class="num">${{ "%.2f"|format(g.spend or 0) }}</td>
+        <td class="num">{{ g.meta_result or 0 }}</td>
+        <td class="num">${{ "%.2f"|format(g.cost_per_result or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="tabs">
+    {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads')] %}
+    <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}" class="{{ 'active' if level==lvl }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="searchbar">
+    <div class="search-input-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
+      <input id="search" type="text" placeholder="Qidirish...">
+    </div>
+  </div>
+
+  <div class="table-scroll">
+  <table id="kpi-table">
+    <thead>
+      <tr>
+        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
+        <th>Natija turi</th>
+        <th class="sortable num" data-key="spend" data-type="num">Spend</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">CRM Lead</th>
+        <th class="sortable num" data-key="meta_result" data-type="num">Meta natija</th>
+        <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
+        <th class="sortable num" data-key="active" data-type="num">Active</th>
+        <th class="sortable num" data-key="sold" data-type="num">Won</th>
+        <th class="sortable num" data-key="unqualified" data-type="num">Lost</th>
+        <th class="sortable num" data-key="qualified" data-type="num">Qual</th>
+        <th class="sortable num" data-key="cost_per_won" data-type="num">Cost/Won</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in data.rows %}
+      <tr data-name="{{ r.name|lower }}"
+          data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}"
+          data-meta_result="{{ r.meta_result }}"
+          data-cpl="{{ r.cpl }}" data-active="{{ r.active }}" data-sold="{{ r.sold }}"
+          data-unqualified="{{ r.unqualified }}" data-qualified="{{ r.qualified }}"
+          data-cost_per_won="{{ r.cost_per_won }}">
+        <td>
+          <span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}
+        </td>
+        <td><span class="badge badge-color-{{ 'blue' if r.goal in ('LEAD_GENERATION','QUALITY_LEAD') else 'dim' }}">{{ r.goal_label }}</span></td>
+        <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
+        <td class="num">{{ r.crm_leads_total or 0 }}</td>
+        <td class="num">{{ r.meta_result or 0 }} <span class="text-faint" style="font-size:11px">{{ r.result_label }}</span></td>
+        <td class="num">${{ "%.2f"|format(r.cpl or 0) }}</td>
+        <td class="num text-blue">{{ r.active or 0 }}</td>
+        <td class="num text-good-strong">{{ r.sold or 0 }}</td>
+        <td class="num text-bad">{{ r.unqualified or 0 }}</td>
+        <td class="num text-blue">{{ r.qualified or 0 }}</td>
+        <td class="num text-good">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  const table = document.getElementById('kpi-table');
+  const tbody = table.querySelector('tbody');
+  const search = document.getElementById('search');
+  let sortState = { key: null, dir: 1 };
+
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    [...tbody.rows].forEach(row => {
+      const name = row.dataset.name;
+      if (name === undefined) return;
+      row.style.display = name.includes(q) ? '' : 'none';
+    });
+  });
+
+  table.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      const type = th.dataset.type;
+      sortState.dir = sortState.key === key ? -sortState.dir : 1;
+      sortState.key = key;
+
+      const rows = [...tbody.rows].filter(r => r.dataset.name !== undefined);
+      rows.sort((a, b) => {
+        let va = a.dataset[key], vb = b.dataset[key];
+        if (type === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+        return va > vb ? sortState.dir : va < vb ? -sortState.dir : 0;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+
+      table.querySelectorAll('th.sortable').forEach(h => h.removeAttribute('data-sorted'));
+      th.dataset.sorted = sortState.dir === 1 ? 'asc' : 'desc';
+    });
+  });
+})();
+</script>
+{% endblock %}

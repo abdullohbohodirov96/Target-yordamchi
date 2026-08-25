@@ -203,3 +203,44 @@ def build_daily_call_counts(session, manager_id: int, start: dt.datetime, end: d
         "days_met": sum(1 for d in days if d["status"] == "met"),
         "days_total": len(days_with_activity),
     }
+
+
+def build_team_daily_call_counts(session, start: dt.datetime, end: dt.datetime, norm_per_manager: int = 60) -> dict:
+    """Butun jamoa (BARCHA menejerlar birgalikda) uchun [start, end)
+    oralig'idagi kunlik "haqiqiy gaplashuv" sonini yig'adi -- Dashboard bosh
+    sahifasidagi umumiy faollik diagrammasi uchun (`build_daily_call_counts`
+    dan farqi -- bitta menejer emas, butun jamoa bo'yicha, manager_id bo'yicha
+    ajratmaydi)."""
+    import call_sync
+    from db import CallRecord, Manager
+
+    configured = call_sync.is_configured()
+    calls = (
+        session.query(CallRecord)
+        .filter(CallRecord.started_at >= start, CallRecord.started_at < end)
+        .all()
+    )
+    all_sessions = group_call_sessions(calls)
+    active_managers_count = session.query(Manager).filter_by(role="manager", is_active=True).count()
+
+    counts_by_day: dict[str, int] = defaultdict(int)
+    for s in all_sessions:
+        if s["started_at"] and not s["is_suspicious"]:
+            counts_by_day[s["started_at"].strftime("%Y-%m-%d")] += 1
+
+    days = []
+    cur = start.date() if isinstance(start, dt.datetime) else start
+    end_date = end.date() if isinstance(end, dt.datetime) else end
+    while cur < end_date:
+        key = cur.strftime("%Y-%m-%d")
+        days.append({"date": key, "day_label": cur.strftime("%d.%m"), "count": counts_by_day.get(key, 0)})
+        cur += dt.timedelta(days=1)
+
+    team_daily_target = active_managers_count * norm_per_manager
+    return {
+        "configured": configured,
+        "days": days,
+        "team_daily_target": team_daily_target,
+        "team_daily_target_series": [team_daily_target] * len(days),
+        "total": sum(d["count"] for d in days),
+    }
