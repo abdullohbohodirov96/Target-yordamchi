@@ -21,6 +21,18 @@ from collections import defaultdict
 SESSION_GAP = dt.timedelta(hours=2)
 MIN_REAL_TALK_SECONDS = 60
 
+# `CallRecord.started_at` UTC'da saqlanadi (Moi Zvonki unix timestamp'idan
+# `dt.datetime.utcfromtimestamp` orqali). Foydalanuvchiga "Individual
+# tekshirish" sahifasida ko'rsatilganda va menejer bo'yicha KUNLIK
+# guruhlashda haqiqiy (Toshkent, UTC+5) vaqt ko'rsatilishi kerak -- aks
+# holda masalan soat 12:00 (Toshkent)dagi qo'ng'iroq "07:00" deb chiqadi.
+# (scheduler.py'dagi bilan bir xil konvensiya.)
+_TASHKENT_OFFSET = dt.timedelta(hours=5)
+
+
+def _to_tashkent(d: dt.datetime | None) -> dt.datetime | None:
+    return (d + _TASHKENT_OFFSET) if d else None
+
 
 def group_call_sessions(calls: list) -> list[dict]:
     """`calls` -- bitta TELEFON RAQAMIGA tegishli `CallRecord` obyektlari
@@ -93,7 +105,7 @@ def build_individual_check(session, since: dt.datetime) -> dict:
             "lead_name": lead.full_name if lead else None,
             "lead_id": lead.id if lead else None,
             "manager_name": (manager.full_name or manager.username) if manager else "Noma'lum",
-            "started_at": s["started_at"],
+            "started_at": _to_tashkent(s["started_at"]),
             "call_count": s["call_count"],
             "total_duration": s["total_duration"],
             "is_suspicious": s["is_suspicious"],
@@ -112,7 +124,7 @@ def build_individual_check(session, since: dt.datetime) -> dict:
             continue
         manager = managers_by_id.get(s["manager_id"])
         mname = (manager.full_name or manager.username) if manager else f"ID {s['manager_id']}"
-        day = s["started_at"].strftime("%Y-%m-%d")
+        day = _to_tashkent(s["started_at"]).strftime("%Y-%m-%d")
         daily_by_manager[mname][day] += 1
         duration_sum_by_manager[mname] += s["total_duration"] or 0
         duration_count_by_manager[mname] += 1
