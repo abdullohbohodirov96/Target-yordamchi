@@ -20,6 +20,8 @@ Jadval (standart, ENV orqali sozlanadi):
     muddati o'tgan `Lead.next_contact_at`ga ega lidlar haqida shaxsiy
     Telegram xabari (menejerga, `Manager.telegram_user_id` bo'lsa) va
     adminlarga umumiy xulosa.
+  - Har 3 soatda -- Instagram Business + Facebook Page uchun SMM statistikasi
+    (obunachilar, postlar, qamrov) -- "SMM hisobot" (`/smm`) sahifasi uchun.
 """
 
 import os
@@ -33,6 +35,7 @@ import orchestrator
 import budget_tracker
 import lead_sync
 import call_sync
+import smm_sync
 import meta_api
 import db
 
@@ -196,6 +199,18 @@ def job_call_cleanup() -> dict:
         return call_sync.reconcile_existing_records()
     except Exception as e:
         logger.exception("Qo'ng'iroq yozuvlarini tozalashda xatolik")
+        return {"error": str(e)}
+
+
+def job_smm_sync() -> dict:
+    """Instagram Business + Facebook Page uchun organik SMM statistikasini
+    (obunachilar, postlar, qamrov) tortib oladi -- "SMM hisobot" sahifasi
+    (`/smm`) shu ma'lumotdan foydalanadi. META_ACCESS_TOKEN/META_PAGE_ID
+    sozlanmagan bo'lsa jim qaytadi (xato emas, ixtiyoriy integratsiya)."""
+    try:
+        return smm_sync.sync_once()
+    except Exception as e:
+        logger.exception("SMM sync xatosi")
         return {"error": str(e)}
 
 
@@ -401,6 +416,7 @@ JOBS = {
     "call-cleanup": job_call_cleanup,
     "call-debug": job_call_debug,
     "followup-reminders": job_followup_reminders,
+    "smm-sync": job_smm_sync,
 }
 
 _scheduler_started = False
@@ -427,5 +443,6 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5"), id="standing-reports")
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20"), id="call-sync")
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30), id="followup-reminders")
+    scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

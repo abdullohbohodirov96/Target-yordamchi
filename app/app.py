@@ -35,6 +35,8 @@ import lead_sync
 import call_sync
 import call_analytics
 import kpi_bonus
+import smm_sync
+import smm_analytics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("target-crm")
@@ -1892,6 +1894,37 @@ def individual_check_set_threshold():
     except (TypeError, ValueError):
         flash("Noto'g'ri qiymat -- butun son (soniya) kiriting.", "error")
     return redirect(url_for("individual_check", days=days))
+
+
+# ---------------------------------------------------------------------------
+# SMM hisobot -- Instagram Business va Facebook Page uchun to'liq organik
+# statistika (obunachilar o'sishi, postlar, qamrov, engagement). QAT'IY
+# admin-only -- Individual tekshirish kabi, `module_required()` orqali emas.
+# ---------------------------------------------------------------------------
+
+@app.route("/smm")
+@login_required
+@admin_required
+def smm_report():
+    days = request.args.get("days", "30")
+    try:
+        days = max(1, min(90, int(days)))
+    except (TypeError, ValueError):
+        days = 30
+
+    session = get_session()
+    try:
+        report = smm_analytics.build_smm_report(session, days=days)
+    finally:
+        session.close()
+
+    return render_template(
+        "smm.html",
+        days=days,
+        configured=smm_sync.is_configured(),
+        sync_status=smm_sync.get_last_status(),
+        **report,
+    )
 
 
 # ---------------------------------------------------------------------------

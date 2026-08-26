@@ -185,6 +185,50 @@ class CallRecord(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class SmmSnapshot(Base):
+    """Instagram Business / Facebook Page uchun HAR KUNLIK "hozirgi holat"
+    suratlanishi (obunachilar soni va h.k.) -- `smm_sync.py` har kuni bir
+    marta yozadi, shu orqali vaqt bo'yicha O'SISH grafigini chizish mumkin
+    (Meta Graph API o'zi "tarixiy obunachilar sonini" bermaydi, faqat JORIY
+    sonni beradi -- shuning uchun o'zimiz kunma-kun saqlab boramiz)."""
+    __tablename__ = "smm_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    platform = Column(String(16), nullable=False, index=True)  # "instagram" | "facebook"
+    date = Column(String(10), nullable=False, index=True)  # "YYYY-MM-DD" (Toshkent kuni)
+    followers_count = Column(Integer, nullable=True)
+    media_count = Column(Integer, nullable=True)  # Instagram uchun -- jami post soni
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("platform", "date", name="uq_smm_snapshot_platform_date"),)
+
+
+class SmmPost(Base):
+    """Instagram/Facebook'dagi bitta post/media haqidagi ENG OXIRGI
+    sinxronlangan statistika (like, comment, qamrov va h.k.) -- `smm_sync.py`
+    muntazam yangilab turadi (postlar statistikasi vaqt o'tishi bilan
+    o'zgarib turadi, shuning uchun "snapshot" emas, har doim eng so'nggi
+    holat saqlanadi, `external_id` bo'yicha upsert qilinadi)."""
+    __tablename__ = "smm_posts"
+
+    id = Column(Integer, primary_key=True)
+    platform = Column(String(16), nullable=False, index=True)  # "instagram" | "facebook"
+    external_id = Column(String(64), unique=True, nullable=False)  # IG media id / FB post id
+    caption = Column(Text, nullable=True)
+    permalink = Column(Text, nullable=True)
+    media_type = Column(String(32), nullable=True)  # IMAGE | VIDEO | CAROUSEL_ALBUM | REEL | STATUS | ...
+    posted_at = Column(DateTime, nullable=True, index=True)
+    like_count = Column(Integer, nullable=True, default=0)
+    comments_count = Column(Integer, nullable=True, default=0)
+    shares_count = Column(Integer, nullable=True, default=0)  # faqat Facebook
+    saved_count = Column(Integer, nullable=True, default=0)   # faqat Instagram
+    reach = Column(Integer, nullable=True)
+    impressions = Column(Integer, nullable=True)
+    raw_data = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
 class CustomField(Base):
     """Admin CRM anketa savollarini (lead'ni to'ldirishda menejer javob berishi
     kerak bo'lgan qo'shimcha maydonlarni) o'zi qo'sha/tahrirlay oladi -- kodga

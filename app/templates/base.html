@@ -30,6 +30,7 @@
         {% endif %}
         {% if current_user.role == 'admin' %}
         <a href="{{ url_for('individual_check') }}" class="{{ 'active' if request.endpoint=='individual_check' }}">Individual tekshirish</a>
+        <a href="{{ url_for('smm_report') }}" class="{{ 'active' if request.endpoint=='smm_report' }}">SMM hisobot</a>
         <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint in ('managers','manager_edit') }}">Menejerlar</a>
         <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Kvalifikatsiya savollari</a>
         <a href="{{ url_for('funnel_settings') }}" class="{{ 'active' if request.endpoint=='funnel_settings' }}">Voronka</a>

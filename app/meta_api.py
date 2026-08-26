@@ -533,3 +533,84 @@ def get_lead_forms(page_id: str) -> list[dict]:
     endpoint yo'q, forma orqali so'raladi)."""
     data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=_get_page_access_token())
     return data.get("data", [])
+
+
+# ---------------------------------------------------------------------------
+# SMM (ORGANIK) STATISTIKA -- Instagram Business va Facebook Page uchun
+# obunachilar/post statistikasi (`smm_sync.py` ishlatadi). QO'SHIMCHA
+# environment variable KERAK EMAS -- allaqachon sozlangan META_ACCESS_TOKEN
+# va META_PAGE_ID yetarli (Page Access Token orqali, xuddi Instant Form
+# funksiyalari kabi). Instagram Business akkaunt shu Page'ga ulangan
+# bo'lishi kerak (Meta Business Suite -> Sozlamalar -> Bog'langan hisoblar).
+# ---------------------------------------------------------------------------
+
+def get_instagram_business_account_id() -> str | None:
+    """META_PAGE_ID'ga ulangan Instagram Business akkaunt ID'sini qaytaradi
+    (agar ulanmagan bo'lsa -- None, bu holda smm_sync Instagram qismini
+    o'tkazib yuboradi, lekin Facebook qismi baribir ishlayveradi)."""
+    if not PAGE_ID:
+        return None
+    data = _get(PAGE_ID, {"fields": "instagram_business_account"}, token=_get_page_access_token())
+    ig = data.get("instagram_business_account")
+    return ig.get("id") if ig else None
+
+
+def get_facebook_page_profile() -> dict:
+    """Sahifaning joriy obunachilar (fan_count) sonini qaytaradi."""
+    return _get(PAGE_ID, {"fields": "fan_count,name"}, token=_get_page_access_token())
+
+
+def get_facebook_page_posts(limit: int = 25) -> list[dict]:
+    """Sahifadagi so'nggi postlarni like/comment/share soni bilan birga
+    qaytaradi. Qamrov/ko'rishlar (impressions) alohida `get_facebook_post_insights()`
+    orqali so'raladi -- bitta so'rovga qo'shib yuborilsa, insights ruxsati
+    yo'q hollarda BUTUN /posts so'rovi xato qaytarib qo'yishi mumkin."""
+    fields = "id,message,created_time,permalink_url,likes.summary(true).limit(0),comments.summary(true).limit(0),shares"
+    data = _get(f"{PAGE_ID}/posts", {"fields": fields, "limit": limit}, token=_get_page_access_token())
+    return data.get("data", [])
+
+
+def get_facebook_post_insights(post_id: str) -> dict:
+    """Bitta Facebook post uchun qamrov (impressions) va faollashgan
+    foydalanuvchilar sonini qaytaradi -- {"post_impressions": N,
+    "post_engaged_users": N} ko'rinishida (mavjud bo'lmasa qiymat None)."""
+    data = _get(f"{post_id}/insights", {"metric": "post_impressions,post_engaged_users"}, token=_get_page_access_token())
+    out = {}
+    for item in data.get("data", []):
+        values = item.get("values") or []
+        out[item.get("name")] = values[0].get("value") if values else None
+    return out
+
+
+def get_instagram_profile(ig_user_id: str) -> dict:
+    """Instagram Business akkauntining joriy obunachilar/post sonini qaytaradi."""
+    return _get(ig_user_id, {"fields": "followers_count,media_count,username"}, token=_get_page_access_token())
+
+
+def get_instagram_media(ig_user_id: str, limit: int = 25) -> list[dict]:
+    """So'nggi Instagram postlarini (like/comment soni bilan) qaytaradi.
+    Har bir media'ning qamrovi (reach) alohida `get_instagram_media_insights()`
+    orqali so'raladi (Meta buni asosiy `/media` so'rovida bermaydi)."""
+    fields = "id,caption,timestamp,permalink,media_type,like_count,comments_count"
+    data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token())
+    return data.get("data", [])
+
+
+def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE") -> dict:
+    """Bitta Instagram post/media uchun qamrov (reach) va saqlanganlar
+    (saved) sonini qaytaradi. VIDEO/REEL turlari uchun "impressions" o'rniga
+    "plays" metrikasi ishlatiladi (Meta bu ikkisini turga qarab farqli
+    qo'llab-quvvatlaydi). Chaqiruvchi (`smm_sync.py`) bu funksiyani har bir
+    media uchun ALOHIDA, xatoni tutib chaqiradi -- bitta postning insights
+    so'rovi muvaffaqiyatsiz bo'lsa ham, qolgan postlar sinxronlanishda
+    davom etadi."""
+    if media_type in ("VIDEO", "REEL"):
+        metrics = "reach,plays,saved"
+    else:
+        metrics = "reach,impressions,saved"
+    data = _get(f"{media_id}/insights", {"metric": metrics}, token=_get_page_access_token())
+    out = {}
+    for item in data.get("data", []):
+        values = item.get("values") or []
+        out[item.get("name")] = values[0].get("value") if values else None
+    return out
