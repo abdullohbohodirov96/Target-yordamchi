@@ -10,16 +10,35 @@ ASOSIY MANTIQ (foydalanuvchi so'ragan qoidalar bo'yicha):
     qo'ng'iroqlar davomiyligining YIG'INDISI, "necha marta" -- shu
     oraliqdagi qo'ng'iroqlar SONI.
   - STANDART: bitta odam bilan o'rtacha ~1 daqiqa (60 soniya) gaplashish
-    kerak. Sessiya umumiy davomiyligi 60 soniyadan KAM bo'lsa -- "shubhali"
+    kerak. Sessiya umumiy davomiyligi shu chegaradan KAM bo'lsa -- "shubhali"
     (haqiqiy suhbat bo'lmagan, faqat "ushlab-qo'yib yubordim" qo'ng'iroq
-    bo'lishi mumkin) deb belgilanadi.
+    bo'lishi mumkin) deb belgilanadi. Bu chegara (2026-08'dan) ADMIN
+    tomonidan "Individual tekshirish" sahifasida o'zgartirilishi mumkin --
+    `kv_store`da ("call_min_real_talk_seconds" kaliti) saqlanadi,
+    `get_min_real_talk_seconds()`/`set_min_real_talk_seconds()` orqali
+    o'qiladi/yoziladi, standart qiymat -- 60 soniya.
 """
 
 import datetime as dt
 from collections import defaultdict
 
+import kv_store
+
 SESSION_GAP = dt.timedelta(hours=2)
-MIN_REAL_TALK_SECONDS = 60
+MIN_REAL_TALK_SECONDS = 60  # standart (admin o'zgartirmagan bo'lsa shu ishlatiladi)
+_MIN_REAL_TALK_KEY = "call_min_real_talk_seconds"
+
+
+def get_min_real_talk_seconds() -> int:
+    value = kv_store.get_json(_MIN_REAL_TALK_KEY, default=None)
+    try:
+        return int(value) if value is not None else MIN_REAL_TALK_SECONDS
+    except (TypeError, ValueError):
+        return MIN_REAL_TALK_SECONDS
+
+
+def set_min_real_talk_seconds(value: int) -> None:
+    kv_store.set_json(_MIN_REAL_TALK_KEY, max(0, int(value)))
 
 # `CallRecord.started_at` UTC'da saqlanadi (Moi Zvonki unix timestamp'idan
 # `dt.datetime.utcfromtimestamp` orqali). Foydalanuvchiga "Individual
@@ -34,12 +53,16 @@ def _to_tashkent(d: dt.datetime | None) -> dt.datetime | None:
     return (d + _TASHKENT_OFFSET) if d else None
 
 
-def group_call_sessions(calls: list) -> list[dict]:
+def group_call_sessions(calls: list, min_real_talk_seconds: int | None = None) -> list[dict]:
     """`calls` -- bitta TELEFON RAQAMIGA tegishli `CallRecord` obyektlari
     ro'yxati (aralash raqamlar bo'lsa avval o'zi guruhlaydi). Qaytaradi:
     har biri {"started_at", "ended_at", "call_count", "total_duration",
     "is_suspicious", "manager_id", "calls": [...]} bo'lgan sessiyalar
-    ro'yxati, VAQT bo'yicha o'sish tartibida."""
+    ro'yxati, VAQT bo'yicha o'sish tartibida. `min_real_talk_seconds` --
+    "shubhali" chegarasi (berilmasa `get_min_real_talk_seconds()` -- admin
+    sozlagan yoki standart 60 soniya)."""
+    if min_real_talk_seconds is None:
+        min_real_talk_seconds = get_min_real_talk_seconds()
     by_phone = defaultdict(list)
     for c in calls:
         if not c.phone_number:
@@ -76,7 +99,7 @@ def group_call_sessions(calls: list) -> list[dict]:
             sessions.append(current)
 
     for s in sessions:
-        s["is_suspicious"] = s["total_duration"] < MIN_REAL_TALK_SECONDS
+        s["is_suspicious"] = s["total_duration"] < min_real_talk_seconds
 
     sessions.sort(key=lambda s: s["started_at"] or dt.datetime.min)
     return sessions

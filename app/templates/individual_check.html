@@ -32,7 +32,7 @@
 
 <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:20px">
   <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ total_sessions or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Shubhali (&lt;1 daqiqa)</div><div class="kpi-value {{ 'bad' if suspicious_count }}">{{ suspicious_count or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Shubhali (&lt;{{ min_real_talk_seconds }} son)</div><div class="kpi-value {{ 'bad' if suspicious_count }}">{{ suspicious_count or 0 }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Faol menejerlar</div><div class="kpi-value">{{ manager_summary|length }}</div></div>
 </div>
 
@@ -61,7 +61,13 @@
 
 <div class="panel">
   <h2 style="padding:16px 16px 0">Qo'ng'iroq sessiyalari</h2>
-  <p class="page-subtitle" style="padding:0 16px">Standart: bitta odam bilan o'rtacha ~1 daqiqa gaplashish kerak. Sessiya umumiy davomiyligi 60 soniyadan kam bo'lsa — "shubhali" deb belgilanadi.</p>
+  <p class="page-subtitle" style="padding:0 16px; margin-bottom:8px">Sessiya umumiy davomiyligi <strong>{{ min_real_talk_seconds }} soniya</strong>dan kam bo'lsa — "shubhali" deb belgilanadi.</p>
+  <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+    <input type="hidden" name="days" value="{{ days }}">
+    <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">Chegara (soniyada):</label>
+    <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">
+    <button type="submit" class="btn">Saqlash</button>
+  </form>
   <div class="table-scroll">
   <table>
     <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th></tr></thead>

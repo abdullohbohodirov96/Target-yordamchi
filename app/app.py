@@ -1869,8 +1869,29 @@ def individual_check():
         "individual_check.html",
         days=days,
         configured=call_sync.is_configured(),
+        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
         **check,
     )
+
+
+@app.route("/individual-tekshirish/chegara", methods=["POST"])
+@login_required
+@admin_required
+def individual_check_set_threshold():
+    """Admin "shubhali qo'ng'iroq" chegarasini (soniyada) o'zgartiradi --
+    `call_analytics.MIN_REAL_TALK_SECONDS` standart 60 soniya edi, endi
+    bu yerdan sozlanadi (kv_store'da saqlanadi)."""
+    days = request.form.get("days", "30")
+    value = request.form.get("min_real_talk_seconds", "").strip()
+    try:
+        seconds = int(value)
+        if seconds < 0:
+            raise ValueError
+        call_analytics.set_min_real_talk_seconds(seconds)
+        flash(f"Chegara {seconds} soniyaga o'rnatildi.", "success")
+    except (TypeError, ValueError):
+        flash("Noto'g'ri qiymat -- butun son (soniya) kiriting.", "error")
+    return redirect(url_for("individual_check", days=days))
 
 
 # ---------------------------------------------------------------------------
