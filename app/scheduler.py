@@ -176,6 +176,17 @@ def job_lead_cleanup() -> dict:
         return {"error": str(e)}
 
 
+def job_call_debug() -> dict:
+    """VAQTINCHALIK (2026-08): barcha qo'ng'iroq "skipped_unmatched" bo'lib
+    chiqqanda -- xom Moi Zvonki javobini va menejerlar telefon raqamlarini
+    yonma-yon ko'rish uchun (`/api/trigger/call-debug`)."""
+    try:
+        return call_sync.debug_sample_calls()
+    except Exception as e:
+        logger.exception("Call-debug xatosi")
+        return {"error": str(e)}
+
+
 def job_call_cleanup() -> dict:
     """Mavjud `CallRecord`larni DARHOL qayta tekshiradi/tozalaydi --
     foydalanuvchi Menejerlar sahifasida telefon raqamini to'g'irlagandan
@@ -388,6 +399,7 @@ JOBS = {
     "standing-reports": job_standing_reports,
     "call-sync": job_call_sync,
     "call-cleanup": job_call_cleanup,
+    "call-debug": job_call_debug,
     "followup-reminders": job_followup_reminders,
 }
 

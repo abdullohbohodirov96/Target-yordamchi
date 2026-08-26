@@ -218,6 +218,39 @@ def reconcile_existing_records() -> dict:
         session.close()
 
 
+def debug_sample_calls(n: int = 5) -> dict:
+    """VAQTINCHALIK DIAGNOSTIKA (2026-08): foydalanuvchi menejer telefon
+    raqamlarini to'g'ri to'ldirgan bo'lsa-yu, BARCHA qo'ng'iroqlar
+    "skipped_unmatched" bo'lib chiqsa -- demak Moi Zvonki API'dan kelayotgan
+    `src_number` maydoni biz taxmin qilgandek "xodimning SIM raqami" emas
+    (bo'sh, ichki extension, yoki boshqa narsa bo'lishi mumkin). Bu funksiya
+    bir nechta XOM (raw) qo'ng'iroq yozuvini va joriy menejerlarning
+    bazadagi telefon raqamlarini yonma-yon qaytaradi -- solishtirib,
+    haqiqiy sababni ko'rish uchun. `/api/trigger/call-debug`."""
+    result = {"configured": is_configured(), "raw_samples": [], "managers_phone_numbers": [], "errors": []}
+    if not result["configured"]:
+        result["errors"].append("Moi Zvonki sozlanmagan.")
+        return result
+    try:
+        raw_calls = _fetch_calls(since=dt.datetime.utcnow() - dt.timedelta(days=2))
+    except Exception as e:
+        result["errors"].append(f"Moi Zvonki bilan bog'lanib bo'lmadi: {e}")
+        return result
+    result["total_fetched"] = len(raw_calls)
+    result["raw_samples"] = raw_calls[:n]
+
+    session = get_session()
+    try:
+        for m in session.query(Manager).filter(Manager.is_active == True).all():  # noqa: E712
+            result["managers_phone_numbers"].append({
+                "id": m.id, "full_name": m.full_name, "username": m.username,
+                "phone_number": m.phone_number, "phone_key9": phone_key9(m.phone_number),
+            })
+    finally:
+        session.close()
+    return result
+
+
 def sync_once(since: dt.datetime | None = None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
     {"configured": bool, "new_calls": N, "skipped_unmatched": N, "errors": [...]}
