@@ -95,8 +95,15 @@
   {% endif %}
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <h2>Lead-sync holati (Instant Form &rarr; CRM)</h2>
+<details class="card" style="margin-bottom:20px" {{ 'open' if lead_sync_status and lead_sync_status.errors }}>
+  <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
+    <span>
+      <strong>Lead-sync holati</strong> <span class="text-faint" style="font-weight:400">(Instant Form &rarr; CRM)</span>
+      {% if lead_sync_status and lead_sync_status.errors %}<span class="badge badge-color-bad" style="margin-left:8px">{{ lead_sync_status.errors|length }} xato</span>{% endif %}
+    </span>
+    <span class="text-faint" style="font-size:12px; font-weight:400">bosib ochish/yopish</span>
+  </summary>
+  <div style="margin-top:12px">
   <p class="page-subtitle" style="margin-top:-6px">Meta'dan lidlarni avtomatik tortib olish jarayonining oxirgi ishga tushishi -- "lead kelgan, lekin CRM'da yo'q" holatini shu yerdan tekshiring.</p>
   {% if not lead_sync_status %}
   <p class="text-faint" style="margin:0">Hali birorta sinxronizatsiya ishga tushmagan (server hozirgina qayta ishga tushgan bo'lishi mumkin -- 15 daqiqada avtomatik ishlaydi).</p>
@@ -134,7 +141,8 @@
   </div>
   {% endif %}
   {% endif %}
-</div>
+  </div>
+</details>
 
 <div class="card">
   <h2>Menejerlar oylik KPI / bonus hisoboti</h2>
