@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Sozlamalar — Target CRM{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Sozlamalar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Kompaniya darajasidagi umumiy sozlamalar, bildirishnomalar va boshqa bo'limlarga havolalar -- hammasi shu yerda.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Umumiy</h2>
+  <p class="page-subtitle" style="margin-top:-6px">KPI/bonus va sifat nazorati hisob-kitoblarida ishlatiladigan chegaralar.</p>
+
+  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:18px">
+    <input type="hidden" name="action" value="set_min_sale">
+    <div class="field" style="margin:0; min-width:220px">
+      <label>Minimal sotuv summasi (so'm)</label>
+      <input type="number" step="1" min="0" name="min_sale_amount" value="{{ min_sale_amount|int }}">
+    </div>
+    <button type="submit" class="btn">Saqlash</button>
+    <span class="text-faint" style="font-size:12.5px">Bu summadan KICHIK "sotuv" KPI/bonus va rejaga umuman kirmaydi.</span>
+  </form>
+
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--border-light); padding-top:14px">
+    <div>
+      <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
+      <div class="text-faint" style="font-size:12.5px">Hozirgi qiymat: {{ min_real_talk_seconds }} soniya</div>
+    </div>
+    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Individual tekshirishda sozlash &rarr;</a>
+  </div>
+</div>
+
+{% if current_user.role == 'admin' %}
+<div class="card" style="margin-bottom:20px">
+  <h2>Bildirishnomalar (Telegram)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer o'zining shaxsiy Telegram ID'sini bog'lasa, unga tegishli eslatmalar (masalan "qayta aloqa" muddati) shaxsiy xabar sifatida yuboriladi. ID'ni topish uchun menejer Telegramda <strong>@userinfobot</strong> ga yozib, o'zining raqamli ID'sini oladi va sizga aytadi.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Menejer</th><th>Telegram ID</th><th>Holat</th><th></th></tr></thead>
+    <tbody>
+      {% for m in managers %}
+      <tr>
+        <td>{{ m.name }}</td>
+        <td class="text-dim">{{ m.telegram_user_id or '—' }}</td>
+        <td>
+          {% if m.telegram_user_id %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" style="display:flex; gap:6px; align-items:center; margin:0">
+            <input type="hidden" name="action" value="set_telegram">
+            <input type="hidden" name="manager_id" value="{{ m.id }}">
+            <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789" style="width:150px; padding:6px 8px">
+            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Saqlash</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="4">Faol menejer topilmadi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Boshqa sozlamalar</h2>
+  <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+    <a href="{{ url_for('funnel_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
+      <div class="kpi-label">Voronka</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Lidlar bosqichlarini sozlash &rarr;</div>
+    </a>
+    <a href="{{ url_for('custom_fields_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
+      <div class="kpi-label">Kvalifikatsiya savollari</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Anketa maydonlarini sozlash &rarr;</div>
+    </a>
+    <a href="{{ url_for('standing_tasks_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
+      <div class="kpi-label">Doimiy vazifalar</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">On/off jadval va qo'shimcha hisobotlar &rarr;</div>
+    </a>
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('managers') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
+      <div class="kpi-label">Menejerlar</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Hisoblar, rol va dostuplar &rarr;</div>
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

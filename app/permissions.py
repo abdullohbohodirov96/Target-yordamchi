@@ -7,10 +7,15 @@ menejerga faqat "Lidlar" ko'rinsin, ikkinchisiga "Analitika" ham ochiq
 bo'lsin. ADMIN roli uchun bu ro'yxat E'TIBORSIZ -- adminda HAR DOIM
 hammasi ochiq.
 
-MUHIM: "Individual tekshirish" (menejerlarning haqiqiy qo'ng'iroq
-faoliyatini tekshirish bo'limi) bu ro'yxatda ATAYLAB YO'Q -- u hech qachon
-menejerga berilmaydigan, qattiq admin-only bo'lim (`app.py`da alohida
-`@admin_required` bilan himoyalangan, `module_required()` orqali emas).
+MUHIM (2026-08, foydalanuvchi so'rovi bilan kengaytirildi): avval faqat 3 ta
+bo'lim (dashboard/leads/analytics) toggle qilinar edi, qolgan hamma narsa
+(Target, Individual tekshirish, SMM, Sozlamalar) qattiq admin-only edi --
+"ko'p bo'limda menejerga dostup berib bo'lmayapti" shikoyati shundan edi.
+Endi deyarli HAR BIR bo'lim shu ro'yxatda -- admin xohlagan menejerga
+xohlagan bo'limni yoqib/o'chirib bera oladi. FAQAT "Menejerlar" (hisob
+boshqaruvi -- boshqa xodimlarning login/maosh/rolini o'zgartirish) bu
+ro'yxatda ATAYLAB YO'Q va har doim qat'iy admin-only qoladi -- bu boshqa
+turdagi (hisob xavfsizligi) huquq, oddiy "bo'limga dostup" emas.
 """
 
 import json
@@ -18,9 +23,12 @@ import json
 # (key, ko'rinadigan nom) -- tartib shu yerda ko'rsatilgan tartibda,
 # manager_edit.html'dagi checkbox ro'yxati va navbar shu tartibni ishlatadi.
 MODULES = [
-    ("dashboard", "Dashboard va Target (umumiy ko'rinish + reklama xarajat statistikasi)"),
+    ("dashboard", "Dashboard (umumiy ko'rinish)"),
     ("leads", "Lidlar"),
     ("analytics", "Analitika (hisobotlar)"),
+    ("target", "Target (Meta Ads + SMM hisobot)"),
+    ("individual_check", "Individual tekshirish (qo'ng'iroq nazorati)"),
+    ("settings", "Sozlamalar (voronka, kvalifikatsiya savollari, doimiy vazifalar)"),
 ]
 
 MODULE_KEYS = {key for key, _ in MODULES}

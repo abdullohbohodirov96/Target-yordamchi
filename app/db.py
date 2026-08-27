@@ -135,6 +135,7 @@ class Sale(Base):
 
     sale_number = Column(Integer, nullable=False, default=1)  # shu LEAD uchun nechinchi sotuv (1,2,3...) -- lifetime tartib
     amount = Column(Float, nullable=False)
+    invoice_number = Column(String(64), nullable=True)  # nakladnoy/chek raqami (ixtiyoriy, buxgalteriya moslashtirishi uchun)
     sold_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
     is_returned = Column(Boolean, nullable=False, default=False)  # vozvrat -- KPI/bonus hisobidan chiqarib tashlanadi

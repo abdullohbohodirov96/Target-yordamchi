@@ -7,11 +7,7 @@
     <h1>SMM hisobot</h1>
     <p class="page-subtitle" style="margin-bottom:0">Instagram va Facebook sahifasi bo'yicha obunachilar o'sishi, postlar statistikasi va umumiy faollik. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
-  <div class="pill-group">
-    {% for d, label in [(7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
-    <a href="?days={{ d }}" class="{{ 'active' if days==d }}">{{ label }}</a>
-    {% endfor %}
-  </div>
+  {% include "_date_picker.html" %}
 </div>
 
 {% if not configured %}

@@ -7,11 +7,7 @@
     <h1>Individual tekshirish</h1>
     <p class="page-subtitle" style="margin-bottom:0">Moi Zvonki qo'ng'iroq yozuvlari lidlar bilan solishtirilib, menejer HAQIQATDA gaplashganmi tekshiriladi. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
-  <div class="pill-group">
-    {% for d, label in [(7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
-    <a href="?days={{ d }}" class="{{ 'active' if days==d }}">{{ label }}</a>
-    {% endfor %}
-  </div>
+  {% include "_date_picker.html" %}
 </div>
 
 {% if not configured %}
@@ -70,7 +66,7 @@
   </form>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th></tr></thead>
+    <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th><th>Yozuv</th></tr></thead>
     <tbody>
       {% for s in sessions %}
       <tr class="{{ 'rowlink' if s.lead_id }}" {% if s.lead_id %}onclick="window.location='{{ url_for('lead_detail', lead_id=s.lead_id) }}'"{% endif %}>
@@ -87,9 +83,17 @@
           <span class="badge badge-color-good">normal</span>
           {% endif %}
         </td>
+        <td onclick="event.stopPropagation()">
+          {% if s.recordings %}
+          <audio controls preload="none" style="height:30px; max-width:200px" src="{{ s.recordings[0] }}"></audio>
+          {% if s.recordings|length > 1 %}<div class="text-faint" style="font-size:11px">+{{ s.recordings|length - 1 }} ta yana</div>{% endif %}
+          {% else %}
+          <span class="text-faint">—</span>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="7">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="8">Ma'lumot yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -61,8 +61,26 @@ import calendar
 import datetime as dt
 import math
 
+import kv_store
+
 SALARY_FIXED = 4_000_000.0
-MIN_SALE_AMOUNT = 500_000.0          # "minimal chek qoidasi"
+MIN_SALE_AMOUNT = 500_000.0          # "minimal chek qoidasi" -- standart (admin o'zgartirmagan bo'lsa shu ishlatiladi)
+_MIN_SALE_AMOUNT_KEY = "kpi_min_sale_amount"
+
+
+def get_min_sale_amount() -> float:
+    """Admin "Sozlamalar" sahifasida o'zgartirishi mumkin bo'lgan minimal
+    chek qiymatini qaytaradi (kv_store'da saqlanadi) -- o'zgartirilmagan
+    bo'lsa standart `MIN_SALE_AMOUNT` (500 000 so'm) qaytadi."""
+    value = kv_store.get_json(_MIN_SALE_AMOUNT_KEY, default=None)
+    try:
+        return float(value) if value is not None else MIN_SALE_AMOUNT
+    except (TypeError, ValueError):
+        return MIN_SALE_AMOUNT
+
+
+def set_min_sale_amount(value: float) -> None:
+    kv_store.set_json(_MIN_SALE_AMOUNT_KEY, max(0.0, float(value)))
 REPEAT_WINDOW_DAYS = 15              # "qayta xarid" bonusi uchun oyna
 SURVIVAL_MIN_SALES = 75              # "o'lim chizig'i" -- 25 ish kunida (to'liq oy)
 SURVIVAL_WORKDAYS = 25

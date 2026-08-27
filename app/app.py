@@ -571,7 +571,7 @@ def _build_dashboard_overview(session) -> dict:
         session.query(Sale)
         .filter(
             Sale.is_returned == False,  # noqa: E712
-            Sale.amount >= kpi_bonus.MIN_SALE_AMOUNT,
+            Sale.amount >= kpi_bonus.get_min_sale_amount(),
             Sale.sold_at >= month_start, Sale.sold_at < month_end,
         )
         .all()
@@ -667,7 +667,7 @@ def _build_dashboard_overview(session) -> dict:
 
 @app.route("/target")
 @login_required
-@module_required("dashboard")
+@module_required("target")
 def target_page():
     period = request.args.get("period", "last_30d")
     level = request.args.get("level", "campaign")
@@ -818,7 +818,7 @@ def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
         .filter(
             Sale.manager_id == manager.id,
             Sale.is_returned == False,  # noqa: E712
-            Sale.amount >= kpi_bonus.MIN_SALE_AMOUNT,
+            Sale.amount >= kpi_bonus.get_min_sale_amount(),
             Sale.sold_at >= start, Sale.sold_at < end,
         )
         .order_by(Sale.sold_at.asc())
@@ -1486,6 +1486,7 @@ def lead_detail(lead_id):
             # qo'shish uchun mustaqil kichik forma. ---
             if form_action == "add_sale":
                 amount_raw = request.form.get("amount", "").strip()
+                invoice_number = request.form.get("invoice_number", "").strip() or None
                 try:
                     amount = float(amount_raw)
                 except ValueError:
@@ -1499,6 +1500,7 @@ def lead_detail(lead_id):
                         manager_id=(manager_row.id if manager_row else lead.assigned_manager_id),
                         sale_number=existing_count + 1,
                         amount=amount,
+                        invoice_number=invoice_number,
                         sold_at=dt.datetime.utcnow(),
                     ))
                     sold_key = _sold_stage_key(stages)
@@ -1514,7 +1516,11 @@ def lead_detail(lead_id):
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
 
             # --- Sotuvni "qaytarilgan" (vozvrat) deb belgilash -- faqat admin,
-            # chunki bu KPI/bonus hisobidan sotuvni butunlay chiqarib tashlaydi. ---
+            # chunki bu KPI/bonus hisobidan sotuvni butunlay chiqarib tashlaydi.
+            # MUHIM: bu "bekor qilish" (pastdagi `delete_sale`) BILAN BIR XIL
+            # EMAS -- "qaytarilgan" yozuv bazada QOLADI (mijoz haqiqatan xarid
+            # qilib, keyin qaytargani haqidagi tarix), "bekor qilish" esa
+            # xato kiritilgan yozuvni BUTUNLAY o'chiradi. ---
             if form_action == "mark_returned":
                 if current_user.role != "admin":
                     flash("Faqat admin sotuvni qaytarilgan deb belgilay oladi.", "error")
@@ -1528,6 +1534,25 @@ def lead_detail(lead_id):
                         _recompute_lead_sale_total(session, lead)
                         session.commit()
                         flash("Sotuv qaytarilgan deb belgilandi -- KPI/bonus hisobidan chiqarildi.", "success")
+                    else:
+                        flash("Sotuv topilmadi.", "error")
+                return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
+
+            # --- Sotuvni BEKOR QILISH (2026-08, foydalanuvchi so'rovi) --
+            # xato kiritilgan sotuv yozuvini bazadan BUTUNLAY o'chiradi (vozvrat
+            # emas -- iz qolmaydi). Faqat admin, chunki qaytarib bo'lmaydi. ---
+            if form_action == "delete_sale":
+                if current_user.role != "admin":
+                    flash("Faqat admin sotuvni bekor qila oladi.", "error")
+                else:
+                    sale_id = request.form.get("sale_id", "")
+                    sale = session.get(Sale, int(sale_id)) if sale_id.isdigit() else None
+                    if sale and sale.lead_id == lead.id:
+                        session.delete(sale)
+                        session.flush()
+                        _recompute_lead_sale_total(session, lead)
+                        session.commit()
+                        flash("Sotuv bekor qilindi (butunlay o'chirildi).", "success")
                     else:
                         flash("Sotuv topilmadi.", "error")
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
@@ -1846,13 +1871,16 @@ def manager_edit(manager_id):
 
 # ---------------------------------------------------------------------------
 # Individual tekshirish -- Moi Zvonki qo'ng'iroq yozuvlarini lidlar bilan
-# solishtirib, menejer HAQIQATDA gaplashdimi tekshiradi. QAT'IY admin-only --
-# `module_required()` orqali emas, menejerga hech qachon berilmaydi.
+# solishtirib, menejer HAQIQATDA gaplashdimi tekshiradi. Avval qat'iy
+# admin-only edi, endi (2026-08, foydalanuvchi so'rovi) admin xohlagan
+# menejerga "individual_check" modulini yoqib bera oladi -- lekin
+# CHEGARANI o'zgartirish (pastdagi POST route) baribir faqat admin uchun
+# qoladi (bu kompaniya darajasidagi umumiy sozlama).
 # ---------------------------------------------------------------------------
 
 @app.route("/individual-tekshirish")
 @login_required
-@admin_required
+@module_required("individual_check")
 def individual_check():
     days = request.args.get("days", "30")
     try:
@@ -1897,14 +1925,78 @@ def individual_check_set_threshold():
 
 
 # ---------------------------------------------------------------------------
+# Nastroyka (Sozlamalar) -- barcha kompaniya darajasidagi sozlamalar bitta
+# joyga yig'ilgan bosh sahifa (2026-08, foydalanuvchi so'rovi: "bo'limlar
+# juda ko'p bo'lib ketti" -- Voronka/Savollar/Doimiy vazifalar/Menejerlar
+# endi chap menyuda alohida-alohida emas, shu "Nastroyka" bo'limi ichidan
+# kartochkalar orqali ochiladi). Bu sahifaning o'zi "Umumiy" (minimal sotuv
+# summasi) va "Bildirishnomalar" (menejerlarning Telegram ID'sini bog'lash)
+# bo'limlarini o'z ichiga oladi -- qolganlari (Voronka/Savollar/Doimiy
+# vazifalar/Menejerlar) o'zining eski sahifalariga havola qilinadi.
+# ---------------------------------------------------------------------------
+
+@app.route("/sozlamalar", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+def settings_hub():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            action = request.form.get("action")
+            if current_user.role != "admin":
+                flash("Bu sozlamani faqat admin o'zgartira oladi.", "error")
+                return redirect(url_for("settings_hub"))
+
+            if action == "set_min_sale":
+                raw = request.form.get("min_sale_amount", "").strip()
+                try:
+                    value = float(raw)
+                    if value < 0:
+                        raise ValueError
+                    kpi_bonus.set_min_sale_amount(value)
+                    flash(f"Minimal sotuv summasi {value:,.0f} so'mga o'rnatildi (bu chegaradan kichik sotuvlar KPI/bonusga kirmaydi).".replace(",", " "), "success")
+                except (TypeError, ValueError):
+                    flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
+
+            elif action == "set_telegram":
+                manager_id = request.form.get("manager_id", "")
+                m = session.get(Manager, int(manager_id)) if manager_id.isdigit() else None
+                if m:
+                    new_value = request.form.get("telegram_user_id", "").strip() or None
+                    m.telegram_user_id = new_value
+                    session.commit()
+                    flash(f"{m.full_name or m.username} uchun Telegram ID {'yangilandi' if new_value else 'o‘chirildi'}.", "success")
+                else:
+                    flash("Menejer topilmadi.", "error")
+
+            return redirect(url_for("settings_hub"))
+
+        managers_all = session.query(Manager).filter_by(is_active=True).order_by(Manager.full_name).all()
+        manager_rows = [
+            {"id": m.id, "name": m.full_name or m.username, "telegram_user_id": m.telegram_user_id}
+            for m in managers_all
+        ]
+    finally:
+        session.close()
+
+    return render_template(
+        "settings_hub.html",
+        min_sale_amount=kpi_bonus.get_min_sale_amount(),
+        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
+        managers=manager_rows,
+    )
+
+
+# ---------------------------------------------------------------------------
 # SMM hisobot -- Instagram Business va Facebook Page uchun to'liq organik
 # statistika (obunachilar o'sishi, postlar, qamrov, engagement). QAT'IY
-# admin-only -- Individual tekshirish kabi, `module_required()` orqali emas.
+# "target" modul huquqiga bog'liq -- chap menyuda "Target" bo'limi ichida
+# (SMM hisobot) sifatida ko'rinadi.
 # ---------------------------------------------------------------------------
 
 @app.route("/smm")
 @login_required
-@admin_required
+@module_required("target")
 def smm_report():
     days = request.args.get("days", "30")
     try:
@@ -1933,7 +2025,7 @@ def smm_report():
 
 @app.route("/settings/fields", methods=["GET", "POST"])
 @login_required
-@admin_required
+@module_required("settings")
 def custom_fields_settings():
     session = get_session()
     try:
@@ -1983,7 +2075,7 @@ FUNNEL_CATEGORIES = [("active", "Faol (hali hal bo'lmagan)"), ("qualified", "Sif
 
 @app.route("/settings/funnel", methods=["GET", "POST"])
 @login_required
-@admin_required
+@module_required("settings")
 def funnel_settings():
     session = get_session()
     try:
@@ -2035,7 +2127,7 @@ def funnel_settings():
 
 @app.route("/settings/tasks", methods=["GET", "POST"])
 @login_required
-@admin_required
+@module_required("settings")
 def standing_tasks_settings():
     from db import StandingTask, StandingReport
     session = get_session()

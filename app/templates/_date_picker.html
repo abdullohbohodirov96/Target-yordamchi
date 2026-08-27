@@ -1,0 +1,40 @@
+{# Ixcham sana-oralig'i filtri (2026-08, foydalanuvchi so'rovi: "data ozi
+   iconka kichkinaro bosin ... bosilsa kotta bosin, tanlagandan keyin
+   yana kichkina bo'lib periodni ko'rsatsin"). Ishlatilishi:
+   {% include "_date_picker.html" %} -- ota-shablonda `days` (joriy tanlangan
+   kun soni, masalan 30) o'zgaruvchisi mavjud bo'lishi kerak, filtr shu
+   sahifaning o'z URL'idagi `?days=N` parametrini o'zgartiradi. #}
+<div class="date-picker" id="datePicker">
+  <button type="button" class="date-picker-trigger" id="datePickerTrigger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+    <span>{% if days==1 %}Bugun{% elif days==7 %}7 kun{% elif days==30 %}30 kun{% elif days==90 %}90 kun{% else %}{{ days }} kun{% endif %}</span>
+  </button>
+  <div class="date-picker-menu" id="datePickerMenu">
+    {% for d, label in [(1,'Bugun'), (7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
+    <a href="?days={{ d }}" class="{{ 'active' if days==d }}">{{ label }}</a>
+    {% endfor %}
+    <div class="date-picker-divider"></div>
+    <form method="get" class="date-picker-custom">
+      <label>Boshqa (kun soni)</label>
+      <div style="display:flex; gap:6px">
+        <input type="number" min="1" max="365" name="days" value="{{ days }}" style="width:80px">
+        <button type="submit" class="btn" style="padding:6px 10px; font-size:12px">OK</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var wrap = document.getElementById('datePicker');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  var trigger = document.getElementById('datePickerTrigger');
+  trigger.addEventListener('click', function (e) {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+})();
+</script>

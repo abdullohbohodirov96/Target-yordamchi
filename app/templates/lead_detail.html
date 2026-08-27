@@ -53,27 +53,41 @@
         <div>
           <div>
             <strong>{{ s.sale_number }}-sotuv</strong> &mdash; {{ s.amount|som }}
+            {% if s.invoice_number %}<span class="text-faint" style="font-size:12px">&middot; nakladnoy №{{ s.invoice_number }}</span>{% endif %}
             {% if s.is_returned %}<span class="badge badge-color-bad">qaytarilgan</span>{% endif %}
           </div>
           <div class="note-meta">{{ s.manager }} &middot; {{ s.sold_at.strftime('%d.%m.%Y %H:%M') if s.sold_at else '' }}</div>
         </div>
-        {% if current_user.role == 'admin' and not s.is_returned %}
-        <form method="post" onsubmit="return confirm('Bu sotuvni QAYTARILGAN deb belgilaysizmi? KPI/bonus hisobidan chiqarib tashlanadi.');" style="margin:0">
-          <input type="hidden" name="form_action" value="mark_returned">
-          <input type="hidden" name="sale_id" value="{{ s.id }}">
-          <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px; font-size:12px">Qaytarilgan deb belgilash</button>
-        </form>
+        {% if current_user.role == 'admin' %}
+        <div style="display:flex; gap:6px; flex-shrink:0">
+          {% if not s.is_returned %}
+          <form method="post" onsubmit="return confirm('Bu sotuvni QAYTARILGAN deb belgilaysizmi? KPI/bonus hisobidan chiqarib tashlanadi, lekin yozuv tarixda saqlanadi.');" style="margin:0">
+            <input type="hidden" name="form_action" value="mark_returned">
+            <input type="hidden" name="sale_id" value="{{ s.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px; font-size:12px">Qaytarilgan deb belgilash</button>
+          </form>
+          {% endif %}
+          <form method="post" onsubmit="return confirm('Bu sotuvni BEKOR QILASIZMI? Yozuv bazadan BUTUNLAY o\'chib ketadi, tarixda ham qolmaydi -- bu qaytarib bo\'lmaydigan amal (faqat xato kiritilgan sotuvlar uchun ishlating).');" style="margin:0">
+            <input type="hidden" name="form_action" value="delete_sale">
+            <input type="hidden" name="sale_id" value="{{ s.id }}">
+            <button type="submit" style="background:none; color:var(--bad); border:1px solid var(--bad); padding:4px 10px; font-size:12px">Bekor qilish</button>
+          </form>
+        </div>
         {% endif %}
       </div>
       {% else %}
       <p class="text-faint" style="margin:0 0 14px">Hali sotuv qo'shilmagan.</p>
       {% endfor %}
 
-      <form method="post" style="display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border-light); padding-top:14px">
+      <form method="post" style="display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border-light); padding-top:14px; flex-wrap:wrap">
         <input type="hidden" name="form_action" value="add_sale">
-        <div class="field" style="flex:1; margin-bottom:0">
+        <div class="field" style="flex:1; min-width:180px; margin-bottom:0">
           <label>Yangi sotuv summasi (so'm)</label>
           <input type="number" step="1" min="0" name="amount" placeholder="masalan 750000" required>
+        </div>
+        <div class="field" style="flex:1; min-width:160px; margin-bottom:0">
+          <label>Nakladnoy № (ixtiyoriy)</label>
+          <input type="text" name="invoice_number" placeholder="masalan 00123">
         </div>
         <button type="submit">Sotuv qo'shish</button>
       </form>

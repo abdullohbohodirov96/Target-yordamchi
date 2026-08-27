@@ -10,42 +10,95 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  {% macro navicon(name) %}{% if name == 'dashboard' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+  {% elif name == 'leads' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path stroke-linecap="round" d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><path stroke-linecap="round" d="M16 4.3c1.5.5 2.5 1.9 2.5 3.5S17.5 10.8 16 11.3M19 14.3c1.8.6 3 2.3 3 4.2"/></svg>
+  {% elif name == 'followup' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5V12l3 2"/></svg>
+  {% elif name == 'analytics' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 20V10M11 20V4M18 20v-7"/></svg>
+  {% elif name == 'headphones' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2.5" y="14" width="4" height="6" rx="1.5"/><rect x="17.5" y="14" width="4" height="6" rx="1.5"/></svg>
+  {% elif name == 'target' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>
+  {% elif name == 'settings' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M19.4 13.5a1.7 1.7 0 000-3l1-1.7-1.7-1.7-1.7 1a1.7 1.7 0 00-3-1L13.5 4.6h-3L10 6.6a1.7 1.7 0 00-3 1l-1.7-1-1.7 1.7 1 1.7a1.7 1.7 0 00-1 3l-1.9.5v3l1.9.5a1.7 1.7 0 001 3l-1 1.7 1.7 1.7 1.7-1a1.7 1.7 0 003 1l.5 1.9h3l.5-1.9a1.7 1.7 0 003-1l1.7 1 1.7-1.7-1-1.7a1.7 1.7 0 001-3l1.9-.5v-3z"/></svg>
+  {% elif name == 'managers' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8.5" cy="8" r="3"/><path stroke-linecap="round" d="M2.8 19.5c0-3.3 2.5-5.7 5.7-5.7s5.7 2.4 5.7 5.7"/><circle cx="17" cy="7.5" r="2.2"/><path stroke-linecap="round" d="M15.5 13.8c2.6.4 4.5 2.5 4.5 5.2"/></svg>
+  {% elif name == 'logout' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5H6a1.5 1.5 0 00-1.5 1.5v12A1.5 1.5 0 006 19.5h3M15.5 16l4-4-4-4M19 12H9"/></svg>
+  {% elif name == 'chevron' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+  {% endif %}{% endmacro %}
+
   {% if current_user.is_authenticated %}
-  <div class="topbar">
-    <div class="topbar-inner">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
       <a href="{{ url_for('dashboard') }}" class="brand">
-        <span class="brand-mark">T</span> Target CRM
+        <span class="brand-mark">T</span><span class="brand-text">Target CRM</span>
       </a>
-      <nav class="navlinks">
-        {% if has_module(current_user, 'dashboard') %}
-        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint=='dashboard' }}">Dashboard</a>
-        <a href="{{ url_for('target_page') }}" class="{{ 'active' if request.endpoint=='target_page' }}">Target</a>
-        {% endif %}
-        {% if has_module(current_user, 'leads') %}
-        <a href="{{ url_for('leads_list') }}" class="{{ 'active' if request.endpoint in ('leads_list','lead_detail') }}">Lidlar</a>
-        <a href="{{ url_for('followups_list') }}" class="{{ 'active' if request.endpoint=='followups_list' }}">Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</a>
-        {% endif %}
-        {% if has_module(current_user, 'analytics') %}
-        <a href="{{ url_for('analytics_page') }}" class="{{ 'active' if request.endpoint=='analytics_page' }}">Analitika</a>
-        {% endif %}
-        {% if current_user.role == 'admin' %}
-        <a href="{{ url_for('individual_check') }}" class="{{ 'active' if request.endpoint=='individual_check' }}">Individual tekshirish</a>
-        <a href="{{ url_for('smm_report') }}" class="{{ 'active' if request.endpoint=='smm_report' }}">SMM hisobot</a>
-        <a href="{{ url_for('managers') }}" class="{{ 'active' if request.endpoint in ('managers','manager_edit') }}">Menejerlar</a>
-        <a href="{{ url_for('custom_fields_settings') }}" class="{{ 'active' if request.endpoint=='custom_fields_settings' }}">Kvalifikatsiya savollari</a>
-        <a href="{{ url_for('funnel_settings') }}" class="{{ 'active' if request.endpoint=='funnel_settings' }}">Voronka</a>
-        <a href="{{ url_for('standing_tasks_settings') }}" class="{{ 'active' if request.endpoint=='standing_tasks_settings' }}">Doimiy vazifalar</a>
-        {% endif %}
-      </nav>
-      <div class="navuser">
-        <span>{{ current_user.full_name or current_user.username }}</span>
-        <a href="{{ url_for('logout') }}" class="logout">Chiqish</a>
-      </div>
     </div>
-  </div>
+
+    <nav class="sidebar-nav">
+      {% if has_module(current_user, 'dashboard') %}
+      <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint=='dashboard' }}" title="Dashboard">
+        <span class="nav-icon">{{ navicon('dashboard') }}</span><span class="nav-text">Dashboard</span>
+      </a>
+      {% endif %}
+      {% if has_module(current_user, 'leads') %}
+      <a href="{{ url_for('leads_list') }}" class="nav-item {{ 'active' if request.endpoint in ('leads_list','lead_detail') }}" title="Lidlar">
+        <span class="nav-icon">{{ navicon('leads') }}</span><span class="nav-text">Lidlar</span>
+      </a>
+      <a href="{{ url_for('followups_list') }}" class="nav-item {{ 'active' if request.endpoint=='followups_list' }}" title="Qayta aloqa">
+        <span class="nav-icon">{{ navicon('followup') }}</span><span class="nav-text">Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span>
+      </a>
+      {% endif %}
+
+      {% if has_module(current_user, 'analytics') or has_module(current_user, 'individual_check') %}
+      <div class="nav-group-label">Analitika</div>
+      {% if has_module(current_user, 'analytics') %}
+      <a href="{{ url_for('analytics_page') }}" class="nav-item {{ 'active' if request.endpoint=='analytics_page' }}" title="Analitika">
+        <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">Analitika</span>
+      </a>
+      {% endif %}
+      {% if has_module(current_user, 'individual_check') %}
+      <a href="{{ url_for('individual_check') }}" class="nav-item {{ 'active' if request.endpoint=='individual_check' }}" title="Individual tekshirish">
+        <span class="nav-icon">{{ navicon('headphones') }}</span><span class="nav-text">Individual tekshirish</span>
+      </a>
+      {% endif %}
+      {% endif %}
+
+      {% if has_module(current_user, 'target') %}
+      <div class="nav-group-label">Target</div>
+      <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint=='target_page' }}" title="Target">
+        <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Target</span>
+      </a>
+      <a href="{{ url_for('smm_report') }}" class="nav-item {{ 'active' if request.endpoint=='smm_report' }}" title="SMM hisobot">
+        <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">SMM hisobot</span>
+      </a>
+      {% endif %}
+
+      {% if has_module(current_user, 'settings') or current_user.role == 'admin' %}
+      <div class="nav-group-label">Nastroyka</div>
+      {% if has_module(current_user, 'settings') %}
+      <a href="{{ url_for('settings_hub') }}" class="nav-item {{ 'active' if request.endpoint=='settings_hub' }}" title="Sozlamalar">
+        <span class="nav-icon">{{ navicon('settings') }}</span><span class="nav-text">Sozlamalar</span>
+      </a>
+      {% endif %}
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('managers') }}" class="nav-item {{ 'active' if request.endpoint in ('managers','manager_edit') }}" title="Menejerlar">
+        <span class="nav-icon">{{ navicon('managers') }}</span><span class="nav-text">Menejerlar</span>
+      </a>
+      {% endif %}
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="nav-item nav-user-info" title="{{ current_user.full_name or current_user.username }}">
+        <span class="nav-icon nav-avatar">{{ (current_user.full_name or current_user.username or '?')[0]|upper }}</span><span class="nav-text">{{ current_user.full_name or current_user.username }}</span>
+      </div>
+      <a href="{{ url_for('logout') }}" class="nav-item" title="Chiqish">
+        <span class="nav-icon">{{ navicon('logout') }}</span><span class="nav-text">Chiqish</span>
+      </a>
+      <button type="button" class="nav-item sidebar-pin" id="sidebarPin" title="Menyuni mahkamlash">
+        <span class="nav-icon sidebar-pin-icon">{{ navicon('chevron') }}</span><span class="nav-text">Yig'ish</span>
+      </button>
+    </div>
+  </aside>
   {% endif %}
 
-  <main class="container">
+  <main class="container{{ ' with-sidebar' if current_user.is_authenticated }}" id="mainContent">
     {% block flash %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -57,6 +110,40 @@
     {% endblock %}
     {% block content %}{% endblock %}
   </main>
+
+  {% if current_user.is_authenticated %}
+  <script>
+  (function () {
+    var sidebar = document.getElementById('sidebar');
+    var main = document.getElementById('mainContent');
+    var pinBtn = document.getElementById('sidebarPin');
+    if (!sidebar || !pinBtn) return;
+    var KEY = 'target_crm_sidebar_pinned';
+    var pinned = false;
+    try { pinned = localStorage.getItem(KEY) === '1'; } catch (e) {}
+
+    function applyPinned() {
+      sidebar.classList.toggle('pinned', pinned);
+      sidebar.classList.toggle('open', pinned);
+      if (main) main.classList.toggle('sidebar-pinned', pinned);
+      pinBtn.classList.toggle('pinned', pinned);
+    }
+    applyPinned();
+
+    sidebar.addEventListener('mouseenter', function () {
+      if (!pinned) sidebar.classList.add('open');
+    });
+    sidebar.addEventListener('mouseleave', function () {
+      if (!pinned) sidebar.classList.remove('open');
+    });
+    pinBtn.addEventListener('click', function () {
+      pinned = !pinned;
+      try { localStorage.setItem(KEY, pinned ? '1' : '0'); } catch (e) {}
+      applyPinned();
+    });
+  })();
+  </script>
+  {% endif %}
 
   {% if current_user.is_authenticated %}
   <div id="ai-assistant-root">

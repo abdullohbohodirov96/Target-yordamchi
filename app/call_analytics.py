@@ -123,6 +123,12 @@ def build_individual_check(session, since: dt.datetime) -> dict:
     for s in all_sessions:
         lead = leads_by_id.get(s["lead_id"]) if s["lead_id"] else None
         manager = managers_by_id.get(s["manager_id"]) if s["manager_id"] else None
+        # Yozuvni "eshitish" (2026-08, foydalanuvchi so'rovi) -- Moi Zvonki
+        # o'zi qaytargan `recording_url` to'g'ridan-to'g'ri brauzerda audio
+        # sifatida ijro etiladi (bizning serverimiz orqali OQIB o'tmaydi --
+        # <audio> tegi to'g'ridan-to'g'ri Moi Zvonki'dan yuklaydi, shuning
+        # uchun bu CRM serveriga hech qanday qo'shimcha yuk solmaydi).
+        recordings = [c.recording_url for c in s["calls"] if c.recording_url]
         rows.append({
             "phone_number": s["phone_number"],
             "lead_name": lead.full_name if lead else None,
@@ -132,6 +138,7 @@ def build_individual_check(session, since: dt.datetime) -> dict:
             "call_count": s["call_count"],
             "total_duration": s["total_duration"],
             "is_suspicious": s["is_suspicious"],
+            "recordings": recordings,
         })
     rows.sort(key=lambda r: r["started_at"] or dt.datetime.min, reverse=True)
 
