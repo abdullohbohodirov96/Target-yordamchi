@@ -63,6 +63,56 @@ V4 (2026-08, HOZIRGI, foydalanuvchining to'liq audit-va-qayta-qurish
   - Batafsil log: qaysi model ishlatilgani, audio davomiyligi/formati/
     kanallar soni, transkripsiya/tahlil davomiyligi (soniyada), xatolar --
     API KALITI HECH QACHON log qilinmaydi.
+V5 (2026-08, HOZIRGI, foydalanuvchi HAQIQIY production bug'ini ko'rsatgach
+    -- o'zbekcha qo'ng'iroqlar Turkcha/Arabcha/Portugalcha/Inglizcha
+    ma'nosiz matnga transkripsiya qilinib, keyin tahlil modeli shu
+    yaramas matndan "to'qib chiqarilgan" umumiy xulosa/ball berardi --
+    asosida): quyidagilar qo'shildi/o'zgardi:
+  - HAQIQIY SIFAT DARVOZASI (`call_quality.py`, `transcribe_with_quality_gate()`):
+    endi HECH QANDAY transkripsiya sinovdan o'tmasdan (script/harf/
+    takrorlanish/tezlik/kutilgan-signal tekshiruvlari) tahlilga
+    YUBORILMAYDI. Sifatsiz bo'lsa -- 3 bosqichli qayta urinish zanjiri
+    (`_mono_transcribe_ladder`: oddiy -> kuchli kontekst -> zaxira model),
+    barchasi muvaffaqiyatsiz bo'lsa `ai_stage = "transcription_failed"`,
+    TAHLIL UMUMAN CHAQIRILMAYDI, `ai_score = NULL` -- bu aynan ko'rsatilgan
+    bug'ning TO'G'RIDAN-TO'G'RI tuzatilishi.
+  - Diarizatsiyada "birinchi gapirgan = Manager" TAXMINI BUTUNLAY OLIB
+    TASHLANDI (chiquvchi/kiruvchi qo'ng'iroq yoki kesilgan yozuvda bu
+    ko'pincha NOTO'G'RI edi) -- endi FAQAT operatorga XOS iboralar
+    (`_OPERATOR_EVIDENCE_PHRASES`) orqali DALIL bilan aniqlanadi
+    (`_guess_operator_speaker`), aks holda "Speaker 1"/"Speaker 2" saqlanadi.
+  - Baholash rubrikasi (`RUBRIC`) "applicable"/"earned" formatiga
+    o'tkazildi: model har mezon uchun bu suhbatga UMUMAN aloqadormi
+    (applicable) va necha ball ERISHILGANI (earned)ni ko'rsatadi; YAKUNIY
+    `score` server kodida `earned_applicable / possible_applicable * 10`
+    formulasi bilan hisoblanadi (aloqasiz mezonlar denominatordan
+    CHIQARILADI). Har bir mezon, `operatorMistakes`, `positivePoints`
+    endi `evidenceTurnIds` orqali ANIQ `normalizedTranscript` bo'lagiga
+    bog'langan -- hallyusinatsiya qilingan indekslar JIM chiqarib
+    tashlanadi.
+  - `customerRequest` sxemasi kengaytirildi: `measurement` (masalan
+    "8 santimetrlisidan") va `parameters` (ro'yxat, masalan "120 plotnost")
+    maydonlari qo'shildi -- IKKALASI HAM transkriptda AYNAN kelgan
+    ko'rinishda saqlanadi, "to'g'irlanmaydi"/"adabiylashtirilmaydi".
+  - `OPENAI_ANALYSIS_MODEL` ENDI `OPENAI_MODEL`ga MUTLAQO BOG'LIQ EMAS
+    (avval fallback sifatida unga qarardi) -- boshqa xususiyatlar
+    `OPENAI_MODEL`ni o'zgartirsa ham, qo'ng'iroq-tahlil YASHIRINCHA
+    ta'sirlanmaydi.
+  - `transcriptionConfidence`/`ai_transcription_quality_reasons` va
+    `ai_operator_channel` bazaga qo'shildi -- sifat darvozasining
+    ISHONCH darajasi va sababi endi UI/debug'da alohida ko'rinadi.
+  - `_download_audio()` endi NOMLANGAN xato kodlari bilan ishlaydi
+    (`AudioDownloadError.code`: `audio_invalid` / `audio_expired` /
+    `audio_download_failed`) -- Content-Length solishtirish, JSON/HTML
+    javoblarni aniqlash, 401/403/404/410'ni "muddati o'tgan" deb
+    belgilash qo'shildi.
+  - Render deploy `runtime: docker`ga o'tkazildi (repo ildizidagi
+    `Dockerfile` orqali) -- shu bilan ffmpeg/ffprobe production'da
+    HAQIQATDA mavjud bo'ladi (avval "python" runtime'da apt-get yo'q
+    edi, stereo-kanal ajratish/audio metadata JIM o'chirilgan holda
+    ishlardi). `/api/health` endi `ffmpeg_available`/`ffprobe_available`ni
+    ko'rsatadi, `log_model_config()` ishga tushganda qaysi model
+    ishlatilayotganini logga yozadi.
 
 MUHIM CHEKLOV (foydalanuvchi talabi bilan): faqat OpenAI ishlatiladi.
 Boshqa transkripsiya provayderi (AssemblyAI, Deepgram, Google Speech,
@@ -85,6 +135,7 @@ import datetime as dt
 import requests
 
 import call_glossary
+import call_quality
 
 logger = logging.getLogger("call_analysis")
 
@@ -98,7 +149,6 @@ logger = logging.getLogger("call_analysis")
 # environment variable orqali bu ro'yxatning BOSHIGA qo'shimcha nomzod
 # qo'shish mumkin (masalan test uchun).
 _TRANSCRIBE_MODEL_CANDIDATES = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"]
-_working_transcribe_config = None  # (model, include_language) -- keshlangan ishlaydigan kombinatsiya
 
 # Stereo-kanal ajratishda har bir kanalni ALOHIDA transkripsiya qilish
 # uchun vaqt tamg'asi (segments) KERAK -- bunga faqat `whisper-1`ning
@@ -108,7 +158,16 @@ _working_transcribe_config = None  # (model, include_language) -- keshlangan ish
 # whisper-1 ATAYLAB ishlatiladi, umumiy ustuvorlikka zid emas.
 _CHANNEL_TIMESTAMP_MODEL = "whisper-1"
 
-OPENAI_ANALYSIS_MODEL = os.environ.get("OPENAI_ANALYSIS_MODEL", os.environ.get("OPENAI_MODEL", "gpt-4o-mini"))
+# 2026-08 V5, foydalanuvchi ANIQ so'ragan: bu ENDI `OPENAI_MODEL`ga
+# (Telegram/assistant xususiyatlari ishlatadigan, `orchestrator.py`)
+# ASLO BOG'LIQ EMAS -- faqat `OPENAI_ANALYSIS_MODEL` o'qiladi. Bu orqali
+# "OPENAI_MODEL boshqa joyda o'zgartirilsa, qo'ng'iroq-tahlil modeli
+# yashirincha o'zgarib qolmasin" degan aniq talab bajarildi. ESLATMA:
+# foydalanuvchi so'ragan "gpt-5.6-terra" HAQIQIY OpenAI modeli EMAS --
+# standart qiymat sifatida tasdiqlangan, ishlaydigan model qo'yilgan;
+# `render.yaml`dagi shu nomdagi environment variable orqali istalgan
+# vaqtda (kod o'zgartirmasdan) yangilanishi mumkin.
+OPENAI_ANALYSIS_MODEL = os.environ.get("OPENAI_ANALYSIS_MODEL", "gpt-4o-mini")
 
 # Qaysi jismoniy audio kanal operator (Manager) liniyasi deb hisoblanadi.
 # Ko'pchilik IP-telefoniya/qo'ng'iroq yozish tizimlarida kanal 0 (chap) --
@@ -120,9 +179,6 @@ CHANNEL_OPERATOR_INDEX = int(os.environ.get("CALL_OPERATOR_CHANNEL", "0") or "0"
 # Vaqtinchalik (tarmoq/5xx) xatolarda necha marta qayta urinish.
 _MAX_RETRIES = 2
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
-
-_REQUIRED_LEGACY_KEYS = ("overview", "score")
-
 
 def is_configured() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY"))
@@ -211,14 +267,81 @@ def _sniff_audio_format(data: bytes, content_type: "str | None", url: str) -> st
     return _detect_magic_format(data) or _guess_audio_format(url, content_type)
 
 
+class AudioDownloadError(RuntimeError):
+    """`_download_audio()` xatosi -- 2026-08 V5, foydalanuvchi ANIQ so'ragan
+    NOMLANGAN xato kodlari bilan, shunda chaqiruvchi/admin-debug/UI xato
+    TURINI (nima uchun) aniq ajrata oladi, shunchaki umumiy matn emas:
+      - "audio_download_failed": tarmoq/HTTP xatosi (server javob bermadi,
+        5xx, ulanish uzildi va h.k.) -- vaqtinchalik bo'lishi mumkin.
+      - "audio_expired": havola ANIQ ishlamay qolgan ko'rinadi (403/404/410,
+        yoki javob matnida "expired"/"muddati o'tgan" kabi belgilar bor).
+      - "audio_invalid": javob keldi, lekin bu haqiqiy audio EMAS (juda
+        kichik, matn/HTML/JSON, yoki tanish audio formatiga mos kelmaydi).
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+_AUDIO_EXPIRED_MARKERS = ("expired", "muddati", "eskirgan", "not found", "404", "link is no longer valid")
+
+
 def _download_audio(url: str) -> "tuple[bytes, str]":
-    resp = requests.get(url, timeout=60)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(url, timeout=60, allow_redirects=True)
+    except requests.RequestException as e:
+        raise AudioDownloadError("audio_download_failed", f"Yozuvni yuklab olishda tarmoq xatosi: {e}") from e
+
+    if resp.status_code in (401, 403, 404, 410):
+        raise AudioDownloadError(
+            "audio_expired",
+            f"Yozuv havolasi (recording_url) ishlamayapti (HTTP {resp.status_code}) -- "
+            "muddati o'tgan yoki o'chirilgan bo'lishi mumkin.",
+        )
+    try:
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise AudioDownloadError("audio_download_failed", f"Yozuvni yuklab olishda HTTP xatosi: {e}") from e
+
     data = resp.content
     content_type = resp.headers.get("Content-Type", "")
 
+    # Content-Length bilan solishtirish -- to'liq yuklanmagan/kesilgan
+    # javobni ANIQLASH uchun (aniq xato tashlamaydi, faqat LOGGA yozadi,
+    # chunki ba'zi serverlar bu sarlavhani noto'g'ri/chunked yuborishi
+    # mumkin -- foydalanuvchi ANIQ so'ragan: qattiq rad emas, kuzatuv).
+    content_length_header = resp.headers.get("Content-Length")
+    if content_length_header:
+        try:
+            expected_len = int(content_length_header)
+            if expected_len > 0 and abs(len(data) - expected_len) > max(64, int(expected_len * 0.02)):
+                logger.warning(
+                    "Qo'ng'iroq yozuvi hajmi Content-Length sarlavhasiga mos kelmadi "
+                    "(kutilgan=%s bayt, olingan=%s bayt, url=%s) -- baribir davom etiladi.",
+                    expected_len, len(data), url,
+                )
+        except ValueError:
+            pass
+
+    ct_lower = content_type.lower()
+    if "json" in ct_lower or "html" in ct_lower or ct_lower.startswith("text/"):
+        preview = data[:200].decode("utf-8", errors="replace")
+        if any(marker in preview.lower() for marker in _AUDIO_EXPIRED_MARKERS):
+            raise AudioDownloadError(
+                "audio_expired",
+                f"Yozuv havolasi muddati o'tgan ko'rinadi (Content-Type: {content_type}): {preview!r}",
+            )
+        raise AudioDownloadError(
+            "audio_invalid",
+            f"Yozuv havolasidan (recording_url) audio o'rniga matn/HTML/JSON qaytdi "
+            f"(Content-Type: {content_type or 'nomaʼlum'}): {preview!r}. "
+            "Havola noto'g'ri yoki yozuv hali tayyor bo'lmagan bo'lishi mumkin.",
+        )
+
     if len(data) < 500:
-        raise RuntimeError(
+        raise AudioDownloadError(
+            "audio_invalid",
             f"Yuklab olingan yozuv fayli juda kichik ({len(data)} bayt, Content-Type: "
             f"{content_type or 'nomaʼlum'}) -- bu haqiqiy audio emasligi mumkin "
             "(havola muddati o'tgan yoki yozuv hali tayyor bo'lmagan bo'lishi mumkin)."
@@ -228,10 +351,11 @@ def _download_audio(url: str) -> "tuple[bytes, str]":
         looks_textual = bool(head) and all(32 <= b < 127 or b in (9, 10, 13) for b in head[:20])
         if looks_textual:
             preview = head.decode("utf-8", errors="replace")
-            raise RuntimeError(
+            raise AudioDownloadError(
+                "audio_invalid",
                 f"Yozuv havolasidan (recording_url) audio o'rniga matn/HTML qaytdi "
                 f"(Content-Type: {content_type or 'nomaʼlum'}) -- boshlanishi: {preview!r}. "
-                "Havola muddati o'tgan yoki noto'g'ri bo'lishi mumkin."
+                "Havola muddati o'tgan yoki noto'g'ri bo'lishi mumkin.",
             )
         logger.warning(
             "Yozuv fayli tanish magic-byte'larga mos kelmadi (Content-Type: %s, boshi: %r) -- "
@@ -252,6 +376,33 @@ def _ffprobe_available() -> bool:
 
 def _ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
+
+
+# 2026-08 V5, foydalanuvchi ANIQ so'ragan: `/api/health`da ffmpeg/ffprobe
+# HAQIQATDA mavjudligini ko'rsatish kerak (Docker runtime'ga o'tish shu
+# tekshiruvni MA'NOLI qiladi) -- shuning uchun ochiq (public) nom bilan
+# ham eksport qilinadi.
+def ffmpeg_available() -> bool:
+    return _ffmpeg_available()
+
+
+def ffprobe_available() -> bool:
+    return _ffprobe_available()
+
+
+def log_model_config() -> None:
+    """Ilova ishga tushganda LOGGA (hech qachon API kalitlarni EMAS) qaysi
+    transkripsiya/tahlil modellari HAQIQATDA ishlatilishini yozadi --
+    foydalanuvchi ANIQ so'ragan: production loglarida yangi modellar
+    ishlatilayotgani ko'rinishi kerak."""
+    primary = os.environ.get("OPENAI_TRANSCRIBE_MODEL") or _TRANSCRIBE_MODEL_CANDIDATES[0]
+    fallback = os.environ.get("OPENAI_TRANSCRIBE_FALLBACK_MODEL", "whisper-1")
+    logger.info("Call transcription model: primary=%s, fallback=%s, channel-timestamp=%s", primary, fallback, _CHANNEL_TIMESTAMP_MODEL)
+    logger.info("Call analysis model: %s", OPENAI_ANALYSIS_MODEL)
+    logger.info(
+        "Call audio tooling: ffmpeg_available=%s, ffprobe_available=%s, operator_channel_index=%s",
+        ffmpeg_available(), ffprobe_available(), CHANNEL_OPERATOR_INDEX,
+    )
 
 
 def probe_audio_metadata(audio_bytes: bytes, audio_format: str) -> "dict | None":
@@ -432,16 +583,19 @@ def try_stereo_channel_transcription(audio_bytes: bytes, audio_format: str, chan
 # Mono transkripsiya (oddiy, kanal ajratilmagan yozuvlar uchun)
 # ---------------------------------------------------------------------------
 
-def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_format: str, include_language: bool = True):
+def _post_transcription(
+    api_key: str, model: str, audio_bytes: bytes, audio_format: str,
+    include_language: bool = True, strong: bool = False,
+):
     data = {
         "model": model,
         "response_format": "text",
         # 2026-08 V4: hint matni endi `call_glossary.py`dan olinadi --
         # markazlashtirilgan, kengaytiriladigan lug'at (dialog namunasi +
-        # sohaga oid atamalar ro'yxati). Whisper "prompt"ni tavsif emas,
-        # "audio davomi" sifatida talqin qiladi -- shuning uchun haqiqiy
-        # dialog namunasi bilan boshlanadi.
-        "prompt": call_glossary.build_transcription_prompt(),
+        # sohaga oid atamalar ro'yxati). `strong=True` -- SIFAT DARVOZASI
+        # oldingi urinishni "suspicious"/"failed" deb topganda, QAYTA
+        # urinishda til/kontekstni yanada qat'iyroq ta'kidlaydi.
+        "prompt": call_glossary.build_transcription_prompt(strong=strong),
         "temperature": "0",
     }
     if include_language:
@@ -455,65 +609,81 @@ def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_form
     )
 
 
-def _transcribe_audio(audio_bytes: bytes, audio_format: str) -> "tuple[str, str]":
-    """Audio -> matn (mono yo'l). `(matn, ishlatilgan_model)` qaytaradi.
-    Ikki bosqichli qidiruv: 1) barcha nomzodlarga `language='uz'` bilan;
-    2) hech qaysi biri qabul qilmasa -- tilsiz (avtomatik aniqlash +
-    dialog-namunali prompt hint bilan). Ishlagan kombinatsiya keshlanadi."""
-    global _working_transcribe_config
+def _call_transcribe_model(api_key: str, model: str, audio_bytes: bytes, audio_format: str, strong: bool = False) -> "str | None":
+    """Bitta modelga BIR marta (mantiqiy) transkripsiya so'rovi yuboradi --
+    avval `language='uz'` bilan, agar bu ANIQ shu parametr sababli 400
+    bilan rad etilsa (ba'zi model/akkauntlar buni qo'llab-quvvatlamaydi),
+    DARHOL tilsiz qayta so'raydi. Bu ICHKI API-moslik fallback -- SIFAT
+    darvozasi retry hisobiga KIRMAYDI (foydalanuvchi so'ragan "maksimal
+    2-3 SIFAT urinishi" shu emas, balki tashqi `_mono_transcribe_ladder`
+    darajasidagi urinishlar)."""
+    for include_language in (True, False):
+        resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=include_language, strong=strong)
+        if resp.status_code == 400 and include_language and "language" in _extract_openai_error(resp).lower():
+            continue
+        if resp.status_code == 404:
+            logger.warning("OpenAI transkripsiya modeli '%s' topilmadi (404): %s", model, _extract_openai_error(resp))
+            return None
+        if not resp.ok:
+            raise RuntimeError(f"OpenAI transkripsiya xatosi (model={model}, HTTP {resp.status_code}): {_extract_openai_error(resp)}")
+        return (resp.text or "").strip() or None
+    return None
+
+
+_QUALITY_RANK = {"good": 3, "suspicious": 2, "failed": 1, "empty": 0, "error": 0}
+
+
+def _mono_transcribe_ladder(audio_bytes: bytes, audio_format: str, audio_duration_sec: "float | None", attempts_log: list) -> "tuple[str, str, str, float, list] | None":
+    """Mono/aralash yozuv uchun -- foydalanuvchi ANIQ so'ragan 3 bosqichli
+    SIFAT-nazorat qilingan qayta urinish zanjiri:
+      1-urinish: asosiy model (`gpt-4o-transcribe`), oddiy kontekst.
+      2-urinish: XUDDI SHU model, lekin KUCHLIROQ til/kontekst ta'kidi
+                 bilan (1-urinish "suspicious"/"failed" bo'lsa).
+      3-urinish (zaxira): BOSHQA model (`whisper-1`) -- ba'zan muammo
+                 modelning o'ziga xos bo'lishi mumkin, shuning uchun
+                 haqiqatda BOSHQA modelni sinab ko'ramiz.
+    Har bir urinishdan keyin `call_quality.assess_quality()` orqali sifat
+    tekshiriladi -- FAQAT "good" YETARLI deb topiladi, aks holda keyingi
+    urinishga o'tiladi. Uchala urinish ham "good" bermasa -- ENG YAXSHI
+    (eng past darajada yomon) natija DEBUG uchun qaytariladi, lekin
+    chaqiruvchi buni TAHLIL uchun ishlatmasligi kerak (`quality_status`ni
+    tekshirsin)."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY sozlanmagan -- qo'ng'iroq tahlili ishlamaydi.")
 
-    env_override = os.environ.get("OPENAI_TRANSCRIBE_MODEL")
-    candidates = []
-    for m in [env_override] + _TRANSCRIBE_MODEL_CANDIDATES:
-        if m and m not in candidates:
-            candidates.append(m)
+    primary_model = os.environ.get("OPENAI_TRANSCRIBE_MODEL") or _TRANSCRIBE_MODEL_CANDIDATES[0]
+    fallback_model = os.environ.get("OPENAI_TRANSCRIBE_FALLBACK_MODEL", "whisper-1")
+    if fallback_model == primary_model:
+        fallback_model = "whisper-1" if primary_model != "whisper-1" else "gpt-4o-mini-transcribe"
 
-    attempts = []
+    plan = [
+        (primary_model, False, "oddiy kontekst (1-urinish)"),
+        (primary_model, True, "kuchliroq til/kontekst ta'kidi (2-urinish, sifat pastligi uchun qayta)"),
+        (fallback_model, True, "zaxira model (3-urinish, boshqa model)"),
+    ]
 
-    def _attempt(model: str, include_language: bool):
-        resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=include_language)
-        if resp.status_code == 400 and include_language and "language" in _extract_openai_error(resp).lower():
-            return None
-        if resp.status_code == 404:
-            err_msg = _extract_openai_error(resp)
-            attempts.append(f"{model} (til={'ha' if include_language else 'yoʻq'}): {err_msg}")
-            logger.warning("OpenAI transkripsiya modeli '%s' topilmadi (404): %s", model, err_msg)
-            return None
-        if not resp.ok:
-            err_msg = _extract_openai_error(resp)
-            raise RuntimeError(f"OpenAI transkripsiya xatosi (model={model}, HTTP {resp.status_code}): {err_msg}")
-        text = (resp.text or "").strip()
+    best = None  # (text, model, quality_status, confidence, reasons)
+    for model, strong, note in plan:
+        try:
+            text = _call_transcribe_model(api_key, model, audio_bytes, audio_format, strong=strong)
+        except RuntimeError as e:
+            attempts_log.append({"attempt": len(attempts_log) + 1, "model": model, "note": note, "quality": "error", "confidence": 0.0, "reasons": [str(e)]})
+            continue
         if not text:
-            attempts.append(f"{model} (til={'ha' if include_language else 'yoʻq'}): bo'sh transkripsiya qaytardi")
-            return None
-        return text
+            attempts_log.append({"attempt": len(attempts_log) + 1, "model": model, "note": note, "quality": "empty", "confidence": 0.0, "reasons": ["Bo'sh transkripsiya qaytdi yoki model mavjud emas."]})
+            continue
+        q = call_quality.assess_quality(text, audio_duration_sec)
+        attempts_log.append({
+            "attempt": len(attempts_log) + 1, "model": model, "note": note,
+            "quality": q["status"], "confidence": q["confidence"], "reasons": q["reasons"], "preview": text[:200],
+        })
+        if call_quality.is_acceptable(q["status"]):
+            return text, model, q["status"], q["confidence"], q["reasons"]
+        if best is None or _QUALITY_RANK[q["status"]] > _QUALITY_RANK[best[2]]:
+            best = (text, model, q["status"], q["confidence"], q["reasons"])
 
-    if _working_transcribe_config:
-        cached_model, cached_lang = _working_transcribe_config
-        text = _attempt(cached_model, cached_lang)
-        if text:
-            return text, cached_model
-        _working_transcribe_config = None
-
-    for model in candidates:
-        text = _attempt(model, True)
-        if text:
-            _working_transcribe_config = (model, True)
-            return text, model
-
-    for model in candidates:
-        text = _attempt(model, False)
-        if text:
-            _working_transcribe_config = (model, False)
-            return text, model
-
-    raise RuntimeError(
-        "OpenAI'da ishlaydigan transkripsiya kombinatsiyasi topilmadi. Sinalgan: "
-        + "; ".join(attempts)
-    )
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -530,24 +700,50 @@ def _post_diarized_transcription(api_key: str, model: str, audio_bytes: bytes, a
     )
 
 
+# 2026-08 V5, foydalanuvchi ANIQ ko'rsatdi: "birinchi gapirgan = Manager"
+# TAXMINI XAVFLI (chiquvchi/kiruvchi qo'ng'iroqlarda, yoki suhbat
+# boshi kesilgan yozuvlarda, bu ko'pincha NOTO'G'RI). Shuning uchun
+# BUTUNLAY OLIB TASHLANDI -- endi Manager/Mijoz FAQAT quyidagi kabi
+# operatorga XOS iboralar TOPILGANDA (dalil bilan) belgilanadi; aks
+# holda "Speaker 1"/"Speaker 2" saqlanadi (foydalanuvchi ANIQ so'ragan:
+# "noto'g'ri ishonch bilan belgilashdan ko'ra noaniqlikni saqlash afzal").
+_OPERATOR_EVIDENCE_PHRASES = [
+    "firmasidan", "kompaniyasidan", "yordam bera olaman", "buyurtma qabul",
+    "menejerman", "operatorman", "qanday yordam bera olaman", "xush kelibsiz",
+    "filialimiz", "kompaniyamiz", "assalomu alaykum, xush kelibsiz",
+]
+
+
+def _guess_operator_speaker(speaker_texts: dict) -> "str | None":
+    """Har bir xom gapiruvchi ID uchun to'plangan matndan operatorga XOS
+    iboralar sonini hisoblaydi. FAQAT bitta gapiruvchi ANIQ ko'proq
+    (kamida 1ta va boshqasidan ko'p) mos kelsa -- o'sha operator deb
+    ISHONCH bilan qaytariladi. Teng bo'lsa yoki hech kimda topilmasa --
+    `None` (noaniq, chaqiruvchi "Speaker 1/2" saqlaydi)."""
+    hits = {speaker: sum(1 for p in _OPERATOR_EVIDENCE_PHRASES if p in text.lower()) for speaker, text in speaker_texts.items()}
+    ranked = sorted(hits.items(), key=lambda kv: kv[1], reverse=True)
+    if len(ranked) >= 2 and ranked[0][1] > 0 and ranked[0][1] > ranked[1][1]:
+        return ranked[0][0]
+    return None
+
+
 def _build_labeled_transcript_from_segments(segments: list) -> "tuple[str, bool] | None":
-    """`diarized_json`dagi `segments`ni "Manager:/Mijoz:" formatiga
-    aylantiradi. Ikkinchi element -- `confident: bool` -- agar aniq
-    ikkita gapiruvchi topilmasa yoki taxmin ISHONCHSIZ bo'lsa `False`
-    (bunday holda "Speaker A/B" saqlanadi, Manager/Mijoz deb NOTO'G'RI
-    ishonch bilan belgilanmaydi -- foydalanuvchi ANIQ shuni so'ragan)."""
+    """`diarized_json`dagi `segments`ni "Manager:/Mijoz:" (yoki, dalil
+    yetarli bo'lmasa, "Speaker 1:/Speaker 2:") formatiga aylantiradi.
+    Ikkinchi qaytarilgan qiymat -- `confident: bool`."""
     if not segments:
         return None
     speaker_order = []
+    speaker_texts: dict = {}
     for seg in segments:
         raw_speaker = str(seg.get("speaker", "")).strip() or "?"
+        text = (seg.get("text") or "").strip()
         if raw_speaker not in speaker_order:
             speaker_order.append(raw_speaker)
+        speaker_texts[raw_speaker] = speaker_texts.get(raw_speaker, "") + " " + text
 
-    # Ishonch mezoni: aynan 2 ta gapiruvchi bo'lsa VA ikkalasi ham yetarlicha
-    # gapirsa (juda qisqa "aralashib qolgan" segment emas) -- Manager/Mijoz
-    # deb belgilashga ishonamiz. Aks holda "Speaker 1/Speaker 2" saqlanadi.
-    confident = len(speaker_order) == 2
+    operator_speaker = _guess_operator_speaker(speaker_texts) if len(speaker_order) == 2 else None
+    confident = operator_speaker is not None
 
     lines = []
     for seg in segments:
@@ -556,8 +752,7 @@ def _build_labeled_transcript_from_segments(segments: list) -> "tuple[str, bool]
         if not text:
             continue
         if confident:
-            idx = speaker_order.index(raw_speaker)
-            label = "Manager" if idx == 0 else "Mijoz"
+            label = "Manager" if raw_speaker == operator_speaker else "Mijoz"
         else:
             idx = speaker_order.index(raw_speaker)
             label = f"Speaker {idx + 1}"
@@ -600,6 +795,114 @@ def _try_diarized_transcription(audio_bytes: bytes, audio_format: str) -> "tuple
     except Exception:
         raw_json_str = ""
     return text, raw_json_str
+
+
+# ---------------------------------------------------------------------------
+# TO'LIQ transkripsiya orkestratsiyasi -- SIFAT DARVOZASI bilan
+# ---------------------------------------------------------------------------
+
+def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_duration_sec: "float | None", channels: "int | None") -> dict:
+    """2026-08, foydalanuvchi haqiqiy muammoni ko'rsatgach QO'SHILDI:
+    ba'zi qo'ng'iroqlar TURKCHA/ma'nosiz matnga transkripsiya qilinib,
+    keyin tahlil modeli shu yaramas matndan umumiy/noto'g'ri xulosa
+    "to'qib chiqarardi". ENDI hech qanday transkripsiya to'g'ridan-to'g'ri
+    tahlilga yuborilmaydi -- avval SIFATI tekshiriladi (`call_quality.py`),
+    sifatsiz bo'lsa QAYTA URINILADI (boshqa model/kontekst bilan), va agar
+    hech biri "good" bermasa -- ANIQ `"transcription_failed"` holati
+    qaytariladi (tahlil UMUMAN chaqirilmaydi, xulosa TO'QILMAYDI).
+
+    Urinish tartibi (eng ishonchlidan boshlab):
+      1) 2-kanalli (stereo) bo'lsa -- kanal bo'yicha ajratib transkripsiya
+         (jismoniy kanalga asoslangan, taxminsiz -- eng ishonchli).
+      2) Diarizatsiya (`gpt-4o-transcribe-diarize`) -- mono/aralash uchun.
+      3) Oddiy transkripsiya 3-bosqichli SIFAT-nazorat zanjiri
+         (`_mono_transcribe_ladder`).
+
+    Qaytaradi:
+      {
+        "text": str | None,           # TANLANGAN transkripsiya matni (eng yaxshisi, hatto "good" bo'lmasa ham -- debug uchun)
+        "model": str | None,
+        "quality_status": "good" | "suspicious" | "failed",
+        "confidence": 0.0-1.0,          # tanlangan variantning sifat-ishonchi (ai_transcription_confidence uchun)
+        "quality_reasons": [str, ...],  # tanlangan variant uchun sabablar (ai_transcription_quality_reasons uchun)
+        "attempts": [...],             # barcha urinishlar (debug/UI uchun)
+        "diarized_raw_json": str | None,
+        "operator_channel_used": int | None,  # stereo-split ishlatilgan bo'lsa CHANNEL_OPERATOR_INDEX, aks holda None
+      }
+
+    MUHIM: chaqiruvchi FAQAT `quality_status == "good"` bo'lsa tahlilga
+    yuborishi kerak -- boshqa holatda `ai_stage = "transcription_failed"`
+    qo'yilishi va tahlil UMUMAN chaqirilmasligi kerak."""
+    attempts_log = []
+    candidates = []  # (text, model, quality_status, confidence, reasons, operator_channel_used)
+    diarized_raw_json = None
+
+    if channels == 2:
+        stereo_text = try_stereo_channel_transcription(audio_bytes, audio_format, channels)
+        if stereo_text:
+            model_label = f"{_CHANNEL_TIMESTAMP_MODEL} (stereo-split)"
+            q = call_quality.assess_quality(stereo_text, audio_duration_sec)
+            attempts_log.append({
+                "attempt": len(attempts_log) + 1, "model": model_label, "note": "stereo-kanal ajratish",
+                "quality": q["status"], "confidence": q["confidence"], "reasons": q["reasons"], "preview": stereo_text[:200],
+            })
+            if call_quality.is_acceptable(q["status"]):
+                return {
+                    "text": stereo_text, "model": model_label, "quality_status": "good",
+                    "confidence": q["confidence"], "quality_reasons": q["reasons"],
+                    "attempts": attempts_log, "diarized_raw_json": None,
+                    "operator_channel_used": CHANNEL_OPERATOR_INDEX,
+                }
+            candidates.append((stereo_text, model_label, q["status"], q["confidence"], q["reasons"], CHANNEL_OPERATOR_INDEX))
+
+    diarize_result = _try_diarized_transcription(audio_bytes, audio_format)
+    if diarize_result:
+        diarize_text, diarize_raw_json = diarize_result
+        diarize_model = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
+        q = call_quality.assess_quality(diarize_text, audio_duration_sec)
+        attempts_log.append({
+            "attempt": len(attempts_log) + 1, "model": diarize_model, "note": "diarizatsiya",
+            "quality": q["status"], "confidence": q["confidence"], "reasons": q["reasons"], "preview": diarize_text[:200],
+        })
+        if call_quality.is_acceptable(q["status"]):
+            return {
+                "text": diarize_text, "model": diarize_model, "quality_status": "good",
+                "confidence": q["confidence"], "quality_reasons": q["reasons"],
+                "attempts": attempts_log, "diarized_raw_json": diarize_raw_json,
+                "operator_channel_used": None,
+            }
+        candidates.append((diarize_text, diarize_model, q["status"], q["confidence"], q["reasons"], None))
+        diarized_raw_json = diarize_raw_json  # debug uchun saqlab qo'yamiz, hatto sifatsiz bo'lsa ham
+
+    mono_best = _mono_transcribe_ladder(audio_bytes, audio_format, audio_duration_sec, attempts_log)
+    if mono_best:
+        mono_text, mono_model, mono_quality, mono_confidence, mono_reasons = mono_best
+        if call_quality.is_acceptable(mono_quality):
+            return {
+                "text": mono_text, "model": mono_model, "quality_status": "good",
+                "confidence": mono_confidence, "quality_reasons": mono_reasons,
+                "attempts": attempts_log, "diarized_raw_json": None,
+                "operator_channel_used": None,
+            }
+        candidates.append((mono_text, mono_model, mono_quality, mono_confidence, mono_reasons, None))
+
+    # Hech biri "good" bermadi -- ENG YAXSHI (eng kam yomon) variantni
+    # DEBUG/qo'lda-tekshirish uchun qaytaramiz, lekin chaqiruvchi buni
+    # TAHLILGA yubormasligi kerak.
+    if candidates:
+        best = max(candidates, key=lambda c: _QUALITY_RANK[c[2]])
+        return {
+            "text": best[0], "model": best[1], "quality_status": best[2],
+            "confidence": best[3], "quality_reasons": best[4],
+            "attempts": attempts_log, "diarized_raw_json": diarized_raw_json,
+            "operator_channel_used": best[5],
+        }
+    return {
+        "text": None, "model": None, "quality_status": "failed",
+        "confidence": 0.0, "quality_reasons": ["Hech qanday transkripsiya urinishi natija bermadi."],
+        "attempts": attempts_log, "diarized_raw_json": None,
+        "operator_channel_used": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -653,20 +956,75 @@ def _turns_to_labeled_text(turns: list) -> str:
 # Tahlil bosqichi -- OpenAI Responses API + Structured Outputs (JSON Schema)
 # ---------------------------------------------------------------------------
 
+# 2026-08 V5, foydalanuvchi so'rovi -- avvalgi "modeldan 1-10 son so'rash"
+# o'rniga endi DETERMINISTIK RUBRIKA: model har bir mezon uchun FAQAT
+# transkriptdagi DALILGA asoslanib ball qo'yadi, YAKUNIY `score` esa
+# SERVER KODIDA shu ballar YIG'INDISI sifatida hisoblanadi (modelning
+# o'zi "umumiy baho" TANLAMAYDI -- shu bilan mezon-ball-yig'indi orasida
+# nomuvofiqlik chiqib qolishi imkonsiz).
+RUBRIC = [
+    ("greeting", "Salomlashish / qo'ng'iroqni ochish", 1),
+    ("needIdentified", "Mijoz ehtiyoji aniqlandimi", 2),
+    ("correctAnswer", "To'g'ri/tegishli javob berildi", 2),
+    ("alternativeOffered", "Muqobil yechim taklif qilindi", 1),
+    ("questionsHandled", "Mijoz savollariga javob berildi", 1),
+    ("nextStep", "Keyingi qadam/savdo siljishi", 1),
+    ("professionalCommunication", "Professional muloqot", 1),
+    ("properClosing", "To'g'ri yakunlash/callback", 1),
+]
+_RUBRIC_MAX_TOTAL = sum(maxp for _k, _l, maxp in RUBRIC)  # = 10
+
+
+_EVIDENCE_ITEM_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["text", "evidenceTurnIds"],
+    "properties": {
+        "text": {"type": "string", "description": "ANIQ, transkriptga asoslangan band (umumiy/mavhum gap emas)."},
+        "evidenceTurnIds": {
+            "type": "array", "items": {"type": "integer"},
+            "description": "normalizedTranscript ro'yxatidagi (0 dan boshlab) qaysi bo'lak(lar) shu bandga dalil ekani.",
+        },
+    },
+}
+
+
+def _rubric_schema_properties() -> dict:
+    props = {}
+    for key, _label, max_points in RUBRIC:
+        props[key] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["applicable", "earned", "reason", "evidenceTurnIds"],
+            "properties": {
+                "applicable": {"type": "boolean", "description": "Bu mezon UMUMAN shu suhbatga aloqadormi (masalan mahsulot so'ralmagan bo'lsa 'to'g'ri javob' mezoni aloqasiz bo'lishi mumkin)."},
+                "earned": {"type": "integer", "enum": list(range(max_points + 1)), "description": f"0 dan {max_points} gacha -- FAQAT applicable=true bo'lsa ma'noli."},
+                "reason": {"type": "string", "description": "Transkriptdagi ANIQ dalilga asoslangan qisqa izoh."},
+                "evidenceTurnIds": {"type": "array", "items": {"type": "integer"}},
+            },
+        }
+    return props
+
+
 _ANALYSIS_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "overview", "score", "normalizedTranscript", "customerRequest",
-        "operatorMistakes", "positivePoints", "saleResult",
-        "callbackRequired", "recommendedResponse",
+        "overview", "scoreReasons", "normalizedTranscript", "customerRequest",
+        "operatorMistakes", "positivePoints", "conversationResult",
+        "callbackRequired", "callbackReason", "recommendedAction", "analysisConfidence",
     ],
     "properties": {
-        "overview": {"type": "string", "description": "2-3 gapdan iborat juda qisqa xulosa."},
-        "score": {"type": "integer", "description": "Suhbat sifatiga 1 dan 10 gacha baho."},
+        "overview": {"type": "string", "description": "1-3 gapdan iborat, ANIQ faktlarga asoslangan xulosa (filler matn emas)."},
+        "scoreReasons": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [k for k, _l, _m in RUBRIC],
+            "properties": _rubric_schema_properties(),
+        },
         "normalizedTranscript": {
             "type": "array",
-            "description": "Suhbat, gap-bo'lib-gap, gapiruvchi bilan.",
+            "description": "Suhbat, gap-bo'lib-gap, gapiruvchi bilan (0 dan boshlab indekslanadi -- operatorMistakes/positivePoints/scoreReasons shu indekslarga ishora qiladi).",
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -680,50 +1038,59 @@ _ANALYSIS_JSON_SCHEMA = {
         "customerRequest": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["product", "brand", "quantity", "measurement", "parameters"],
+            "required": ["product", "brand", "quantity", "unit", "measurement", "parameters", "intent"],
             "properties": {
                 "product": {"type": ["string", "null"]},
                 "brand": {"type": ["string", "null"]},
                 "quantity": {"type": ["string", "null"]},
-                "measurement": {"type": ["string", "null"]},
-                "parameters": {"type": ["string", "null"]},
+                "unit": {"type": ["string", "null"]},
+                "measurement": {"type": ["string", "null"], "description": "Masalan '8 santimetrlisidan' -- aynan transkriptda kelgan ko'rinishda."},
+                "parameters": {"type": "array", "items": {"type": "string"}, "description": "Boshqa xususiyatlar, masalan '120 plotnost' -- aynan transkriptda kelgan ko'rinishda saqlangan bandlar."},
+                "intent": {"type": ["string", "null"]},
             },
         },
-        "operatorMistakes": {"type": "array", "items": {"type": "string"}},
-        "positivePoints": {"type": "array", "items": {"type": "string"}},
-        "saleResult": {"type": "string", "enum": ["sold", "lost", "pending", "unknown"]},
+        "operatorMistakes": {"type": "array", "items": _EVIDENCE_ITEM_SCHEMA},
+        "positivePoints": {"type": "array", "items": _EVIDENCE_ITEM_SCHEMA},
+        "conversationResult": {"type": "string", "enum": ["sold", "lost", "pending", "information_only", "unknown"]},
         "callbackRequired": {"type": "boolean"},
-        "recommendedResponse": {"type": "string"},
+        "callbackReason": {"type": ["string", "null"]},
+        "recommendedAction": {"type": ["string", "null"]},
+        "analysisConfidence": {"type": "number", "description": "0.0 (juda noaniq) dan 1.0 (juda ishonchli) gacha."},
     },
 }
 
+_RUBRIC_CRITERIA_TEXT = "\n".join(f'- "{key}" (max {maxp} ball): {label}' for key, label, maxp in RUBRIC)
+
 _ANALYSIS_SYSTEM_PROMPT = f"""Sen professional savdo va mijoz bilan suhbatlarni tahlil qiluvchi AI assistentsan.
 
-Senga qo'ng'iroq suhbatining TAYYOR TRANSKRIPSIYASI (matn ko'rinishida, avtomatik nutqni-matnga aylantirish xizmati orqali olingan) beriladi. Matn asosan o'zbek tilida bo'lishi mumkin, lekin ruscha, inglizcha yoki boshqa so'zlar aralashishi mumkin.
+Senga qo'ng'iroq suhbatining TAYYOR TRANSKRIPSIYASI (matn ko'rinishida, avtomatik nutqni-matnga aylantirish xizmati orqali olingan, allaqachon SIFATI tekshirilgan) beriladi. Matn asosan o'zbek tilida bo'lishi mumkin, lekin ruscha, inglizcha yoki boshqa so'zlar aralashishi mumkin.
 
 QAT'IY QOIDALAR (buzilmasin):
 
 1. Transkripsiyada AYTILGAN so'zlarni HECH QACHON "to'g'ri" yoki "adabiy" o'zbek tiliga o'zgartirma yoki tarjima qilma. Masalan agar transkripsiyada "120 plotnost, 8 santimetrlisidan kerak" deyilgan bo'lsa -- buni SHU KO'RINISHIDA saqla, "120 zichlik, 8 santimetrlik" kabi "tuzatilgan" versiyaga almashtirma.
-2. Transkripsiyada YO'Q ma'lumotni o'zingdan qo'shib chiqarma yoki umumiy bilimingdan foydalanib "to'ldirma" (masalan "8 sm bazalt albatta mavjud" kabi tasdiqni faqat MATNDA aniq aytilgan bo'lsagina yoz).
+2. Transkripsiyada YO'Q ma'lumotni o'zingdan qo'shib chiqarma yoki umumiy bilimingdan foydalanib "to'ldirma" (masalan "8 sm bazalt albatta mavjud" kabi tasdiqni faqat MATNDA aniq aytilgan bo'lsagina yoz -- kompaniyaning ICHKI mahsulot ma'lumoti tasdiqlamasa, buni "menejer noto'g'ri ma'lumot berdi" deb DA'VO QILMA, faqat "menejer shunday javob berdi" deb KUZATUV sifatida yoz).
 3. Noaniq/eshitilmagan/uzilgan joylarni "[noaniq]" deb belgila -- o'zingdan taxmin qilib to'ldirma.
 4. Mahsulot/brend nomini ANIQ bilmasang yoki noaniq eshitilgan bo'lsa -- "eng yaqin" nomga zo'rma-zo'raki moslashtirma, transkripsiyada qanday kelgan bo'lsa saqla yoki "[noaniq]" deb belgila.
 5. Gapiruvchilarni imkon qadar "manager"/"mijoz" deb ajrat; aniqlab bo'lmasa "unknown" qoldir -- taxmin bilan noto'g'ri belgilashdan ko'ra "unknown" afzal.
+6. HAR BIR "operatorMistakes"/"positivePoints" bandi ANIQ transkript qismiga asoslangan bo'lishi kerak -- umumiy/mavhum gap YOZMA. YOMON misol: "Manager mijozga yaxshi xizmat ko'rsatmadi." YAXSHI misol: "Manager mijoz 8 sm mahsulot so'raganida alternativani tekshirishni taklif qilmadi." HAR BIR bandning "evidenceTurnIds" maydonida `normalizedTranscript` ro'yxatidagi (0 dan boshlab hisoblanadigan) QAYSI bo'lak(lar) shu bandga DALIL ekanini ko'rsat.
 
 {call_glossary.build_analysis_glossary_note()}
 
-BAHOLASH (1-10, faqat butun son):
-1-3 = suhbat yomon o'tgan; 4-6 = o'rtacha, yaxshilash kerak; 7-10 = yaxshi suhbat.
-E'tibor ber: menejer mijozni tushundimi, to'g'ri savollar berdimi, ehtiyojni aniqladimi, aniq/tushunarli javob berdimi, professional gaplashdimi, suhbatni keyingi qadamga olib bordimi, mijozning savollari javobsiz qolmadimi.
+BAHOLASH RUBRIKASI (scoreReasons) -- har bir mezon uchun:
+{_RUBRIC_CRITERIA_TEXT}
+Har bir mezon uchun: agar mezon shu suhbatga UMUMAN ALOQADOR bo'lmasa (masalan mijoz muqobil variant so'ramagan, demak "alternativ taklif qilish" mezoni aloqasiz) -- "applicable": false qo'y (bu "jarima" EMAS, keyinchalik umumiy balldan CHIQARIB TASHLANADI). Aloqador bo'lsa -- "applicable": true va "earned"ga FAQAT transkriptda ANIQ dalil bo'lgan darajada ball ber (0 dan max ballgacha). "reason" va "evidenceTurnIds" orqali QAYSI transkript qismiga asoslanganingni ko'rsat.
 
-MIJOZ SO'ROVI (customerRequest): mijoz nima so'ragani -- mahsulot, brend, miqdor, o'lcham (masalan santimetr/millimetr/kvadrat/kub), boshqa parametrlar. Aniq aytilmagan maydonlarni `null` qoldir -- o'zingdan to'ldirma.
+MIJOZ SO'ROVI (customerRequest): mijoz nima so'ragani -- mahsulot, brend, miqdor, o'lchov birligi (unit -- santimetr/millimetr/kvadrat/kub), o'lcham (measurement -- masalan "8 santimetrlisidan", AYNAN transkriptda kelgan ko'rinishda), boshqa parametrlar (parameters -- ro'yxat, masalan "120 plotnost", AYNAN transkriptda kelgan ko'rinishda), va mijozning asosiy niyati (intent, masalan "narx bilish", "buyurtma berish", "shikoyat"). Aniq aytilmagan maydonlarni `null` (yoki bo'sh ro'yxat) qoldir -- o'zingdan TO'LDIRMA, TAXMIN QILMA.
 
-MENEJER XATOLARI / IJOBIY TOMONLAR: aniq, transkripsiyaga asoslangan, qisqa bandlar ro'yxati (bo'sh bo'lishi ham mumkin).
+MENEJER XATOLARI / IJOBIY TOMONLAR: aniq, transkripsiyaga asoslangan, dalil (evidenceTurnIds) bilan bandlar ro'yxati (bo'sh bo'lishi ham mumkin) -- qoida 6ga qara.
 
-SAVDO NATIJASI (saleResult): "sold" (sotildi/buyurtma berildi), "lost" (rad etildi/qiziqmadi), "pending" (hali hal bo'lmagan, o'ylab ko'radi), "unknown" (transkripsiyadan aniqlab bo'lmaydi).
+SUHBAT NATIJASI (conversationResult): "sold" (sotildi/buyurtma berildi), "lost" (rad etildi/qiziqmadi), "pending" (hali hal bo'lmagan, o'ylab ko'radi), "information_only" (mijoz faqat ma'lumot so'radi, sotib olish niyati aniq ko'rinmadi), "unknown" (transkripsiyadan aniqlab bo'lmaydi).
 
-CALLBACK (callbackRequired): mijozga qayta qo'ng'iroq/aloqa qilish kerakmi (masalan "keyinroq qo'ng'iroq qilaman" deyilgan bo'lsa).
+CALLBACK (callbackRequired/callbackReason): mijozga qayta qo'ng'iroq/aloqa qilish kerakmi va NEGA (masalan "keyinroq qo'ng'iroq qilaman" deyilgan bo'lsa).
 
-TAVSIYA (recommendedResponse): menejer/kompaniya keyingi safar qanday harakat qilishi kerakligi bo'yicha qisqa, amaliy tavsiya.
+TAVSIYA (recommendedAction): menejer/kompaniya keyingi safar qanday harakat qilishi kerakligi bo'yicha qisqa, amaliy tavsiya (yoki `null`, agar tavsiya qilish uchun yetarli asos bo'lmasa).
+
+ISHONCH DARAJASI (analysisConfidence, 0.0-1.0): transkript noaniq/uzuq-yuluq yoki ma'nosi tushunarsiz qismlar ko'p bo'lsa -- PASTROQ qiymat qo'y. Aniq, to'liq, tushunarli suhbat uchun YUQORIROQ.
 
 MUHIM: JSON'dan tashqarida hech qanday matn yozma, markdown ishlatma."""
 
@@ -753,39 +1120,102 @@ def _parse_analysis_json(raw_text: str) -> dict:
             text = text[4:]
     data = json.loads(text)
 
-    missing = [k for k in _REQUIRED_LEGACY_KEYS if k not in data]
-    if missing:
-        raise ValueError(f"Model javobida quyidagi maydonlar yo'q: {missing}")
+    if "scoreReasons" not in data or "overview" not in data:
+        raise ValueError("Model javobida 'overview'/'scoreReasons' maydonlari yo'q.")
 
-    # Status/rang HAMISHA score'dan server kodida DETERMINISTIK
-    # hisoblanadi -- modelning o'z bahosiga ishonilmaydi.
-    try:
-        score = max(1, min(10, int(round(float(data["score"])))))
-    except (TypeError, ValueError):
+    data.setdefault("normalizedTranscript", [])
+    turn_count = len(data["normalizedTranscript"])
+
+    def _clean_evidence_ids(raw_ids) -> list:
+        # Model TURN indekslarini "to'qib chiqarishi" (haqiqatda mavjud
+        # bo'lmagan indeks) mumkin -- shuning uchun haqiqiy diapazondan
+        # tashqari qiymatlar JIM chiqarib tashlanadi, xato tashlanmaydi.
+        out = []
+        for i in raw_ids or []:
+            try:
+                i = int(i)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= i < turn_count and i not in out:
+                out.append(i)
+        return out
+
+    # YAKUNIY score HECH QACHON modeldan to'g'ridan-to'g'ri olinmaydi --
+    # rubrika mezonlari bo'yicha "earned/possible" (FAQAT aloqador
+    # mezonlar bo'yicha) NISBATI server kodida hisoblanadi, so'ng 10
+    # ballik shkalaga o'tkaziladi (foydalanuvchi ANIQ so'ragan formula:
+    # earned_applicable / possible_applicable * 10).
+    raw_reasons = data.get("scoreReasons") or {}
+    score_reasons = []
+    earned_total = 0
+    possible_total = 0
+    for key, label, max_points in RUBRIC:
+        entry = raw_reasons.get(key) or {}
+        applicable = bool(entry.get("applicable", True))
+        try:
+            earned = max(0, min(max_points, int(entry.get("earned", 0))))
+        except (TypeError, ValueError):
+            earned = 0
+        if applicable:
+            earned_total += earned
+            possible_total += max_points
+        score_reasons.append({
+            "criterion": key, "label": label, "applicable": applicable,
+            "earned": earned if applicable else None, "possible": max_points,
+            "reason": (entry.get("reason") or "").strip(),
+            "evidenceTurnIds": _clean_evidence_ids(entry.get("evidenceTurnIds")),
+        })
+    if possible_total > 0:
+        score = max(0, min(10, round(earned_total / possible_total * 10)))
+    else:
+        # Hech qanday mezon aloqador emas deb topilsa (juda kamdan-kam,
+        # masalan juda qisqa/uzilgan suhbat) -- neytral o'rtacha qiymat.
         score = 5
+
+    # Status/rang HAMISHA (deterministik) hisoblangan score'dan
+    # olinadi -- modelning o'z bahosiga ASLO ishonilmaydi.
     if score <= 3:
         status, color = "bad", "red"
     elif score <= 6:
         status, color = "average", "yellow"
     else:
         status, color = "good", "green"
+
     data["score"] = score
+    data["scoreReasons"] = score_reasons
     data["status"] = status
     data["color"] = color
-    data.setdefault("normalizedTranscript", [])
+
+    def _clean_evidence_items(raw_items) -> list:
+        cleaned = []
+        for item in raw_items or []:
+            if isinstance(item, str):
+                # Model qoidani buzib oddiy string qaytarsa ham qulab tushmaslik uchun.
+                cleaned.append({"text": item, "evidenceTurnIds": []})
+            elif isinstance(item, dict) and item.get("text"):
+                cleaned.append({"text": item["text"], "evidenceTurnIds": _clean_evidence_ids(item.get("evidenceTurnIds"))})
+        return cleaned
+
+    data["operatorMistakes"] = _clean_evidence_items(data.get("operatorMistakes"))
+    data["positivePoints"] = _clean_evidence_items(data.get("positivePoints"))
     data.setdefault("customerRequest", {})
-    data.setdefault("operatorMistakes", [])
-    data.setdefault("positivePoints", [])
-    data.setdefault("saleResult", "unknown")
+    data.setdefault("conversationResult", "unknown")
     data.setdefault("callbackRequired", False)
-    data.setdefault("recommendedResponse", "")
+    data.setdefault("callbackReason", None)
+    data.setdefault("recommendedAction", None)
+    try:
+        conf = float(data.get("analysisConfidence", 0.5))
+    except (TypeError, ValueError):
+        conf = 0.5
+    data["analysisConfidence"] = max(0.0, min(1.0, conf))
     return data
 
 
-_SALE_RESULT_LABELS_UZ = {
+_CONVERSATION_RESULT_LABELS_UZ = {
     "sold": "Sotildi",
     "lost": "Yo'qotildi",
     "pending": "Kutilmoqda",
+    "information_only": "Faqat ma'lumot so'radi",
     "unknown": "Noma'lum",
 }
 
@@ -795,18 +1225,22 @@ def _build_result_summary(data: dict) -> str:
     qisqa, server tomonidan yig'ilgan matn -- modeldan alohida erkin matn
     so'rash o'rniga, allaqachon structured maydonlardan deterministik
     quriladi."""
-    sale = _SALE_RESULT_LABELS_UZ.get(data.get("saleResult"), "Noma'lum")
+    sale = _CONVERSATION_RESULT_LABELS_UZ.get(data.get("conversationResult"), "Noma'lum")
     parts = [f"Natija: {sale}."]
     if data.get("callbackRequired"):
-        parts.append("Mijozga qayta bog'lanish kerak.")
-    if data.get("recommendedResponse"):
-        parts.append(f"Tavsiya: {data['recommendedResponse']}")
+        reason = data.get("callbackReason")
+        parts.append(f"Mijozga qayta bog'lanish kerak{f' ({reason})' if reason else ''}.")
+    if data.get("recommendedAction"):
+        parts.append(f"Tavsiya: {data['recommendedAction']}")
     return " ".join(parts)
 
 
 def _analyze_transcript(transcript_text: str) -> dict:
     """Matn -> tahlil. OpenAI Responses API + Structured Outputs (qat'iy
-    JSON Schema) orqali -- erkin matnni qo'lda parslash EMAS."""
+    JSON Schema) orqali -- erkin matnni qo'lda parslash EMAS. Chaqiruvchi
+    (`analyze_call_record`) BU FUNKSIYANI FAQAT transkripsiya SIFATI
+    "good" deb topilgandan keyin chaqiradi -- sifatsiz/shubhali
+    transkripsiya HECH QACHON shu yerga yetib kelmasligi kerak."""
     api_key = os.environ.get("OPENAI_API_KEY")
     resp = _openai_request(
         "POST", "https://api.openai.com/v1/responses",
@@ -843,22 +1277,33 @@ def _analyze_transcript(transcript_text: str) -> dict:
 def analyze_call_record(session, call) -> dict:
     """Bitta `db.CallRecord` yozuvini tahlil qiladi. Bosqichlar
     (`call.ai_stage`): processing_audio -> transcribing -> analyzing ->
-    completed (yoki xato bo'lsa -- failed). Agar OLDINGI urinishda
-    transkripsiya MUVAFFAQIYATLI bo'lib, faqat TAHLIL bosqichi xato
-    bergan bo'lsa (`ai_raw_transcription` mavjud VA `ai_error` mavjud) --
-    audio QAYTA yuklab olinmaydi/QAYTA transkripsiya qilinmaydi, to'g'ridan
-    -to'g'ri mavjud xom transkripsiyadan tahlil qilinadi."""
+    completed. Agar transkripsiya SIFATI yetarli bo'lmasa (barcha
+    urinishlardan keyin ham) -- `ai_stage = "transcription_failed"`,
+    TAHLIL UMUMAN CHAQIRILMAYDI (foydalanuvchi ANIQ so'ragan: sifatsiz
+    transkriptdan hech qachon xulosa "to'qilmasin"). Agar OLDINGI
+    urinishda transkripsiya SIFATI "good" bo'lib, faqat TAHLIL bosqichi
+    kutilmagan xato bergan bo'lsa (`ai_stage == "failed"`, transkripsiya
+    "good" bo'lgani `ai_transcription_quality`dan ko'rinadi) -- audio
+    QAYTA yuklab olinmaydi/QAYTA transkripsiya qilinmaydi, mavjud xom
+    transkripsiyadan to'g'ridan-to'g'ri tahlil qilinadi. Aksincha,
+    `ai_stage == "transcription_failed"` bo'lgan yozuvlar uchun --
+    transkripsiya SIFATSIZ deb topilgani uchun -- AUDIO QAYTADAN TO'LIQ
+    (boshidan) qayta ishlanadi."""
     now = dt.datetime.utcnow()
     if not call.recording_url:
         raise ValueError("Bu qo'ng'iroqda yozuv (recording_url) yo'q.")
 
-    resume_from_transcript = bool(call.ai_raw_transcription) and bool(call.ai_error)
+    resume_from_transcript = (
+        bool(call.ai_raw_transcription)
+        and call.ai_transcription_quality == "good"
+        and call.ai_stage == "failed"
+    )
 
     try:
         if resume_from_transcript:
             logger.info(
-                "Qo'ng'iroq #%s: oldingi transkripsiya mavjud, faqat TAHLIL qayta urinilmoqda "
-                "(audio qayta yuklanmaydi).", call.id,
+                "Qo'ng'iroq #%s: oldingi transkripsiya SIFATLI (good) deb topilgan, faqat TAHLIL "
+                "qayta urinilmoqda (audio qayta yuklanmaydi).", call.id,
             )
             transcript_text = call.ai_raw_transcription
             call.ai_stage = "analyzing"
@@ -871,14 +1316,13 @@ def analyze_call_record(session, call) -> dict:
 
             metadata = probe_audio_metadata(audio_bytes, audio_format)
             channels = metadata.get("channels") if metadata else None
+            duration_sec = metadata.get("duration_sec") if metadata else None
             if metadata:
                 call.ai_audio_channels = metadata.get("channels")
                 call.ai_audio_codec = metadata.get("codec")
                 call.ai_audio_duration_sec = metadata.get("duration_sec")
                 session.commit()
-                duration_label = (
-                    f"{metadata['duration_sec']:.1f}s" if metadata.get("duration_sec") is not None else "noma'lum"
-                )
+                duration_label = f"{duration_sec:.1f}s" if duration_sec is not None else "noma'lum"
                 logger.info(
                     "Qo'ng'iroq #%s audio metadata: kodek=%s, kanal=%s, davomiylik=%s",
                     call.id, metadata.get("codec"), metadata.get("channels"), duration_label,
@@ -887,39 +1331,44 @@ def analyze_call_record(session, call) -> dict:
             call.ai_stage = "transcribing"
             session.commit()
 
-            transcript_text = None
-            model_used = None
-            diarized_raw_json = None
-
-            # 1) 2-kanalli (stereo) bo'lsa -- kanal bo'yicha ALOHIDA
-            #    transkripsiya (eng ishonchli, taxminsiz gapiruvchi ajratish).
-            if channels == 2:
-                transcript_text = try_stereo_channel_transcription(audio_bytes, audio_format, channels)
-                if transcript_text:
-                    model_used = f"{_CHANNEL_TIMESTAMP_MODEL} (stereo-split)"
-
-            # 2) Mono/aralash -- avval HAQIQIY diarizatsiya bilan sinaladi.
-            if not transcript_text:
-                diarize_result = _try_diarized_transcription(audio_bytes, audio_format)
-                if diarize_result:
-                    transcript_text, diarized_raw_json = diarize_result
-                    model_used = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
-
-            # 3) Hech biri ishlamasa -- oddiy transkripsiya + matn modeliga taxmin.
-            if not transcript_text:
-                transcript_text, model_used = _transcribe_audio(audio_bytes, audio_format)
-
-            if diarized_raw_json:
-                call.ai_diarized_json = diarized_raw_json
-
+            outcome = transcribe_with_quality_gate(audio_bytes, audio_format, duration_sec, channels)
             transcribe_elapsed = time.monotonic() - t0
+
+            call.ai_raw_transcription = outcome["text"]
+            call.ai_model_transcribe = outcome["model"]
+            call.ai_transcription_quality = outcome["quality_status"]
+            call.ai_transcription_confidence = outcome.get("confidence")
+            call.ai_transcription_quality_reasons = json.dumps(outcome.get("quality_reasons") or [], ensure_ascii=False)[:2000]
+            call.ai_transcription_attempts = len(outcome["attempts"])
+            call.ai_transcription_attempts_log = json.dumps(outcome["attempts"], ensure_ascii=False)[:20000]
+            call.ai_operator_channel = outcome.get("operator_channel_used")
+            if outcome["diarized_raw_json"]:
+                call.ai_diarized_json = outcome["diarized_raw_json"]
+
             logger.info(
-                "Qo'ng'iroq #%s transkripsiya tugadi: model=%s, %.1fs, %s belgi",
-                call.id, model_used, transcribe_elapsed, len(transcript_text or ""),
+                "Qo'ng'iroq #%s transkripsiya tugadi: %s urinish, tanlangan model=%s, sifat=%s, %.1fs, %s belgi",
+                call.id, len(outcome["attempts"]), outcome["model"], outcome["quality_status"],
+                transcribe_elapsed, len(outcome["text"] or ""),
             )
 
-            call.ai_raw_transcription = transcript_text
-            call.ai_model_transcribe = model_used
+            if not call_quality.is_acceptable(outcome["quality_status"]):
+                # 2026-08, foydalanuvchi ANIQ so'ragan MAJBURIY QOIDA:
+                # sifatsiz transkripsiya TAHLILGA YUBORILMAYDI -- yolg'on
+                # ishonchli, "to'qilgan" xulosa ko'rsatishdan ko'ra, aniq
+                # "transkripsiya sifati yetarli emas" holati AFZAL.
+                reasons = "; ".join(
+                    r for a in outcome["attempts"] for r in (a.get("reasons") or [])
+                ) or "sabab aniqlanmadi"
+                call.ai_error = (
+                    f"Transkripsiya sifati yetarli emas ({outcome['quality_status']}, "
+                    f"{len(outcome['attempts'])} urinishdan keyin). Sabablar: {reasons}"
+                )[:2000]
+                call.ai_stage = "transcription_failed"
+                call.ai_analyzed_at = now
+                session.commit()
+                return {"analysisStatus": "not_analyzed_due_to_bad_transcription", "quality_status": outcome["quality_status"]}
+
+            transcript_text = outcome["text"]
             call.ai_stage = "analyzing"
             session.commit()
 
@@ -927,13 +1376,14 @@ def analyze_call_record(session, call) -> dict:
         result = _analyze_transcript(transcript_text)
         analyze_elapsed = time.monotonic() - t1
         logger.info(
-            "Qo'ng'iroq #%s tahlil tugadi: model=%s, %.1fs, baho=%s",
-            call.id, OPENAI_ANALYSIS_MODEL, analyze_elapsed, result.get("score"),
+            "Qo'ng'iroq #%s tahlil tugadi: model=%s, %.1fs, baho=%s, ishonch=%.2f",
+            call.id, OPENAI_ANALYSIS_MODEL, analyze_elapsed, result.get("score"), result.get("analysisConfidence", 0),
         )
 
         normalized_text = _turns_to_labeled_text(result["normalizedTranscript"])
         call.ai_overview = result["overview"]
         call.ai_score = result["score"]
+        call.ai_score_reasons = json.dumps(result["scoreReasons"], ensure_ascii=False)
         call.ai_status = result["status"]
         call.ai_color = result["color"]
         call.ai_result = _build_result_summary(result)
@@ -941,15 +1391,24 @@ def analyze_call_record(session, call) -> dict:
         call.ai_customer_request = json.dumps(result["customerRequest"], ensure_ascii=False)
         call.ai_operator_mistakes = json.dumps(result["operatorMistakes"], ensure_ascii=False)
         call.ai_positive_points = json.dumps(result["positivePoints"], ensure_ascii=False)
-        call.ai_sale_result = result["saleResult"]
+        call.ai_sale_result = result["conversationResult"]
         call.ai_callback_required = bool(result["callbackRequired"])
-        call.ai_recommended_response = result["recommendedResponse"]
+        call.ai_callback_reason = result.get("callbackReason")
+        call.ai_recommended_response = result.get("recommendedAction")
+        call.ai_analysis_confidence = result["analysisConfidence"]
         call.ai_model_analysis = OPENAI_ANALYSIS_MODEL
         call.ai_error = None
         call.ai_stage = "completed"
         call.ai_analyzed_at = now
         session.commit()
         return result
+    except AudioDownloadError as e:
+        logger.exception("Qo'ng'iroq #%s audio yuklashda xato (kod=%s)", call.id, e.code)
+        call.ai_error = f"[{e.code}] {e}"[:2000]
+        call.ai_stage = "failed"
+        call.ai_analyzed_at = now
+        session.commit()
+        raise
     except Exception as e:
         logger.exception("Qo'ng'iroq #%s tahlilida xato", call.id)
         call.ai_error = f"{type(e).__name__}: {e}"[:2000]

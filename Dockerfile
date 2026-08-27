@@ -1,27 +1,14 @@
-# Dockerfile — IXTIYORIY, hozircha render.yaml'da ISHLATILMAYDI.
+# Dockerfile — 2026-08, foydalanuvchi ANIQ so'ragan: production'da
+# ffmpeg/ffprobe HAQIQATDA mavjud bo'lishi kerak (audio metadata +
+# stereo-kanal ajratish uchun). `render.yaml` endi shu Dockerfile
+# orqali `runtime: docker` bilan deploy qilinadi.
 #
-# Nega qo'shildi: 2026-08 audio-tahlil audit so'rovida foydalanuvchi
-# ffmpeg/ffprobe orqali audio metadata aniqlash va stereo (2-kanalli)
-# yozuvlarni kanal bo'yicha ajratishni so'radi. Bu funksiyalar
-# `call_analysis.py`da ALLAQACHON qo'shilgan VA to'liq himoyalangan
-# (`shutil.which()` orqali) -- ffmpeg/ffprobe mavjud bo'lmasa, ular
-# JIM o'tkazib yuboriladi, butun tahlil (transkripsiya+baholash)
-# baribir ishlayveradi.
-#
-# LEKIN: joriy `render.yaml` `runtime: python` (native buildpack)
-# ishlatadi -- bu muhitda apt-get/tizim paketi o'rnatish IMKONSIZ,
-# demak ffmpeg/ffprobe PRODUCTION'da odatda MAVJUD EMAS. Agar
-# haqiqatda audio-metadata va stereo-kanal ajratishni PRODUCTION'da
-# ISHLATMOQCHI bo'lsangiz -- shu Dockerfile'dan foydalanib
-# `render.yaml`da `runtime: python`ni `runtime: docker`ga
-# o'zgartirish kerak.
-#
-# BU O'ZGARISH ATAYLAB AVTOMATIK QILINMADI (faqat shu fayl tayyorlab
-# qo'yildi) -- bu deploy runtime'ini o'zgartiruvchi infratuzilma
-# qarori, va uni faqat siz aniq tasdiqlaganingizdan keyin qo'llash
-# kerak deb topildi. Agar xohlasangiz -- render.yaml'dagi runtime
-# qatorini o'zgartirib qo'yaman, buni faqat siz so'raganingizda
-# qilaman.
+# MUHIM: `--workers 1` SAQLANGAN (o'zgartirilmagan) -- APScheduler
+# (kunlik hisobot, soatlik audit, byudjet nazorati, AI-tahlil navbati)
+# va Telegram bot holati BITTA jarayonda saqlanishi kerak; agar
+# workers>1 bo'lsa, har bir worker ALOHIDA scheduler nusxasini ishga
+# tushirib, vazifalar TAKRORLANIB bajarilardi (masalan bitta hisobot
+# 2-4 marta yuborilishi mumkin edi).
 
 FROM python:3.11-slim
 
@@ -38,4 +25,7 @@ COPY app/ ./
 
 EXPOSE 10000
 
-CMD ["gunicorn", "wsgi:application", "--workers", "1", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:10000"]
+# Shell-shakl (array emas) -- Render beradigan $PORT o'zgaruvchisini
+# ishlatish uchun ATAYLAB shunday yozilgan (agar $PORT berilmasa, 10000
+# standart sifatida ishlatiladi).
+CMD gunicorn wsgi:application --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:${PORT:-10000}

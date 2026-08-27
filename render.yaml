@@ -1,14 +1,18 @@
 services:
   - type: web
     name: target-crm
-    runtime: python
+    # 2026-08, foydalanuvchi ANIQ so'ragan: `runtime: python` (native
+    # buildpack) ffmpeg/ffprobe'ni O'RNATA OLMAYDI (apt-get yo'q) --
+    # audio metadata + stereo-kanal ajratish uchun bular ENDI HAQIQATDA
+    # kerak, shuning uchun `runtime: docker`ga o'tkazildi (repo ildizidagi
+    # `Dockerfile` orqali, u ffmpeg'ni o'rnatadi). `dockerCommand` --workers
+    # 1'ni SAQLAYDI (APScheduler/Telegram holati bitta jarayonda bo'lishi
+    # SHART -- ko'proq worker vazifalarni takrorlab yuborardi).
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: gunicorn wsgi:application --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
     plan: starter
-    rootDir: app
-    buildCommand: pip install -r requirements.txt
-    # --workers 1: bot/scheduler holati bitta jarayonda saqlanishi uchun
-    # muhim (README'dagi "nega workers=1" izohiga qarang). --threads 4
-    # bir necha vaqtinchalik web so'rovni bir vaqtda ushlab turishga yetadi.
-    startCommand: gunicorn wsgi:application --workers 1 --threads 4 --timeout 120
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -21,6 +25,18 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      # 2026-08: qo'ng'iroq-tahlil (call_analysis.py) ENDI shu o'zgaruvchini
+      # o'qiydi -- `OPENAI_MODEL`ga BOG'LIQ EMAS (foydalanuvchi ANIQ
+      # so'ragan: "boshqa xususiyatlar OPENAI_MODEL orqali sozlanaversin,
+      # lekin qo'ng'iroq tahlili buni yashirincha ISHLATMASIN"). ESLATMA:
+      # foydalanuvchi so'ragan "gpt-5.6-terra" HAQIQIY OpenAI modeli EMAS
+      # (bunday model hozircha mavjud emas) -- shuning uchun standart
+      # qiymat sifatida TASDIQLANGAN, ishlaydigan model qo'yildi. Agar/
+      # qachon "gpt-5.6-terra" (yoki boshqa yangi model) HAQIQATDA mavjud
+      # bo'lsa, shu qatorni Render Dashboard'da o'zgartirish YETARLI --
+      # kodni qayta yozish shart emas.
+      - key: OPENAI_ANALYSIS_MODEL
         value: gpt-4o-mini
       - key: META_ACCESS_TOKEN
         sync: false

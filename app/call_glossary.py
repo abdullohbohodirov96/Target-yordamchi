@@ -29,25 +29,36 @@ GLOSSARY_TERMS = [
     "dunyabunya",
     "bazalt",
     "penopleks",
+    "penoplast",
     "gipsokarton",
+    "gips",
     "profil",
     "plotnost",
     "zichlik",
+    "qalinlik",
     "santimetr",
     "millimetr",
+    "metr",
     "kvadrat",
     "kvadrat metr",
     "kub",
     "dona",
     "pachka",
+    "list",
     "Vetonit",
     "Somafix",
     "TYTAN",
     "Demir",
     "smesitel",
     "rakovina",
+    "unitaz",
     "kafel",
+    "plitka",
     "sement",
+    "shpaklyovka",
+    "gruntovka",
+    "pena",
+    "germetik",
     "dostavka",
     "filial",
     "narx",
@@ -89,13 +100,27 @@ DIALOGUE_SAMPLE = (
 )
 
 
-def build_transcription_prompt(extra_terms: "list[str] | None" = None) -> str:
+def build_transcription_prompt(extra_terms: "list[str] | None" = None, strong: bool = False) -> str:
     """Transkripsiya so'rovining "prompt" maydoni uchun to'liq matn:
     dialog namunasi + lug'at atamalari ro'yxati. MUHIM: bu ro'yxat modelni
     so'zlarni "tuzatishga" undamaydi -- faqat qanday atamalar uchrashi
-    mumkinligini "eslatib qo'yadi" (Whisper prompt'ning tabiati shunday)."""
+    mumkinligini "eslatib qo'yadi" (Whisper prompt'ning tabiati shunday).
+
+    `strong=True` -- 2026-08, transkripsiya TURKCHA "gibberish" (masalan
+    "Allah'a sığındık" kabi) chiqarib qo'ygan holatlarda QAYTA urinish
+    uchun -- til/kontekstni yanada qat'iyroq ta'kidlaydi (modelning
+    ba'zan noto'g'ri, kutilmagan tilga "sirg'alib ketishi" ehtimolini
+    kamaytirish uchun, xususan gpt-4o-transcribe oilasi "prompt"ni
+    ko'proq YO'RIQNOMA sifatida tushunadi -- Whisper'dan farqli)."""
     hint = build_glossary_hint(extra_terms=extra_terms)
-    return f"{DIALOGUE_SAMPLE} Suhbatda quyidagi atamalar uchrashi mumkin: {hint}."
+    prefix = ""
+    if strong:
+        prefix = (
+            "MUHIM: bu qo'ng'iroq FAQAT o'zbek va rus tillarida (ba'zan brend "
+            "nomlari/raqamlar inglizcha bo'lishi mumkin). Turkcha yoki boshqa "
+            "tilga ASLO aylantirma. "
+        )
+    return f"{prefix}{DIALOGUE_SAMPLE} Suhbatda quyidagi atamalar uchrashi mumkin: {hint}."
 
 
 def build_analysis_glossary_note(extra_terms: "list[str] | None" = None) -> str:

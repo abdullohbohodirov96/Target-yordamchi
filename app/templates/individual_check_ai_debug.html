@@ -24,25 +24,56 @@
 <div class="card" style="margin-bottom:20px">
   <h2>Umumiy</h2>
   <p class="page-subtitle" style="margin:4px 0"><strong>Mijoz:</strong> {{ d.lead_name or d.phone_number or '—' }} &nbsp;|&nbsp; <strong>Menejer:</strong> {{ d.manager_name }}</p>
-  {% if d.recording_url %}<audio controls preload="none" style="height:32px; width:100%; margin:8px 0" src="{{ d.recording_url }}"></audio>{% endif %}
+  {% if d.recording_url %}<audio controls preload="none" style="height:32px; width:100%; margin:8px 0" src="{{ url_for('individual_check_audio_proxy', call_id=d.id) }}"></audio>{% endif %}
   <p class="page-subtitle" style="margin:4px 0">
     <strong>Audio kanallar:</strong> {{ d.audio_channels if d.audio_channels is not none else 'aniqlanmagan (ffprobe mavjud emas yoki xato)' }} &nbsp;|&nbsp;
     <strong>Kodek:</strong> {{ d.audio_codec or '—' }} &nbsp;|&nbsp;
-    <strong>Davomiylik:</strong> {{ '%.1f'|format(d.audio_duration_sec) ~ ' s' if d.audio_duration_sec else '—' }}
+    <strong>Davomiylik:</strong> {{ '%.1f'|format(d.audio_duration_sec) ~ ' s' if d.audio_duration_sec else '—' }} &nbsp;|&nbsp;
+    <strong>Operator kanal (ishlatilgan, agar stereo-split bo'lsa):</strong> {{ d.operator_channel if d.operator_channel is not none else '—' }}
+  </p>
+  <p class="page-subtitle" style="margin:4px 0">
+    <strong>ffmpeg mavjud (server):</strong> {{ 'Ha' if d.ffmpeg_available else 'Yo\'q' }} &nbsp;|&nbsp;
+    <strong>ffprobe mavjud (server):</strong> {{ 'Ha' if d.ffprobe_available else 'Yo\'q' }}
   </p>
   {% if d.error %}<p class="text-bad" style="margin:8px 0 0"><strong>Xatolik:</strong> {{ d.error }}</p>{% endif %}
 </div>
 
 <div class="card" style="margin-bottom:20px">
+  <h2>Sifat darvozasi (transkripsiya)</h2>
+  <p class="page-subtitle" style="margin:4px 0">
+    <strong>Holat:</strong> <span class="{{ 'text-good' if d.transcription_quality=='good' else ('text-bad' if d.transcription_quality=='failed' else 'text-warn') }}">{{ d.transcription_quality or '—' }}</span> &nbsp;|&nbsp;
+    <strong>Ishonch:</strong> {{ (d.transcription_confidence * 100) | round | int if d.transcription_confidence is not none else '—' }}{{ '%' if d.transcription_confidence is not none }} &nbsp;|&nbsp;
+    <strong>Urinishlar soni:</strong> {{ d.transcription_attempts if d.transcription_attempts is not none else '—' }}
+  </p>
+  {% if d.transcription_quality_reasons %}
+  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Yakuniy sabab(lar):</strong></p>
+  <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px">{{ d.transcription_quality_reasons }}</pre>
+  {% endif %}
+  {% if d.transcription_attempts_log %}
+  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Barcha urinishlar jurnali (xom JSON):</strong></p>
+  <pre style="white-space:pre-wrap; font-size:11.5px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px; max-height:260px; overflow:auto">{{ d.transcription_attempts_log }}</pre>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:20px">
   <h2>Tuzilmali tahlil natijalari</h2>
-  <p class="page-subtitle" style="margin:4px 0"><strong>Savdo natijasi:</strong> {{ d.sale_result or '—' }} &nbsp;|&nbsp; <strong>Qayta bog'lanish kerakmi:</strong> {{ 'Ha' if d.callback_required else 'Yo\'q' }}</p>
+  <p class="page-subtitle" style="margin:4px 0">
+    <strong>Savdo natijasi:</strong> {{ d.sale_result or '—' }} &nbsp;|&nbsp;
+    <strong>Qayta bog'lanish kerakmi:</strong> {{ 'Ha' if d.callback_required else 'Yo\'q' }} &nbsp;|&nbsp;
+    <strong>AI tahlil ishonchi:</strong> {{ (d.analysis_confidence * 100) | round | int if d.analysis_confidence is not none else '—' }}{{ '%' if d.analysis_confidence is not none }}
+  </p>
+  {% if d.callback_reason %}<p class="page-subtitle" style="margin:4px 0"><strong>Qayta bog'lanish sababi:</strong> {{ d.callback_reason }}</p>{% endif %}
   {% if d.recommended_response %}<p class="page-subtitle" style="margin:4px 0"><strong>Tavsiya:</strong> {{ d.recommended_response }}</p>{% endif %}
   <p class="page-subtitle" style="margin:8px 0 2px"><strong>Mijoz so'rovi (xom JSON):</strong></p>
   <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px">{{ d.customer_request or '—' }}</pre>
-  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Menejer xatolari (xom JSON):</strong></p>
+  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Menejer xatolari (xom JSON, evidenceTurnIds bilan):</strong></p>
   <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px">{{ d.operator_mistakes or '—' }}</pre>
-  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Ijobiy tomonlar (xom JSON):</strong></p>
+  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Ijobiy tomonlar (xom JSON, evidenceTurnIds bilan):</strong></p>
   <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px">{{ d.positive_points or '—' }}</pre>
+  {% if d.score_reasons %}
+  <p class="page-subtitle" style="margin:8px 0 2px"><strong>Baholash rubrikasi (applicable/earned, xom JSON):</strong></p>
+  <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:10px; border-radius:8px">{{ d.score_reasons }}</pre>
+  {% endif %}
 </div>
 
 <div class="card" style="margin-bottom:20px">

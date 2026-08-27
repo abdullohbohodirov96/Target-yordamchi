@@ -152,16 +152,23 @@
         </td>
         <td class="text-dim">{{ c.manager_name }}</td>
         <td>
-          {% if c.error %}
+          {% if c.transcription_failed %}
+          <span class="badge badge-color-warn" title="Transkripsiya sifati yetarli emas">sifat past</span>
+          {% elif c.error %}
           <span class="badge badge-color-bad">xatolik</span>
           {% elif c.score %}
           <span class="badge badge-color-{{ 'bad' if c.color=='red' else ('warn' if c.color=='yellow' else 'good') }}">{{ c.score }}/10</span>
           {% else %}
           <span class="text-faint">—</span>
           {% endif %}
+          {% if not c.transcription_failed and c.analysis_confidence is not none and c.analysis_confidence < 0.5 %}
+          <div class="text-faint" style="font-size:10.5px; margin-top:2px">ishonch past ({{ (c.analysis_confidence * 100) | round | int }}%)</div>
+          {% endif %}
         </td>
         <td style="max-width:360px; font-size:13px">
-          {% if c.error %}
+          {% if c.transcription_failed %}
+          <span class="text-bad" style="font-size:12px">Transkripsiya sifati yetarli emas. Qayta transkripsiya qilish kerak.</span>
+          {% elif c.error %}
           <span class="text-bad" style="font-size:12px">{{ c.error }}</span>
           {% else %}
           {{ c.overview or '—' }}
@@ -172,7 +179,25 @@
           <details>
             <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">Batafsil</summary>
             <div style="margin-top:10px; max-width:560px">
-              {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ c.recording_url }}"></audio>{% endif %}
+              {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ url_for('individual_check_audio_proxy', call_id=c.id) }}"></audio>{% endif %}
+
+              {% if c.transcription_failed %}
+              <div class="card" style="border-color:#FCA5A5; padding:10px; margin-bottom:10px">
+                <p class="text-bad" style="margin:0; font-size:13px"><strong>Transkripsiya sifati yetarli emas.</strong> Qayta transkripsiya qilish kerak.</p>
+                {% if c.transcription_quality_reasons %}
+                <ul style="margin:6px 0 0; padding-left:18px; font-size:12px" class="text-dim">
+                  {% for r in c.transcription_quality_reasons %}<li>{{ r }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {% if c.transcription_confidence is not none and c.transcription_confidence < 0.7 %}
+              <p class="page-subtitle" style="margin:0 0 8px; font-size:11.5px">⚠ Transkripsiya ishonchi past ({{ (c.transcription_confidence * 100) | round | int }}%) -- natijalarni ehtiyot bilan baholang.</p>
+              {% endif %}
+              {% if c.analysis_confidence is not none and c.analysis_confidence < 0.5 %}
+              <p class="page-subtitle" style="margin:0 0 8px; font-size:11.5px">⚠ AI tahlil ishonchi past ({{ (c.analysis_confidence * 100) | round | int }}%) -- transkript noaniq/uzuq-yuluq bo'lishi mumkin.</p>
+              {% endif %}
 
               {% if c.customer_request and (c.customer_request.product or c.customer_request.brand or c.customer_request.quantity or c.customer_request.measurement or c.customer_request.parameters) %}
               <div style="margin-bottom:10px">
@@ -188,12 +213,13 @@
               {% endif %}
 
               {% if c.result %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Natija:</strong> {{ c.result }}</p>{% endif %}
+              {% if c.callback_reason %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Qayta bog'lanish sababi:</strong> {{ c.callback_reason }}</p>{% endif %}
 
               {% if c.operator_mistakes %}
               <div style="margin-bottom:10px">
                 <p class="page-subtitle" style="margin:0 0 4px"><strong>Menejer xatolari:</strong></p>
                 <ul style="margin:0; padding-left:18px; font-size:13px" class="text-bad">
-                  {% for m in c.operator_mistakes %}<li>{{ m }}</li>{% endfor %}
+                  {% for m in c.operator_mistakes %}<li>{{ m.text }}{% if m.evidenceTurnIds %} <span class="text-faint" style="font-size:10.5px">(dalil: #{{ m.evidenceTurnIds|join(', #') }})</span>{% endif %}</li>{% endfor %}
                 </ul>
               </div>
               {% endif %}
@@ -202,7 +228,7 @@
               <div style="margin-bottom:10px">
                 <p class="page-subtitle" style="margin:0 0 4px"><strong>Ijobiy tomonlar:</strong></p>
                 <ul style="margin:0; padding-left:18px; font-size:13px" class="text-good">
-                  {% for p in c.positive_points %}<li>{{ p }}</li>{% endfor %}
+                  {% for p in c.positive_points %}<li>{{ p.text }}{% if p.evidenceTurnIds %} <span class="text-faint" style="font-size:10.5px">(dalil: #{{ p.evidenceTurnIds|join(', #') }})</span>{% endif %}</li>{% endfor %}
                 </ul>
               </div>
               {% endif %}

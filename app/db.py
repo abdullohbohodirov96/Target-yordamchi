@@ -209,9 +209,10 @@ class CallRecord(Base):
     ai_customer_request = Column(Text, nullable=True)  # JSON: {"product","brand","quantity","measurement","parameters"}
     ai_operator_mistakes = Column(Text, nullable=True)  # JSON ro'yxat (string'lar)
     ai_positive_points = Column(Text, nullable=True)  # JSON ro'yxat (string'lar)
-    ai_sale_result = Column(String(16), nullable=True)  # sold | lost | pending | unknown
+    ai_sale_result = Column(String(32), nullable=True)  # sold | lost | pending | information_only | unknown
     ai_callback_required = Column(Boolean, nullable=True)
-    ai_recommended_response = Column(Text, nullable=True)
+    ai_recommended_response = Column(Text, nullable=True)  # = "recommendedAction" (spec nomlanishi), ustun nomi eskicha saqlangan
+    ai_callback_reason = Column(Text, nullable=True)
     ai_model_transcribe = Column(String(64), nullable=True)  # haqiqatda ishlagan transkripsiya modeli (debug)
     ai_model_analysis = Column(String(64), nullable=True)  # haqiqatda ishlagan tahlil modeli (debug)
     ai_audio_channels = Column(Integer, nullable=True)  # ffprobe orqali aniqlangan kanal soni (mavjud bo'lsa)
@@ -219,13 +220,35 @@ class CallRecord(Base):
     ai_audio_duration_sec = Column(Float, nullable=True)
     # Holat mashinasi (foydalanuvchi so'rovi -- "aniq holatlar" kerak edi):
     # uploaded -> processing_audio -> transcribing -> analyzing -> completed
-    # (yoki har qanday bosqichda -- failed). `ai_analyzed_at` mavjudligi
-    # eskicha "tugadi/tugamadi" belgisi bo'lib qoladi (orqaga moslik uchun);
-    # `ai_stage` esa QAYSI bosqichda ekanini aniq ko'rsatadi -- masalan
-    # transkripsiya muvaffaqiyatli, lekin tahlil muvaffaqiyatsiz bo'lsa,
-    # qayta ishga tushirilganda AUDIO QAYTA YUKLAB OLINMAYDI/QAYTA
-    # TRANSKRIPSIYA QILINMAYDI, faqat tahlil bosqichi qaytadan sinaladi.
+    # (yoki -- transkripsiya SIFATI yetarli bo'lmasa -- "transcription_failed",
+    # yoki tahlil bosqichida kutilmagan xato bo'lsa -- "failed").
+    # `ai_analyzed_at` mavjudligi eskicha "tugadi/tugamadi" belgisi bo'lib
+    # qoladi (orqaga moslik uchun); `ai_stage` esa QAYSI bosqichda ekanini
+    # aniq ko'rsatadi -- masalan transkripsiya muvaffaqiyatli (SIFATI
+    # "good"), lekin tahlil muvaffaqiyatsiz bo'lsa ("failed"), qayta ishga
+    # tushirilganda AUDIO QAYTA YUKLAB OLINMAYDI/QAYTA TRANSKRIPSIYA
+    # QILINMAYDI, faqat tahlil bosqichi qaytadan sinaladi. Aksincha,
+    # "transcription_failed" bo'lsa -- xom transkripsiya SIFATSIZ deb
+    # topilgani uchun keyingi urinishda AUDIO QAYTADAN TO'LIQ qayta
+    # ishlanadi (transkripsiya bosqichidan boshlab).
     ai_stage = Column(String(24), nullable=True, index=True)
+
+    # 2026-08, TRANSKRIPSIYA SIFAT DARVOZASI (foydalanuvchi so'rovi -- xato
+    # transkripsiyani ("Allah'a sığındık" kabi turkcha "gibberish") hech
+    # qachon tahlilga yubormaslik kerak): har bir urinishning sifati va
+    # nechta urinish qilingani saqlanadi (debug + UI xabar uchun).
+    ai_transcription_quality = Column(String(16), nullable=True)  # good | suspicious | failed
+    ai_transcription_confidence = Column(Float, nullable=True)  # 0.0-1.0, tanlangan transkripsiyaning sifat darvozasi ishonchi
+    ai_transcription_quality_reasons = Column(Text, nullable=True)  # JSON ro'yxat -- YAKUNIY tanlangan urinishning sabablari
+    ai_transcription_attempts = Column(Integer, nullable=True)
+    ai_transcription_attempts_log = Column(Text, nullable=True)  # JSON: [{"attempt","model","quality","reasons"}, ...]
+    ai_analysis_confidence = Column(Float, nullable=True)  # 0.0-1.0, tahlil modelining o'z ishonchi
+    ai_score_reasons = Column(Text, nullable=True)  # JSON: rubrika bo'yicha har bir mezon uchun ball+sabab
+    # Stereo-kanal ajratishda QAYSI jismoniy kanal operator sifatida
+    # ISHLATILGANI (0 yoki 1) -- bu HAR DOIM YOZUV TIZIMINING konvensiyasi
+    # asosida, kontent-taxmin EMAS, lekin baribir "tekshirilmagan taxmin"
+    # ekanini debug ko'rinishida aniq ko'rsatish uchun saqlanadi.
+    ai_operator_channel = Column(Integer, nullable=True)
 
 
 class SmmSnapshot(Base):
@@ -473,6 +496,30 @@ def _migrate_add_missing_columns() -> None:
                     logger.error("Migratsiya XATOSI: %s.%s qo'shib bo'lmadi -- %s", table.name, col.name, e)
 
 
+# 2026-08: `ai_sale_result` boshida `String(16)` edi, endi yangi tahlil
+# sxemasida `"information_only"` (17 belgi) qiymati qo'shildi -- bu
+# ALLAQACHON deploy qilingan ustunga sig'maydi (`_migrate_add_missing_columns`
+# FAQAT yo'q ustunlarni QO'SHADI, mavjud ustun TURINI o'zgartirmaydi).
+# Shuning uchun bu yerda ALOHIDA, xavfsiz (qayta ishga tushirilsa ham xato
+# bermaydigan) "ustun turini kengaytirish" qadami qo'shildi.
+_COLUMN_TYPE_WIDENING = {
+    ("call_records", "ai_sale_result"): "VARCHAR(32)",
+}
+
+
+def _migrate_widen_columns() -> None:
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for (table, col), new_type in _COLUMN_TYPE_WIDENING.items():
+            if table not in existing_tables:
+                continue
+            try:
+                conn.execute(sa_text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE {new_type}'))
+            except Exception as e:
+                logger.error("Migratsiya XATOSI (ustun turini kengaytirish): %s.%s -- %s", table, col, e)
+
+
 def init_db() -> None:
     """Jadvallarni yaratadi (agar hali yo'q bo'lsa) va mavjud jadvallarga
     yetishmayotgan ustunlarni qo'shadi (`_migrate_add_missing_columns`).
@@ -484,6 +531,7 @@ def init_db() -> None:
         )
     Base.metadata.create_all(engine)
     _migrate_add_missing_columns()
+    _migrate_widen_columns()
     seed_default_funnel_stages()
 
 

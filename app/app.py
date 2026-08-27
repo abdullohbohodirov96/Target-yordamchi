@@ -17,7 +17,7 @@ import threading
 import datetime as dt
 from collections import defaultdict
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
@@ -2146,6 +2146,22 @@ def _build_ai_analysis_view(session, since) -> dict:
             except (TypeError, ValueError):
                 return None
 
+        # 2026-08 V5, foydalanuvchi ANIQ so'ragan: operatorMistakes/
+        # positivePoints endi `{"text","evidenceTurnIds"}` obyektlari --
+        # lekin ESKI (V4'da tahlil qilingan) yozuvlarda hali oddiy string
+        # bo'lishi mumkin, shuning uchun shablon HAR DOIM `.text` bilan
+        # ishlay olishi uchun bu yerda ODDIY STRINGLAR ham obyektga
+        # aylantiriladi (backward-compat).
+        def _normalize_evidence_list(raw):
+            items = _load_json(raw) or []
+            out = []
+            for item in items:
+                if isinstance(item, dict):
+                    out.append({"text": item.get("text", ""), "evidenceTurnIds": item.get("evidenceTurnIds") or []})
+                elif isinstance(item, str):
+                    out.append({"text": item, "evidenceTurnIds": []})
+            return out
+
         rows.append({
             "id": c.id,
             "started_at": (c.started_at + dt.timedelta(hours=5)) if c.started_at else None,
@@ -2158,18 +2174,29 @@ def _build_ai_analysis_view(session, since) -> dict:
             "overview": c.ai_overview, "result": c.ai_result,
             "transcription": c.ai_transcription, "error": c.ai_error,
             "stage": c.ai_stage,
+            # 2026-08 V5 -- sifat darvozasi ma'lumotlari: qo'ng'iroq
+            # `transcription_failed` bo'lsa, UI aynan NEGA tahlil
+            # qilinmaganini ko'rsatishi kerak (foydalanuvchi ANIQ so'ragan:
+            # yolg'on ishonchli xulosa o'rniga aniq holat).
+            "transcription_failed": c.ai_stage == "transcription_failed",
+            "transcription_quality": c.ai_transcription_quality,
+            "transcription_confidence": c.ai_transcription_confidence,
+            "transcription_quality_reasons": _load_json(c.ai_transcription_quality_reasons) or [],
+            "analysis_confidence": c.ai_analysis_confidence,
             # 2026-08, foydalanuvchi so'rovi -- transkripsiyani "SMS suhbat"
             # ko'rinishida (Manager/Mijoz alohida tomonlarda, gap-bo'lib-gap)
             # ko'rsatish uchun, xom matn oldindan {"speaker","text"} bo'laklarga
             # ajratib beriladi (shablon o'zi regex bilan ishlamasin uchun).
             "turns": call_analysis.parse_transcript_turns(c.ai_transcription) if c.ai_transcription else [],
-            # 2026-08 V4 -- kengaytirilgan tahlil maydonlari (mijoz so'rovi,
-            # menejer xatolari, ijobiy tomonlar, savdo natijasi, tavsiya).
+            # 2026-08 V4/V5 -- kengaytirilgan tahlil maydonlari (mijoz so'rovi,
+            # menejer xatolari (endi evidenceTurnIds bilan), ijobiy tomonlar,
+            # savdo natijasi, qayta bog'lanish sababi, tavsiya).
             "customer_request": _load_json(c.ai_customer_request),
-            "operator_mistakes": _load_json(c.ai_operator_mistakes) or [],
-            "positive_points": _load_json(c.ai_positive_points) or [],
+            "operator_mistakes": _normalize_evidence_list(c.ai_operator_mistakes),
+            "positive_points": _normalize_evidence_list(c.ai_positive_points),
             "sale_result": c.ai_sale_result,
             "callback_required": c.ai_callback_required,
+            "callback_reason": c.ai_callback_reason,
             "recommended_response": c.ai_recommended_response,
         })
     return {
@@ -2225,6 +2252,69 @@ def individual_check_run_ai_analysis():
     return redirect(url_for("individual_check", days=days, tab="ai"))
 
 
+@app.route("/individual-tekshirish/audio/<int:call_id>")
+@login_required
+def individual_check_audio_proxy(call_id):
+    """2026-08 V5, foydalanuvchi ANIQ so'ragan: AI tahlil tab'idagi audio
+    pleer ba'zan "0:00/0:00" ko'rsatib, ishlamay qolgan. ANIQLANMAGAN,
+    lekin ENG EHTIMOLIY sabab: brauzer audio DAVOMIYLIGINI aniqlash uchun
+    HTTP Range so'rovi yuboradi -- agar Moi Zvonki'ning imzolangan
+    (signed) yozuv havolasi Range'ni QO'LLAB-QUVVATLAMASA yoki noto'g'ri/
+    yo'q Content-Type qaytarsa, ba'zi brauzerlar pleerni "0:00/0:00"
+    holatida qoldiradi. Bu AUTENTIFIKATSIYA qilingan (`login_required`)
+    proxy -- yozuvni SERVER TOMONIDA yuklab oladi (Range so'rovini
+    FORWARD qilib) va TO'G'RI `Content-Type`/`Accept-Ranges`/
+    `Content-Range` bilan qayta uzatadi. `recording_url`ning o'zi HECH
+    QACHON brauzerga to'g'ridan-to'g'ri berilmaydi (login talab qilinishi
+    ham shu bilan bog'liq -- ochiq/anonim audio-ulashish EMAS)."""
+    import requests as _requests
+    from db import CallRecord
+
+    session = get_session()
+    try:
+        call = session.get(CallRecord, call_id)
+        recording_url = call.recording_url if call else None
+    finally:
+        session.close()
+    if not recording_url:
+        abort(404)
+
+    upstream_headers = {}
+    range_header = request.headers.get("Range")
+    if range_header:
+        upstream_headers["Range"] = range_header
+
+    try:
+        upstream = _requests.get(recording_url, headers=upstream_headers, stream=True, timeout=30)
+    except _requests.RequestException:
+        logger.warning("Qo'ng'iroq #%s uchun audio-proxy yuklab olishda xato", call_id)
+        abort(502)
+
+    if upstream.status_code not in (200, 206):
+        abort(502)
+
+    content_type = upstream.headers.get("Content-Type") or ""
+    if not content_type.lower().startswith("audio/"):
+        # Moi Zvonki ba'zan noto'g'ri/generic Content-Type qaytarishi
+        # mumkin -- brauzer pleer ISHLASHI uchun audio/* MAJBURIY.
+        content_type = "audio/mpeg"
+
+    resp_headers = {
+        "Content-Type": content_type,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, max-age=3600",
+    }
+    for h in ("Content-Length", "Content-Range"):
+        if upstream.headers.get(h):
+            resp_headers[h] = upstream.headers[h]
+
+    return Response(
+        upstream.iter_content(chunk_size=65536),
+        status=upstream.status_code,
+        headers=resp_headers,
+    )
+
+
 @app.route("/individual-tekshirish/ai-debug/<int:call_id>")
 @login_required
 @admin_required
@@ -2259,6 +2349,13 @@ def individual_check_ai_debug(call_id):
             "audio_channels": call.ai_audio_channels,
             "audio_codec": call.ai_audio_codec,
             "audio_duration_sec": call.ai_audio_duration_sec,
+            "operator_channel": call.ai_operator_channel,
+            "transcription_quality": call.ai_transcription_quality,
+            "transcription_confidence": call.ai_transcription_confidence,
+            "transcription_quality_reasons": call.ai_transcription_quality_reasons,
+            "transcription_attempts": call.ai_transcription_attempts,
+            "transcription_attempts_log": call.ai_transcription_attempts_log,
+            "analysis_confidence": call.ai_analysis_confidence,
             "raw_transcription": call.ai_raw_transcription,
             "normalized_transcription": call.ai_transcription,
             "diarized_json": call.ai_diarized_json,
@@ -2267,7 +2364,11 @@ def individual_check_ai_debug(call_id):
             "positive_points": call.ai_positive_points,
             "sale_result": call.ai_sale_result,
             "callback_required": call.ai_callback_required,
+            "callback_reason": call.ai_callback_reason,
             "recommended_response": call.ai_recommended_response,
+            "score_reasons": call.ai_score_reasons,
+            "ffmpeg_available": call_analysis.ffmpeg_available(),
+            "ffprobe_available": call_analysis.ffprobe_available(),
         }
     finally:
         session.close()
@@ -2647,6 +2748,9 @@ def health():
         "database_configured": bool(os.environ.get("DATABASE_URL")),
         "cron_secret_set": bool(CRON_SECRET),
         "moizvonki_configured": call_sync.is_configured(),
+        "call_analysis_configured": call_analysis.is_configured(),
+        "ffmpeg_available": call_analysis.ffmpeg_available(),
+        "ffprobe_available": call_analysis.ffprobe_available(),
     })
 
 
@@ -2666,6 +2770,7 @@ def manual_trigger(job_name):
 
 def create_app():
     init_db()
+    call_analysis.log_model_config()
     from scheduler import start_scheduler
     start_scheduler(app)
     return app
