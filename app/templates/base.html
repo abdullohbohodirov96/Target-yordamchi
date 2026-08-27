@@ -239,14 +239,25 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          typingRow.remove();
-          addMessage('assistant', data.reply || data.error || "Kechirasiz, javob olishda xatolik yuz berdi.");
+          var replyText = data.reply || data.error || "Kechirasiz, javob olishda xatolik yuz berdi.";
+          // Javobni darhol emas, insonning yozish tezligini eslatuvchi kichik
+          // kechikish bilan ko'rsatamiz -- darhol javob berish "bu bot" degan
+          // taassurot qoldiradi (2026-08, NotebookLM orqali o'rganilgan
+          // Chatplace platformasidagi tamoyil asosida, lekin bu yerda LIVE
+          // veb-vidjet bo'lgani uchun 30 soniya emas -- javob uzunligiga
+          // qarab 0.6-2.2 soniya orasida, foydalanuvchini kutdirib qo'ymaydigan
+          // darajada tanlangan).
+          var delay = Math.min(600 + replyText.length * 8, 2200);
+          setTimeout(function () {
+            typingRow.remove();
+            addMessage('assistant', replyText);
+            input.disabled = false;
+            input.focus();
+          }, delay);
         })
         .catch(function () {
           typingRow.remove();
           addMessage('assistant', "⚠️ Serverga ulanishda xatolik yuz berdi. Qayta urinib ko'ring.");
-        })
-        .finally(function () {
           input.disabled = false;
           input.focus();
         });

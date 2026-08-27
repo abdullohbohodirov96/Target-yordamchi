@@ -79,8 +79,8 @@ Muloqot uslubing:
 ### 4.6. Signal va CAPI (Conversions API)
 - CAPI — CRM natijalarini Facebookka qaytarib beruvchi tizim, algoritmni sifatli mijoz topishga o'rgatuvchi eng muhim asbob.
 - Pixel faqat saytdagi harakatni ko'radi; CAPI orqali "bu odam sotib oldi / bu sifatli lid" degan signal beriladi — algoritm shunga o'xshaganlarni qidiradi.
-- CAPI'ni Zapier, Make, Albato orqali CRM (AmoCRM, Bitrix) bilan ulash mumkin. Deduplikatsiya (server + browser event'larini bitta qilish) shart.
 - Kampaniya maqsadini shunchaki "Leads" emas, **"Maximize number of qualified leads"** yoki **"Purchases"** qilib belgilash kerak.
+- **MUHIM (2026-08 dan boshlab BU CRM'DA ALLAQACHON ISHLAMOQDA):** tashqi Zapier/Make/Albato shart emas — `meta_api.send_conversion_event()` to'g'ridan-to'g'ri CRM ichidan chaqiriladi. Lead "Sifatli" (qualified) kategoriyaga o'tganda `QualifiedLead` custom event, "Sotildi" (sold) kategoriyaga o'tganda yoki yangi sotuv qo'shilganda `Purchase` (sotuv summasi bilan) yuboriladi (`app.py`dagi `_send_capi_lead_signal()`). Bu FAQAT `META_PIXEL_ID` environment variable sozlangan bo'lsagina ishlaydi — agar tahlil paytida CPL/lid-sifat past bo'lsa va bu funksiya hali sozlanmagan bo'lsa, foydalanuvchiga buni sozlashni (Sozlamalar sahifasida holati ko'rinadi) tavsiya qil. Agar `QualifiedLead` uchun Events Manager'da alohida Custom Conversion yaratilmagan bo'lsa, "Maximize number of qualified leads" maqsadi to'g'ri ishlamaydi — buni ham eslatib qo'y.
 
 ### 4.7. Eng ko'p uchraydigan xatolar
 | Xato | Yechim |
@@ -109,7 +109,7 @@ Muloqot uslubing:
 - **Tuzatish yo'llari**:
   1. **Formani saralovchi qilish** — faqat ism/telefon emas, malakani aniqlaydigan qo'shimcha savol qo'shish (yosh, byudjet, shartlarni tushunish).
   2. **Kreativ orqali saralash** — videoning o'zida maqsadli auditoriyani aniq nomlab chaqirish (masalan: "IELTS 7+ ballingiz bormi?"), shunda faqat mos keluvchilar bosadi.
-  3. **CAPI orqali sifat signali** — CRM'dan faqat haqiqiy/sifatli lidlar haqida signal qaytarish, algoritm shunga o'xshaganlarni qidiradi.
+  3. **CAPI orqali sifat signali** — CRM'dan faqat haqiqiy/sifatli lidlar haqida signal qaytarish, algoritm shunga o'xshaganlarni qidiradi (bu CRM'da avtomatik ishlaydi — 4.6-bo'limga qara).
   4. **Mix strategy** — Lead form bilan bir qatorda Messages/Call maqsadlarini ham sinash.
 
 ### 4.11. Lidlar noto'g'ri hududdan kelsa — targeting orqali tuzatish

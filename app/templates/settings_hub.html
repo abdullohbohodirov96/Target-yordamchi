@@ -63,6 +63,54 @@
   </table>
   </div>
 </div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2 style="display:flex; align-items:center; gap:10px">
+    Meta Conversions API (CAPI)
+    {% if capi_configured %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+  </h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
+    Lead "Sifatli" yoki "Sotildi" bosqichiga o'tganda, CRM bu haqidagi signalni avtomatik ravishda Meta'ga qaytarib yuboradi -- algoritm shunga o'xshagan odamlarni auksionda qidirishni o'rganadi (kampaniya maqsadi "Maximize number of qualified leads" bilan birga ishlaydi).
+    {% if not capi_configured %}
+    Ishga tushirish uchun Render'dagi environment variable'larga <code>META_PIXEL_ID</code> qo'shing (Meta Events Manager → Data Sources → Pixel). Qo'shimcha token shart emas -- mavjud <code>META_ACCESS_TOKEN</code> yetarli.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if current_user.role == 'admin' %}
+<div class="card" style="margin-bottom:20px">
+  <h2>AI-yordamchi: javobsiz savollar</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Web AI-yordamchisi bilim bazasidan aniq javob topa olmagan savollar shu yerga tushadi -- ko'rib chiqib, kerak bo'lsa bilim bazasiga (target_master_agent.md) qo'shimcha qiling.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Savol</th><th>Kim so'radi</th><th>Qachon</th><th>Holat</th><th></th></tr></thead>
+    <tbody>
+      {% for q in unanswered %}
+      <tr>
+        <td>{{ q.question }}</td>
+        <td class="text-dim">{{ q.manager_name }}</td>
+        <td class="text-dim">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '—' }}</td>
+        <td>
+          {% if q.is_resolved %}<span class="badge badge-color-good">hal qilindi</span>{% else %}<span class="badge badge-color-bad">javobsiz</span>{% endif %}
+        </td>
+        <td>
+          {% if not q.is_resolved %}
+          <form method="post" style="margin:0">
+            <input type="hidden" name="action" value="resolve_unanswered">
+            <input type="hidden" name="question_id" value="{{ q.id }}">
+            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Hal qilindi deb belgilash</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="5">Hozircha javobsiz savol yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
 {% endif %}
 
 <div class="card">

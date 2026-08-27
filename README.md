@@ -72,6 +72,7 @@ mumkin. Alohida **PostgreSQL** ham qo'shing (New → PostgreSQL) va uning
 | `OPENAI_API_KEY` (MAJBURIY) | platform.openai.com |
 | `META_ACCESS_TOKEN` / `META_AD_ACCOUNT_ID` | **eski Vercel loyihangizdan ko'chiring** (Vercel → Settings → Environment Variables) — token hali amal qiladi bo'lsa qayta ishlatish mumkin |
 | `META_PAGE_ID` | **YANGI, MAJBURIY endi** — CRM lead-sync shu Page'ning Instant Form'laridan lead o'qiydi. Facebook Page → About → Page ID |
+| `META_PIXEL_ID` (ixtiyoriy) | Lead "Sifatli"/"Sotildi" bo'lganda Meta'ga qayta-signal (Conversions API) yuborish uchun. Meta Events Manager → Data Sources → Pixel. Sozlanmasa CAPI signali jim ravishda o'chiq qoladi, CRM'ning boshqa qismiga ta'sir qilmaydi |
 | `CRON_SECRET`, `FLASK_SECRET_KEY` | `render.yaml`da `generateValue: true` — Render o'zi tasodifiy qiymat yaratadi |
 
 Guruh chat_id'larini bilish uchun: botni ikkala guruhga qo'shing, guruhda

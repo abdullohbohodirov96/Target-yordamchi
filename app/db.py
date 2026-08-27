@@ -230,6 +230,23 @@ class SmmPost(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class AssistantUnanswered(Base):
+    """Web AI-yordamchisi javob TOPA OLMAGAN savollar (2026-08, NotebookLM
+    orqali o'rganilgan "Chatplace" AI-agent yondashuvi asosida qo'shildi --
+    u yerda ham bilim bazasida yo'q savollar admin uchun alohida
+    ro'yxatga ajratib qo'yiladi). Yordamchi javobida `[[UNANSWERED]]`
+    belgisini qo'shsa, `app.py` shu belgini o'qib bu jadvalga yozadi va
+    foydalanuvchiga ko'rsatishdan oldin belgini olib tashlaydi."""
+    __tablename__ = "assistant_unanswered"
+
+    id = Column(Integer, primary_key=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
+    manager_name = Column(String(255), nullable=True)  # kesh -- manager keyin o'chsa ham savol tarixi tushunarli qolsin
+    question = Column(Text, nullable=False)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+
+
 class CustomField(Base):
     """Admin CRM anketa savollarini (lead'ni to'ldirishda menejer javob berishi
     kerak bo'lgan qo'shimcha maydonlarni) o'zi qo'sha/tahrirlay oladi -- kodga

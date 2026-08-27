@@ -21,7 +21,10 @@ ESLATMA: Bu MVP kodi. Ishlab chiqarishga (production) chiqarishdan oldin:
 """
 
 import os
+import re
 import json
+import time
+import hashlib
 import concurrent.futures
 import requests
 
@@ -31,6 +34,7 @@ GRAPH_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
 AD_ACCOUNT_ID = os.environ.get("META_AD_ACCOUNT_ID", "")  # format: act_1234567890
 PAGE_ID = os.environ.get("META_PAGE_ID", "")  # Facebook Page ID (ad creative uchun)
+PIXEL_ID = os.environ.get("META_PIXEL_ID", "")  # Conversions API (CAPI) uchun -- ixtiyoriy
 
 
 class MetaAPIError(Exception):
@@ -65,6 +69,89 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
     if isinstance(result, dict) and "error" in result:
         raise MetaAPIError(result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Conversions API (CAPI) -- CRM'dagi lead-sifat/sotuv signalini Meta'ga qayta
+# yuborish (2026-08, NotebookLM orqali o'rganilgan "Vena AI" konsepsiyasi
+# asosida qo'shildi -- bilim bazasi 4.6/4.10-bo'limlarida ilgaridan tavsiya
+# qilingan edi, lekin hech qachon amalga oshirilmagan edi). G'oya: sotuvchi
+# CRM'da lidni "sifatli" yoki "sotib oldi" deb belgilaganda, shu hodisa
+# darhol Meta'ga signal sifatida yuboriladi -- algoritm shunga o'xshagan
+# odamlarni auksionda qidirishni o'rganadi (ayniqsa "Maximize number of
+# qualified leads" maqsadi bilan birga ishlaganda samarali).
+#
+# Sozlash: Render environment variable'larga META_PIXEL_ID qo'shing (Meta
+# Events Manager -> Data Sources -> Pixel). Bu sozlanmagan bo'lsa,
+# send_conversion_event() jim ravishda hech narsa qilmaydi (xato tashlamaydi)
+# -- CRM'ning asosiy oqimi (lead saqlash, sotuv qo'shish) CAPI ulanmagan
+# taqdirda ham hech qachon buzilmasligi kerak.
+# ---------------------------------------------------------------------------
+
+def is_capi_configured() -> bool:
+    return bool(ACCESS_TOKEN and PIXEL_ID)
+
+
+def _hash_sha256(value: str) -> str:
+    return hashlib.sha256(value.strip().lower().encode("utf-8")).hexdigest()
+
+
+def send_conversion_event(
+    event_name: str,
+    *,
+    phone: str | None = None,
+    email: str | None = None,
+    lead_id: str | None = None,
+    event_id: str | None = None,
+    value: float | None = None,
+    currency: str = "UZS",
+) -> dict | None:
+    """Bitta hodisani (masalan "QualifiedLead" yoki "Purchase") Meta
+    Conversions API'ga yuboradi.
+
+    - `phone`/`email` -- mijozning CRM'dagi kontakti (SHA-256 bilan xeshlanadi,
+      xom holda hech qachon Meta'ga yuborilmaydi -- bu Meta'ning o'zi talab
+      qiladigan standart usul).
+    - `lead_id` -- agar mavjud bo'lsa, Meta'ning o'z Instant Form leadgen ID'si
+      (`Lead.meta_lead_id`) -- eng aniq moslashtirish usuli, chunki bu lead
+      allaqachon Meta tomonida bor va reklama bilan bevosita bog'langan.
+    - `event_id` -- dublikatni oldini olish uchun barqaror kalit (masalan
+      f"lead-{lead.id}-qualified") -- bir xil hodisa qayta yuborilib qolsa
+      ham Meta ikkalanini bittaga hisoblaydi.
+    - `value`/`currency` -- pul summasi bilan bog'liq hodisalar uchun
+      (masalan sotuv summasi).
+
+    META_PIXEL_ID sozlanmagan yoki moslashtiradigan hech qanday kontakt
+    berilmagan bo'lsa -- `None` qaytaradi, xato tashlamaydi.
+    """
+    if not is_capi_configured():
+        return None
+
+    user_data: dict = {}
+    if phone:
+        digits = re.sub(r"\D", "", phone)
+        if digits:
+            user_data["ph"] = [_hash_sha256(digits)]
+    if email and "@" in email:
+        user_data["em"] = [_hash_sha256(email)]
+    if lead_id:
+        user_data["lead_id"] = str(lead_id)
+
+    if not user_data:
+        return None  # moslashtiradigan hech narsa yo'q -- yuborishning ma'nosi yo'q
+
+    event = {
+        "event_name": event_name,
+        "event_time": int(time.time()),
+        "action_source": "system_generated",
+        "user_data": user_data,
+    }
+    if event_id:
+        event["event_id"] = event_id
+    if value is not None:
+        event["custom_data"] = {"value": round(float(value), 2), "currency": currency}
+
+    return _post(f"{PIXEL_ID}/events", {"data": [event]}, token=ACCESS_TOKEN)
 
 
 # ---------------------------------------------------------------------------

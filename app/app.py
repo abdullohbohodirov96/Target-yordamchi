@@ -29,7 +29,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered
 from dashboard_data import get_kpis
 import lead_sync
 import call_sync
@@ -51,6 +51,70 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
+
+# ---------------------------------------------------------------------------
+# Web AI-yordamchisi uchun qo'shimcha "ohang" ko'rsatmasi (2026-08, NotebookLM
+# orqali o'rganilgan Chatplace platformasi yondashuvi asosida). FAQAT web
+# vidjeti (`/api/assistant`) uchun ishlatiladi -- Telegram bot o'zining
+# xom KNOWLEDGE_BASE'ini o'zgarishsiz davom ettiradi, chunki bu ikkalasi
+# alohida "shaxs" sifatida ko'rilgan (Telegram -- ichki jamoa uchun tezkor
+# hisobot boti, web vidjet -- CRM ichidagi yordamchi).
+#
+# `[[UNANSWERED]]` -- modelga JAVOBINING OXIRIGA qo'shishni buyuruvchi
+# yashirin belgi (foydalanuvchiga ko'rsatilmaydi, `api_assistant()` uni
+# aniqlab olib tashlaydi va savolni admin ko'rishi uchun
+# `AssistantUnanswered` jadvaliga yozadi) -- Chatplace'dagi "botda yo'q
+# savolni admin uchun alohida ro'yxatga ajratish" tamoyilining analogi.
+# ---------------------------------------------------------------------------
+WEB_ASSISTANT_PERSONA = """Sen "Target CRM" tizimi ichidagi AI-yordamchisan. Suhbatdoshing -- shu CRM'dan foydalanayotgan menejer yoki admin. Quruq, robot kabi emas, balki iliq, samimiy va professional ohangda -- xuddi jonli, tajribali hamkasb kabi gaplash.
+
+Agar pastdagi BILIM BAZASI'da so'ralgan savolga ANIQ javob TOPILMASA:
+- Hech qachon o'zingdan taxmin qilib, noaniq yoki noto'g'ri bo'lishi mumkin bo'lgan ma'lumot to'qib chiqarma.
+- Javobingni shunday boshla: "Menda bu bo'yicha aniq ma'lumot yo'q, lekin ..." va bilganingcha eng yaqin foydali narsani taklif qil.
+- Javobingning ENG OXIRIGA (boshqa hech qayerga emas) qatordan keyin aynan shu belgini qo'sh: [[UNANSWERED]]
+
+Agar bilim bazasida yoki suhbat tarixida javob aniq bo'lsa -- oddiygina, ishonchli javob ber, [[UNANSWERED]] belgisini HECH QACHON qo'shma."""
+
+
+def _web_assistant_system_prompt() -> str:
+    return f"{WEB_ASSISTANT_PERSONA}\n\n---\n\n# BILIM BAZASI\n\n{KNOWLEDGE_BASE}"
+
+
+def _log_unanswered_question(session, manager_name: str | None, question: str) -> None:
+    try:
+        manager_row = session.query(Manager).filter_by(username=current_user.username).first() if current_user.is_authenticated else None
+        session.add(AssistantUnanswered(
+            manager_id=manager_row.id if manager_row else None,
+            manager_name=manager_name,
+            question=question[:2000],
+        ))
+        session.commit()
+    except Exception:
+        logger.exception("Javobsiz savolni saqlashda xatolik")
+
+
+# ---------------------------------------------------------------------------
+# Conversions API (CAPI) -- lead-sifat/sotuv signalini Meta'ga qayta yuborish
+# (2026-08, NotebookLM orqali o'rganilgan "Vena AI" konsepsiyasi asosida).
+# Har doim try/except bilan o'raladi -- CAPI ulanmagan yoki vaqtincha
+# ishlamayotgan bo'lishi CRM'ning asosiy amalini (status/sotuv saqlash)
+# HECH QACHON to'xtatmasligi kerak.
+# ---------------------------------------------------------------------------
+
+def _send_capi_lead_signal(lead, event_name: str, *, value: float | None = None, event_id_suffix: str = "") -> None:
+    if not meta_api.is_capi_configured():
+        return
+    try:
+        meta_api.send_conversion_event(
+            event_name,
+            phone=lead.phone,
+            email=lead.email,
+            lead_id=lead.meta_lead_id,
+            event_id=f"lead-{lead.id}-{event_name.lower()}{event_id_suffix}",
+            value=value,
+        )
+    except Exception:
+        logger.exception("CAPI signalini yuborishda xatolik (lead_id=%s, event=%s)", lead.id, event_name)
 
 
 # ---------------------------------------------------------------------------
@@ -456,15 +520,27 @@ def api_assistant():
         logger.exception("Web yordamchi: execute_intent xatosi")
         result = f"⚠️ Buyruqni bajarishda xatolik: {e}"
 
+    unanswered = False
     if result is None:
         try:
-            result = orchestrator.call_light_chat(KNOWLEDGE_BASE, history, max_tokens=800)
+            result = orchestrator.call_light_chat(_web_assistant_system_prompt(), history, max_tokens=800)
         except Exception as e:
             logger.exception("Web yordamchi: call_light_chat xatosi")
             result = f"⚠️ Xatolik yuz berdi: {e}"
+        if result and "[[UNANSWERED]]" in result:
+            unanswered = True
+            result = result.replace("[[UNANSWERED]]", "").strip()
 
     history.append({"role": "assistant", "content": result})
     kv_store.set_json(history_key, history[-12:])
+
+    if unanswered:
+        session = get_session()
+        try:
+            _log_unanswered_question(session, current_user.full_name or current_user.username, user_text)
+        finally:
+            session.close()
+
     return jsonify({"reply": result, "is_admin": is_admin})
 
 
@@ -1512,6 +1588,7 @@ def lead_detail(lead_id):
                     session.flush()
                     _recompute_lead_sale_total(session, lead)
                     session.commit()
+                    _send_capi_lead_signal(lead, "Purchase", value=amount, event_id_suffix=f"-{existing_count + 1}")
                     flash(f"{existing_count + 1}-sotuv qo'shildi.", "success")
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
 
@@ -1578,6 +1655,7 @@ def lead_detail(lead_id):
             if "email" in request.form:
                 lead.email = new_email or None
 
+            old_category = stage_by_key[lead.status].category if lead.status in stage_by_key else None
             if new_status in stage_by_key:
                 lead.status = new_status
 
@@ -1616,6 +1694,17 @@ def lead_detail(lead_id):
             session.flush()
             _recompute_lead_sale_total(session, lead)
             session.commit()
+
+            # --- CAPI signal: lead yangi kategoriyaga o'tganda Meta'ga qayta
+            # aloqa yuboriladi (faqat HAQIQIY o'tishda -- qayta saqlashda
+            # takrorlanmasin uchun eski/yangi kategoriya solishtiriladi). ---
+            new_category = stage_by_key[new_status].category if new_status in stage_by_key else old_category
+            if new_status in stage_by_key and new_category != old_category:
+                if new_category == "qualified":
+                    _send_capi_lead_signal(lead, "QualifiedLead")
+                elif new_category == "sold":
+                    _send_capi_lead_signal(lead, "Purchase", value=lead.sale_amount)
+
             flash("Saqlandi.", "success")
             return redirect(url_for("leads_list"))
 
@@ -1969,12 +2058,34 @@ def settings_hub():
                 else:
                     flash("Menejer topilmadi.", "error")
 
+            elif action == "resolve_unanswered":
+                q_id = request.form.get("question_id", "")
+                q = session.get(AssistantUnanswered, int(q_id)) if q_id.isdigit() else None
+                if q:
+                    q.is_resolved = True
+                    session.commit()
+                    flash("Savol hal qilingan deb belgilandi.", "success")
+
             return redirect(url_for("settings_hub"))
 
         managers_all = session.query(Manager).filter_by(is_active=True).order_by(Manager.full_name).all()
         manager_rows = [
             {"id": m.id, "name": m.full_name or m.username, "telegram_user_id": m.telegram_user_id}
             for m in managers_all
+        ]
+        unanswered_rows = (
+            session.query(AssistantUnanswered)
+            .order_by(AssistantUnanswered.is_resolved.asc(), AssistantUnanswered.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        unanswered = [
+            {
+                "id": u.id, "question": u.question,
+                "manager_name": u.manager_name or "—",
+                "created_at": u.created_at, "is_resolved": u.is_resolved,
+            }
+            for u in unanswered_rows
         ]
     finally:
         session.close()
@@ -1984,6 +2095,8 @@ def settings_hub():
         min_sale_amount=kpi_bonus.get_min_sale_amount(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
         managers=manager_rows,
+        unanswered=unanswered,
+        capi_configured=meta_api.is_capi_configured(),
     )
 
 
