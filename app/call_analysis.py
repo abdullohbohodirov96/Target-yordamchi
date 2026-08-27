@@ -200,14 +200,10 @@ def _guess_audio_format(url: str, content_type: str | None) -> str:
     return "mp3"
 
 
-def _sniff_audio_format(data: bytes, content_type: str | None, url: str) -> str:
-    """Fayl KENGAYTMASI/Content-Type'ga emas, fayl BOSHIDAGI "magic bytes"ga
-    qarab haqiqiy formatni aniqlaydi. 2026-08: transkripsiya "gibberish"
-    (ma'nosiz so'zlar) chiqarayotgani aniqlandi -- buning bir sababi format
-    NOTO'G'RI taxmin qilinib, OpenAI'ga masalan WAV fayl "mp3" deb
-    yuborilishi bo'lishi mumkin edi (bunda model xato dekodlangan audio
-    "shovqinini" so'zlarga aylantirishga urinadi). Bu funksiya faylning
-    o'zidan (headerdan) haqiqiy formatni o'qiydi -- ancha ishonchli."""
+def _detect_magic_format(data: bytes) -> str | None:
+    """Faylning BOSHIDAGI "magic bytes"iga qarab formatni aniqlaydi.
+    Hech narsa mos kelmasa `None` qaytaradi (ya'ni bu ehtimol umuman
+    audio EMAS -- masalan xato sahifasi)."""
     head = data[:16]
     if head[:3] == b"ID3" or (len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
         return "mp3"
@@ -217,14 +213,57 @@ def _sniff_audio_format(data: bytes, content_type: str | None, url: str) -> str:
         return "ogg"
     if len(head) >= 8 and head[4:8] == b"ftyp":
         return "m4a"
-    return _guess_audio_format(url, content_type)
+    return None
+
+
+def _sniff_audio_format(data: bytes, content_type: str | None, url: str) -> str:
+    """Fayl KENGAYTMASI/Content-Type'ga emas, fayl BOSHIDAGI "magic bytes"ga
+    qarab haqiqiy formatni aniqlaydi. 2026-08: transkripsiya "gibberish"
+    (ma'nosiz so'zlar) chiqarayotgani aniqlandi -- buning bir sababi format
+    NOTO'G'RI taxmin qilinib, OpenAI'ga masalan WAV fayl "mp3" deb
+    yuborilishi bo'lishi mumkin edi (bunda model xato dekodlangan audio
+    "shovqinini" so'zlarga aylantirishga urinadi). Bu funksiya faylning
+    o'zidan (headerdan) haqiqiy formatni o'qiydi -- ancha ishonchli."""
+    return _detect_magic_format(data) or _guess_audio_format(url, content_type)
 
 
 def _download_audio(url: str) -> tuple[bytes, str]:
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
-    audio_format = _sniff_audio_format(resp.content, resp.headers.get("Content-Type"), url)
-    return resp.content, audio_format
+    data = resp.content
+    content_type = resp.headers.get("Content-Type", "")
+
+    # 2026-08: tahlil hali ham ma'nosiz ("gibberish") matn chiqarayotgani
+    # haqida shikoyat kelgach -- bir ehtimol tekshirildi: balki `recording_url`
+    # dan AUDIO EMAS, xato sahifasi (HTML/JSON) tushib qolayotgandir (havola
+    # muddati o'tgan yoki noto'g'ri bo'lsa ham server ko'pincha HTTP 200
+    # bilan "xato" sahifasini qaytaradi -- `raise_for_status()` buni
+    # ushlamaydi). Bunday holda Whisper "audio" sifatida matnni dekodlashga
+    # urinib, albatta ma'nosiz chiqindi beradi. Shuning uchun ENDI yuklab
+    # olingan fayl HAQIQATDA audio ko'rinishiga ega ekanini aniq tekshiramiz.
+    if len(data) < 500:
+        raise RuntimeError(
+            f"Yuklab olingan yozuv fayli juda kichik ({len(data)} bayt, Content-Type: "
+            f"{content_type or 'nomaʼlum'}) -- bu haqiqiy audio emasligi mumkin "
+            "(havola muddati o'tgan yoki yozuv hali tayyor bo'lmagan bo'lishi mumkin)."
+        )
+    if _detect_magic_format(data) is None:
+        head = data[:60]
+        looks_textual = bool(head) and all(32 <= b < 127 or b in (9, 10, 13) for b in head[:20])
+        if looks_textual:
+            preview = head.decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Yozuv havolasidan (recording_url) audio o'rniga matn/HTML qaytdi "
+                f"(Content-Type: {content_type or 'nomaʼlum'}) -- boshlanishi: {preview!r}. "
+                "Havola muddati o'tgan yoki noto'g'ri bo'lishi mumkin."
+            )
+        logger.warning(
+            "Yozuv fayli tanish magic-byte'larga mos kelmadi (Content-Type: %s, boshi: %r) -- "
+            "baribir yuborilmoqda.", content_type, data[:16],
+        )
+
+    audio_format = _sniff_audio_format(data, content_type, url)
+    return data, audio_format
 
 
 def _extract_openai_error(resp) -> str:
@@ -246,9 +285,22 @@ def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_form
     data = {
         "model": model,
         "response_format": "text",
-        # 2026-08: kontekst hint -- tilni aniq bilmasak ham, so'zlar
-        # o'zbekcha savdo suhbatiga tegishli ekanini eslatib turadi.
-        "prompt": "Bu savdo menejeri va mijoz o'rtasidagi telefon suhbati, o'zbek tilida.",
+        # 2026-08: `language="uz"` bu endpoint uchun rad etilgani sababli
+        # (pastga qarang), tilni "prompt" orqali bilvosita bildirishga
+        # majburmiz. MUHIM: Whisper "prompt"ni TAVSIF sifatida emas, "audio
+        # DAVOMI" sifatida talqin qiladi -- shuning uchun "bu o'zbekcha
+        # suhbat" kabi TASHQI tavsif deyarli foydasiz, LEKIN haqiqiy
+        # o'zbekcha DIALOG NAMUNASI berish tilni va uslubni kuchli tarzda
+        # "tortadi" (OpenAI'ning o'z tavsiyasi). Shuning uchun bu yerda
+        # aynan shu ko'rinishdagi namuna ishlatilgan.
+        "prompt": (
+            "Manager: Assalomu alaykum, xush kelibsiz, sizga qanday yordam bera olaman? "
+            "Mijoz: Vaalaykum assalom, menga mahsulot narxi va yetkazib berish haqida "
+            "ma'lumot kerak edi."
+        ),
+        # Hallyusinatsiya (ma'nosiz so'z to'qish) ehtimolini kamaytirish
+        # uchun eng "ishonchli"/deterministik dekodlashni so'raymiz.
+        "temperature": "0",
     }
     if include_language:
         # 2026-08: tilni ANIQ ko'rsatmasak, Whisper ba'zan noto'g'ri tilni
