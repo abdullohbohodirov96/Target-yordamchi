@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Sotilgan xaridorlar — Target CRM{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Sotilgan xaridorlar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Har bir xarid alohida qator -- bitta mijoz bir necha marta xarid qilgan bo'lsa, har biri alohida ko'rinadi.</p>
+  </div>
+</div>
+
+<div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:16px; max-width:480px">
+  <div class="kpi-card"><div class="kpi-label">Xaridlar soni</div><div class="kpi-value">{{ total_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Jami summa</div><div class="kpi-value good">{{ total_amount|som }}</div></div>
+</div>
+
+<form method="get" class="searchbar" style="padding:0; margin-bottom:14px">
+  <div class="search-input-wrap" style="max-width:320px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" name="q" value="{{ search_q }}" placeholder="Ism yoki telefon bo'yicha qidirish...">
+  </div>
+  {% if purchase_filter %}<input type="hidden" name="purchase" value="{{ purchase_filter }}">{% endif %}
+</form>
+
+<div class="filters">
+  <a href="{{ url_for('sold_customers_list', q=search_q) }}" class="{{ 'active' if purchase_filter=='' }}">Hammasi</a>
+  <a href="{{ url_for('sold_customers_list', purchase='1', q=search_q) }}" class="{{ 'active' if purchase_filter=='1' }}">1-xarid</a>
+  <a href="{{ url_for('sold_customers_list', purchase='2plus', q=search_q) }}" class="{{ 'active' if purchase_filter=='2plus' }}">Takroriy xarid (2+)</a>
+</div>
+
+<div class="panel">
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Xaridor</th><th>Telefon</th><th>Menejer</th><th>Xarid raqami</th><th class="num">Summa</th><th>Chek/Nakladnoy</th><th>Sana</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sales %}
+      <tr>
+        <td><a href="{{ url_for('lead_detail', lead_id=s.lead_id) }}" class="text-blue">{{ s.full_name }}</a></td>
+        <td class="text-dim">{{ s.phone or '—' }}</td>
+        <td class="text-dim">{{ s.manager_name }}</td>
+        <td>
+          {% if s.sale_number == 1 %}
+          <span class="badge badge-color-blue">1-xarid</span>
+          {% else %}
+          <span class="badge badge-color-good">{{ s.sale_number }}-xarid (takroriy)</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ s.amount|som }}</td>
+        <td class="text-dim">{{ s.invoice_number or '—' }}</td>
+        <td class="text-dim">{{ s.sold_at.strftime('%Y-%m-%d') if s.sold_at else '—' }}</td>
+        <td><a href="{{ url_for('lead_detail', lead_id=s.lead_id) }}" class="text-blue">ko'rish</a></td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="8">Bu filtr bo'yicha xarid topilmadi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

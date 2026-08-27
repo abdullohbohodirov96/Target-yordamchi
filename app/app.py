@@ -34,6 +34,7 @@ from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bound
 import lead_sync
 import call_sync
 import call_analytics
+import call_analysis
 import kpi_bonus
 import smm_sync
 import smm_analytics
@@ -1109,6 +1110,57 @@ def leads_list():
     )
 
 
+@app.route("/sotilgan-xaridorlar")
+@login_required
+@module_required("leads")
+def sold_customers_list():
+    """"Sotilgan xaridorlar" -- CRM bo'limi ichidagi alohida sahifa (2026-08,
+    foydalanuvchi so'rovi: "bo'limni almashtirib CRM qilib, ichiga sotilgan
+    xaridorlar qo'shish kerak, 1-xarid/2-xarid filtr bilan").
+
+    `/leads` sahifasidagi "Sotildi" filtri LEAD darajasida ishlaydi (bitta
+    qator = bitta lead, hatto o'sha lead necha marta xarid qilgan bo'lsa
+    ham) -- bu yerda esa HAR BIR XARID (`Sale`) alohida qator, shuning
+    uchun "1-xarid" (birinchi marta xarid qilganlar) va "Takroriy xarid"
+    (2-marta va undan ko'p xarid qilganlar) bo'yicha filtrlash mumkin.
+    `Sale.sale_number` allaqachon mavjud -- har bir sotuv yozilganda
+    "shu LEAD uchun nechinchi sotuv" avtomatik hisoblab qo'yiladi
+    (multi-sale-per-lead funksiyasi, ilgari qo'shilgan)."""
+    purchase_filter = request.args.get("purchase", "")  # "" | "1" | "2plus"
+    search_q = request.args.get("q", "").strip()
+    session = get_session()
+    try:
+        q = (
+            session.query(Sale)
+            .join(Lead, Sale.lead_id == Lead.id)
+            .filter(Sale.is_returned == False, Sale.amount >= kpi_bonus.get_min_sale_amount())  # noqa: E712
+            .order_by(Sale.sold_at.desc())
+        )
+        if purchase_filter == "1":
+            q = q.filter(Sale.sale_number == 1)
+        elif purchase_filter == "2plus":
+            q = q.filter(Sale.sale_number > 1)
+        if search_q:
+            like = f"%{search_q}%"
+            q = q.filter((Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)))
+        sales = q.limit(500).all()
+        rows = [{
+            "id": s.id, "lead_id": s.lead_id,
+            "full_name": (s.lead.full_name if s.lead else None) or "Noma'lum",
+            "phone": s.lead.phone if s.lead else None,
+            "manager_name": s.manager.full_name if s.manager else "—",
+            "sale_number": s.sale_number, "amount": s.amount,
+            "invoice_number": s.invoice_number, "sold_at": s.sold_at,
+        } for s in sales]
+        total_amount = sum(r["amount"] for r in rows)
+    finally:
+        session.close()
+    return render_template(
+        "sold_customers.html", sales=rows, purchase_filter=purchase_filter,
+        search_q=search_q, total_amount=total_amount, total_count=len(rows),
+    )
+
+
 @app.route("/leads/new", methods=["GET", "POST"])
 @login_required
 @module_required("leads")
@@ -2028,21 +2080,109 @@ def individual_check():
         days = max(1, min(90, int(days)))
     except (TypeError, ValueError):
         days = 30
+    tab = request.args.get("tab", "calls")
+    if tab not in ("calls", "ai"):
+        tab = "calls"
     since = dt.datetime.utcnow() - dt.timedelta(days=days)
 
     session = get_session()
     try:
         check = call_analytics.build_individual_check(session, since)
+        ai = _build_ai_analysis_view(session, since)
     finally:
         session.close()
 
     return render_template(
         "individual_check.html",
-        days=days,
+        days=days, tab=tab,
         configured=call_sync.is_configured(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
+        ai=ai,
         **check,
     )
+
+
+def _build_ai_analysis_view(session, since) -> dict:
+    """"AI analiz" tab uchun (2026-08, foydalanuvchi so'rovi -- audio-tahlil
+    promptini avtomatik ishlatib, "Individual tekshirish"ning ICHIDA emas,
+    alohida tab sifatida ko'rsatish kerak): tahlil qilingan qo'ng'iroqlar
+    ro'yxati + hozircha navbatda turganlar soni ("hozir nima qilinayotgani"
+    ko'rinishi uchun)."""
+    from db import CallRecord, Lead, Manager
+
+    min_seconds = call_analytics.get_min_real_talk_seconds()
+    analyzed = (
+        session.query(CallRecord)
+        .filter(CallRecord.ai_analyzed_at.isnot(None), CallRecord.started_at >= since)
+        .order_by(CallRecord.ai_analyzed_at.desc())
+        .limit(200)
+        .all()
+    )
+    pending_count = (
+        session.query(CallRecord)
+        .filter(
+            CallRecord.recording_url.isnot(None),
+            CallRecord.ai_analyzed_at.is_(None),
+            CallRecord.duration_seconds >= min_seconds,
+            CallRecord.started_at >= since,
+        )
+        .count()
+    )
+    lead_ids = {c.lead_id for c in analyzed if c.lead_id}
+    leads_by_id = {l.id: l for l in session.query(Lead).filter(Lead.id.in_(lead_ids)).all()} if lead_ids else {}
+    managers_by_id = {m.id: m for m in session.query(Manager).all()}
+
+    rows = []
+    error_count = 0
+    for c in analyzed:
+        lead = leads_by_id.get(c.lead_id) if c.lead_id else None
+        manager = managers_by_id.get(c.manager_id) if c.manager_id else None
+        if c.ai_error:
+            error_count += 1
+        rows.append({
+            "id": c.id,
+            "started_at": (c.started_at + dt.timedelta(hours=5)) if c.started_at else None,
+            "phone_number": c.phone_number,
+            "lead_name": lead.full_name if lead else None,
+            "lead_id": lead.id if lead else None,
+            "manager_name": (manager.full_name or manager.username) if manager else "Noma'lum",
+            "recording_url": c.recording_url,
+            "score": c.ai_score, "status": c.ai_status, "color": c.ai_color,
+            "overview": c.ai_overview, "result": c.ai_result,
+            "transcription": c.ai_transcription, "error": c.ai_error,
+        })
+    return {
+        "rows": rows,
+        "analyzed_count": len(rows),
+        "error_count": error_count,
+        "pending_count": pending_count,
+        "openai_configured": call_analysis.is_configured(),
+    }
+
+
+@app.route("/individual-tekshirish/ai-tahlil-boshlash", methods=["POST"])
+@login_required
+@admin_required
+def individual_check_run_ai_analysis():
+    """"Hoziroq tahlil qilish" tugmasi -- admin bosganda, navbatda turgan
+    bir nechta qo'ng'iroqni FON JARAYONNI KUTMASDAN darhol tahlil qiladi
+    (cheklangan son -- audio tahlili sekin, veb so'rovi juda uzoq kutmasin)."""
+    days = request.form.get("days", "30")
+    session = get_session()
+    try:
+        result = call_analysis.run_pending_analysis(session, limit=5)
+    finally:
+        session.close()
+    if result.get("error"):
+        flash(result["error"], "error")
+    else:
+        level = "success" if not result.get("failed") else "warning"
+        flash(
+            f"{result.get('analyzed', 0)} ta qo'ng'iroq tahlil qilindi "
+            f"({result.get('failed', 0)} tasida xatolik, {result.get('remaining', 0)} tasi navbatda qoldi).",
+            level,
+        )
+    return redirect(url_for("individual_check", days=days, tab="ai"))
 
 
 @app.route("/individual-tekshirish/chegara", methods=["POST"])

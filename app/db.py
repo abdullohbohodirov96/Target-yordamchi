@@ -185,6 +185,18 @@ class CallRecord(Base):
     raw_data = Column(Text, nullable=True)  # xizmatdan kelgan to'liq JSON (keyinchalik kerak bo'lsa)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
+    # AI qo'ng'iroq tahlili (2026-08, foydalanuvchi bergan audio-tahlil
+    # prompti asosida, `call_analysis.py`) -- `ai_analyzed_at` NULL bo'lsa,
+    # hali tahlil qilinmagan (yoki hali navbatda) degani.
+    ai_overview = Column(Text, nullable=True)
+    ai_score = Column(Integer, nullable=True)  # 1-10
+    ai_status = Column(String(16), nullable=True)  # bad | average | good
+    ai_color = Column(String(16), nullable=True)  # red | yellow | green
+    ai_result = Column(Text, nullable=True)
+    ai_transcription = Column(Text, nullable=True)
+    ai_error = Column(Text, nullable=True)
+    ai_analyzed_at = Column(DateTime, nullable=True, index=True)
+
 
 class SmmSnapshot(Base):
     """Instagram Business / Facebook Page uchun HAR KUNLIK "hozirgi holat"

@@ -18,6 +18,7 @@
   {% elif name == 'target' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>
   {% elif name == 'settings' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M19.4 13.5a1.7 1.7 0 000-3l1-1.7-1.7-1.7-1.7 1a1.7 1.7 0 00-3-1L13.5 4.6h-3L10 6.6a1.7 1.7 0 00-3 1l-1.7-1-1.7 1.7 1 1.7a1.7 1.7 0 00-1 3l-1.9.5v3l1.9.5a1.7 1.7 0 001 3l-1 1.7 1.7 1.7 1.7-1a1.7 1.7 0 003 1l.5 1.9h3l.5-1.9a1.7 1.7 0 003-1l1.7 1 1.7-1.7-1-1.7a1.7 1.7 0 001-3l1.9-.5v-3z"/></svg>
   {% elif name == 'managers' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8.5" cy="8" r="3"/><path stroke-linecap="round" d="M2.8 19.5c0-3.3 2.5-5.7 5.7-5.7s5.7 2.4 5.7 5.7"/><circle cx="17" cy="7.5" r="2.2"/><path stroke-linecap="round" d="M15.5 13.8c2.6.4 4.5 2.5 4.5 5.2"/></svg>
+  {% elif name == 'cart' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16l-1.4 10.2a2 2 0 01-2 1.8H7.4a2 2 0 01-2-1.8L4 8z"/><path stroke-linecap="round" d="M8 8V6.5a4 4 0 018 0V8"/></svg>
   {% elif name == 'logout' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5H6a1.5 1.5 0 00-1.5 1.5v12A1.5 1.5 0 006 19.5h3M15.5 16l4-4-4-4M19 12H9"/></svg>
   {% elif name == 'chevron' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
   {% endif %}{% endmacro %}
@@ -37,8 +38,12 @@
       </a>
       {% endif %}
       {% if has_module(current_user, 'leads') %}
+      <div class="nav-group-label">CRM</div>
       <a href="{{ url_for('leads_list') }}" class="nav-item {{ 'active' if request.endpoint in ('leads_list','lead_detail') }}" title="Lidlar">
         <span class="nav-icon">{{ navicon('leads') }}</span><span class="nav-text">Lidlar</span>
+      </a>
+      <a href="{{ url_for('sold_customers_list') }}" class="nav-item {{ 'active' if request.endpoint=='sold_customers_list' }}" title="Sotilgan xaridorlar">
+        <span class="nav-icon">{{ navicon('cart') }}</span><span class="nav-text">Sotilgan xaridorlar</span>
       </a>
       <a href="{{ url_for('followups_list') }}" class="nav-item {{ 'active' if request.endpoint=='followups_list' }}" title="Qayta aloqa">
         <span class="nav-icon">{{ navicon('followup') }}</span><span class="nav-text">Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span>

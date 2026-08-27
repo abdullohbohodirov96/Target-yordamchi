@@ -28,6 +28,10 @@ Jadval (standart, ENV orqali sozlanadi):
   - 10:00 Toshkent -- Raqobatchilar tahlili: `Competitor` jadvaliga qo'shilgan
     har bir raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi
     va qisqa amaliy hisobot tayyorlanadi (2026-08, foydalanuvchi so'rovi).
+  - Har soatda (:10, :30, :50) -- qo'ng'iroq yozuvlarining AI tahlili
+    (transkripsiya + 1-10 baho) -- "Individual tekshirish" sahifasidagi
+    "AI analiz" bo'limi uchun (2026-08, foydalanuvchi bergan audio-tahlil
+    prompti asosida, `call_analysis.py`).
 
 Telegram guruh xabarlari IKKI turga bo'lingan (2026-08, foydalanuvchi
 so'rovi -- "bittasiga to'liq harakatini, bittasiga faqat kunlik hisobotni"):
@@ -51,6 +55,7 @@ import orchestrator
 import budget_tracker
 import lead_sync
 import call_sync
+import call_analysis
 import smm_sync
 import competitor_sync
 import competitor_analytics
@@ -236,6 +241,24 @@ def job_call_sync() -> dict:
     except Exception as e:
         logger.exception("Qo'ng'iroq sync xatosi")
         return {"error": str(e)}
+
+
+def job_call_analysis() -> dict:
+    """Qo'ng'iroq yozuvlarini AI yordamida tahlil qiladi (2026-08,
+    foydalanuvchi bergan audio-tahlil prompti asosida, `call_analysis.py`) --
+    AVTOMATIK: har ishga tushishda hali tahlil qilinmagan, "haqiqiy"
+    (shubhali emas) qo'ng'iroqlardan bir nechtasini (limit bilan, API
+    xarajatini nazoratda ushlab turish uchun) tahlil qiladi. `job_call_sync`
+    dan keyin ishga tushishi uchun soatning boshqa daqiqasida rejalashtirilgan
+    (avval yangi qo'ng'iroqlar sinxronlansin, keyin ular tahlil qilinsin)."""
+    session = db.get_session()
+    try:
+        return call_analysis.run_pending_analysis(session, limit=8)
+    except Exception as e:
+        logger.exception("Qo'ng'iroq AI tahlilida xatolik")
+        return {"error": str(e)}
+    finally:
+        session.close()
 
 
 def job_lead_cleanup() -> dict:
@@ -542,6 +565,7 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
+    scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # call-sync'dan keyin
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.add_job(job_competitor_analysis, CronTrigger(hour=10, minute=0, timezone=TIMEZONE), id="competitor-analysis")

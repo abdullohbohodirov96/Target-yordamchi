@@ -191,6 +191,7 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
 .kpi-value { font-size: 20px; font-weight: 600; margin-top: 5px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .kpi-value.good { color: var(--good); }
 .kpi-value.bad { color: var(--bad); }
+.kpi-value.warn { color: var(--warn); }
 
 /* ---------- Period pills ---------- */
 .pill-group {
