@@ -86,6 +86,26 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
 
     return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
 
+
+def custom_range_bounds_utc(date_from: str, date_to: str) -> tuple[dt.datetime, dt.datetime] | None:
+    """Foydalanuvchi ANIQ ikkita sanani (masalan Dashboard'dagi "sana
+    oralig'i" formasidan, `YYYY-MM-DD`, Toshkent vaqti) tanlaganda ishlatiladi
+    -- Meta Ads Manager'dagi "custom range" tanlovi kabi. `_date_preset_bounds_utc`
+    tayyor preset'lar (bugun/kecha/last_Nd) uchun, bu esa ixtiyoriy ikkita
+    sana uchun. `date_to` kuni HAM TO'LIQ hisobga olinadi (o'sha kunning
+    oxirigacha, ya'ni keyingi kun boshigacha)."""
+    try:
+        start_date = dt.datetime.strptime((date_from or "").strip(), "%Y-%m-%d")
+        end_date = dt.datetime.strptime((date_to or "").strip(), "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+    start_tashkent = start_date
+    end_tashkent = end_date + dt.timedelta(days=1)
+    return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
+
+
 LEVELS = {
     "campaign": {"id_field": "campaign_id", "name_field": "campaign_name", "lead_attr": "campaign_id"},
     "adset": {"id_field": "adset_id", "name_field": "adset_name", "lead_attr": "adset_id"},
@@ -234,6 +254,7 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
 
     status_by_id = {}
     goal_by_id = {}
+    child_count_by_id = {}
     try:
         structure = meta_api.get_account_structure(active_only=False)
         key = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}[level]
@@ -242,6 +263,22 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
         if level == "campaign":
             for c in structure.get("campaigns", []):
                 goal_by_id[c["id"]] = OBJECTIVE_TO_TYPICAL_GOAL.get(c.get("objective", ""), "")
+            # MUHIM (2026-08, foydalanuvchi topgan chalkashlik: "3 ta target
+            # yoqilgan, lekin Campaigns bo'limi faqat 1 tasini ko'rsatvoti"):
+            # bu ODATDA XATO EMAS -- Meta'da bitta KAMPANIYA ichida bir nechta
+            # REKLAMA GURUHI (ad set) bo'lishi juda oddiy holat (masalan har
+            # bir mahsulot/sana uchun alohida ad set, hammasi bitta kampaniya
+            # ichida). "Campaigns" bo'limi har doim bitta kampaniya uchun
+            # BITTA qator ko'rsatadi -- foydalanuvchi "target" deb atagan
+            # narsalar ko'pincha aslida shu kampaniyaning ICHIDAGI ad set'lar
+            # bo'ladi, ular "Ad sets" bo'limida ko'rinadi. Shuni tepada aniq
+            # ko'rsatish uchun har bir kampaniyaning nechta ad set'i borligini
+            # hisoblab, qatorga qo'shamiz (shablon shuni yozadi).
+            adsets_per_campaign = defaultdict(int)
+            for a in structure.get("adsets", []):
+                if a.get("campaign_id"):
+                    adsets_per_campaign[a["campaign_id"]] += 1
+            child_count_by_id = dict(adsets_per_campaign)
         elif level == "adset":
             for a in structure.get("adsets", []):
                 goal_by_id[a["id"]] = a.get("optimization_goal", "") or ""
@@ -274,6 +311,7 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
             "goal_label": GOAL_LABELS.get(goal, GOAL_LABELS[""]),
             "meta_result": meta_result,
             "result_label": result_label,
+            "child_adset_count": child_count_by_id.get(oid) if level == "campaign" else None,
         }
 
     # CRM tomonidagi lead statistikasi -- tanlangan `date_preset` bilan BIR

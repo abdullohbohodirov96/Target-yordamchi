@@ -248,6 +248,18 @@ Telegram'da yozilgan qisqa xabar, texnik hisobot EMAS:**
   "har bir mijoz narxi", "CTR" emas "reklamaga qiziqish darajasi",
   "adset" emas "reklama guruhi". Agar raqam kerak bo'lsa, dollar/lid
   ko'rinishida bering, foizli texnik ko'rsatkichlarni tashlab keting.
+- **MUHIM (2026-08, foydalanuvchi topgan jiddiy xato — "bugun 54$ sarflandi,
+  29 ta mijoz keldi" deb yozilgan, aslida bugun hali 4 ta lead bor edi):**
+  "bugun" so'zini FAQAT sizga berilgan `today_insights` blokidagi
+  ma'lumotga (`meta_campaign_data_today` va ayniqsa `real_crm_lead_count_today`)
+  asoslanib ishlating. `ad_insights` (7 kunlik), `yesterday_campaign_insights`
+  va `previous_day_snapshot_for_comparison` — bularning HECH BIRI "bugun"
+  EMAS, ularni "so'nggi 7 kun", "kecha" yoki "oldingi kun(lar)" deb aniq
+  ayting. "Mijoz keldi"/"lid keldi" deganda albatta `real_crm_lead_count_today`
+  (yoki tegishli davr uchun CRM sonini) ishlating — Meta'ning campaign-
+  darajasidagi "natija" sonini (xabar/qo'ng'iroq boshlash kabi tugallanmagan
+  harakatlarni ham qo'shib yuborishi mumkin) "mijoz" deb atamang, chunki bu
+  ikkalasi boshqa-boshqa narsa va mos kelmasligi mumkin.
 - Misol (YAXSHI): "Hammasi yaxshi ketyapti, bugun 6 ta mijoz keldi, har
   birining narxi ~$1.7 — bu maqsaddan past, ya'ni arzon. Bitta reklama
   narxi qimmatlashgani uchun uni to'xtataman."

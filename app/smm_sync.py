@@ -85,11 +85,56 @@ def _upsert_post(session, **fields) -> None:
     session.commit()
 
 
+def _friendly_meta_error(e: meta_api.MetaAPIError) -> str:
+    """`MetaAPIError`ning xom Meta xatolik dict'ini ("message"/"code"/"type")
+    o'qib bo'lmaydigan Python exception matni ({'message': '...', 'code': 10}
+    kabi) o'rniga tushunarli matnga aylantiradi. 2026-08, foydalanuvchi
+    ko'rgan aniq holat: `(#10) This endpoint requires the
+    'pages_read_engagement' permission or the 'Page Public Content Access'
+    feature` -- bu KOD MUAMMOSI EMAS, Meta Business Manager/App Review
+    tomonida sozlanishi kerak bo'lgan ruxsat -- shuning uchun bu holatga
+    ALOHIDA, aniq harakat ko'rsatmasi beriladi."""
+    meta_err = e.args[0] if e.args else {}
+    message = meta_err.get("message", str(e)) if isinstance(meta_err, dict) else str(e)
+    code = meta_err.get("code") if isinstance(meta_err, dict) else None
+    if code == 10 or "pages_read_engagement" in message or "Page Public Content Access" in message:
+        return (
+            "Facebook postlarini o'qish uchun ruxsat yetarli emas (Meta xatosi: "
+            f"\"{message}\"). BU KODDAGI XATO EMAS -- Meta Business Manager'da "
+            "App Review orqali 'Page Public Content Access' funksiyasini "
+            "yoqish yoki tokenga 'pages_read_engagement' ruxsatini qo'shish "
+            "kerak (Meta Developer Console -> App -> Permissions and Features)."
+        )
+    return message
+
+
+def _facebook_media_type(post: dict) -> str:
+    """Facebook post'ining `attachments` maydonidan haqiqiy media turini
+    aniqlaydi (2026-08, foydalanuvchi so'rovi -- avval bu HAR DOIM "STATUS"
+    deb belgilanardi, chunki `attachments` maydoni umuman so'ralmasdi, shu
+    sabab "Eng faol postlar" jadvalida video/rasm/oddiy matn postlarini
+    farqlab bo'lmasdi). Meta'ning `attachments.data[0].media_type` odatda
+    "photo"/"video"/"album"/"link" qiymatlaridan birini beradi -- ularni
+    Instagram tomonida ishlatiladigan IMAGE/VIDEO/CAROUSEL_ALBUM/LINK
+    nomlariga moslashtiramiz, shunda shablon ikkalasini ham bir xil
+    belgi/ikonka bilan ko'rsata oladi."""
+    attachments = ((post.get("attachments") or {}).get("data")) or []
+    if not attachments:
+        return "STATUS"
+    raw = (attachments[0].get("media_type") or attachments[0].get("type") or "").lower()
+    return {
+        "photo": "IMAGE",
+        "video_inline": "VIDEO", "video_autoplay": "VIDEO", "video": "VIDEO",
+        "album": "CAROUSEL_ALBUM",
+        "link": "LINK", "share": "LINK",
+    }.get(raw, "STATUS")
+
+
 def _sync_facebook(session, result: dict) -> None:
     try:
         profile = meta_api.get_facebook_page_profile()
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Facebook Page profilini olishda xatolik: {e}")
+        result["errors"].append(f"Facebook Page profilini olishda xatolik: {_friendly_meta_error(e)}")
         return
 
     followers = profile.get("fan_count")
@@ -99,7 +144,7 @@ def _sync_facebook(session, result: dict) -> None:
     try:
         posts = meta_api.get_facebook_page_posts(limit=25)
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Facebook postlarini olishda xatolik: {e}")
+        result["errors"].append(f"Facebook postlarini olishda xatolik: {_friendly_meta_error(e)}")
         return
 
     synced = 0
@@ -118,7 +163,7 @@ def _sync_facebook(session, result: dict) -> None:
             external_id=post_id,
             caption=p.get("message"),
             permalink=p.get("permalink_url"),
-            media_type="STATUS",
+            media_type=_facebook_media_type(p),
             posted_at=_parse_dt(p.get("created_time")),
             like_count=((p.get("likes") or {}).get("summary") or {}).get("total_count", 0),
             comments_count=((p.get("comments") or {}).get("summary") or {}).get("total_count", 0),
@@ -136,7 +181,7 @@ def _sync_instagram(session, result: dict) -> None:
     try:
         ig_id = meta_api.get_instagram_business_account_id()
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Instagram akkauntni aniqlashda xatolik: {e}")
+        result["errors"].append(f"Instagram akkauntni aniqlashda xatolik: {_friendly_meta_error(e)}")
         return
     if not ig_id:
         result["notices"].append(
@@ -149,7 +194,7 @@ def _sync_instagram(session, result: dict) -> None:
     try:
         profile = meta_api.get_instagram_profile(ig_id)
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Instagram profilini olishda xatolik: {e}")
+        result["errors"].append(f"Instagram profilini olishda xatolik: {_friendly_meta_error(e)}")
         return
 
     _upsert_snapshot(
@@ -162,7 +207,7 @@ def _sync_instagram(session, result: dict) -> None:
     try:
         media_list = meta_api.get_instagram_media(ig_id, limit=25)
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Instagram postlarini olishda xatolik: {e}")
+        result["errors"].append(f"Instagram postlarini olishda xatolik: {_friendly_meta_error(e)}")
         return
 
     synced = 0

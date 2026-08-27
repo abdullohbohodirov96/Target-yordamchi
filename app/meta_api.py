@@ -746,7 +746,16 @@ def get_facebook_page_posts(limit: int = 25) -> list[dict]:
     qaytaradi. Qamrov/ko'rishlar (impressions) alohida `get_facebook_post_insights()`
     orqali so'raladi -- bitta so'rovga qo'shib yuborilsa, insights ruxsati
     yo'q hollarda BUTUN /posts so'rovi xato qaytarib qo'yishi mumkin."""
-    fields = "id,message,created_time,permalink_url,likes.summary(true).limit(0),comments.summary(true).limit(0),shares"
+    # 2026-08, foydalanuvchi so'rovi ("eng faol postlar qaysiligini
+    # bilmayman, videomi yo'qmi ko'rsatsin"): `attachments{media_type,type}`
+    # qo'shildi -- shu orqali post rasm/video/albom/havola ekanini
+    # aniqlash mumkin bo'ladi (avval bu maydon so'ralmagani uchun har bir
+    # Facebook post kodda majburan "STATUS" deb belgilanardi).
+    fields = (
+        "id,message,created_time,permalink_url,"
+        "likes.summary(true).limit(0),comments.summary(true).limit(0),shares,"
+        "attachments{media_type,type}"
+    )
     data = _get(f"{PAGE_ID}/posts", {"fields": fields, "limit": limit}, token=_get_page_access_token())
     return data.get("data", [])
 

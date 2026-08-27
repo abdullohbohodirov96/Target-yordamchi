@@ -34,7 +34,8 @@ def _post_to_dict(p) -> dict:
 def _build_platform_report(session, platform: str, days: int) -> dict:
     from db import SmmSnapshot, SmmPost
 
-    since_date = (dt.datetime.utcnow() + _TASHKENT_OFFSET - dt.timedelta(days=days)).strftime("%Y-%m-%d")
+    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    since_date = (now_tashkent - dt.timedelta(days=days)).strftime("%Y-%m-%d")
     snapshots = (
         session.query(SmmSnapshot)
         .filter(SmmSnapshot.platform == platform, SmmSnapshot.date >= since_date)
@@ -43,11 +44,44 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     )
     latest_followers = snapshots[-1].followers_count if snapshots else None
     earliest_followers = snapshots[0].followers_count if snapshots else None
+    # MUHIM (2026-08, foydalanuvchi topgan chalkashlik -- "O'sish (30 kun):
+    # +0" deb ko'rsatilgan, aslida o'sish YO'Q emas, shunchaki hali ikkinchi
+    # solishtirish nuqtasi (snapshot) yig'ilmagan edi): agar shu davrda
+    # FAQAT bitta (yoki nolta) snapshot bo'lsa, "0" o'rniga `None` qaytaramiz
+    # -- shablon buni "—" ("yetarli ma'lumot yo'q") deb ko'rsatadi.
     growth = (
         latest_followers - earliest_followers
-        if (latest_followers is not None and earliest_followers is not None)
+        if (len(snapshots) >= 2 and latest_followers is not None and earliest_followers is not None)
         else None
     )
+
+    # "Bu oy qancha obunachi keldi" -- foydalanuvchi aniq shuni so'radi.
+    # Tepadagi `days` (7/30/90 kunlik) tanlovdan MUSTAQIL, doim JORIY
+    # TAQVIM OYI bo'yicha hisoblanadi -- foydalanuvchi 7 kunlik ko'rinishni
+    # tanlagan bo'lsa ham, "bu oy" ko'rsatkichi to'g'ri chiqishi kerak.
+    month_start_date = now_tashkent.strftime("%Y-%m-01")
+    all_snapshots = (
+        session.query(SmmSnapshot)
+        .filter(SmmSnapshot.platform == platform)
+        .order_by(SmmSnapshot.date.asc())
+        .all()
+    )
+    month_snapshots = [s for s in all_snapshots if s.date >= month_start_date]
+    prior_snapshots = [s for s in all_snapshots if s.date < month_start_date]
+    growth_month = None
+    if month_snapshots:
+        latest_month_followers = month_snapshots[-1].followers_count
+        if len(month_snapshots) >= 2:
+            baseline_followers = month_snapshots[0].followers_count
+        elif prior_snapshots:
+            # Oy boshida hali snapshot bo'lmasa, oydan OLDINGI eng yaqin
+            # kunlik qiymat bilan solishtiramiz (baribir taxminiy emas,
+            # haqiqiy kunlik yozuv asosida).
+            baseline_followers = prior_snapshots[-1].followers_count
+        else:
+            baseline_followers = None
+        if baseline_followers is not None and latest_month_followers is not None:
+            growth_month = latest_month_followers - baseline_followers
 
     all_posts = (
         session.query(SmmPost)
@@ -80,6 +114,7 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
         "followers_count": latest_followers,
         "media_count": snapshots[-1].media_count if snapshots else None,
         "growth": growth,
+        "growth_month": growth_month,
         "chart": [{"date": s.date, "followers": s.followers_count or 0} for s in snapshots],
         "posts_count_period": len(period_posts),
         "total_reach": total_reach,

@@ -13,6 +13,21 @@
   </div>
 </div>
 
+<div class="page-head" style="margin-top:-14px; align-items:center; flex-wrap:wrap; gap:10px">
+  <div class="pill-group">
+    {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('this_month','Shu oy'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
+    <a href="?period={{ p }}" class="{{ 'active' if o.period==p }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" style="display:flex; align-items:center; gap:6px">
+    <input type="hidden" name="period" value="custom">
+    <input type="date" name="date_from" value="{{ o.date_from or '' }}" style="padding:6px 8px; font-size:13px; border:1px solid var(--border-light); border-radius:6px">
+    <span class="text-faint">&mdash;</span>
+    <input type="date" name="date_to" value="{{ o.date_to or '' }}" style="padding:6px 8px; font-size:13px; border:1px solid var(--border-light); border-radius:6px">
+    <button type="submit" class="btn toggle-all-btn-outline {{ 'active' if o.period=='custom' }}" style="padding:6px 12px; font-size:12.5px">Sana oralig'i</button>
+  </form>
+</div>
+
 {% if o.followups_overdue or o.followups_today %}
 <div class="panel" style="margin-bottom:20px; border-left:3px solid var(--bad); padding:14px 16px">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
@@ -38,9 +53,9 @@
 
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">Jami lidlar</div><div class="kpi-value">{{ o.total_leads }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Shu oy yangi lidlar</div><div class="kpi-value">{{ o.leads_this_month }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Shu oy sotuvlar</div><div class="kpi-value good">{{ o.sales_count_month }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Shu oy oborot</div><div class="kpi-value">{{ o.turnover_month|som }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ o.period_label }} yangi lidlar</div><div class="kpi-value">{{ o.leads_in_period }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ o.period_label }} sotuvlar</div><div class="kpi-value good">{{ o.sales_count_period }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ o.period_label }} oborot</div><div class="kpi-value">{{ o.turnover_period|som }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Konversiya (sotildi)</div><div class="kpi-value {{ 'good' if o.conversion_pct >= 10 else '' }}">{{ o.conversion_pct }}%</div></div>
   <div class="kpi-card"><div class="kpi-label">Shu oy jami bonus</div><div class="kpi-value">{{ o.total_bonus_month|som }}</div></div>
 </div>

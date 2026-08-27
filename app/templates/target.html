@@ -87,6 +87,16 @@
 </div>
 {% endif %}
 
+{% if level == 'campaign' %}
+<div class="flash flash-info" style="margin-bottom:14px">
+  Bu yerda har bir qator BITTA Meta kampaniyasi. Bitta kampaniya ichida bir nechta
+  reklama guruhi (ad set) bo'lishi mumkin -- masalan har xil mahsulot/sana uchun
+  alohida "target" sifatida ishlatilayotgan bo'lsa, ular shu yerda EMAS,
+  <a href="?period={{ period }}&level=adset&show_all={{ '1' if show_all else '0' }}">"Ad sets"</a>
+  bo'limida alohida-alohida ko'rinadi.
+</div>
+{% endif %}
+
 <div class="panel">
   <div class="tabs">
     {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads')] %}
@@ -128,6 +138,9 @@
           data-cost_per_won="{{ r.cost_per_won }}">
         <td>
           <span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}
+          {% if level == 'campaign' and r.child_adset_count and r.child_adset_count > 1 %}
+          <span class="text-faint" style="font-size:11px"> ({{ r.child_adset_count }} ta reklama guruhi)</span>
+          {% endif %}
         </td>
         <td><span class="badge badge-color-{{ 'blue' if r.goal in ('LEAD_GENERATION','QUALITY_LEAD') else 'dim' }}">{{ r.goal_label }}</span></td>
         <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>

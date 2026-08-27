@@ -34,6 +34,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import db
+import dashboard_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
@@ -176,12 +177,8 @@ ACTION_EXECUTORS = {
     "pause_ad": lambda a: _execute_and_verify_status(a["object_id"], "PAUSED"),
     "resume_ad": lambda a: _execute_and_verify_status(a["object_id"], "ACTIVE"),
     "archive_campaign": lambda a: _execute_and_verify_status(a["object_id"], "ARCHIVED"),
-    "increase_budget": lambda a: meta_api.adjust_budget_by_percent(
-        a["object_id"], a["params"]["current_daily_budget_cents"], abs(a["params"]["percent"])
-    ),
-    "decrease_budget": lambda a: meta_api.adjust_budget_by_percent(
-        a["object_id"], a["params"]["current_daily_budget_cents"], -abs(a["params"]["percent"])
-    ),
+    "increase_budget": lambda a: _execute_adjust_budget(a, "increase"),
+    "decrease_budget": lambda a: _execute_adjust_budget(a, "decrease"),
     "fix_region_targeting": lambda a: _execute_fix_region(a),
     "adjust_audience": lambda a: _execute_adjust_audience(a),
     "launch_campaign": lambda a: _execute_launch_campaign(a),
@@ -270,13 +267,26 @@ def _require_any(action: dict, *paths: tuple) -> object:
                 break
         if found:
             return node
+    # MUHIM (2026-08, foydalanuvchi Telegram loglarida takror ko'rgan xato):
+    # oldin bu xabar faqat "qaysi joylashuvlar sinab ko'rildi"ni ko'rsatardi,
+    # lekin model HAQIQATDA nima yuborganini (masalan `params` ichida qanday
+    # kalitlar bor edi) ko'rsatmasdi -- shuning uchun har safar server logini
+    # ochib `action_received`ni qo'lda o'qish kerak edi. Endi xabarning o'zida
+    # haqiqiy `params` kalitlari ham ko'rsatiladi -- shu orqali muammo
+    # server logisiz ham darhol tushunarli bo'ladi.
+    params_obj = action.get("params")
+    received_keys = sorted(params_obj.keys()) if isinstance(params_obj, dict) else []
+    received_keys_display = ", ".join(received_keys) if received_keys else "(bo'sh)"
     raise meta_api.MetaAPIError({
         "message": (
             "Targetolog action'ida kerakli maydon topilmadi (sinab ko'rilgan "
-            f"joylashuvlar: {[' > '.join(p) for p in paths]}). Qaytadan urinib "
-            "ko'ring yoki buyruqni boshqacharoq/aniqroq yozing."
+            f"joylashuvlar: {[' > '.join(p) for p in paths]}). Model 'params' "
+            "ichiga boshqa nom/joylashuv bilan yozgan bo'lishi mumkin -- "
+            f"haqiqatda kelgan 'params' kalitlari: {received_keys_display}"
+            ". Qaytadan urinib ko'ring yoki buyruqni boshqacharoq/aniqroq yozing."
         ),
         "tried_paths": [".".join(p) for p in paths],
+        "received_params_keys": received_keys,
         "action_received": action,
     })
 
@@ -295,17 +305,50 @@ def _execute_fix_region(action: dict) -> dict:
     return {"verified": True, "current_targeting": verified.get("targeting", {})}
 
 
+# `targeting` obyektida odatda uchraydigan kalitlar -- model uni
+# `params.audience_change.targeting`/`params.targeting` ichiga emas,
+# TO'G'RIDAN-TO'G'RI `params`ning o'ziga yozib qo'ysa ham (Telegram
+# loglarida bir necha marta takrorlangan xato) shu orqali aniqlaymiz.
+_TARGETING_LIKE_KEYS = {
+    "geo_locations", "excluded_geo_locations", "age_min", "age_max",
+    "genders", "interests", "flexible_spec", "locales",
+    "publisher_platforms", "device_platforms", "custom_audiences",
+    "excluded_custom_audiences",
+}
+
+
 def _execute_adjust_audience(action: dict) -> dict:
     """`adjust_audience` (masalan hudud exclude qilish): targeting'ni yangilaydi,
     KEYIN adset'ni qayta o'qib, so'ralgan o'zgarish (masalan excluded_geo_locations)
     haqiqatan saqlanganini tasdiqlaydi. Tasdiqlanmasa — bajarilgan deb ko'rsatilmaydi,
-    xato sifatida qaytariladi (foydalanuvchi buni Telegram'da ❌ bilan ko'radi)."""
+    xato sifatida qaytariladi (foydalanuvchi buni Telegram'da ❌ bilan ko'radi).
+
+    MUHIM (2026-08, Telegram loglarida ko'p marta takrorlangan xato --
+    "kerakli maydon topilmadi: params > audience_change > targeting / params
+    > targeting"): model targeting maydonlarini ba'zan ikkalasiga ham
+    joylamasdan, TO'G'RIDAN-TO'G'RI `params`ning o'ziga yozib qo'yadi
+    (masalan `{"params": {"excluded_geo_locations": [...]}}`). Shuning uchun
+    ikkita "rasmiy" joylashuvdan tashqari, UCHINCHI, kengroq fallback ham
+    qo'shildi: agar `params`ning o'zida targeting'ga xos kalit(lar) bo'lsa,
+    o'sha `params`ning o'zini targeting sifatida ishlatamiz."""
     adset_id = _require(action, "object_id")
-    new_targeting = _require_any(
-        action,
-        ("params", "audience_change", "targeting"),
-        ("params", "targeting"),
-    )
+    params = action.get("params") if isinstance(action.get("params"), dict) else {}
+    audience_change = params.get("audience_change") if isinstance(params.get("audience_change"), dict) else {}
+
+    if isinstance(audience_change.get("targeting"), dict):
+        new_targeting = audience_change["targeting"]
+    elif isinstance(params.get("targeting"), dict):
+        new_targeting = params["targeting"]
+    elif _TARGETING_LIKE_KEYS & set(params.keys()):
+        new_targeting = {k: v for k, v in params.items() if k != "audience_change"}
+    else:
+        # Hech biri topilmadi -- aniq, batafsil (received_params_keys bilan)
+        # xato uchun _require_any'ning o'ziga qaytamiz.
+        new_targeting = _require_any(
+            action,
+            ("params", "audience_change", "targeting"),
+            ("params", "targeting"),
+        )
     meta_api.update_targeting(adset_id, new_targeting)
 
     verified = meta_api.get_adset_details(adset_id)
@@ -325,6 +368,61 @@ def _execute_adjust_audience(action: dict) -> dict:
                 "actual_targeting": actual_targeting,
             })
     return {"verified": True, "current_targeting": actual_targeting}
+
+
+def _execute_adjust_budget(action: dict, direction: str) -> dict:
+    """`increase_budget`/`decrease_budget` uchun.
+
+    MUHIM (2026-08, foydalanuvchi Telegram loglarida ko'rgan xato --
+    `KeyError: 'current_daily_budget_cents'`): oldin bu joriy kunlik
+    byudjetni TO'G'RIDAN-TO'G'RI Targetolog'ning JSON javobidan olardi --
+    agar model shu maydonni schema'ga to'liq amal qilmasdan qoldirib
+    ketsa (yoki eski/noto'g'ri qiymat yozsa), yo xom KeyError chiqardi,
+    yo noto'g'ri bazadan foiz hisoblanardi. Endi HAQIQIY joriy byudjet
+    modelning taxminiga ishonmasdan, to'g'ridan-to'g'ri Meta'dan
+    (`get_adset_details`) o'qib olinadi -- keyin natija qayta o'qib
+    tasdiqlanadi (boshqa executor'lardagi kabi verify-after-write)."""
+    adset_id = _require(action, "object_id")
+    percent = abs(float(_require(action, "params", "percent")))
+    if direction == "decrease":
+        percent = -percent
+
+    current = meta_api.get_adset_details(adset_id)
+    current_budget = current.get("daily_budget")
+    if not current_budget:
+        raise meta_api.MetaAPIError({
+            "message": (
+                "Bu reklama guruhining o'zida kunlik byudjet topilmadi -- "
+                "ehtimol byudjet KAMPANIYA darajasida sozlangan (Campaign "
+                "Budget Optimization / CBO). Hozircha faqat reklama guruhi "
+                "darajasidagi byudjetni o'zgartira olaman -- Ads Manager'da "
+                "qo'lda tekshiring."
+            ),
+            "adset_id": adset_id,
+        })
+    current_budget = int(current_budget)
+
+    meta_api.adjust_budget_by_percent(adset_id, current_budget, percent)
+
+    verified = meta_api.get_adset_details(adset_id)
+    new_budget = verified.get("daily_budget")
+    expected_budget = int(current_budget * (1 + percent / 100))
+    # Meta ba'zan kichik yaxlitlash farqi bilan qaytarishi mumkin -- shuning
+    # uchun kutilgan qiymatdan 5% (yoki kamida 1 tiyin) ichidagi farqni ham
+    # "tasdiqlangan" deb hisoblaymiz.
+    tolerance = max(1, abs(expected_budget) * 0.05)
+    if not new_budget or abs(int(new_budget) - expected_budget) > tolerance:
+        raise meta_api.MetaAPIError({
+            "message": (
+                f"Meta so'rovni qabul qildi, lekin qayta tekshirganda byudjet "
+                f"kutilganidek o'zgarmagan (eski: {current_budget}, kutilgan: "
+                f"~{expected_budget}, hozirgi: {new_budget}). Ads Manager'da "
+                "qo'lda tekshiring."
+            ),
+            "old_budget_cents": current_budget, "expected_budget_cents": expected_budget,
+            "actual_budget_cents": new_budget,
+        })
+    return {"verified": True, "old_budget_cents": current_budget, "new_budget_cents": int(new_budget)}
 
 
 def _execute_launch_campaign(action: dict) -> dict:
@@ -879,20 +977,55 @@ def _call_agent(system_prompt: str, user_content: str) -> dict:
 SNAPSHOT_KV_KEY = "orchestrator_daily_snapshot"
 
 
+def _crm_leads_count_today() -> int:
+    """CRM bazamizdagi (Meta emas) HAQIQIY, bugun (Toshkent vaqti) tushgan
+    lead yozuvlari soni. 2026-08, foydalanuvchi topgan xato: Telegram audit
+    xabari "bugun 29 ta mijoz keldi" deb yozgan, aslida CRM'da bugun bor-yo'g'i
+    4 ta lead bor edi -- sabab: Targetologga hech qachon haqiqiy CRM lead
+    sonini bermasdik, u Meta'ning campaign-darajasidagi "natija" sonini
+    (bu xabar/qo'ng'iroq boshlash kabi tugallanmagan harakatlarni ham
+    o'z ichiga olishi mumkin) "mijoz" deb noto'g'ri talqin qilgan bo'lishi
+    mumkin edi. Endi aniq, tekshirilgan CRM soni beriladi."""
+    date_bounds = dashboard_data._date_preset_bounds_utc("today")
+    if not date_bounds:
+        return 0
+    start_utc, end_utc = date_bounds
+    session = db.get_session()
+    try:
+        return session.query(db.Lead).filter(
+            db.Lead.created_at >= start_utc, db.Lead.created_at < end_utc
+        ).count()
+    finally:
+        session.close()
+
+
 def gather_data() -> dict:
     """Meta API'dan tahlil uchun kerakli barcha ma'lumotni yig'adi.
 
     Shuningdek, KECHAGI (oldingi chaqiruvdagi) kampaniya darajasidagi
     statistikani ham qo'shib beradi ("previous_snapshot") — shu orqali
-    Targetolog "kecha CPA $9 edi, bugun $14 ga chiqdi" kabi HAQIQIY
+    Targetolog "kecha CPA $9 edi, undan oldin $14 edi" kabi HAQIQIY
     solishtirishga asoslanib xulosa chiqara oladi, taxmin qilmaydi. Joriy
-    holat esa ertangi solishtirish uchun KV'ga saqlanadi."""
+    holat esa ertangi solishtirish uchun KV'ga saqlanadi.
+
+    MUHIM (2026-08, foydalanuvchi topgan xato -- "bugun 54$ sarflandi, 29 ta
+    mijoz keldi" deb hisobot berilgan, aslida bugun hali 4 ta lead bor edi):
+    oldin bu funksiya HECH QACHON haqiqiy "bugun" (date_preset="today")
+    ma'lumotini bermasdi -- faqat `last_7d` va `yesterday` bor edi (o'zgaruvchi
+    nomi "campaign_insights_today" bo'lsa ham, aslida "yesterday" so'rovi edi!).
+    Natijada Targetolog "bugun" so'zini ishlatib, aslida 7-kunlik yoki kechagi
+    jamlangan raqamni tasvirlab yozardi. Endi haqiqiy "bugun" Meta ma'lumoti
+    VA haqiqiy CRM lead soni alohida, aniq nomlangan blokda beriladi -- va
+    pastdagi `comparison_instruction` so'zi bilan model "bugun" so'zini FAQAT
+    shu blokka asoslanib ishlatishi kerakligi aniq ta'kidlanadi."""
     account_structure = meta_api.get_account_structure()
     ad_insights = meta_api.get_insights(level="ad", date_preset="last_7d")
     region_breakdown = meta_api.get_insights(
         level="ad", date_preset="last_7d", breakdowns=["region"]
     )
-    campaign_insights_today = meta_api.get_insights(level="campaign", date_preset="yesterday")
+    yesterday_campaign_insights = meta_api.get_insights(level="campaign", date_preset="yesterday")
+    today_campaign_insights = meta_api.get_insights(level="campaign", date_preset="today")
+    today_crm_leads = _crm_leads_count_today()
 
     # MUHIM: bu funksiya endi FAQAT kunlik cron'dan emas, tez-tez (masalan
     # har 30-60 daqiqada) ishlaydigan "kuzatuv" cron'idan ham chaqirilishi
@@ -907,7 +1040,7 @@ def gather_data() -> dict:
     if previous_snapshot is None or previous_snapshot.get("date") != today_str:
         kv_store.set_json(SNAPSHOT_KV_KEY, {
             "date": today_str,
-            "campaign_insights": campaign_insights_today,
+            "campaign_insights": yesterday_campaign_insights,
         })
 
     return {
@@ -916,13 +1049,32 @@ def gather_data() -> dict:
         "region_breakdown": region_breakdown,
         "business_rules": BUSINESS_RULES,
         "generated_at": datetime.utcnow().isoformat(),
-        "yesterday_campaign_insights": campaign_insights_today,
+        "today_insights": {
+            "meta_campaign_data_today": today_campaign_insights,
+            "real_crm_lead_count_today": today_crm_leads,
+            "note": (
+                "MUHIM: 'bugun'/'today' so'zini summary'da ishlatganda FAQAT "
+                "shu 'today_insights' blokidagi ma'lumotga asoslaning, boshqa "
+                "hech qanday blokka emas. 'real_crm_lead_count_today' -- "
+                "bizning CRM bazamizdagi TASDIQLANGAN, haqiqiy lead yozuvlari "
+                "soni (bugun, Toshkent vaqti bilan). 'mijoz keldi'/'lid keldi' "
+                "deganda ANIQ shu sonni ayting -- Meta'ning campaign-darajasidagi "
+                "'natija' (masalan xabar boshlash, qo'ng'iroq urinishi kabi "
+                "tugallanmagan harakatlarni ham qo'shib yuborishi mumkin) sonini "
+                "'mijoz' deb atamang, ular boshqa-boshqa narsa."
+            ),
+        },
+        "yesterday_campaign_insights": yesterday_campaign_insights,
         "previous_day_snapshot_for_comparison": previous_snapshot,
         "comparison_instruction": (
-            "'previous_day_snapshot_for_comparison' — avvalgi marta saqlangan "
-            "kunlik holat (agar mavjud bo'lsa). Shu bilan 'yesterday_campaign_insights'ni "
-            "solishtirib, narx/CPA/CPL keskin o'zgargan joylarni summary'da aniq ayting "
-            "(masalan 'CPA kecha $9 edi, bugun $14 — 55% oshdi')."
+            "'previous_day_snapshot_for_comparison' — 1-2 kun oldin saqlangan "
+            "kunlik holat (agar mavjud bo'lsa). Buni 'yesterday_campaign_insights' "
+            "bilan solishtiring va IKKALASINI HAM 'kecha'/'oldingi kun(lar)' deb "
+            "ayting (masalan 'kecha CPA $14 edi, undan oldingi kun $9 edi — 55% "
+            "oshdi'). DIQQAT: bu ikkalasi ham 'BUGUN' EMAS — 'bugun' so'zini "
+            "FAQAT yuqoridagi alohida 'today_insights' blokiga asoslanib "
+            "ishlating, hech qachon 'yesterday_campaign_insights' yoki "
+            "'previous_day_snapshot_for_comparison'ni 'bugun' deb atamang."
         ),
     }
 

@@ -30,7 +30,7 @@ import kv_store
 import monthly_report
 import permissions
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd
-from dashboard_data import get_kpis
+from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_sync
 import call_sync
 import call_analytics
@@ -603,30 +603,65 @@ def logout():
 @login_required
 @module_required("dashboard")
 def dashboard():
+    period = request.args.get("period", "this_month")
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
     session = get_session()
     try:
-        overview = _build_dashboard_overview(session)
+        overview = _build_dashboard_overview(session, period=period, date_from=date_from, date_to=date_to)
     finally:
         session.close()
     return render_template("dashboard.html", o=overview)
 
 
-def _build_dashboard_overview(session) -> dict:
+_DASHBOARD_PERIOD_LABELS = {
+    "today": "Bugun", "last_7d": "So'nggi 7 kun",
+    "last_30d": "So'nggi 30 kun", "last_90d": "So'nggi 90 kun",
+}
+
+
+def _dashboard_period_bounds(period: str, date_from: str | None, date_to: str | None, month_start, month_end):
+    """Dashboard'ning tepadagi KPI kartochkalari ("Yangi lidlar"/"Sotuvlar"/
+    "Oborot") qaysi sana oralig'i uchun hisoblanishini aniqlaydi.
+
+    MUHIM (2026-08, foydalanuvchi so'rovi: "sana bo'yicha ko'rish ham qo'shish
+    kerak, nechta lead tushdi bugun bilib olish uchun, sana oralig'ini ham
+    ko'rish mumkin bo'lsin, Meta target'ga o'xshab"): ilgari Dashboard
+    BUTUNLAY qattiq joriy taqvim oyiga bog'langan edi -- "bugun" yoki boshqa
+    biror davrni alohida ko'rish imkoni yo'q edi. Endi Target sahifasidagi
+    kabi tayyor davrlar ('today'/'last_7d'/'last_30d'/'last_90d') + 'custom'
+    (Meta Ads Manager'dagi kabi aniq sanalar oralig'i) qo'llab-quvvatlanadi,
+    standart esa avvalgidek 'this_month' (joriy oy)."""
+    if period == "custom" and date_from and date_to:
+        bounds = custom_range_bounds_utc(date_from, date_to)
+        if bounds:
+            return bounds[0], bounds[1], f"{date_from} — {date_to}"
+    if period in _DASHBOARD_PERIOD_LABELS:
+        bounds = _date_preset_bounds_utc(period)
+        if bounds:
+            return bounds[0], bounds[1], _DASHBOARD_PERIOD_LABELS[period]
+    return month_start, month_end, "Shu oy"
+
+
+def _build_dashboard_overview(session, period: str = "this_month", date_from: str | None = None, date_to: str | None = None) -> dict:
     """Bosh sahifa ("Dashboard") uchun butun kompaniya bo'yicha umumiy
-    ko'rinishni yig'adi -- lidlar holati (voronka taqsimoti), shu oydagi
-    sotuv/oborot kunlik taqsimoti, menejerlar reytingi (KPI/bonus) va
-    qo'ng'iroq faolligi (Moi Zvonki ulangan bo'lsa). `dashboard.html`
-    shundan Chart.js diagrammalarini quradi."""
+    ko'rinishni yig'adi -- lidlar holati (voronka taqsimoti), tanlangan davr
+    bo'yicha yangi lid/sotuv/oborot, shu oydagi kunlik sotuv taqsimoti,
+    menejerlar reytingi (KPI/bonus, har doim JORIY OYGA bog'liq -- KPI/bonus
+    rejalari oylik bo'lgani uchun) va qo'ng'iroq faolligi (Moi Zvonki
+    ulangan bo'lsa). `dashboard.html` shundan Chart.js diagrammalarini
+    quradi."""
     now = dt.datetime.utcnow()
     year, month = now.year, now.month
     month_start, month_end = kpi_bonus.month_bounds(year, month)
+    period_start, period_end, period_label = _dashboard_period_bounds(period, date_from, date_to, month_start, month_end)
 
     # 1) Lidlar holati -- voronka bosqichlari bo'yicha taqsimot
     stages = _active_funnel_stages(session)
     color_hex = {"blue": "#2563EB", "good": "#059669", "bad": "#DC2626", "warn": "#D97706", "dim": "#94A3B8"}
     all_leads = session.query(Lead.id, Lead.status, Lead.created_at).all()
     total_leads = len(all_leads)
-    leads_this_month = sum(1 for l in all_leads if l.created_at and month_start <= l.created_at < month_end)
+    leads_in_period = sum(1 for l in all_leads if l.created_at and period_start <= l.created_at < period_end)
     status_raw_counts: dict[str, int] = defaultdict(int)
     for l in all_leads:
         status_raw_counts[l.status] += 1
@@ -642,18 +677,31 @@ def _build_dashboard_overview(session) -> dict:
     sold_total = status_raw_counts.get(sold_key, 0) if sold_key else 0
     conversion_pct = round((sold_total / total_leads) * 100, 1) if total_leads else 0.0
 
-    # 2) Shu oydagi sotuvlar -- barcha menejerlar, kunlik taqsimot
-    sales_this_month = (
-        session.query(Sale)
-        .filter(
-            Sale.is_returned == False,  # noqa: E712
-            Sale.amount >= kpi_bonus.get_min_sale_amount(),
-            Sale.sold_at >= month_start, Sale.sold_at < month_end,
+    # 2) Shu oydagi sotuvlar -- barcha menejerlar, kunlik taqsimot (diagramma
+    # HAR DOIM joriy oy uchun, tanlangan davrdan qat'i nazar -- KPI/bonus
+    # va "Sotuvlar dinamikasi" grafigi oylik tushunchaga bog'liq).
+    def _sales_in_range(start, end):
+        return (
+            session.query(Sale)
+            .filter(
+                Sale.is_returned == False,  # noqa: E712
+                Sale.amount >= kpi_bonus.get_min_sale_amount(),
+                Sale.sold_at >= start, Sale.sold_at < end,
+            )
+            .all()
         )
-        .all()
-    )
-    sales_count_month = len(sales_this_month)
-    turnover_month = sum(s.amount for s in sales_this_month)
+
+    sales_this_month = _sales_in_range(month_start, month_end)
+
+    # Tepadagi KPI kartochkalari ("Sotuvlar"/"Oborot") uchun -- TANLANGAN
+    # davr bo'yicha. Standart holatda (period="this_month") bu xuddi
+    # yuqoridagi bilan bir xil oraliq, shuning uchun qayta so'ramaymiz.
+    if period_start == month_start and period_end == month_end:
+        sales_in_period = sales_this_month
+    else:
+        sales_in_period = _sales_in_range(period_start, period_end)
+    sales_count_period = len(sales_in_period)
+    turnover_period = sum(s.amount for s in sales_in_period)
 
     daily_turnover: dict[str, float] = defaultdict(float)
     for s in sales_this_month:
@@ -718,12 +766,16 @@ def _build_dashboard_overview(session) -> dict:
     return {
         "generated_at": now.isoformat(),
         "total_leads": total_leads,
-        "leads_this_month": leads_this_month,
+        "leads_in_period": leads_in_period,
+        "period": period,
+        "period_label": period_label,
+        "date_from": date_from,
+        "date_to": date_to,
         "status_breakdown": status_breakdown,
         "sold_total": sold_total,
         "conversion_pct": conversion_pct,
-        "sales_count_month": sales_count_month,
-        "turnover_month": turnover_month,
+        "sales_count_period": sales_count_period,
+        "turnover_period": turnover_period,
         "sales_trend": sales_trend,
         "leaderboard": leaderboard,
         "max_leaderboard_turnover": max_leaderboard_turnover,

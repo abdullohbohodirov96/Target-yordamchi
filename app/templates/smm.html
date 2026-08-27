@@ -61,9 +61,18 @@
   </p>
   {% else %}
 
-  <div class="kpi-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom:16px">
+  <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:16px">
     <div class="kpi-card"><div class="kpi-label">Obunachilar</div><div class="kpi-value">{{ p.followers_count if p.followers_count is not none else '—' }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">O'sish ({{ days }} kun)</div><div class="kpi-value {{ 'good' if p.growth and p.growth > 0 else ('bad' if p.growth and p.growth < 0) }}">{{ '{:+d}'.format(p.growth) if p.growth is not none else '—' }}</div></div>
+    <div class="kpi-card">
+      <div class="kpi-label">O'sish ({{ days }} kun)</div>
+      <div class="kpi-value {{ 'good' if p.growth and p.growth > 0 else ('bad' if p.growth and p.growth < 0) }}">{{ '{:+d}'.format(p.growth) if p.growth is not none else '—' }}</div>
+      {% if p.growth is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">O'sish (bu oy)</div>
+      <div class="kpi-value {{ 'good' if p.growth_month and p.growth_month > 0 else ('bad' if p.growth_month and p.growth_month < 0) }}">{{ '{:+d}'.format(p.growth_month) if p.growth_month is not none else '—' }}</div>
+      {% if p.growth_month is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
+    </div>
     <div class="kpi-card"><div class="kpi-label">Postlar ({{ days }} kun)</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
     <div class="kpi-card"><div class="kpi-label">Umumiy qamrov</div><div class="kpi-value">{{ p.total_reach }}</div></div>
     <div class="kpi-card"><div class="kpi-label">Umumiy ko'rishlar</div><div class="kpi-value">{{ p.total_impressions }}</div></div>
@@ -89,11 +98,22 @@
   <h3 style="margin:0 0 8px">Eng faol postlar</h3>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Sana</th><th>Matn</th><th class="num">Like</th><th class="num">Komment</th><th class="num">{{ 'Share' if key=='facebook' else 'Saqlangan' }}</th><th class="num">Qamrov</th><th class="num">Jami faollik</th><th></th></tr></thead>
+    <thead><tr><th>Sana</th><th>Turi</th><th>Matn</th><th class="num">Like</th><th class="num">Komment</th><th class="num">{{ 'Share' if key=='facebook' else 'Saqlangan' }}</th><th class="num">Qamrov</th><th class="num">Jami faollik</th><th></th></tr></thead>
     <tbody>
       {% for post in p.top_posts %}
+      {% set mt = post.media_type or 'STATUS' %}
+      {% set mt_label = {'VIDEO': 'Video', 'REEL': 'Reels', 'IMAGE': 'Rasm', 'CAROUSEL_ALBUM': 'Albom', 'LINK': 'Havola', 'STATUS': 'Matn'}.get(mt, mt) %}
+      {% set mt_color = {'VIDEO': 'blue', 'REEL': 'blue', 'IMAGE': 'dim', 'CAROUSEL_ALBUM': 'warn', 'LINK': 'good', 'STATUS': 'dim'}.get(mt, 'dim') %}
       <tr>
         <td class="text-dim">{{ post.posted_at.strftime('%Y-%m-%d') if post.posted_at else '—' }}</td>
+        <td>
+          <span class="badge badge-color-{{ mt_color }}" style="display:inline-flex; align-items:center; gap:4px">
+            {% if mt in ('VIDEO', 'REEL') %}
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            {% endif %}
+            {{ mt_label }}
+          </span>
+        </td>
         <td>{{ post.caption or '—' }}</td>
         <td class="num">{{ post.like_count }}</td>
         <td class="num">{{ post.comments_count }}</td>
@@ -103,7 +123,7 @@
         <td>{% if post.permalink %}<a href="{{ post.permalink }}" target="_blank" rel="noopener" class="text-blue">ko'rish</a>{% endif %}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="8">Bu davr uchun post topilmadi.</td></tr>
+      <tr class="empty-row"><td colspan="9">Bu davr uchun post topilmadi.</td></tr>
       {% endfor %}
     </tbody>
   </table>
