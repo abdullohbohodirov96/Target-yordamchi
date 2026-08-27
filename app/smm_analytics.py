@@ -20,6 +20,7 @@ def _post_to_dict(p) -> dict:
         "caption": (p.caption or "").strip()[:140],
         "permalink": p.permalink,
         "media_type": p.media_type,
+        "thumbnail_url": p.thumbnail_url,
         "posted_at": p.posted_at,
         "like_count": p.like_count or 0,
         "comments_count": p.comments_count or 0,

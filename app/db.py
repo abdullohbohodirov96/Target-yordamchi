@@ -218,6 +218,7 @@ class SmmPost(Base):
     caption = Column(Text, nullable=True)
     permalink = Column(Text, nullable=True)
     media_type = Column(String(32), nullable=True)  # IMAGE | VIDEO | CAROUSEL_ALBUM | REEL | STATUS | ...
+    thumbnail_url = Column(Text, nullable=True)  # post/video muqovasi -- "Eng faol postlar" jadvalida ko'rsatish uchun
     posted_at = Column(DateTime, nullable=True, index=True)
     like_count = Column(Integer, nullable=True, default=0)
     comments_count = Column(Integer, nullable=True, default=0)

@@ -747,12 +747,14 @@ def get_facebook_page_posts(limit: int = 25) -> list[dict]:
     orqali so'raladi -- bitta so'rovga qo'shib yuborilsa, insights ruxsati
     yo'q hollarda BUTUN /posts so'rovi xato qaytarib qo'yishi mumkin."""
     # 2026-08, foydalanuvchi so'rovi ("eng faol postlar qaysiligini
-    # bilmayman, videomi yo'qmi ko'rsatsin"): `attachments{media_type,type}`
-    # qo'shildi -- shu orqali post rasm/video/albom/havola ekanini
-    # aniqlash mumkin bo'ladi (avval bu maydon so'ralmagani uchun har bir
-    # Facebook post kodda majburan "STATUS" deb belgilanardi).
+    # bilmayman, videomi yo'qmi ko'rsatsin, video boshini/coverini
+    # qo'ysa bo'ladimi"): `attachments{media_type,type}` -- post turini
+    # aniqlash uchun; `full_picture` -- Meta HAR QANDAY post (rasm YOKI
+    # video) uchun avtomatik generatsiya qiladigan muqova/preview rasm
+    # URL'i, shu orqali "Eng faol postlar" jadvalida haqiqiy kichik
+    # rasm (thumbnail) ko'rsatish mumkin bo'ladi.
     fields = (
-        "id,message,created_time,permalink_url,"
+        "id,message,created_time,permalink_url,full_picture,"
         "likes.summary(true).limit(0),comments.summary(true).limit(0),shares,"
         "attachments{media_type,type}"
     )
@@ -781,7 +783,12 @@ def get_instagram_media(ig_user_id: str, limit: int = 25) -> list[dict]:
     """So'nggi Instagram postlarini (like/comment soni bilan) qaytaradi.
     Har bir media'ning qamrovi (reach) alohida `get_instagram_media_insights()`
     orqali so'raladi (Meta buni asosiy `/media` so'rovida bermaydi)."""
-    fields = "id,caption,timestamp,permalink,media_type,like_count,comments_count"
+    # `thumbnail_url` -- FAQAT video/reels turidagi media uchun mavjud
+    # (Meta shunday cheklaydi); rasm/albom uchun `media_url`ning o'zi
+    # muqova sifatida ishlatiladi (2026-08, foydalanuvchi so'rovi: "eng
+    # faol postlar" jadvalida qaysi post ekanini bilish uchun kichik
+    # rasm/video muqovasi ko'rsatilsin).
+    fields = "id,caption,timestamp,permalink,media_type,media_url,thumbnail_url,like_count,comments_count"
     data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token())
     return data.get("data", [])
 

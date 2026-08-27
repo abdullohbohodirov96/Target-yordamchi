@@ -164,6 +164,7 @@ def _sync_facebook(session, result: dict) -> None:
             caption=p.get("message"),
             permalink=p.get("permalink_url"),
             media_type=_facebook_media_type(p),
+            thumbnail_url=p.get("full_picture"),
             posted_at=_parse_dt(p.get("created_time")),
             like_count=((p.get("likes") or {}).get("summary") or {}).get("total_count", 0),
             comments_count=((p.get("comments") or {}).get("summary") or {}).get("total_count", 0),
@@ -227,6 +228,9 @@ def _sync_instagram(session, result: dict) -> None:
             caption=m.get("caption"),
             permalink=m.get("permalink"),
             media_type=m.get("media_type"),
+            # `thumbnail_url` faqat VIDEO/REEL turida keladi -- IMAGE/
+            # CAROUSEL_ALBUM uchun `media_url`ning o'zi muqova bo'ladi.
+            thumbnail_url=m.get("thumbnail_url") or m.get("media_url"),
             posted_at=_parse_dt(m.get("timestamp")),
             like_count=m.get("like_count", 0),
             comments_count=m.get("comments_count", 0),
