@@ -132,7 +132,7 @@
       <p class="page-subtitle" style="margin:4px 0 0">Har bir "haqiqiy" (shubhali bo'lmagan) qo'ng'iroq yozuvi avtomatik navbat bo'yicha, soatiga bir necha marta (soat :10, :30, :50 da) tahlil qilinadi -- transkripsiya, qisqa xulosa va 1-10 baho bilan.</p>
     </div>
     {% if ai.openai_configured %}
-    <form method="post" action="{{ url_for('individual_check_run_ai_analysis') }}">
+    <form method="post" action="{{ url_for('individual_check_run_ai_analysis') }}" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.dataset.origText=b.innerHTML; b.innerHTML='<span class=\'btn-spinner\'></span> Tahlil qilinmoqda...'; return true;">
       <input type="hidden" name="days" value="{{ days }}">
       <button type="submit" class="btn">Hoziroq tahlil qilish{% if ai.pending_count %} ({{ ai.pending_count }} navbatda){% endif %}</button>
     </form>

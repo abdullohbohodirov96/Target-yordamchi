@@ -138,8 +138,24 @@ MUHIM:
 • Audio uzun bo'lsa ham to'liq suhbatni transkripsiya qil.
 • Audio ichidagi ma'lumotlarni taxmin qilma."""
 
-OPENAI_AUDIO_MODEL = os.environ.get("OPENAI_AUDIO_MODEL", "gpt-4o-mini-audio-preview")
+OPENAI_AUDIO_MODEL = os.environ.get("OPENAI_AUDIO_MODEL", "gpt-4o-audio-preview")
+# 2026-08: production'da `gpt-4o-mini-audio-preview` OpenAI'dan 404
+# (model_not_found) qaytardi -- bu OpenAI akkaunti/tarif uchun mavjud
+# bo'lmagan model nomi ekan. Aniq qaysi nom to'g'ri ishlashini bu yerdan
+# tekshirib bo'lmagani uchun, ENDI bir nechta nomzod nom ketma-ket
+# sinaladi (birinchi ishlagani keyingi chaqiruvlar uchun keshlanadi) --
+# shunday qilib qaysi model haqiqatda mavjudligidan qat'i nazar ishlaydi,
+# va agar birontasi ham ishlamasa xatolikda OpenAI'ning O'ZI aytgan aniq
+# sababi ko'rsatiladi (endi generik "404 Client Error" emas).
+_FALLBACK_AUDIO_MODELS = [
+    "gpt-4o-audio-preview",
+    "gpt-4o-mini-audio-preview",
+    "gpt-4o-audio-preview-2024-12-17",
+    "gpt-4o-mini-audio-preview-2024-12-17",
+    "gpt-4o-audio-preview-2024-10-01",
+]
 _REQUIRED_KEYS = ("overview", "score", "status", "color", "result", "transcription")
+_working_model = None  # bir marta muvaffaqiyatli ishlagan model shu yerda keshlanadi
 
 
 def is_configured() -> bool:
@@ -195,16 +211,27 @@ def _parse_json_response(text: str) -> dict:
     return data
 
 
-def _call_openai_audio(audio_bytes: bytes, audio_format: str) -> dict:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY sozlanmagan -- qo'ng'iroq audio-tahlili ishlamaydi.")
-    b64_audio = base64.b64encode(audio_bytes).decode("ascii")
-    resp = requests.post(
+def _extract_openai_error(resp) -> str:
+    """OpenAI xato javobidan ANIQ sabab matnini chiqarib olishga harakat
+    qiladi (masalan "The model `gpt-4o-mini-audio-preview` does not exist
+    or you do not have access to it.") -- shunda `ai_error` ustunida
+    generik "404 Client Error" o'rniga aynan nima noto'g'riligi ko'rinadi."""
+    try:
+        body = resp.json()
+        msg = (body.get("error") or {}).get("message")
+        if msg:
+            return msg
+    except Exception:
+        pass
+    return (resp.text or "")[:300] or f"HTTP {resp.status_code}"
+
+
+def _post_chat_completion(api_key: str, model: str, b64_audio: str, audio_format: str):
+    return requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
         json={
-            "model": OPENAI_AUDIO_MODEL,
+            "model": model,
             "modalities": ["text"],
             "temperature": 0,
             "response_format": {"type": "json_object"},
@@ -226,10 +253,49 @@ def _call_openai_audio(audio_bytes: bytes, audio_format: str) -> dict:
         # bosilganda cheklangan sondagi qo'ng'iroq uchun ishlatiladi).
         timeout=180,
     )
-    resp.raise_for_status()
-    data = resp.json()
-    content = data["choices"][0]["message"]["content"]
-    return _parse_json_response(content)
+
+
+def _call_openai_audio(audio_bytes: bytes, audio_format: str) -> dict:
+    global _working_model
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY sozlanmagan -- qo'ng'iroq audio-tahlili ishlamaydi.")
+    b64_audio = base64.b64encode(audio_bytes).decode("ascii")
+
+    candidates = []
+    if _working_model:
+        candidates.append(_working_model)
+    for m in [OPENAI_AUDIO_MODEL] + _FALLBACK_AUDIO_MODELS:
+        if m and m not in candidates:
+            candidates.append(m)
+
+    attempts = []
+    for model in candidates:
+        resp = _post_chat_completion(api_key, model, b64_audio, audio_format)
+        if resp.status_code == 404:
+            # Ehtimol model nomi bu OpenAI akkaunti uchun mavjud emas --
+            # keyingi nomzodni sinaymiz (auth/rate-limit/boshqa xatolarda
+            # ESA darhol to'xtaymiz, chunki model almashtirish yordam
+            # bermaydi).
+            err_msg = _extract_openai_error(resp)
+            attempts.append(f"{model}: {err_msg}")
+            logger.warning("OpenAI audio modeli '%s' topilmadi (404): %s", model, err_msg)
+            continue
+        if not resp.ok:
+            err_msg = _extract_openai_error(resp)
+            raise RuntimeError(f"OpenAI xatosi (model={model}, HTTP {resp.status_code}): {err_msg}")
+        _working_model = model
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        return _parse_json_response(content)
+
+    raise RuntimeError(
+        "OpenAI'da ishlaydigan audio-tahlil modeli topilmadi. Sinalgan modellar: "
+        + "; ".join(attempts)
+        + ". OPENAI_AUDIO_MODEL environment variable'ga akkauntingizda mavjud "
+        "bo'lgan aniq model nomini qo'shing (OpenAI hisobingizdagi Models "
+        "ro'yxatidan tekshiring)."
+    )
 
 
 def analyze_call_record(session, call) -> dict:
@@ -269,28 +335,46 @@ def run_pending_analysis(session, limit: int = 10) -> dict:
     `scheduler.py`dagi davriy vazifa VA admin'ning "hoziroq tahlil qilish"
     tugmasi ikkalasi ham shu funksiyani chaqiradi (turli `limit` bilan).
 
-    Qaytaradi: {"analyzed": N, "failed": N, "remaining": N}."""
+    2026-08: avval tahlil urinib, XATOLIK bilan tugagan yozuvlar
+    (`ai_error IS NOT NULL`) ham qayta ko'rib chiqiladi -- aks holda
+    tizimli xato (masalan noto'g'ri model nomi) tuzatilgandan keyin ham
+    o'sha yozuvlar abadiy "xatolik"da qolib qolar edi. Hali umuman
+    urinilmagan yozuvlarga USTUNLIK beriladi, qolgan joy bo'lsagina
+    xatolik bilan tugaganlar qayta sinaladi.
+
+    Qaytaradi: {"analyzed": N, "failed": N, "remaining": N, "retry_remaining": N}."""
     import call_analytics
     from db import CallRecord
 
     if not is_configured():
-        return {"analyzed": 0, "failed": 0, "remaining": 0, "error": "OPENAI_API_KEY sozlanmagan"}
+        return {"analyzed": 0, "failed": 0, "remaining": 0, "retry_remaining": 0, "error": "OPENAI_API_KEY sozlanmagan"}
 
     min_seconds = call_analytics.get_min_real_talk_seconds()
-    pending_q = session.query(CallRecord).filter(
+    base_filter = (
         CallRecord.recording_url.isnot(None),
-        CallRecord.ai_analyzed_at.is_(None),
         CallRecord.duration_seconds >= min_seconds,
     )
-    pending = pending_q.order_by(CallRecord.started_at.desc()).limit(limit).all()
+    never_tried_q = session.query(CallRecord).filter(*base_filter, CallRecord.ai_analyzed_at.is_(None))
+    retry_q = session.query(CallRecord).filter(*base_filter, CallRecord.ai_error.isnot(None))
+
+    never_tried = never_tried_q.order_by(CallRecord.started_at.desc()).limit(limit).all()
+    remaining_slots = max(0, limit - len(never_tried))
+    to_retry = (
+        retry_q.order_by(CallRecord.started_at.desc()).limit(remaining_slots).all()
+        if remaining_slots else []
+    )
 
     analyzed, failed = 0, 0
-    for call in pending:
+    for call in never_tried + to_retry:
         try:
             analyze_call_record(session, call)
             analyzed += 1
         except Exception:
             failed += 1  # xato allaqachon analyze_call_record ichida log qilindi/saqlandi
 
-    remaining = pending_q.count()
-    return {"analyzed": analyzed, "failed": failed, "remaining": remaining}
+    return {
+        "analyzed": analyzed,
+        "failed": failed,
+        "remaining": never_tried_q.count(),
+        "retry_remaining": retry_q.count(),
+    }

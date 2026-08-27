@@ -2177,9 +2177,10 @@ def individual_check_run_ai_analysis():
         flash(result["error"], "error")
     else:
         level = "success" if not result.get("failed") else "warning"
+        retry_note = f", {result.get('retry_remaining', 0)} tasi qayta urinish navbatida" if result.get("retry_remaining") else ""
         flash(
             f"{result.get('analyzed', 0)} ta qo'ng'iroq tahlil qilindi "
-            f"({result.get('failed', 0)} tasida xatolik, {result.get('remaining', 0)} tasi navbatda qoldi).",
+            f"({result.get('failed', 0)} tasida xatolik, {result.get('remaining', 0)} tasi navbatda qoldi{retry_note}).",
             level,
         )
     return redirect(url_for("individual_check", days=days, tab="ai"))
