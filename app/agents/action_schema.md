@@ -19,7 +19,9 @@ faqat taklif beradi.
         "new_daily_budget": 250000,
         "creative_brief": {
           "problem": "Hook rate 8% ga tushib ketdi (norma >20%)",
-          "hooks": ["...", "..."],
+          "final_primary_text": "replace_creative uchun MAJBURIY (2026-08, avtomatik ijro etiladi): bitta, YAKUNIY, tayyor ishlatiladigan asosiy reklama matni -- variantlar ro'yxati EMAS, aynan shu matn mavjud rasm/video bilan birga darhol e'lon qilinadi.",
+          "final_headline": "replace_creative uchun ixtiyoriy: yangi sarlavha (link reklama bo'lsa).",
+          "hooks": ["... (qo'shimcha g'oyalar uchun, ijroga ta'sir qilmaydi)", "..."],
           "body_angle": "...",
           "cta": "..."
         },

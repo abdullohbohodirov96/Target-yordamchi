@@ -7,7 +7,10 @@ shu jarayon ichida ishlaydi.
 Jadval (standart, ENV orqali sozlanadi):
   - 09:00 Toshkent -- ADMIN TARGET HISOBOTI (har doim yuboriladi, faqat OpenAI,
     hech qanday action bajarmaydi) -- foydalanuvchi so'ragan "har kuni 9:00"
-    talabi aynan shu.
+    talabi aynan shu. **2026-08dan: KECHAGI (o'tgan to'liq kun) natijasi
+    bilan** ("bugungi kun" o'rniga -- ertalab bu deyarli bo'sh bo'lardi), va
+    kuniga FAQAT BIR MARTA (`kv_store` orqali kunlik "guard" bilan himoyalangan
+    -- takroriy/tashqi trigger bo'lsa ham qayta yuborilmaydi).
   - Har soatda -- to'liq audit + avtomatik tuzatish (Targetolog: byudjet
     oshirish/kamaytirish, pause/resume) -- FAQAT diqqatga loyiq narsa bo'lsa
     Telegram'ga yuboradi.
@@ -53,6 +56,7 @@ import competitor_sync
 import competitor_analytics
 import meta_api
 import db
+import kv_store
 
 logger = logging.getLogger("scheduler")
 
@@ -133,16 +137,36 @@ def _tg_send(chat_id: int, text: str) -> dict:
     return {"ok": last_error is None, "error": last_error}
 
 
+_ADMIN_REPORT_GUARD_KEY = "admin_report_last_sent_date"
+
+
 def job_admin_report() -> str:
+    """Har kuni 09:00 (Toshkent) -- KECHAGI kunning TO'LIQ (24 soatlik)
+    natijasini beradi, "bugungi kun" emas (2026-08, foydalanuvchi so'rovi:
+    "shunaqa hisobotni bir kun oldingi kunnikini bersin" -- ertalab soat
+    9da "bugungi kun" statistikasi deyarli bo'sh bo'ladi, chunki kun endigina
+    boshlangan, kechagi to'liq kun esa haqiqiy manzarani ko'rsatadi).
+
+    MUHIM (kuniga FAQAT BIR MARTA): agar bu funksiya bir kunda ikkinchi marta
+    chaqirilsa (masalan eski tashqi cron-job.org sozlamasi hali ham qolib
+    ketgan, yoki qayta-deploy paytida ikki marta ishga tushib qolsa) --
+    "boshqa avtomatik bermasin" talabiga ko'ra, ikkinchi chaqiruv JIM
+    o'tkazib yuboriladi, xabar QAYTA yuborilmaydi."""
     targets = _daily_summary_targets()
     if not targets:
         return "hisobot yuboriladigan chat yo'q"
     now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
+    today_str = now.strftime("%Y-%m-%d")
+
+    if kv_store.get_json(_ADMIN_REPORT_GUARD_KEY) == today_str:
+        return f"bugun ({today_str}) allaqachon yuborilgan -- qayta yuborilmadi"
+
+    yesterday = now - dt.timedelta(days=1)
     try:
         report = orchestrator.build_admin_report(
-            now.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
-            "Ertalabki holat va bugungi ish rejasi",
-            insight_kwargs={"date_preset": "today"},
+            yesterday.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
+            "Kechagi kun uchun to'liq yakuniy hisobot",
+            insight_kwargs={"date_preset": "yesterday"},
         )
     except Exception as e:
         logger.exception("Admin hisobot xatosi")
@@ -150,6 +174,7 @@ def job_admin_report() -> str:
             _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
         return f"xato: {e}"
     send_results = {cid: _tg_send(cid, report) for cid in targets}
+    kv_store.set_json(_ADMIN_REPORT_GUARD_KEY, today_str)
     if all(r["ok"] for r in send_results.values()):
         return f"yuborildi -> {targets}"
     return f"URINISH QILINDI, lekin ba'zilari rad etildi: {send_results}"
@@ -504,15 +529,21 @@ def start_scheduler(app) -> None:
     _scheduler_started = True
 
     scheduler = BackgroundScheduler(timezone=TIMEZONE)
-    scheduler.add_job(job_admin_report, CronTrigger(hour=9, minute=0), id="admin-report")
-    scheduler.add_job(job_watch_cycle, CronTrigger(minute=5), id="watch")  # har soatning 5-daqiqasida
-    scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10), id="budget")
-    scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15"), id="lead-sync")
-    scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5"), id="standing-tasks")
-    scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5"), id="standing-reports")
-    scheduler.add_job(job_call_sync, CronTrigger(minute="*/20"), id="call-sync")
-    scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30), id="followup-reminders")
-    scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
-    scheduler.add_job(job_competitor_analysis, CronTrigger(hour=10, minute=0), id="competitor-analysis")
+    # MUHIM: har bir CronTrigger'ga ALOHIDA ham `timezone=TIMEZONE` beriladi
+    # (2026-08, foydalanuvchi so'rovi: "har kuni 9da" xabari aslida 14:00da
+    # kelib turgan holat kuzatilgan -- bu BackgroundScheduler darajasidagi
+    # `timezone` sozlamasiga bog'liqligini kutish o'rniga, har bir trigger'ni
+    # o'zi ham aniq Toshkent vaqtiga bog'lab, mumkin bo'lgan noaniqlikni
+    # (masalan platforma darajasidagi TZ o'zgaruvchisi/muhit) yo'qotish uchun).
+    scheduler.add_job(job_admin_report, CronTrigger(hour=9, minute=0, timezone=TIMEZONE), id="admin-report")
+    scheduler.add_job(job_watch_cycle, CronTrigger(minute=5, timezone=TIMEZONE), id="watch")  # har soatning 5-daqiqasida
+    scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
+    scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
+    scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
+    scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
+    scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
+    scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
+    scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
+    scheduler.add_job(job_competitor_analysis, CronTrigger(hour=10, minute=0, timezone=TIMEZONE), id="competitor-analysis")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

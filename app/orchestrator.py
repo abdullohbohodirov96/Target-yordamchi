@@ -169,6 +169,7 @@ _ACTION_FRIENDLY_VERB = {
     "schedule_on_off": "kunlik avtomatik yoqish/o'chirish jadvalini qo'ydim",
     "schedule_report": "qo'shimcha doimiy hisobot vaqtini qo'shdim",
     "cancel_standing_task": "doimiy vazifani bekor qildim",
+    "replace_creative": "reklama matnini yangiladim",
 }
 
 ACTION_EXECUTORS = {
@@ -190,9 +191,16 @@ ACTION_EXECUTORS = {
         if a.get("params", {}).get("losing_adset_id")
         else {"status": "no_loser_specified"}
     ),
-    # replace_creative va create_instant_form MVP bosqichida avtomatik ijro etilmaydi —
-    # bular ijodiy/qo'lda tasdiqlash talab qiladigan qadamlar (AI video/rasm yarata
-    # olmaydi), shuning uchun faqat taklif sifatida odamga (Telegram orqali) ko'rsatiladi.
+    "replace_creative": lambda a: _execute_replace_creative(a),
+    # create_instant_form MVP bosqichida avtomatik ijro etilmaydi -- forma
+    # yaratish odatda bir martalik/kamdan-kam va tasdiqlash talab qiladigan
+    # qadam, shuning uchun faqat taklif sifatida odamga (Telegram orqali)
+    # ko'rsatiladi. replace_creative esa (2026-08, foydalanuvchi so'rovi bilan)
+    # ENDI AVTOMATIK ijro etiladi -- mavjud rasm/video SAQLANIB, faqat matn
+    # (`final_primary_text`/`final_headline`) yangilanadi va yangi creative
+    # to'g'ridan-to'g'ri reklamaga biriktiriladi (pastga, `_execute_replace_creative`
+    # ga qarang). Butunlay YANGI vizual kerak bo'lgan holatlar hali ham odam
+    # dizaynerga TZ sifatida `summary`da chiqariladi -- bu action turi orqali emas.
 }
 
 
@@ -373,6 +381,65 @@ def _execute_ab_test(action: dict) -> dict:
         "test_duration_days": params.get("test_duration_days", 7),
         "decision_metric": params.get("decision_metric", "CPA"),
     }
+
+
+def _execute_replace_creative(action: dict) -> dict:
+    """4-band (targetolog prompt), 2026-08 matn-avtonom variant: mavjud
+    rasm/video'ni SAQLAB, faqat reklama matnini (`final_primary_text`/
+    `final_headline`) yangilab, yangi creative'ni reklamaga biriktiradi va
+    qayta o'qib tasdiqlaydi. AI hali rasm/video generatsiya qila olmaydi --
+    shuning uchun Targetolog butunlay YANGI vizual kerak deb hisoblasa, bu
+    action turini UMUMAN chiqarmasligi, o'rniga `summary`da odam dizaynerga
+    TZ yozishi kerak (bu funksiya faqat matn-almashtirish yo'lini bajaradi)."""
+    ad_id = _require(action, "object_id")
+    final_primary_text = _require_any(
+        action,
+        ("params", "creative_brief", "final_primary_text"),
+        ("params", "final_primary_text"),
+    )
+    params = action.get("params") or {}
+    brief = params.get("creative_brief") or {}
+    final_headline = brief.get("final_headline") or params.get("final_headline")
+
+    current = meta_api.get_ad_creative_details(ad_id)
+    if not current.get("object_story_spec"):
+        raise meta_api.MetaAPIError({
+            "message": (
+                "Reklamaning joriy kreativida object_story_spec topilmadi -- "
+                "matnni avtomatik almashtirib bo'lmaydi. Ads Manager'da qo'lda "
+                "tekshiring yoki yangi vizual bilan qo'lda yarating."
+            ),
+            "ad_id": ad_id,
+        })
+
+    new_creative = meta_api.create_ad_creative_with_new_copy(
+        page_id=meta_api.PAGE_ID,
+        base_story_spec=current["object_story_spec"],
+        primary_text=final_primary_text,
+        headline=final_headline,
+        name=action.get("object_name"),
+    )
+    new_creative_id = new_creative.get("id")
+    if not new_creative_id:
+        raise meta_api.MetaAPIError({
+            "message": "Yangi kreativ yaratildi, lekin ID qaytmadi -- reklamaga biriktirib bo'lmadi.",
+            "response": new_creative,
+        })
+
+    meta_api.update_ad_creative(ad_id, new_creative_id)
+
+    verified = meta_api.get_ad_creative_details(ad_id)
+    if verified.get("creative_id") != new_creative_id:
+        raise meta_api.MetaAPIError({
+            "message": (
+                "Meta so'rovni qabul qildi, lekin qayta tekshirganda reklama "
+                "hali eski kreativni ko'rsatyapti -- o'zgarish saqlanmagan bo'lishi mumkin."
+            ),
+            "expected_creative_id": new_creative_id,
+            "actual_creative_id": verified.get("creative_id"),
+        })
+    return {"verified": True, "new_creative_id": new_creative_id}
+
 
 AUTO_EXECUTABLE_TYPES = set(ACTION_EXECUTORS.keys())
 
@@ -954,7 +1021,9 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
                 continue
 
             if action_type not in AUTO_EXECUTABLE_TYPES and action_type not in SCHEDULING_ACTION_TYPES:
-                # replace_creative / create_instant_form — inson tasdig'i kerak
+                # create_instant_form -- inson tasdig'i kerak (replace_creative
+                # 2026-08dan AUTO_EXECUTABLE_TYPES ichida, shuning uchun bu
+                # yerga endi tushmaydi).
                 skipped.append({"action": action, "decision": decision, "reason": "manual_step_required"})
                 continue
 
@@ -1008,9 +1077,14 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
     # tushunarli xabar. Targetolog'ning o'z xulosasi (`summary`) allaqachon
     # oddiy tilda yozilgan bo'lishi kerak (system prompt shuni talab qiladi);
     # bu yerda faqat qisqa amaliy qo'shimcha qilinadi.
+    # replace_creative endi (2026-08) AVTOMATIK ijro etiladi -- shuning uchun
+    # bu ro'yxatda faqat create_instant_form qoladi (u hali odam tasdig'ini
+    # kutadi). Yangi vizual kerak bo'lgan (matn-almashtirish yetarli bo'lmagan)
+    # holatlar Targetolog tomonidan alohida action sifatida emas, `summary`
+    # ichida odam dizaynerga TZ sifatida chiqariladi.
     creative_or_form_actions = [
         a for a in targetolog_plan.get("actions", [])
-        if a["type"] in ("replace_creative", "create_instant_form")
+        if a["type"] in ("create_instant_form",)
     ]
 
     report_lines = [targetolog_plan.get("summary", "").strip()]

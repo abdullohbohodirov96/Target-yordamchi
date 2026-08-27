@@ -561,6 +561,78 @@ def copy_adset(adset_id: str, rename_suffix: str = " - B variant", status_option
 
 
 # ---------------------------------------------------------------------------
+# KREATIV MATNINI ALMASHTIRISH (replace_creative -- matn-avtonom variant, 2026-08)
+#
+# AdCreative'lar Meta'da IMMUTABLE -- mavjudini "tahrirlab" bo'lmaydi. Shuning
+# uchun "reklama matnini yangilash" aslida: (1) joriy kreativning to'liq
+# object_story_spec'ini (rasm/video shu ichida -- image_hash/video_id) o'qib
+# olish, (2) FAQAT matn maydonini (message/name) yangi qiymat bilan
+# almashtirib, YANGI AdCreative yaratish, (3) reklamaga o'sha yangi creative_id
+# ni biriktirish. Rasm/video O'ZGARMAYDI -- shuning uchun bu AI hali rasm/video
+# generatsiya qila olmasa ham, mavjud vizual bilan matnni avtonom yangilashga
+# yetarli.
+# ---------------------------------------------------------------------------
+
+def get_ad_creative_details(ad_id: str) -> dict:
+    """Reklamaning joriy kreativini (matn + rasm/video) qaytaradi.
+    `replace_creative` uchun MUHIM: yangi creative yaratishdan oldin joriy
+    `object_story_spec`ning AYNAN NUSXASIDAN boshlash kerak (noldan qurish
+    EMAS) -- aks holda rasm/video yo'qolib ketishi yoki Meta "invalid
+    creative" xatosi berishi mumkin."""
+    data = _get(ad_id, {"fields": "id,name,adset_id,creative{id,object_story_spec,image_hash,video_id}"})
+    creative = data.get("creative", {}) or {}
+    return {
+        "ad_id": data.get("id"),
+        "ad_name": data.get("name"),
+        "adset_id": data.get("adset_id"),
+        "creative_id": creative.get("id"),
+        "object_story_spec": creative.get("object_story_spec", {}),
+        "image_hash": creative.get("image_hash"),
+        "video_id": creative.get("video_id"),
+    }
+
+
+def create_ad_creative_with_new_copy(
+    page_id: str,
+    base_story_spec: dict,
+    primary_text: str,
+    headline: str | None = None,
+    name: str | None = None,
+) -> dict:
+    """Mavjud kreativning `object_story_spec`idan (rasm/video O'ZGARMAYDI)
+    chuqur nusxa olib, FAQAT matn maydonlarini (`link_data.message`/`name`
+    yoki `video_data.message`/`title`) yangi qiymat bilan almashtirib, YANGI
+    AdCreative yaratadi. Reklamaga biriktirish uchun keyin
+    `update_ad_creative()` chaqiriladi."""
+    story_spec = json.loads(json.dumps(base_story_spec or {}))  # chuqur nusxa
+    story_spec["page_id"] = story_spec.get("page_id") or page_id
+
+    if "video_data" in story_spec:
+        story_spec["video_data"]["message"] = primary_text
+        if headline:
+            story_spec["video_data"]["title"] = headline
+    else:
+        # link_data bo'lmasa ham (masalan photo_data), matn saqlanib qolishi
+        # uchun eng keng tarqalgan holatga -- link_data'ga -- tushamiz.
+        story_spec.setdefault("link_data", {})["message"] = primary_text
+        if headline:
+            story_spec["link_data"]["name"] = headline
+
+    payload = {
+        "name": name or "Target Master — yangilangan matn",
+        "object_story_spec": story_spec,
+    }
+    return _post(f"{AD_ACCOUNT_ID}/adcreatives", payload)
+
+
+def update_ad_creative(ad_id: str, creative_id: str) -> dict:
+    """Mavjud reklamaga YANGI creative'ni biriktiradi (eskisi endi
+    ko'rsatilmaydi, lekin arxivda saqlanib qoladi). Reklamaning o'zi (ad_id,
+    demak statistika tarixi) o'zgarmaydi."""
+    return _post(ad_id, {"creative": {"creative_id": creative_id}})
+
+
+# ---------------------------------------------------------------------------
 # INSTANT FORMS / LEAD ADS (4.9-bo'lim)
 # ---------------------------------------------------------------------------
 

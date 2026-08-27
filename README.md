@@ -22,7 +22,11 @@ kabi har so'rovga alohida qisqa muddatli funksiya emas) va ustiga to'liq
 - 🤖 **Telegram bot** — eski botning BARCHA mantig'i saqlangan (erkin matn
   bilan buyruq berish, savolga javob, oylik PDF hisobot va h.k.), lekin
   endi:
-  - Har kuni **09:00 (Toshkent)** — ADMIN TARGET HISOBOTI har doim yuboriladi.
+  - Har kuni **09:00 (Toshkent)** — ADMIN TARGET HISOBOTI har doim yuboriladi,
+    **kechagi (o'tgan to'liq kun) natijasi bilan** (2026-08 dan — ertalab
+    "bugungi kun" statistikasi deyarli bo'sh bo'lardi). Kuniga faqat BIR
+    MARTA yuboriladi — takroriy/tashqi trigger bo'lsa ham jim o'tkazib
+    yuboriladi.
   - **Har soat** — to'liq audit + avtomatik tuzatish (byudjet oshirish/
     kamaytirish, pause/resume) — faqat diqqatga loyiq narsa bo'lsa yuboradi.
   - **Har 4 soatda** — byudjet balansi nazorati.
