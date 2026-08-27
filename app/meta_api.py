@@ -631,6 +631,28 @@ def get_lead_forms(page_id: str) -> list[dict]:
 # bo'lishi kerak (Meta Business Suite -> Sozlamalar -> Bog'langan hisoblar).
 # ---------------------------------------------------------------------------
 
+def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), limit: int = 30) -> list[dict]:
+    """Meta Ad Library (`ads_archive`) orqali biror brend/sahifa nomi
+    bo'yicha HOZIR yoki YAQINDA ishlagan reklamalarni qaytaradi (2026-08,
+    raqobatchi tahlili uchun qo'shildi).
+
+    MUHIM: bu OMMAVIY (public) endpoint -- reklama BERUVCHIning o'zi
+    bo'lish shart emas, oddiy `META_ACCESS_TOKEN` (mavjud, boshqa hech
+    narsa sozlash shart emas) yetarli. Faqat "search_terms" (brend nomi)
+    bo'yicha qidiradi -- aniq Page ID emas, chunki bizda faqat veb-sayt
+    domenlari bor, Page ID emas.
+    """
+    data = _get("ads_archive", {
+        "search_terms": search_terms,
+        "ad_reached_countries": list(countries),
+        "ad_active_status": "ALL",
+        "ad_type": "ALL",
+        "limit": limit,
+        "fields": "id,ad_snapshot_url,page_name,ad_creative_bodies,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time",
+    })
+    return data.get("data", [])
+
+
 def get_instagram_business_account_id() -> str | None:
     """META_PAGE_ID'ga ulangan Instagram Business akkaunt ID'sini qaytaradi
     (agar ulanmagan bo'lsa -- None, bu holda smm_sync Instagram qismini

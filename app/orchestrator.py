@@ -974,7 +974,14 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
                 succeeded.append({"action": final_action, "result": result})
             except meta_api.MetaAPIError as e:
                 logger.exception("Action bajarishda Meta API xatoligi: %s", action_type)
-                failed.append({"action": final_action, "error": str(e)})
+                # Meta xatosi odatda {"message": "...", "type": "...", "code": ...}
+                # ko'rinishidagi dict bo'ladi -- foydalanuvchiga faqat qisqa
+                # `message` qismini ko'rsatamiz (2026-08, foydalanuvchi so'rovi:
+                # "aniq muammo xatosini yozsin" -- xatolik xabari endi shunchaki
+                # "xatolik chiqdi" emas, Meta NEGA rad etganini aytadi).
+                meta_err = e.args[0] if e.args else {}
+                short_error = meta_err.get("message", str(e)) if isinstance(meta_err, dict) else str(e)
+                failed.append({"action": final_action, "error": short_error})
             except Exception as e:
                 # MUHIM: MetaAPIError'dan tashqari HAR QANDAY xato (masalan
                 # Targetolog kutilgan schema'ga to'liq amal qilmasa — KeyError/
@@ -1031,12 +1038,17 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
         if len(succeeded) > 10:
             report_lines.append(f"   ...va yana {len(succeeded) - 10} tasi.")
     if failed:
-        names = ", ".join(
-            f["action"].get("object_name", f["action"].get("object_id", "?"))
-            for f in failed[:5]
-        )
-        extra = f" va yana {len(failed) - 5} tasi" if len(failed) > 5 else ""
-        report_lines.append(f"\n⚠️ {len(failed)} tasida xatolik chiqdi ({names}{extra}) — hisobda hech narsa o'zgarmadi.")
+        # 2026-08, foydalanuvchi so'rovi ("aniq muammo xatosini yozsin" --
+        # avval faqat nomlar ro'yxati ko'rsatilardi, "3 tasida xatolik
+        # chiqdi" deb, SABABSIZ -- endi har birining QISQA sababi ham
+        # ko'rsatiladi, shunda admin muammoni tushunib to'g'irlay oladi.
+        report_lines.append(f"\n⚠️ {len(failed)} tasida xatolik chiqdi -- hisobda hech narsa o'zgarmadi:")
+        for f in failed[:5]:
+            name = f["action"].get("object_name", f["action"].get("object_id", "?"))
+            reason = (f.get("error") or "noma'lum xato")[:150]
+            report_lines.append(f"   ❌ {name}: {reason}")
+        if len(failed) > 5:
+            report_lines.append(f"   ...va yana {len(failed) - 5} tasi (batafsili server logida).")
     if creative_or_form_actions:
         names = ", ".join(a.get("object_name", "?") for a in creative_or_form_actions[:5])
         report_lines.append(f"\n🎨 Bularga sizning tasdig'ingiz kerak: {names}.")

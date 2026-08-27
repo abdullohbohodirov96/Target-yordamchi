@@ -230,6 +230,39 @@ class SmmPost(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class Competitor(Base):
+    """Admin qo'shgan raqobatchilar ro'yxati -- har kuni soat 10:00da
+    `competitor_sync.py` Meta Ad Library orqali ularning joriy
+    reklamalarini tekshiradi va `competitor_analytics.py` qisqa amaliy
+    hisobot tayyorlaydi (2026-08, foydalanuvchi so'rovi)."""
+    __tablename__ = "competitors"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)  # ko'rinadigan nom, masalan "Arboss"
+    domain = Column(String(255), nullable=True)  # veb-sayt, masalan "arboss.uz"
+    search_term = Column(String(255), nullable=True)  # Ad Library'da qidiriladigan kalit so'z -- bo'sh bo'lsa `name` ishlatiladi
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+class CompetitorAd(Base):
+    """Meta Ad Library'dan topilgan bitta reklamaning ENG OXIRGI holati --
+    `external_id` (Meta'ning ad_archive_id) bo'yicha upsert qilinadi (SMM
+    postlar bilan bir xil pattern -- `SmmPost`ga qara)."""
+    __tablename__ = "competitor_ads"
+
+    id = Column(Integer, primary_key=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"), nullable=False, index=True)
+    external_id = Column(String(64), unique=True, nullable=False)
+    page_name = Column(String(255), nullable=True)
+    body_text = Column(Text, nullable=True)
+    snapshot_url = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)  # hozir ishlab turibdimi (ad_delivery_stop_time yo'q bo'lsa)
+    ad_started_at = Column(DateTime, nullable=True)
+    first_seen_at = Column(DateTime, default=dt.datetime.utcnow)
+    last_seen_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+
 class AssistantUnanswered(Base):
     """Web AI-yordamchisi javob TOPA OLMAGAN savollar (2026-08, NotebookLM
     orqali o'rganilgan "Chatplace" AI-agent yondashuvi asosida qo'shildi --

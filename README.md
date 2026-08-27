@@ -67,7 +67,7 @@ mumkin. Alohida **PostgreSQL** ham qo'shing (New → PostgreSQL) va uning
 | O'zgaruvchi | Qayerdan olinadi |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | @BotFather |
-| `TELEGRAM_AGENTS_GROUP_ID` / `TELEGRAM_REPORT_GROUP_ID` | pastga qarang |
+| `TELEGRAM_AGENTS_GROUP_ID` / `TELEGRAM_REPORT_GROUP_ID` | pastga qarang. **2026-08 dan boshlab ikkalasi TURLI vazifa bajaradi:** `AGENTS_GROUP_ID` -- "to'liq harakat" guruhi, HAMMA xabar (soatlik audit, byudjet, qayta-aloqa, raqobatchi tahlili, kunlik hisobot) shu yerga tushadi; `REPORT_GROUP_ID` -- FAQAT soat 9:00dagi kunlik admin hisobotini oladi, boshqa hech narsa yubormaydi (`scheduler.py`: `_full_activity_targets()` / `_daily_summary_targets()`) |
 | `ANTHROPIC_API_KEY` | console.anthropic.com |
 | `OPENAI_API_KEY` (MAJBURIY) | platform.openai.com |
 | `META_ACCESS_TOKEN` / `META_AD_ACCOUNT_ID` | **eski Vercel loyihangizdan ko'chiring** (Vercel → Settings → Environment Variables) — token hali amal qiladi bo'lsa qayta ishlatish mumkin |
@@ -81,6 +81,19 @@ bittadan xabar yozing, keyin brauzerda oching:
 https://api.telegram.org/bot<TOKEN>/getUpdates
 ```
 va har bir guruh uchun `"chat":{"id": -100...}` qiymatini oling.
+
+### 3b. Raqobatchilar tahlili (2026-08, yangi)
+
+`/sozlamalar` → **Raqobatchilar** sahifasidan kompaniya nomlarini (masalan
+"Arboss", saytini "arboss.uz") qo'shing. Har kuni soat 10:00da CRM Meta Ad
+Library (`ads_archive` — OMMAVIY endpoint) orqali shu nomlar bo'yicha
+qidiradi va topilgan reklamalarni tahlil qilib "to'liq harakat" Telegram
+guruhiga yuboradi. **Qo'shimcha API kalit shart emas** — mavjud
+`META_ACCESS_TOKEN` yetarli, chunki Ad Library reklama beruvchining o'zi
+bo'lishni talab qilmaydi. Agar Meta tokendan ruxsat xatosi qaytarsa (juda
+kam uchraydigan holat), xatolik matni to'g'ridan-to'g'ri Telegram
+xabarida ko'rinadi — shunda Meta Business Manager'da tokenga `ads_read`
+ruxsatini qo'shish kifoya qiladi, yangi ilova yaratish shart emas.
 
 ### 4. Birinchi admin hisobni yarating
 

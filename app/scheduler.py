@@ -22,6 +22,19 @@ Jadval (standart, ENV orqali sozlanadi):
     adminlarga umumiy xulosa.
   - Har 3 soatda -- Instagram Business + Facebook Page uchun SMM statistikasi
     (obunachilar, postlar, qamrov) -- "SMM hisobot" (`/smm`) sahifasi uchun.
+  - 10:00 Toshkent -- Raqobatchilar tahlili: `Competitor` jadvaliga qo'shilgan
+    har bir raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi
+    va qisqa amaliy hisobot tayyorlanadi (2026-08, foydalanuvchi so'rovi).
+
+Telegram guruh xabarlari IKKI turga bo'lingan (2026-08, foydalanuvchi
+so'rovi -- "bittasiga to'liq harakatini, bittasiga faqat kunlik hisobotni"):
+  - `_full_activity_targets()` (faqat `TELEGRAM_AGENTS_GROUP_ID`) -- soatlik
+    audit, byudjet ogohlantirishi, qayta-aloqa xulosasi, raqobatchi tahlili --
+    HAMMA faoliyat xabari shu yerga.
+  - `_daily_summary_targets()` (`TELEGRAM_AGENTS_GROUP_ID` + `TELEGRAM_REPORT_GROUP_ID`)
+    -- FAQAT soat 9:00dagi kunlik admin hisoboti (`job_admin_report`) shu
+    ikkalasiga ham boradi; `TELEGRAM_REPORT_GROUP_ID` boshqa hech qanday
+    xabar olmaydi.
 """
 
 import os
@@ -36,6 +49,8 @@ import budget_tracker
 import lead_sync
 import call_sync
 import smm_sync
+import competitor_sync
+import competitor_analytics
 import meta_api
 import db
 
@@ -44,15 +59,47 @@ logger = logging.getLogger("scheduler")
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Tashkent")
 
 
-def _report_targets() -> list[int]:
+def _group_id(env_name: str) -> int | None:
+    raw = os.environ.get(env_name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("%s noto'g'ri formatda: %r", env_name, raw)
+        return None
+
+
+def _full_activity_targets() -> list[int]:
+    """"To'liq harakat" guruhi -- soatlik audit natijalari, byudjet
+    ogohlantirishlari, qayta-aloqa xulosasi va HAMMA boshqa faoliyat xabari
+    shu YERGA yuboriladi (2026-08, foydalanuvchi so'rovi: "bittasiga to'liq
+    bersin harakatini"). Faqat `TELEGRAM_AGENTS_GROUP_ID`. Agar u sozlanmagan
+    bo'lsa, eski xulq-atvorga mos ravishda `TELEGRAM_REPORT_GROUP_ID`ga yoki
+    (u ham bo'lmasa) foydalanuvchi Telegram'da /start bosgan shaxsiy chatga
+    tushib qoladi -- hech qayerga yuborilmay qolib ketmasligi uchun."""
+    agents_id = _group_id("TELEGRAM_AGENTS_GROUP_ID")
+    if agents_id is not None:
+        return [agents_id]
+    report_id = _group_id("TELEGRAM_REPORT_GROUP_ID")
+    if report_id is not None:
+        return [report_id]
+    chat_id = budget_tracker.get_notify_chat_id()
+    return [chat_id] if chat_id is not None else []
+
+
+def _daily_summary_targets() -> list[int]:
+    """Har kuni soat 9:00dagi ADMIN HISOBOTI ikkala guruhga ham boradi --
+    "to'liq harakat" guruhiga (u baribir hammasini ko'radi) VA alohida
+    "faqat kunlik hisobot" guruhiga (2026-08, foydalanuvchi so'rovi:
+    "bittasiga faqat kunlik hisobotni bersin, boshqasi kerak emas" --
+    ya'ni bu ikkinchi guruh SOATLIK audit/qayta-aloqa/byudjet xabarlarini
+    UMUMAN olmaydi, faqat shu funksiya orqali kunlik hisobotni oladi)."""
     targets = []
     for env_name in ("TELEGRAM_AGENTS_GROUP_ID", "TELEGRAM_REPORT_GROUP_ID"):
-        raw = os.environ.get(env_name)
-        if raw:
-            try:
-                targets.append(int(raw))
-            except ValueError:
-                logger.warning("%s noto'g'ri formatda: %r", env_name, raw)
+        gid = _group_id(env_name)
+        if gid is not None and gid not in targets:
+            targets.append(gid)
     if targets:
         return targets
     chat_id = budget_tracker.get_notify_chat_id()
@@ -87,7 +134,7 @@ def _tg_send(chat_id: int, text: str) -> dict:
 
 
 def job_admin_report() -> str:
-    targets = _report_targets()
+    targets = _daily_summary_targets()
     if not targets:
         return "hisobot yuboriladigan chat yo'q"
     now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
@@ -109,7 +156,7 @@ def job_admin_report() -> str:
 
 
 def job_watch_cycle() -> str:
-    targets = _report_targets()
+    targets = _full_activity_targets()
     try:
         report = orchestrator.run_daily_cron_report(dry_run=False)
     except Exception as e:
@@ -214,13 +261,34 @@ def job_smm_sync() -> dict:
         return {"error": str(e)}
 
 
+def job_competitor_analysis() -> str:
+    """Har kuni soat 10:00 -- admin qo'shgan raqobatchilarning Meta Ad
+    Library'dagi joriy reklamalarini yangilaydi va qisqa amaliy hisobot
+    tayyorlab "to'liq harakat" guruhiga yuboradi (2026-08, foydalanuvchi
+    so'rovi). Raqobatchi qo'shilmagan bo'lsa jim qaytadi."""
+    targets = _full_activity_targets()
+    try:
+        competitor_sync.sync_once()
+        report = competitor_analytics.build_daily_report()
+    except Exception as e:
+        logger.exception("Raqobatchilar tahlilida xatolik")
+        for cid in targets:
+            _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {e}")
+        return f"xato: {e}"
+    if not report:
+        return "raqobatchi qo'shilmagan"
+    for cid in targets:
+        _tg_send(cid, report)
+    return f"yuborildi -> {targets}"
+
+
 def job_followup_reminders() -> dict:
     """"Qayta aloqa" (follow-up) eslatmasi -- har kuni ertalab, `Lead.next_contact_at`
     BUGUN yoki undan OLDINROQ (kechiktirilgan) bo'lgan har bir lead uchun:
       - shu leadga biriktirilgan menejerga (agar `Manager.telegram_user_id`
         to'ldirilgan bo'lsa) SHAXSIY Telegram xabar -- "bugun kimlar bilan
         qayta bog'lanish kerak" ro'yxati (eng ko'p kechikkani birinchi).
-      - adminlar guruhiga (_report_targets()) UMUMIY qisqa xulosa -- nechta
+      - "to'liq harakat" guruhiga (_full_activity_targets()) UMUMIY qisqa xulosa -- nechta
         lead kechikkan/bugungi, va biriktirilmagan (egasiz) qayta aloqalar
         bo'lsa alohida ogohlantirish (ular hech kimga yuborilmaydi, chunki
         egasi yo'q -- admin o'zi ko'rib biriktirishi kerak).
@@ -271,7 +339,7 @@ def job_followup_reminders() -> dict:
                 else:
                     logger.warning("Qayta aloqa eslatmasi menejer %s (telegram_user_id=%s)ga yuborilmadi: %s", m.username, m.telegram_user_id, result["error"])
 
-        targets = _report_targets()
+        targets = _full_activity_targets()
         if targets:
             overdue_count = sum(1 for l in due if l.next_contact_at.date() < now.date())
             today_count = len(due) - overdue_count
@@ -417,6 +485,7 @@ JOBS = {
     "call-debug": job_call_debug,
     "followup-reminders": job_followup_reminders,
     "smm-sync": job_smm_sync,
+    "competitor-analysis": job_competitor_analysis,
 }
 
 _scheduler_started = False
@@ -444,5 +513,6 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20"), id="call-sync")
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
+    scheduler.add_job(job_competitor_analysis, CronTrigger(hour=10, minute=0), id="competitor-analysis")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

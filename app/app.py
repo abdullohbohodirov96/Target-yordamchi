@@ -29,7 +29,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd
 from dashboard_data import get_kpis
 import lead_sync
 import call_sync
@@ -2176,6 +2176,60 @@ def custom_fields_settings():
     finally:
         session.close()
     return render_template("custom_fields.html", fields=rows)
+
+
+# ---------------------------------------------------------------------------
+# Admin: raqobatchilar ro'yxati (2026-08, foydalanuvchi so'rovi -- Meta Ad
+# Library orqali har kuni soat 10:00da avtomatik tahlil qilinadigan
+# ro'yxatni shu yerdan qo'shish/o'chirish/tahrirlash mumkin).
+# ---------------------------------------------------------------------------
+
+@app.route("/settings/competitors", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+def competitors_settings():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "add":
+                name = request.form.get("name", "").strip()
+                domain = request.form.get("domain", "").strip() or None
+                search_term = request.form.get("search_term", "").strip() or None
+                if name:
+                    session.add(Competitor(name=name, domain=domain, search_term=search_term))
+                    session.commit()
+                    flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
+                else:
+                    flash("Kompaniya nomini kiriting.", "error")
+            elif action == "toggle":
+                comp_id = request.form.get("competitor_id", "")
+                c = session.get(Competitor, int(comp_id)) if comp_id.isdigit() else None
+                if c:
+                    c.is_active = not c.is_active
+                    session.commit()
+            elif action == "delete":
+                comp_id = request.form.get("competitor_id", "")
+                c = session.get(Competitor, int(comp_id)) if comp_id.isdigit() else None
+                if c:
+                    session.query(CompetitorAd).filter_by(competitor_id=c.id).delete()
+                    session.delete(c)
+                    session.commit()
+                    flash("Raqobatchi o'chirildi.", "success")
+            return redirect(url_for("competitors_settings"))
+
+        all_competitors = session.query(Competitor).order_by(Competitor.created_at.desc()).all()
+        rows = []
+        for c in all_competitors:
+            ads_count = session.query(CompetitorAd).filter_by(competitor_id=c.id, is_active=True).count()
+            rows.append({
+                "id": c.id, "name": c.name, "domain": c.domain,
+                "search_term": c.search_term, "is_active": c.is_active,
+                "active_ads_count": ads_count,
+            })
+    finally:
+        session.close()
+    return render_template("competitors.html", competitors=rows)
 
 
 # ---------------------------------------------------------------------------
