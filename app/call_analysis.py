@@ -36,6 +36,7 @@ baho/xulosa/status kabi asosiy natijalar buzilmaydi.
 """
 
 import os
+import re
 import json
 import logging
 import datetime as dt
@@ -185,10 +186,30 @@ def _guess_audio_format(url: str, content_type: str | None) -> str:
     return "mp3"
 
 
+def _sniff_audio_format(data: bytes, content_type: str | None, url: str) -> str:
+    """Fayl KENGAYTMASI/Content-Type'ga emas, fayl BOSHIDAGI "magic bytes"ga
+    qarab haqiqiy formatni aniqlaydi. 2026-08: transkripsiya "gibberish"
+    (ma'nosiz so'zlar) chiqarayotgani aniqlandi -- buning bir sababi format
+    NOTO'G'RI taxmin qilinib, OpenAI'ga masalan WAV fayl "mp3" deb
+    yuborilishi bo'lishi mumkin edi (bunda model xato dekodlangan audio
+    "shovqinini" so'zlarga aylantirishga urinadi). Bu funksiya faylning
+    o'zidan (headerdan) haqiqiy formatni o'qiydi -- ancha ishonchli."""
+    head = data[:16]
+    if head[:3] == b"ID3" or (len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
+        return "mp3"
+    if head[:4] == b"RIFF":
+        return "wav"
+    if head[:4] == b"OggS":
+        return "ogg"
+    if len(head) >= 8 and head[4:8] == b"ftyp":
+        return "m4a"
+    return _guess_audio_format(url, content_type)
+
+
 def _download_audio(url: str) -> tuple[bytes, str]:
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
-    audio_format = _guess_audio_format(url, resp.headers.get("Content-Type"))
+    audio_format = _sniff_audio_format(resp.content, resp.headers.get("Content-Type"), url)
     return resp.content, audio_format
 
 
@@ -212,7 +233,17 @@ def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_form
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (f"audio.{audio_format}", audio_bytes, f"audio/{audio_format}")},
-        data={"model": model, "response_format": "text"},
+        data={
+            "model": model,
+            "response_format": "text",
+            # 2026-08: tilni ANIQ ko'rsatmasak, Whisper ba'zan noto'g'ri tilni
+            # avtomatik aniqlab, natijada butunlay ma'nosiz ("gibberish")
+            # matn chiqarib beradi (foydalanuvchi screenshot bilan ko'rsatdi
+            # -- "kordi tskizdun siske" kabi haqiqiy so'z bo'lmagan chiqindi).
+            # `language="uz"` shu xato ehtimolini sezilarli kamaytiradi.
+            "language": "uz",
+            "prompt": "Bu savdo menejeri va mijoz o'rtasidagi telefon suhbati, o'zbek tilida.",
+        },
         timeout=180,
     )
 
@@ -285,6 +316,44 @@ def _parse_json_response(text: str) -> dict:
     data["status"] = status
     data["color"] = color
     return data
+
+
+_TURN_RE = re.compile(
+    r"(?m)^(Manager|Mijoz|Speaker\s*1|Speaker\s*2)\s*:\s*"
+    r"(.*(?:\n(?!(?:Manager|Mijoz|Speaker\s*1|Speaker\s*2)\s*:).*)*)"
+)
+
+
+def parse_transcript_turns(text: str) -> list:
+    """2026-08, foydalanuvchi so'rovi -- transkripsiyani "SMS suhbat"
+    ko'rinishida (Manager bir tomonda, Mijoz boshqa tomonda, gap-bo'lib-gap
+    pufakchalar bilan) chiqarish uchun, model qaytargan "Manager: ...\\n
+    Mijoz: ...\\n" formatidagi matnni {"speaker", "raw_label", "text"}
+    lug'atlar ro'yxatiga ajratadi. `app.py`dagi `_build_ai_analysis_view()`
+    shu funksiyani chaqirib, natijani shablonga (`individual_check.html`)
+    uzatadi."""
+    if not text:
+        return []
+    turns = []
+    for m in _TURN_RE.finditer(text):
+        speaker_raw = m.group(1).strip()
+        body = m.group(2).strip()
+        if not body:
+            continue
+        low = speaker_raw.lower()
+        if low.startswith("manager"):
+            speaker = "manager"
+        elif low.startswith("mijoz"):
+            speaker = "mijoz"
+        else:
+            speaker = "unknown"
+        turns.append({"speaker": speaker, "raw_label": speaker_raw, "text": body})
+    if not turns:
+        # Model kutilgan "Manager:/Mijoz:" formatiga amal qilmagan bo'lsa --
+        # xom matnni bitta "unknown" bo'lak sifatida qaytaramiz (shablon
+        # baribir buni ko'rsata oladi, faqat ikki tomonga ajratmasdan).
+        turns = [{"speaker": "unknown", "raw_label": "", "text": text.strip()}]
+    return turns
 
 
 def _analyze_transcript(transcript_text: str) -> dict:

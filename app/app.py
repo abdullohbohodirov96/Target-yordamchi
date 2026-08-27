@@ -2150,6 +2150,11 @@ def _build_ai_analysis_view(session, since) -> dict:
             "score": c.ai_score, "status": c.ai_status, "color": c.ai_color,
             "overview": c.ai_overview, "result": c.ai_result,
             "transcription": c.ai_transcription, "error": c.ai_error,
+            # 2026-08, foydalanuvchi so'rovi -- transkripsiyani "SMS suhbat"
+            # ko'rinishida (Manager/Mijoz alohida tomonlarda, gap-bo'lib-gap)
+            # ko'rsatish uchun, xom matn oldindan {"speaker","text"} bo'laklarga
+            # ajratib beriladi (shablon o'zi regex bilan ishlamasin uchun).
+            "turns": call_analysis.parse_transcript_turns(c.ai_transcription) if c.ai_transcription else [],
         })
     return {
         "rows": rows,

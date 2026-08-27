@@ -300,6 +300,26 @@ th.sortable[data-sorted="desc"]::after { border-top: 4px solid var(--ink); opaci
 
 .empty-row td { padding: 40px 16px; text-align: center; color: var(--text-faint); }
 
+/* ---------- Qo'ng'iroq transkripsiyasi -- SMS/chat pufakcha ko'rinishi
+   (2026-08, foydalanuvchi so'rovi: "AI analiz" tabidagi "Batafsil" ochilganda
+   xom <pre> matn o'rniga, Manager va Mijoz ALOHIDA tomonlarda, ismi bilan,
+   gap-bo'lib-gap pufakchalar bilan chiqishi kerak edi). ---------- */
+.chat-transcript {
+  display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto;
+  background: var(--bg); border-radius: 10px; padding: 12px;
+}
+.chat-bubble {
+  max-width: 78%; padding: 7px 12px; border-radius: 14px; font-size: 12.5px; line-height: 1.5;
+}
+.chat-bubble-label { font-size: 10px; font-weight: 700; letter-spacing: 0.02em; margin-bottom: 2px; opacity: 0.6; }
+.chat-bubble-text { white-space: pre-wrap; word-break: break-word; }
+/* Manager -- o'ng tomonda (menejer tomoni), ko'k fon */
+.chat-bubble.manager { align-self: flex-end; background: var(--blue-bg); color: var(--ink); border-bottom-right-radius: 4px; }
+/* Mijoz -- chap tomonda, neytral kulrang fon */
+.chat-bubble.mijoz { align-self: flex-start; background: var(--card); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; }
+/* Gapiruvchi aniqlanmagan (Speaker 1/2) -- markazda, xolisroq rangda */
+.chat-bubble.unknown { align-self: center; background: var(--border-light); color: var(--text-dim); max-width: 90%; }
+
 /* ---------- Badges ---------- */
 .badge {
   display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 999px;

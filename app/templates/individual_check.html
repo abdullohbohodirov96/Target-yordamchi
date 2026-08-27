@@ -174,7 +174,18 @@
             <div style="margin-top:10px; max-width:520px">
               {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:8px" src="{{ c.recording_url }}"></audio>{% endif %}
               {% if c.result %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Natija:</strong> {{ c.result }}</p>{% endif %}
-              <pre style="white-space:pre-wrap; font-family:inherit; font-size:12.5px; line-height:1.5; background:var(--border-light); border-radius:8px; padding:10px; margin:0; max-height:320px; overflow-y:auto">{{ c.transcription }}</pre>
+              <div class="chat-transcript">
+                {% for t in c.turns %}
+                <div class="chat-bubble {{ t.speaker }}">
+                  <div class="chat-bubble-label">
+                    {% if t.speaker == 'manager' %}{{ c.manager_name or 'Manager' }}
+                    {% elif t.speaker == 'mijoz' %}{{ c.lead_name or c.phone_number or 'Mijoz' }}
+                    {% else %}{{ t.raw_label or "Noma'lum" }}{% endif %}
+                  </div>
+                  <div class="chat-bubble-text">{{ t.text }}</div>
+                </div>
+                {% endfor %}
+              </div>
             </div>
           </details>
           {% endif %}
