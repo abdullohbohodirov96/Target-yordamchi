@@ -228,22 +228,29 @@ def _extract_openai_error(resp) -> str:
     return (resp.text or "")[:300] or f"HTTP {resp.status_code}"
 
 
-def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_format: str):
+def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_format: str, include_language: bool = True):
+    data = {
+        "model": model,
+        "response_format": "text",
+        # 2026-08: kontekst hint -- tilni aniq bilmasak ham, so'zlar
+        # o'zbekcha savdo suhbatiga tegishli ekanini eslatib turadi.
+        "prompt": "Bu savdo menejeri va mijoz o'rtasidagi telefon suhbati, o'zbek tilida.",
+    }
+    if include_language:
+        # 2026-08: tilni ANIQ ko'rsatmasak, Whisper ba'zan noto'g'ri tilni
+        # avtomatik aniqlab, natijada butunlay ma'nosiz ("gibberish") matn
+        # chiqarib beradi -- shuning uchun avval `language="uz"` bilan
+        # sinaladi. LEKIN production'da bu account/endpoint uchun aynan
+        # "uz" qiymati HTTP 400 ("Language 'uz' is not supported.") bilan
+        # rad etilishi aniqlandi -- shuning uchun bu parametr FAQAT birinchi
+        # urinishda qo'shiladi, rad etilsa (`_transcribe_audio` pastda)
+        # DARHOL shu parametrsiz qayta so'raladi.
+        data["language"] = "uz"
     return requests.post(
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (f"audio.{audio_format}", audio_bytes, f"audio/{audio_format}")},
-        data={
-            "model": model,
-            "response_format": "text",
-            # 2026-08: tilni ANIQ ko'rsatmasak, Whisper ba'zan noto'g'ri tilni
-            # avtomatik aniqlab, natijada butunlay ma'nosiz ("gibberish")
-            # matn chiqarib beradi (foydalanuvchi screenshot bilan ko'rsatdi
-            # -- "kordi tskizdun siske" kabi haqiqiy so'z bo'lmagan chiqindi).
-            # `language="uz"` shu xato ehtimolini sezilarli kamaytiradi.
-            "language": "uz",
-            "prompt": "Bu savdo menejeri va mijoz o'rtasidagi telefon suhbati, o'zbek tilida.",
-        },
+        data=data,
         timeout=180,
     )
 
@@ -265,7 +272,13 @@ def _transcribe_audio(audio_bytes: bytes, audio_format: str) -> str:
 
     attempts = []
     for model in candidates:
-        resp = _post_transcription(api_key, model, audio_bytes, audio_format)
+        resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=True)
+        if resp.status_code == 400 and "language" in _extract_openai_error(resp).lower():
+            # "Language 'uz' is not supported" -- shu model/endpoint uchun
+            # bu parametr rad etiladi. Modelning o'zi ishlamayotgani emas --
+            # darhol tilsiz (faqat `prompt` hint bilan) qayta so'raymiz.
+            logger.warning("Model '%s' 'language' parametrini rad etdi -- tilsiz qayta so'ralmoqda.", model)
+            resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=False)
         if resp.status_code == 404:
             err_msg = _extract_openai_error(resp)
             attempts.append(f"{model}: {err_msg}")
