@@ -33,6 +33,20 @@ ajratmaydi -- shuning uchun Manager/Mijoz ajratish endi 2-bosqichdagi matn
 modeliga TAXMIN sifatida topshiriladi (suhbat mazmuniga qarab, masalan
 savol beruvchi odatda Manager). Bu 100% aniq bo'lmasligi mumkin, lekin
 baho/xulosa/status kabi asosiy natijalar buzilmaydi.
+
+2026-08, UCHINCHI VERSIYA (ixtiyoriy yaxshilash qo'shildi): foydalanuvchi
+OpenAI'ning `gpt-4o-transcribe-diarize` modelini taklif qildi -- bu HAQIQIY
+diarizatsiya qiladi (kim qachon gapirganini vaqt bo'yicha ajratadi,
+taxminsiz). Shuning uchun ENDI avval shu model bilan sinab ko'riladi
+(`_try_diarized_transcription()`) -- muvaffaqiyatli bo'lsa, natija
+to'g'ridan-to'g'ri "Manager: ...\\nMijoz: ..." formatiga aylantiriladi
+(birinchi gapirgan tomon -- odatda qo'ng'iroqqa javob bergan -- Manager
+deb belgilanadi). MUHIM: bu OpenAI account/tarif uchun MAVJUD BO'LMASLIGI
+MUMKIN (xuddi audio-preview modellar kabi) -- shuning uchun BUTUNLAY
+IXTIYORIY qatlam sifatida qo'shilgan: islamasa/404/xato bersa, JIM
+(xatosiz) eski `whisper-1` orqali oddiy transkripsiya + matn modeliga
+taxmin qildirish yo'liga qaytiladi. Hech qanday holatda butun tahlil shu
+modelga BOG'LIQ emas.
 """
 
 import os
@@ -300,6 +314,73 @@ def _transcribe_audio(audio_bytes: bytes, audio_format: str) -> str:
     )
 
 
+def _post_diarized_transcription(api_key: str, model: str, audio_bytes: bytes, audio_format: str):
+    return requests.post(
+        "https://api.openai.com/v1/audio/transcriptions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        files={"file": (f"audio.{audio_format}", audio_bytes, f"audio/{audio_format}")},
+        data={"model": model, "response_format": "diarized_json", "chunking_strategy": "auto"},
+        timeout=180,
+    )
+
+
+def _build_labeled_transcript_from_segments(segments: list) -> str | None:
+    """`diarized_json` javobidagi `segments` ro'yxatini (har biri
+    {"speaker": "A"/"B"/..., "text": "..."}) "Manager: ...\\nMijoz: ...\\n"
+    formatiga aylantiradi. TAXMIN: qo'ng'iroqqa BIRINCHI javob bergan
+    (birinchi gapirgan) tomon -- odatda "Assalomu alaykum, ... firmasidan"
+    kabi qabul qilish gapini aytadigan -- Manager deb belgilanadi, undan
+    keyin paydo bo'lgan har qanday boshqa gapiruvchi Mijoz deb olinadi.
+    Bu ko'pchilik chiquvchi/kiruvchi savdo qo'ng'iroqlari uchun to'g'ri
+    (2 tomonlik suhbat), lekin 100% kafolat emas."""
+    if not segments:
+        return None
+    speaker_order = []
+    lines = []
+    for seg in segments:
+        raw_speaker = str(seg.get("speaker", "")).strip() or "?"
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        if raw_speaker not in speaker_order:
+            speaker_order.append(raw_speaker)
+        label = "Manager" if speaker_order.index(raw_speaker) == 0 else "Mijoz"
+        lines.append(f"{label}: {text}")
+    return "\n".join(lines) if lines else None
+
+
+def _try_diarized_transcription(audio_bytes: bytes, audio_format: str) -> str | None:
+    """IXTIYORIY qatlam -- HAQIQIY (taxminsiz) gapiruvchi ajratish uchun
+    `gpt-4o-transcribe-diarize` bilan sinab ko'radi. Bu model bu OpenAI
+    akkauntida MAVJUD BO'LMASLIGI MUMKIN (audio-preview modellar kabi) --
+    shuning uchun har qanday xatoda (404, boshqa HTTP xato, tarmoq xatosi,
+    kutilmagan javob formati) `None` qaytaradi va CHAQIRUVCHI FUNKSIYA
+    (`analyze_call_record`) muqobil sifatida eski `_transcribe_audio()`
+    yo'liga o'tadi -- bu qatlam butun tahlilni TO'XTATA OLMAYDI."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    model = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
+    try:
+        resp = _post_diarized_transcription(api_key, model, audio_bytes, audio_format)
+    except requests.RequestException as e:
+        logger.warning("Diarizatsiya so'rovi (model=%s) tarmoq xatosi bilan tugadi: %s", model, e)
+        return None
+    if not resp.ok:
+        err_msg = _extract_openai_error(resp)
+        logger.warning(
+            "Diarizatsiya modeli '%s' ishlamadi (HTTP %s): %s -- oddiy transkripsiya yo'liga o'tilmoqda.",
+            model, resp.status_code, err_msg,
+        )
+        return None
+    try:
+        segments = resp.json().get("segments") or []
+    except Exception:
+        logger.warning("Diarizatsiya javobini JSON qilib o'qib bo'lmadi -- oddiy transkripsiya yo'liga o'tilmoqda.")
+        return None
+    return _build_labeled_transcript_from_segments(segments)
+
+
 def _parse_json_response(text: str) -> dict:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -409,7 +490,13 @@ def analyze_call_record(session, call) -> dict:
         raise ValueError("Bu qo'ng'iroqda yozuv (recording_url) yo'q.")
     try:
         audio_bytes, audio_format = _download_audio(call.recording_url)
-        transcript_text = _transcribe_audio(audio_bytes, audio_format)
+        # Avval HAQIQIY diarizatsiya (taxminsiz gapiruvchi ajratish) bilan
+        # sinab ko'ramiz; mavjud bo'lmasa/xato bersa (None qaytadi) --
+        # oddiy transkripsiya + matn modeliga taxmin qildirish yo'liga
+        # o'tamiz (eski, ishlab turgan yo'l).
+        transcript_text = _try_diarized_transcription(audio_bytes, audio_format)
+        if not transcript_text:
+            transcript_text = _transcribe_audio(audio_bytes, audio_format)
         result = _analyze_transcript(transcript_text)
         call.ai_overview = result["overview"]
         call.ai_score = result["score"]
