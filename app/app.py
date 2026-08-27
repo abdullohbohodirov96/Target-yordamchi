@@ -2165,29 +2165,47 @@ def _build_ai_analysis_view(session, since) -> dict:
     }
 
 
+def _run_ai_analysis_in_background(limit: int) -> None:
+    """`individual_check_run_ai_analysis()` uchun fon ishchisi. 2026-08:
+    avval bu ISH TO'G'RIDAN-TO'G'RI so'rov ichida (sinxron) bajarilardi --
+    har bir qo'ng'iroq audio yuklab olish + transkripsiya (diarizatsiya
+    urinishi bilan birga bir necha marta OpenAI'ga so'rov, har biri 90-180s
+    timeout) + matn tahlili (yana bir so'rov) talab qiladi, ya'ni BITTA
+    qo'ng'iroq o'zi 2-3 daqiqagacha cho'zilishi mumkin. `render.yaml`dagi
+    gunicorn `--timeout 120` shundan tezroq ishchi jarayonni majburan
+    o'ldirib qo'yardi -- brauzerda "ERR_CONNECTION_CLOSED" sifatida
+    ko'rinardi (foydalanuvchi screenshot bilan ko'rsatdi). Endi Telegram
+    botdagi bilan bir xil naqsh: HTTP so'rov DARHOL qaytadi, haqiqiy ish esa
+    fon oqimida (thread) davom etadi -- xuddi `job_call_analysis()`
+    (scheduler.py) allaqachon qanday ishlab turgan bo'lsa, shunday."""
+    session = get_session()
+    try:
+        call_analysis.run_pending_analysis(session, limit=limit)
+    except Exception:
+        logger.exception("Fon jarayonida AI tahlili xatosi")
+    finally:
+        session.close()
+
+
 @app.route("/individual-tekshirish/ai-tahlil-boshlash", methods=["POST"])
 @login_required
 @admin_required
 def individual_check_run_ai_analysis():
     """"Hoziroq tahlil qilish" tugmasi -- admin bosganda, navbatda turgan
-    bir nechta qo'ng'iroqni FON JARAYONNI KUTMASDAN darhol tahlil qiladi
-    (cheklangan son -- audio tahlili sekin, veb so'rovi juda uzoq kutmasin)."""
+    bir nechta qo'ng'iroqni FON OQIMIDA (thread) tahlil qilishni ishga
+    tushiradi va DARHOL qaytadi (yuqoridagi izohga qarang -- sinxron
+    bajarish gunicorn timeout'iga urilib, ulanish uzilishiga olib kelardi)."""
     days = request.form.get("days", "30")
-    session = get_session()
-    try:
-        result = call_analysis.run_pending_analysis(session, limit=5)
-    finally:
-        session.close()
-    if result.get("error"):
-        flash(result["error"], "error")
-    else:
-        level = "success" if not result.get("failed") else "warning"
-        retry_note = f", {result.get('retry_remaining', 0)} tasi qayta urinish navbatida" if result.get("retry_remaining") else ""
-        flash(
-            f"{result.get('analyzed', 0)} ta qo'ng'iroq tahlil qilindi "
-            f"({result.get('failed', 0)} tasida xatolik, {result.get('remaining', 0)} tasi navbatda qoldi{retry_note}).",
-            level,
-        )
+    if not call_analysis.is_configured():
+        flash("OPENAI_API_KEY sozlanmagan -- AI tahlil ishlamaydi.", "error")
+        return redirect(url_for("individual_check", days=days, tab="ai"))
+    thread = threading.Thread(target=_run_ai_analysis_in_background, args=(5,), daemon=True)
+    thread.start()
+    flash(
+        "Tahlil fon jarayonida boshlandi (audio tahlili bir necha daqiqa davom etishi mumkin) -- "
+        "bir necha daqiqadan so'ng natijalarni ko'rish uchun sahifani yangilang.",
+        "success",
+    )
     return redirect(url_for("individual_check", days=days, tab="ai"))
 
 

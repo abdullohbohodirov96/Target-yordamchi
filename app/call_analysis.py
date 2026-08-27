@@ -64,7 +64,7 @@ logger = logging.getLogger("call_analysis")
 # ochiq bo'lgan), keyingi nomzodlar yangiroq/sifatliroq bo'lishi mumkin,
 # lekin ba'zi akkauntlarda mavjud bo'lmasligi mumkin.
 _TRANSCRIBE_MODEL_CANDIDATES = ["whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcribe"]
-_working_transcribe_model = None  # bir marta ishlagan model shu yerda keshlanadi
+_working_transcribe_config = None  # (model, include_language) -- bir marta ishlagan kombinatsiya shu yerda keshlanadi
 
 # TAHLIL (matn -> JSON natija) bosqichi -- ANIQ SHU akkauntda allaqachon
 # ishlatilib turgan oddiy matn modeli (orchestrator.py bilan bir xil
@@ -317,51 +317,85 @@ def _post_transcription(api_key: str, model: str, audio_bytes: bytes, audio_form
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (f"audio.{audio_format}", audio_bytes, f"audio/{audio_format}")},
         data=data,
-        timeout=180,
+        # 2026-08: 180s'dan 90ga tushirildi -- endi bu fon oqimida (thread)
+        # ishlaydi (gunicorn HTTP timeout'iga bog'liq emas), lekin har bir
+        # urinish baribir CHEKLANGAN bo'lishi kerak (bir nechta model/til
+        # kombinatsiyasi ketma-ket sinalganda, har biri 180s kutsa, bitta
+        # qo'ng'iroq o'zi 10+ daqiqaga cho'zilib ketishi mumkin edi).
+        timeout=90,
     )
 
 
 def _transcribe_audio(audio_bytes: bytes, audio_format: str) -> str:
-    """Audio -> matn (1-bosqich). Bir nechta model nomzodini sinaydi,
-    birinchi ishlagani keyingi chaqiruvlar uchun keshlanadi (`_call_openai_audio`
-    eski versiyasidagi bilan bir xil naqsh)."""
-    global _working_transcribe_model
+    """Audio -> matn (1-bosqich). 2026-08: foydalanuvchi transkripsiya hali
+    ham noto'g'ri (ingliz/arab tilida "gibberish") chiqayotganini xabar
+    qildi -- muammo shunda ediki, "language='uz'" biror model uchun rad
+    etilishi bilanoq, HAMMA keyingi urinishlar (shu jumladan boshqa
+    model nomzodlari) uchun ham darhol tilsiz (avtomatik aniqlashga
+    tayanib) so'ralar edi -- garchi BOSHQA model "uz"ni qabul qilishi
+    mumkin bo'lsa ham. Endi ikki BOSQICHLI qidiruv qilinadi: 1) barcha
+    nomzodlarga `language="uz"` bilan (eng ishonchli -- avtomatik
+    aniqlashga umuman ehtiyoj yo'q); shu birontasi ham qabul qilmasa,
+    2) barcha nomzodlarga tilsiz (faqat dialog-namunali `prompt` hint
+    bilan). Topilgan ishlaydigan (model, til-bormi) kombinatsiyasi
+    keshlanadi -- keyingi chaqiruvda AVVAL o'sha yo'l sinaladi."""
+    global _working_transcribe_config
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY sozlanmagan -- qo'ng'iroq tahlili ishlamaydi.")
 
     env_override = os.environ.get("OPENAI_TRANSCRIBE_MODEL")
     candidates = []
-    for m in [_working_transcribe_model, env_override] + _TRANSCRIBE_MODEL_CANDIDATES:
+    for m in [env_override] + _TRANSCRIBE_MODEL_CANDIDATES:
         if m and m not in candidates:
             candidates.append(m)
 
     attempts = []
-    for model in candidates:
-        resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=True)
-        if resp.status_code == 400 and "language" in _extract_openai_error(resp).lower():
-            # "Language 'uz' is not supported" -- shu model/endpoint uchun
-            # bu parametr rad etiladi. Modelning o'zi ishlamayotgani emas --
-            # darhol tilsiz (faqat `prompt` hint bilan) qayta so'raymiz.
-            logger.warning("Model '%s' 'language' parametrini rad etdi -- tilsiz qayta so'ralmoqda.", model)
-            resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=False)
+
+    def _attempt(model: str, include_language: bool):
+        resp = _post_transcription(api_key, model, audio_bytes, audio_format, include_language=include_language)
+        if resp.status_code == 400 and include_language and "language" in _extract_openai_error(resp).lower():
+            return None  # bu kombinatsiya rad etildi -- chaqiruvchi keyingisiga o'tadi
         if resp.status_code == 404:
             err_msg = _extract_openai_error(resp)
-            attempts.append(f"{model}: {err_msg}")
+            attempts.append(f"{model} (til={'ha' if include_language else 'yoʻq'}): {err_msg}")
             logger.warning("OpenAI transkripsiya modeli '%s' topilmadi (404): %s", model, err_msg)
-            continue
+            return None
         if not resp.ok:
             err_msg = _extract_openai_error(resp)
             raise RuntimeError(f"OpenAI transkripsiya xatosi (model={model}, HTTP {resp.status_code}): {err_msg}")
         text = (resp.text or "").strip()
         if not text:
-            attempts.append(f"{model}: bo'sh transkripsiya qaytardi")
-            continue
-        _working_transcribe_model = model
+            attempts.append(f"{model} (til={'ha' if include_language else 'yoʻq'}): bo'sh transkripsiya qaytardi")
+            return None
         return text
 
+    # Tezkor yo'l -- avval oxirgi marta ishlagan kombinatsiya bilan sinaymiz.
+    if _working_transcribe_config:
+        cached_model, cached_lang = _working_transcribe_config
+        text = _attempt(cached_model, cached_lang)
+        if text:
+            return text
+        _working_transcribe_config = None  # bu safar ishlamadi -- to'liq qidiruvga o'tamiz
+
+    # 1-bosqich: HAR BIR nomzodda `language="uz"`ni majburlashga harakat --
+    # bu autodetect xatosi ehtimolini butunlay yo'qotadi.
+    for model in candidates:
+        text = _attempt(model, True)
+        if text:
+            _working_transcribe_config = (model, True)
+            return text
+
+    # 2-bosqich: hech qaysi model "uz"ni qabul qilmadi -- tilsiz (faqat
+    # dialog-namunali `prompt` orqali kontekst hint bilan) sinaymiz.
+    for model in candidates:
+        text = _attempt(model, False)
+        if text:
+            _working_transcribe_config = (model, False)
+            return text
+
     raise RuntimeError(
-        "OpenAI'da ishlaydigan transkripsiya modeli topilmadi. Sinalgan modellar: "
+        "OpenAI'da ishlaydigan transkripsiya kombinatsiyasi topilmadi. Sinalgan: "
         + "; ".join(attempts)
     )
 
@@ -372,7 +406,7 @@ def _post_diarized_transcription(api_key: str, model: str, audio_bytes: bytes, a
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (f"audio.{audio_format}", audio_bytes, f"audio/{audio_format}")},
         data={"model": model, "response_format": "diarized_json", "chunking_strategy": "auto"},
-        timeout=180,
+        timeout=90,
     )
 
 
