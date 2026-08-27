@@ -38,7 +38,53 @@ import datetime as dt
 from collections import defaultdict
 
 import meta_api
+import kpi_bonus
 from db import get_session, Lead, FunnelStage
+
+_TASHKENT_OFFSET = dt.timedelta(hours=5)
+
+
+def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime] | None:
+    """`date_preset` ("today", "yesterday", "last_7d", "last_30d", "last_90d"
+    va h.k. -- Meta'ning o'zi ishlatadigan nomlar, `target_page()`dagi davr
+    tugmalaridan keladi) uchun Toshkent vaqtida mos KUN ORALIG'INI hisoblab,
+    UTC'ga o'tkazib qaytaradi -- CRM'dagi `Lead.created_at` (UTC, naive)
+    bilan solishtirish uchun.
+
+    MUHIM (2026-08, foydalanuvchi topgan xato): oldin CRM lead soni sana
+    bo'yicha UMUMAN filtrlanmasdi -- "Bugun" davrini tanlasa ham, dashboard
+    doim BARCHA vaqtdagi lead sonini ko'rsatardi (masalan bugun 1 ta lead
+    kelgan bo'lsa ham, "7" deb ko'rsatgan -- bu shu funksiya yo'qligidan).
+    Endi Meta'ning xarajat/ko'rsatish statistikasi qaysi davr uchun
+    so'ralayotgan bo'lsa, CRM lead soni ham AYNAN o'sha davr uchun
+    hisoblanadi.
+
+    Noma'lum/qo'llab-quvvatlanmaydigan preset uchun `None` qaytaradi (filtr
+    qo'yilmaydi -- "shu paytgacha jamlangan hammasi" ma'nosida, eski xatti-
+    harakat saqlanib qoladi)."""
+    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    today_start_tashkent = now_tashkent.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if date_preset == "today":
+        start_tashkent = today_start_tashkent
+        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    elif date_preset == "yesterday":
+        start_tashkent = today_start_tashkent - dt.timedelta(days=1)
+        end_tashkent = today_start_tashkent
+    elif date_preset.startswith("last_") and date_preset.endswith("d"):
+        try:
+            days = int(date_preset[len("last_"):-1])
+        except ValueError:
+            return None
+        # Meta'ning "last_Nd" preseti bugungi kunni ham o'z ichiga oladi
+        # (aylanma N-kunlik oyna) -- shuning uchun tugash chegarasi ham
+        # "ertaga boshlanishi"gacha.
+        start_tashkent = today_start_tashkent - dt.timedelta(days=days)
+        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    else:
+        return None
+
+    return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
 
 LEVELS = {
     "campaign": {"id_field": "campaign_id", "name_field": "campaign_name", "lead_attr": "campaign_id"},
@@ -230,11 +276,18 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
             "result_label": result_label,
         }
 
-    # CRM tomonidagi lead statistikasi (hammasi, sana filtrisiz -- oddiylik
-    # uchun MVP'da "shu paytgacha jamlangan" holatni ko'rsatamiz).
+    # CRM tomonidagi lead statistikasi -- tanlangan `date_preset` bilan BIR
+    # XIL davr uchun (yuqoridagi Meta xarajat/ko'rsatish so'rovi ham shu
+    # davr uchun edi). Preset tanib bo'lmasa (masalan kelajakda yangi
+    # preset qo'shilsa), eski xatti-harakat -- filtrisiz, hammasi -- saqlanadi.
+    date_bounds = _date_preset_bounds_utc(date_preset)
     session = get_session()
     try:
-        leads = session.query(Lead).all()
+        lead_query = session.query(Lead)
+        if date_bounds:
+            start_utc, end_utc = date_bounds
+            lead_query = lead_query.filter(Lead.created_at >= start_utc, Lead.created_at < end_utc)
+        leads = lead_query.all()
         # voronka bosqichi (key) -> kategoriya (active/qualified/unqualified/sold)
         # xaritasi -- admin bosqichlarni o'zgartirgan/qo'shgan bo'lsa ham, dashboard
         # to'g'ri kategoriyaga hisoblaydi (custom_fields_settings/funnel_settings'da
@@ -278,6 +331,14 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
         "_effective_leads": 0,
     }
     goal_totals = defaultdict(lambda: {"count": 0, "spend": 0.0, "meta_result": 0, "result_label": ""})
+    # MUHIM (2026-08, foydalanuvchi topgan xato): `revenue` (sotuv summasi)
+    # CRM'da SO'MDA saqlanadi, `spend` (reklama xarajati) esa Meta'dan
+    # to'g'ridan-to'g'ri DOLLARDA keladi. Ikkalasini valyutasiga qaramasdan
+    # to'g'ridan-to'g'ri ayirib/bo'lish ROI'ni yuzlab million foizga
+    # "buzib" ko'rsatardi (masalan $1500000 "daromad" aslida 1 500 000 so'm
+    # -- atigi ~$120 edi). Endi ROI hisoblashdan OLDIN daromad dollarga
+    # o'tkaziladi (kurs: Sozlamalar -> Umumiy'dan tahrirlanadi).
+    usd_to_uzs_rate = kpi_bonus.get_usd_to_uzs_rate()
     for oid in all_ids:
         meta_part = meta_by_id.get(oid, {
             "id": oid, "name": "(noma'lum)", "status": "",
@@ -304,7 +365,9 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
         row["cpl"] = (row["spend"] / effective_leads) if effective_leads else 0.0
         row["cost_per_won"] = (row["spend"] / row["sold"]) if row["sold"] else 0.0
         row["avg_check"] = (row["revenue"] / row["sold"]) if row["sold"] else 0.0
-        row["roi_percent"] = ((row["revenue"] - row["spend"]) / row["spend"] * 100.0) if row["spend"] else 0.0
+        revenue_usd = row["revenue"] / usd_to_uzs_rate
+        row["revenue_usd"] = revenue_usd
+        row["roi_percent"] = ((revenue_usd - row["spend"]) / row["spend"] * 100.0) if row["spend"] else 0.0
         row["cost_per_result"] = (row["spend"] / row["meta_result"]) if row["meta_result"] else 0.0
         rows.append(row)
 
@@ -324,7 +387,9 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
     del totals["_effective_leads"]
     totals["cost_per_won"] = (totals["spend"] / totals["sold"]) if totals["sold"] else 0.0
     totals["avg_check"] = (totals["revenue"] / totals["sold"]) if totals["sold"] else 0.0
-    totals["roi_percent"] = ((totals["revenue"] - totals["spend"]) / totals["spend"] * 100.0) if totals["spend"] else 0.0
+    totals["revenue_usd"] = totals["revenue"] / usd_to_uzs_rate
+    totals["roi_percent"] = ((totals["revenue_usd"] - totals["spend"]) / totals["spend"] * 100.0) if totals["spend"] else 0.0
+    totals["usd_to_uzs_rate"] = usd_to_uzs_rate
 
     goal_breakdown = []
     for label, g in goal_totals.items():

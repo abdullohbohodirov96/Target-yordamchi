@@ -96,6 +96,7 @@
       </button>
     </div>
   </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
   {% endif %}
 
   <main class="container{{ ' with-sidebar' if current_user.is_authenticated }}" id="mainContent">
@@ -117,25 +118,48 @@
     var sidebar = document.getElementById('sidebar');
     var main = document.getElementById('mainContent');
     var pinBtn = document.getElementById('sidebarPin');
+    var backdrop = document.getElementById('sidebarBackdrop');
     if (!sidebar || !pinBtn) return;
     var KEY = 'target_crm_sidebar_pinned';
     var pinned = false;
     try { pinned = localStorage.getItem(KEY) === '1'; } catch (e) {}
 
+    // Tor (mobil, <=720px) ekranda menyu ochilganda orqa fon (backdrop)
+    // ham ko'rsatiladi -- CSS shu klass bo'lmasa buni faqat shu kenglikda
+    // ko'rsatadi, kattaroq ekranda hech narsa qilmaydi.
+    function setOpen(isOpen) {
+      sidebar.classList.toggle('open', isOpen);
+      if (backdrop) backdrop.classList.toggle('show', isOpen && !pinned);
+    }
+
     function applyPinned() {
       sidebar.classList.toggle('pinned', pinned);
-      sidebar.classList.toggle('open', pinned);
+      setOpen(pinned);
       if (main) main.classList.toggle('sidebar-pinned', pinned);
       pinBtn.classList.toggle('pinned', pinned);
     }
     applyPinned();
 
     sidebar.addEventListener('mouseenter', function () {
-      if (!pinned) sidebar.classList.add('open');
+      if (!pinned) setOpen(true);
     });
     sidebar.addEventListener('mouseleave', function () {
-      if (!pinned) sidebar.classList.remove('open');
+      if (!pinned) setOpen(false);
     });
+    // Sensorli ekranda "mouseenter" ishonchli ishlamaydi -- shuning uchun
+    // menyu ustiga bosilganda ham (agar hali ochilmagan bo'lsa) ochiladi.
+    sidebar.addEventListener('click', function (e) {
+      if (!pinned && !sidebar.classList.contains('open')) {
+        e.preventDefault();
+        setOpen(true);
+      }
+    });
+    // Backdrop'ga bosilsa (mobil'da menyudan tashqariga bosish) -- menyu yopiladi.
+    if (backdrop) {
+      backdrop.addEventListener('click', function () {
+        if (!pinned) setOpen(false);
+      });
+    }
     pinBtn.addEventListener('click', function () {
       pinned = !pinned;
       try { localStorage.setItem(KEY, pinned ? '1' : '0'); } catch (e) {}

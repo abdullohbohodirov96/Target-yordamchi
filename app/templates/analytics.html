@@ -23,8 +23,12 @@
     <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
     <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
     <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">${{ "%.2f"|format(t.revenue or 0) }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">{{ (t.revenue or 0)|som }}</div></div>
+    <div class="kpi-card">
+      <div class="kpi-label">ROI</div>
+      <div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">kurs: $1 = {{ (t.usd_to_uzs_rate or 0)|som }}</div>
+    </div>
   </div>
   <p class="page-subtitle" style="margin:12px 0 0"><a href="{{ url_for('target_page') }}" class="text-blue">To'liq Target sahifasini ko'rish &rarr;</a></p>
 </div>

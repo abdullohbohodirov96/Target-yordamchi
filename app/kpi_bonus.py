@@ -81,6 +81,35 @@ def get_min_sale_amount() -> float:
 
 def set_min_sale_amount(value: float) -> None:
     kv_store.set_json(_MIN_SALE_AMOUNT_KEY, max(0.0, float(value)))
+
+
+# Dollar/so'm kursi -- dashboard'da ROI hisoblashda ishlatiladi (sotuv summasi
+# so'mda, reklama xarajati Meta'dan USD'da keladi -- ikkalasini bitta valyutaga
+# keltirmasdan to'g'ridan-to'g'ri solishtirish ROI'ni yuzlab million foizga
+# "buzib" ko'rsatib yuborardi, 2026-08 foydalanuvchi topgan xato). Kurs vaqt
+# o'tishi bilan o'zgaradi -- shuning uchun kodga qattiq yozilmagan, admin
+# "Sozlamalar" sahifasidan xohlagan vaqtda yangilay oladi.
+USD_TO_UZS_RATE = 11_800.0           # standart (admin o'zgartirmagan bo'lsa) -- 2026-08 taxminiy bozor kursi
+_USD_TO_UZS_RATE_KEY = "usd_to_uzs_rate"
+
+
+def get_usd_to_uzs_rate() -> float:
+    """Admin "Sozlamalar" sahifasida o'zgartirishi mumkin bo'lgan dollar/so'm
+    kursini qaytaradi (kv_store'da saqlanadi) -- o'zgartirilmagan bo'lsa
+    standart `USD_TO_UZS_RATE` qaytadi. Real kurs muntazam o'zgargani uchun
+    buni vaqti-vaqti bilan yangilab turish tavsiya etiladi."""
+    value = kv_store.get_json(_USD_TO_UZS_RATE_KEY, default=None)
+    try:
+        rate = float(value) if value is not None else USD_TO_UZS_RATE
+        return rate if rate > 0 else USD_TO_UZS_RATE
+    except (TypeError, ValueError):
+        return USD_TO_UZS_RATE
+
+
+def set_usd_to_uzs_rate(value: float) -> None:
+    kv_store.set_json(_USD_TO_UZS_RATE_KEY, max(1.0, float(value)))
+
+
 REPEAT_WINDOW_DAYS = 15              # "qayta xarid" bonusi uchun oyna
 SURVIVAL_MIN_SALES = 75              # "o'lim chizig'i" -- 25 ish kunida (to'liq oy)
 SURVIVAL_WORKDAYS = 25

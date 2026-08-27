@@ -2047,6 +2047,17 @@ def settings_hub():
                 except (TypeError, ValueError):
                     flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
 
+            elif action == "set_usd_rate":
+                raw = request.form.get("usd_to_uzs_rate", "").strip()
+                try:
+                    value = float(raw)
+                    if value <= 0:
+                        raise ValueError
+                    kpi_bonus.set_usd_to_uzs_rate(value)
+                    flash(f"Dollar/so'm kursi 1$ = {value:,.0f} so'mga o'rnatildi (ROI hisobida ishlatiladi).".replace(",", " "), "success")
+                except (TypeError, ValueError):
+                    flash("Noto'g'ri qiymat -- kursni raqam ko'rinishida kiriting.", "error")
+
             elif action == "set_telegram":
                 manager_id = request.form.get("manager_id", "")
                 m = session.get(Manager, int(manager_id)) if manager_id.isdigit() else None
@@ -2094,6 +2105,7 @@ def settings_hub():
         "settings_hub.html",
         min_sale_amount=kpi_bonus.get_min_sale_amount(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
+        usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(),
         managers=manager_rows,
         unanswered=unanswered,
         capi_configured=meta_api.is_capi_configured(),
@@ -2123,9 +2135,14 @@ def smm_report():
     finally:
         session.close()
 
+    # MUHIM: `report` ichida ALLAQACHON "days" kaliti bor (`build_smm_report`
+    # o'zi qaytaradi) -- bu yerda YANA `days=days` deb alohida berish
+    # "got multiple values for keyword argument 'days'" TypeError'iga olib
+    # kelardi va sahifa HAR DOIM "Internal Server Error" bilan ochilmasdi
+    # (2026-08, foydalanuvchi topgan xato). Endi faqat `report`dagi bitta
+    # "days" ishlatiladi.
     return render_template(
         "smm.html",
-        days=days,
         configured=smm_sync.is_configured(),
         sync_status=smm_sync.get_last_status(),
         **report,

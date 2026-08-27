@@ -23,6 +23,16 @@
     <span class="text-faint" style="font-size:12.5px">Bu summadan KICHIK "sotuv" KPI/bonus va rejaga umuman kirmaydi.</span>
   </form>
 
+  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:0; border-top:1px solid var(--border-light); padding-top:14px">
+    <input type="hidden" name="action" value="set_usd_rate">
+    <div class="field" style="margin:0; min-width:220px">
+      <label>Dollar/so'm kursi (1$ = ? so'm)</label>
+      <input type="number" step="1" min="1" name="usd_to_uzs_rate" value="{{ usd_to_uzs_rate|int }}">
+    </div>
+    <button type="submit" class="btn">Saqlash</button>
+    <span class="text-faint" style="font-size:12.5px">Target sahifasidagi ROI (%) shu kursga qarab hisoblanadi (sotuv summasi so'mda, reklama xarajati dollarda bo'lgani uchun) -- kurs o'zgarganda vaqti-vaqti bilan yangilab turing.</span>
+  </form>
+
   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--border-light); padding-top:14px">
     <div>
       <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
