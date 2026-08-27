@@ -2139,6 +2139,13 @@ def _build_ai_analysis_view(session, since) -> dict:
         manager = managers_by_id.get(c.manager_id) if c.manager_id else None
         if c.ai_error:
             error_count += 1
+
+        def _load_json(raw):
+            try:
+                return json.loads(raw) if raw else None
+            except (TypeError, ValueError):
+                return None
+
         rows.append({
             "id": c.id,
             "started_at": (c.started_at + dt.timedelta(hours=5)) if c.started_at else None,
@@ -2150,11 +2157,20 @@ def _build_ai_analysis_view(session, since) -> dict:
             "score": c.ai_score, "status": c.ai_status, "color": c.ai_color,
             "overview": c.ai_overview, "result": c.ai_result,
             "transcription": c.ai_transcription, "error": c.ai_error,
+            "stage": c.ai_stage,
             # 2026-08, foydalanuvchi so'rovi -- transkripsiyani "SMS suhbat"
             # ko'rinishida (Manager/Mijoz alohida tomonlarda, gap-bo'lib-gap)
             # ko'rsatish uchun, xom matn oldindan {"speaker","text"} bo'laklarga
             # ajratib beriladi (shablon o'zi regex bilan ishlamasin uchun).
             "turns": call_analysis.parse_transcript_turns(c.ai_transcription) if c.ai_transcription else [],
+            # 2026-08 V4 -- kengaytirilgan tahlil maydonlari (mijoz so'rovi,
+            # menejer xatolari, ijobiy tomonlar, savdo natijasi, tavsiya).
+            "customer_request": _load_json(c.ai_customer_request),
+            "operator_mistakes": _load_json(c.ai_operator_mistakes) or [],
+            "positive_points": _load_json(c.ai_positive_points) or [],
+            "sale_result": c.ai_sale_result,
+            "callback_required": c.ai_callback_required,
+            "recommended_response": c.ai_recommended_response,
         })
     return {
         "rows": rows,
@@ -2207,6 +2223,55 @@ def individual_check_run_ai_analysis():
         "success",
     )
     return redirect(url_for("individual_check", days=days, tab="ai"))
+
+
+@app.route("/individual-tekshirish/ai-debug/<int:call_id>")
+@login_required
+@admin_required
+def individual_check_ai_debug(call_id):
+    """2026-08, foydalanuvchi so'rovi -- admin/debug ko'rinish: xom
+    transkripsiya, normallashtirilgan transkripsiya, ishlatilgan modellar,
+    audio metadata va jarayon bosqichini ko'rsatadi. ODDIY operator UI'ga
+    (`individual_check.html`ning AI tab'i) chiqarilmaydi -- faqat admin
+    ANIQ shu URL'ga o'tsa ko'rinadi (masalan tahlil sifatini tekshirish
+    yoki xatoni diagnostika qilish uchun)."""
+    from db import CallRecord, Lead, Manager
+
+    session = get_session()
+    try:
+        call = session.get(CallRecord, call_id)
+        if not call:
+            flash("Qo'ng'iroq topilmadi.", "error")
+            return redirect(url_for("individual_check", tab="ai"))
+        lead = session.get(Lead, call.lead_id) if call.lead_id else None
+        manager = session.get(Manager, call.manager_id) if call.manager_id else None
+        debug = {
+            "id": call.id,
+            "phone_number": call.phone_number,
+            "lead_name": lead.full_name if lead else None,
+            "manager_name": (manager.full_name or manager.username) if manager else "Noma'lum",
+            "recording_url": call.recording_url,
+            "stage": call.ai_stage,
+            "error": call.ai_error,
+            "analyzed_at": call.ai_analyzed_at,
+            "model_transcribe": call.ai_model_transcribe,
+            "model_analysis": call.ai_model_analysis,
+            "audio_channels": call.ai_audio_channels,
+            "audio_codec": call.ai_audio_codec,
+            "audio_duration_sec": call.ai_audio_duration_sec,
+            "raw_transcription": call.ai_raw_transcription,
+            "normalized_transcription": call.ai_transcription,
+            "diarized_json": call.ai_diarized_json,
+            "customer_request": call.ai_customer_request,
+            "operator_mistakes": call.ai_operator_mistakes,
+            "positive_points": call.ai_positive_points,
+            "sale_result": call.ai_sale_result,
+            "callback_required": call.ai_callback_required,
+            "recommended_response": call.ai_recommended_response,
+        }
+    finally:
+        session.close()
+    return render_template("individual_check_ai_debug.html", d=debug)
 
 
 @app.route("/individual-tekshirish/chegara", methods=["POST"])

@@ -168,24 +168,68 @@
           {% endif %}
         </td>
         <td>
-          {% if c.transcription %}
+          {% if c.transcription or c.error %}
           <details>
             <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">Batafsil</summary>
-            <div style="margin-top:10px; max-width:520px">
-              {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:8px" src="{{ c.recording_url }}"></audio>{% endif %}
-              {% if c.result %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Natija:</strong> {{ c.result }}</p>{% endif %}
-              <div class="chat-transcript">
-                {% for t in c.turns %}
-                <div class="chat-bubble {{ t.speaker }}">
-                  <div class="chat-bubble-label">
-                    {% if t.speaker == 'manager' %}{{ c.manager_name or 'Manager' }}
-                    {% elif t.speaker == 'mijoz' %}{{ c.lead_name or c.phone_number or 'Mijoz' }}
-                    {% else %}{{ t.raw_label or "Noma'lum" }}{% endif %}
-                  </div>
-                  <div class="chat-bubble-text">{{ t.text }}</div>
-                </div>
-                {% endfor %}
+            <div style="margin-top:10px; max-width:560px">
+              {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ c.recording_url }}"></audio>{% endif %}
+
+              {% if c.customer_request and (c.customer_request.product or c.customer_request.brand or c.customer_request.quantity or c.customer_request.measurement or c.customer_request.parameters) %}
+              <div style="margin-bottom:10px">
+                <p class="page-subtitle" style="margin:0 0 4px"><strong>Mijoz so'rovi:</strong></p>
+                <ul style="margin:0; padding-left:18px; font-size:13px">
+                  {% if c.customer_request.product %}<li>Mahsulot: {{ c.customer_request.product }}</li>{% endif %}
+                  {% if c.customer_request.brand %}<li>Brend: {{ c.customer_request.brand }}</li>{% endif %}
+                  {% if c.customer_request.quantity %}<li>Miqdor: {{ c.customer_request.quantity }}</li>{% endif %}
+                  {% if c.customer_request.measurement %}<li>O'lcham: {{ c.customer_request.measurement }}</li>{% endif %}
+                  {% if c.customer_request.parameters %}<li>Parametrlar: {{ c.customer_request.parameters }}</li>{% endif %}
+                </ul>
               </div>
+              {% endif %}
+
+              {% if c.result %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Natija:</strong> {{ c.result }}</p>{% endif %}
+
+              {% if c.operator_mistakes %}
+              <div style="margin-bottom:10px">
+                <p class="page-subtitle" style="margin:0 0 4px"><strong>Menejer xatolari:</strong></p>
+                <ul style="margin:0; padding-left:18px; font-size:13px" class="text-bad">
+                  {% for m in c.operator_mistakes %}<li>{{ m }}</li>{% endfor %}
+                </ul>
+              </div>
+              {% endif %}
+
+              {% if c.positive_points %}
+              <div style="margin-bottom:10px">
+                <p class="page-subtitle" style="margin:0 0 4px"><strong>Ijobiy tomonlar:</strong></p>
+                <ul style="margin:0; padding-left:18px; font-size:13px" class="text-good">
+                  {% for p in c.positive_points %}<li>{{ p }}</li>{% endfor %}
+                </ul>
+              </div>
+              {% endif %}
+
+              {% if c.recommended_response %}
+              <p class="page-subtitle" style="margin:0 0 10px"><strong>Tavsiya etilgan harakat:</strong> {{ c.recommended_response }}</p>
+              {% endif %}
+
+              {% if c.transcription %}
+              <details>
+                <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">To'liq transkripsiya</summary>
+                <div class="chat-transcript" style="margin-top:8px">
+                  {% for t in c.turns %}
+                  <div class="chat-bubble {{ t.speaker }}">
+                    <div class="chat-bubble-label">
+                      {% if t.speaker == 'manager' %}{{ c.manager_name or 'Manager' }}
+                      {% elif t.speaker == 'mijoz' %}{{ c.lead_name or c.phone_number or 'Mijoz' }}
+                      {% else %}{{ t.raw_label or "Noma'lum" }}{% endif %}
+                    </div>
+                    <div class="chat-bubble-text">{{ t.text }}</div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </details>
+              {% endif %}
+
+              <p style="margin:10px 0 0"><a href="{{ url_for('individual_check_ai_debug', call_id=c.id) }}" class="text-faint" style="font-size:11.5px">Debug ko'rinish (xom transkripsiya, model, audio metadata) →</a></p>
             </div>
           </details>
           {% endif %}

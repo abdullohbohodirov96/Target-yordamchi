@@ -193,9 +193,39 @@ class CallRecord(Base):
     ai_status = Column(String(16), nullable=True)  # bad | average | good
     ai_color = Column(String(16), nullable=True)  # red | yellow | green
     ai_result = Column(Text, nullable=True)
-    ai_transcription = Column(Text, nullable=True)
+    ai_transcription = Column(Text, nullable=True)  # NORMALIZATSIYA qilingan (Manager/Mijoz yorliqli, tozalangan) matn
     ai_error = Column(Text, nullable=True)
     ai_analyzed_at = Column(DateTime, nullable=True, index=True)
+
+    # 2026-08, PIPELINE AUDIT (foydalanuvchi so'rovi -- to'liq transkripsiya
+    # quvur liniyasini tekshirish/tuzatish): xom (ASR/diarizatsiya bosqichidan
+    # to'g'ridan-to'g'ri, HECH QANDAY AI "tozalash"siz) transkripsiya endi
+    # ALOHIDA saqlanadi -- debug/aniqlikni solishtirish uchun, hech qachon
+    # ustidan yozilmaydi. `ai_transcription` (yuqorida) shu xom matndan AI
+    # tomonidan "normalizatsiya qilingan" (Manager/Mijoz yorliqli, tahlil
+    # bosqichida qayta formatlangan) versiya bo'lib qoladi.
+    ai_raw_transcription = Column(Text, nullable=True)
+    ai_diarized_json = Column(Text, nullable=True)  # diarizatsiya API'sining xom JSON javobi (mavjud bo'lsa) -- debug uchun
+    ai_customer_request = Column(Text, nullable=True)  # JSON: {"product","brand","quantity","measurement","parameters"}
+    ai_operator_mistakes = Column(Text, nullable=True)  # JSON ro'yxat (string'lar)
+    ai_positive_points = Column(Text, nullable=True)  # JSON ro'yxat (string'lar)
+    ai_sale_result = Column(String(16), nullable=True)  # sold | lost | pending | unknown
+    ai_callback_required = Column(Boolean, nullable=True)
+    ai_recommended_response = Column(Text, nullable=True)
+    ai_model_transcribe = Column(String(64), nullable=True)  # haqiqatda ishlagan transkripsiya modeli (debug)
+    ai_model_analysis = Column(String(64), nullable=True)  # haqiqatda ishlagan tahlil modeli (debug)
+    ai_audio_channels = Column(Integer, nullable=True)  # ffprobe orqali aniqlangan kanal soni (mavjud bo'lsa)
+    ai_audio_codec = Column(String(32), nullable=True)
+    ai_audio_duration_sec = Column(Float, nullable=True)
+    # Holat mashinasi (foydalanuvchi so'rovi -- "aniq holatlar" kerak edi):
+    # uploaded -> processing_audio -> transcribing -> analyzing -> completed
+    # (yoki har qanday bosqichda -- failed). `ai_analyzed_at` mavjudligi
+    # eskicha "tugadi/tugamadi" belgisi bo'lib qoladi (orqaga moslik uchun);
+    # `ai_stage` esa QAYSI bosqichda ekanini aniq ko'rsatadi -- masalan
+    # transkripsiya muvaffaqiyatli, lekin tahlil muvaffaqiyatsiz bo'lsa,
+    # qayta ishga tushirilganda AUDIO QAYTA YUKLAB OLINMAYDI/QAYTA
+    # TRANSKRIPSIYA QILINMAYDI, faqat tahlil bosqichi qaytadan sinaladi.
+    ai_stage = Column(String(24), nullable=True, index=True)
 
 
 class SmmSnapshot(Base):
