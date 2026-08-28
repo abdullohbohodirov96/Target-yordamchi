@@ -4,7 +4,7 @@
 {% block content %}
 <div class="login-shell">
   <div class="login-card">
-    <div class="login-brand"><img class="brand-mark" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Replix logo"> Replix</div>
+    <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
     <p class="login-subtitle">Kirish uchun login/parolingizni kiriting</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

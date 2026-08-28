@@ -94,8 +94,22 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
     period_posts = [p for p in all_posts if p.posted_at and p.posted_at >= cutoff]
 
-    total_reach = sum(p.reach or 0 for p in period_posts)
-    total_impressions = sum(p.impressions or 0 for p in period_posts)
+    # MUHIM (2026-08, foydalanuvchi so'rovi: "nimadir noto'g'ri bo'lsa nima
+    # uchunligini tushuntiring" -- "Umumiy qamrov"/"Umumiy ko'rishlar" har
+    # doim "0" ko'rsatib, xuddi hech narsa ishlamayotgandek ko'rinardi,
+    # aslida Meta HAR BIR post uchun insights so'ralganda ba'zan ruxsat/
+    # cheklov tufayli hech qanday qiymat qaytarmaydi -- `smm_sync.py`da bu
+    # holat `reach=None`/`impressions=None` sifatida saqlanadi). Endi "hech
+    # birida ma'lumot yo'q" (None) bilan "haqiqatan 0" ni ANIQ ajratamiz --
+    # birinchisida shablon "—" + tushuntirish ko'rsatadi, ikkinchisida esa
+    # haqiqiy "0" qoladi. Qisman (ba'zi postlarda bor, ba'zilarida yo'q)
+    # holat uchun ham nechta post "ko'rinmasligi"ni alohida hisoblaymiz.
+    reach_values = [p.reach for p in period_posts if p.reach is not None]
+    impressions_values = [p.impressions for p in period_posts if p.impressions is not None]
+    total_reach = sum(reach_values) if reach_values else None
+    total_impressions = sum(impressions_values) if impressions_values else None
+    reach_missing_count = len(period_posts) - len(reach_values)
+    impressions_missing_count = len(period_posts) - len(impressions_values)
     total_likes = sum(p.like_count or 0 for p in period_posts)
     total_comments = sum(p.comments_count or 0 for p in period_posts)
     total_shares = sum(p.shares_count or 0 for p in period_posts)
@@ -120,6 +134,9 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
         "posts_count_period": len(period_posts),
         "total_reach": total_reach,
         "total_impressions": total_impressions,
+        "reach_missing_count": reach_missing_count,
+        "impressions_missing_count": impressions_missing_count,
+        "posts_in_period_count": len(period_posts),
         "total_likes": total_likes,
         "total_comments": total_comments,
         "total_shares": total_shares,

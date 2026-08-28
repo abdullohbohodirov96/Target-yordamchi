@@ -71,9 +71,7 @@ a { color: inherit; text-decoration: none; }
 
 .sidebar-top { padding: 16px 14px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink); white-space: nowrap; }
-.brand-mark {
-  width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; display: inline-block;
-}
+.brand-icon { width: 28px; height: 28px; object-fit: contain; display: block; flex-shrink: 0; }
 
 .sidebar-nav {
   flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px;
@@ -88,8 +86,8 @@ a { color: inherit; text-decoration: none; }
      screenshot bilan ko'rsatdi). Endi balandlik padding+line-height'ga mos. */
 }
 .sidebar.open .nav-group-label { opacity: 1; }
-.brand-text { overflow: hidden; white-space: nowrap; opacity: 0; width: 0; transition: opacity 0.1s; }
-.sidebar.open .brand-text { opacity: 1; width: auto; }
+.brand-wordmark { height: 18px; overflow: hidden; opacity: 0; width: 0; transition: opacity 0.1s; display: block; }
+.sidebar.open .brand-wordmark { opacity: 1; width: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius);
   color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 2px;
@@ -169,7 +167,9 @@ a { color: inherit; text-decoration: none; }
 .date-picker-divider { height: 1px; background: var(--border-light); margin: 4px 2px; }
 .date-picker-custom { padding: 4px 10px 2px; }
 .date-picker-custom label { display: block; font-size: 11px; color: var(--text-faint); margin-bottom: 4px; }
-.date-picker-custom input[type="number"] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.date-picker-custom input[type="number"], .date-picker-custom input[type="date"] {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.5px;
+}
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
@@ -236,12 +236,13 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
   overflow-x: auto; scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
-.tabs a {
-  padding: 12px 2px; font-size: 13.5px; color: var(--text-faint); border-bottom: 2px solid transparent;
+.tabs a, .tabs button {
+  padding: 12px 2px; font-size: 13.5px; color: var(--text-faint); border: none; border-bottom: 2px solid transparent;
   margin-bottom: -1px; white-space: nowrap; flex-shrink: 0; transition: color 0.12s, border-color 0.15s;
+  background: none; font-family: inherit; cursor: pointer;
 }
-.tabs a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--blue); }
-.tabs a:hover:not(.active) { color: var(--text); }
+.tabs a.active, .tabs button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--blue); }
+.tabs a:hover:not(.active), .tabs button:hover:not(.active) { color: var(--text); }
 
 /* ---------- Search box ---------- */
 .searchbar { padding: 14px 16px; border-bottom: 1px solid var(--border-light); }
@@ -400,8 +401,8 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
   background: linear-gradient(90deg, var(--ink) 0%, var(--blue) 100%);
 }
-.login-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: var(--ink); margin-bottom: 6px; }
-.login-brand .brand-mark { width: 38px; height: 38px; }
+.login-brand { display: flex; align-items: center; margin-bottom: 6px; }
+.login-logo { height: 44px; width: auto; object-fit: contain; display: block; }
 .login-subtitle { color: var(--text-faint); font-size: 13px; margin: 0 0 22px; }
 
 .login-error {
@@ -433,23 +434,28 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .note-item:last-child { border-bottom: none; }
 .note-meta { color: var(--text-faint); font-size: 11px; margin-top: 3px; }
 
-/* ---------- AI yordamchi (floating chat widget) ---------- */
+/* ---------- AI yordamchi (floating chat widget) ----------
+   2026-08, foydalanuvchi so'rovi: rangларни logotipga (ko'k->siyohrang
+   gradient) moslashtirish, ikonkani esa OQ rangda qoldirish (rangli
+   logotipni to'g'ridan-to'g'ri qo'ysak, gradient fon bilan "aralashib"
+   ketardi). */
 #ai-assistant-root { position: fixed; right: 22px; bottom: 22px; z-index: 100; }
 
 #ai-assistant-toggle {
-  width: 54px; height: 54px; border-radius: 50%; background: var(--ink); color: #fff;
+  width: 54px; height: 54px; border-radius: 50%; color: #fff;
+  background: linear-gradient(135deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
   border: none; display: flex; align-items: center; justify-content: center; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: background 0.15s;
+  box-shadow: 0 4px 14px rgba(43,110,245,0.35); transition: box-shadow 0.15s, transform 0.15s;
   padding: 0; animation: ai-breathe 2.6s ease-in-out infinite;
 }
-#ai-assistant-toggle:hover { background: #1E293B; }
+#ai-assistant-toggle:hover { box-shadow: 0 6px 18px rgba(43,110,245,0.45); }
 #ai-assistant-toggle svg, #ai-assistant-toggle img { width: 30px; height: 30px; display: block; }
-#ai-assistant-toggle.active { background: var(--blue); animation: none; }
+#ai-assistant-toggle.active { animation: none; }
 #ai-assistant-toggle.ai-clicked { animation: ai-click-pop 0.35s ease-out; }
 
 @keyframes ai-breathe {
-  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(15,23,42,0.25); }
-  50% { transform: scale(1.07); box-shadow: 0 6px 20px rgba(15,23,42,0.32); }
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(43,110,245,0.35); }
+  50% { transform: scale(1.07); box-shadow: 0 6px 20px rgba(43,110,245,0.45); }
 }
 @keyframes ai-click-pop {
   0% { transform: scale(1); }
@@ -475,8 +481,10 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 #ai-assistant-header {
   display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
-  background: var(--ink); color: #fff; font-size: 13.5px; font-weight: 600; flex-shrink: 0;
+  background: linear-gradient(135deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+  color: #fff; font-size: 13.5px; font-weight: 600; flex-shrink: 0;
 }
+#ai-assistant-header-logo { height: 22px; width: auto; display: block; }
 #ai-assistant-close { background: none; border: none; color: #fff; padding: 2px; cursor: pointer; opacity: 0.8; }
 #ai-assistant-close:hover { opacity: 1; }
 #ai-assistant-close svg { width: 16px; height: 16px; display: block; }
@@ -490,7 +498,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   max-width: 84%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45;
   white-space: pre-wrap; word-break: break-word;
 }
-.ai-msg-user .ai-bubble { background: var(--ink); color: #fff; border-bottom-right-radius: 3px; }
+.ai-msg-user .ai-bubble { background: #2B6EF5; color: #fff; border-bottom-right-radius: 3px; }
 .ai-msg-assistant .ai-bubble { background: var(--border-light); color: var(--text); border-bottom-left-radius: 3px; }
 .ai-msg.ai-typing .ai-bubble { color: var(--text-faint); font-style: italic; }
 
@@ -501,10 +509,10 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 #ai-assistant-form input:focus { outline: none; border-color: #94A3B8; background: #fff; }
 #ai-assistant-form button {
-  width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: #fff; border: none;
+  width: 36px; height: 36px; border-radius: 50%; background: #2B6EF5; color: #fff; border: none;
   display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0;
 }
-#ai-assistant-form button:hover { background: #1E293B; }
+#ai-assistant-form button:hover { background: #1E56C4; }
 #ai-assistant-form button svg { width: 16px; height: 16px; }
 
 @media (max-width: 480px) {

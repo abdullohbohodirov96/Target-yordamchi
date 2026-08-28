@@ -1,0 +1,47 @@
+{# Dashboard uchun ixcham sana-oralig'i filtri (2026-08, foydalanuvchi so'rovi:
+   "data tanlashni Meta Ads'ga o'xshatib qil yoki boshqacha qil, lekin
+   qiyin/noqulay bo'lmasin" -- ilgari bu yerda pill tugmalar QATORI + doim
+   ko'rinib turadigan ikkita xom native <input type=date> + alohida
+   "Sana oralig'i" tugmasi birga turardi, bu chalkash va band ko'rinardi.
+   Endi -- boshqa sahifalarda ishlatiladigan `_date_picker.html` bilan BIR
+   XIL vizual til (bitta ixcham trigger tugma + ochiladigan menyu), lekin
+   Meta'ning murakkab ikki oylik kalendaridan farqli, faqat tez tanlovlar +
+   ikkita oddiy sana maydoni bilan -- oddiy va tanish. Ishlatilishi: ota
+   shablonda `o.period`/`o.period_label`/`o.date_from`/`o.date_to` mavjud
+   bo'lishi kerak. #}
+<div class="date-picker" id="dashDatePicker">
+  <button type="button" class="date-picker-trigger" id="dashDatePickerTrigger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+    <span>{{ o.period_label }}</span>
+  </button>
+  <div class="date-picker-menu" id="dashDatePickerMenu">
+    {% for p, label in [('today','Bugun'), ('last_7d','7 kun'), ('this_month','Shu oy'), ('last_30d','30 kun'), ('last_90d','90 kun')] %}
+    <a href="?period={{ p }}" class="{{ 'active' if o.period==p }}">{{ label }}</a>
+    {% endfor %}
+    <div class="date-picker-divider"></div>
+    <form method="get" class="date-picker-custom">
+      <input type="hidden" name="period" value="custom">
+      <label>Boshqa oraliq</label>
+      <div style="display:flex; flex-direction:column; gap:6px">
+        <input type="date" name="date_from" value="{{ o.date_from or '' }}">
+        <input type="date" name="date_to" value="{{ o.date_to or '' }}">
+        <button type="submit" class="btn" style="padding:6px 10px; font-size:12px">Qo'llash</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var wrap = document.getElementById('dashDatePicker');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  var trigger = document.getElementById('dashDatePickerTrigger');
+  trigger.addEventListener('click', function (e) {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+})();
+</script>

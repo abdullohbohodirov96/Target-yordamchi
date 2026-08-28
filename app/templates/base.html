@@ -34,7 +34,8 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <a href="{{ url_for('dashboard') }}" class="brand">
-        <img class="brand-mark" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Replix logo"><span class="brand-text">Replix</span>
+        <img class="brand-icon" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Replix">
+        <img class="brand-wordmark" src="{{ url_for('static', filename='brand/logo-wordmark.png') }}" alt="Replix">
       </a>
     </div>
 
@@ -184,12 +185,12 @@
   {% if current_user.is_authenticated %}
   <div id="ai-assistant-root">
     <button id="ai-assistant-toggle" type="button" aria-label="AI yordamchi">
-      <img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="" width="30" height="30">
+      <img src="{{ url_for('static', filename='brand/logo-icon-white.png') }}" alt="" width="30" height="30">
     </button>
 
     <div id="ai-assistant-panel" hidden>
       <div id="ai-assistant-header">
-        <span>AI Yordamchi</span>
+        <img id="ai-assistant-header-logo" src="{{ url_for('static', filename='brand/logo-icon-white.png') }}" alt="Replix AI yordamchi">
         <button id="ai-assistant-close" type="button" aria-label="Yopish">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
         </button>

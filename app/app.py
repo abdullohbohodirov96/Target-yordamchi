@@ -638,7 +638,16 @@ def _dashboard_period_bounds(period: str, date_from: str | None, date_to: str | 
     if period == "custom" and date_from and date_to:
         bounds = custom_range_bounds_utc(date_from, date_to)
         if bounds:
-            return bounds[0], bounds[1], f"{date_from} — {date_to}"
+            # MUHIM (2026-08, foydalanuvchi so'rovi -- ixcham trigger tugmasi
+            # o'qish qulay bo'lishi uchun): xom ISO ("2026-08-01") o'rniga
+            # odatdagi "01.08.2026" formatida ko'rsatiladi.
+            def _fmt(d: str) -> str:
+                try:
+                    y, m, dd = d.split("-")
+                    return f"{dd}.{m}.{y}"
+                except ValueError:
+                    return d
+            return bounds[0], bounds[1], f"{_fmt(date_from)} — {_fmt(date_to)}"
     if period in _DASHBOARD_PERIOD_LABELS:
         bounds = _date_preset_bounds_utc(period)
         if bounds:

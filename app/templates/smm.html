@@ -47,9 +47,19 @@
 </details>
 {% endif %}
 
+{# 2026-08, foydalanuvchi so'rovi: "IG va FB ni tepa-past emas, tugma orqali
+   o'tadigan qil" -- ilgari ikkala platforma karta sifatida BIR-BIRI OSTIDA
+   cheksiz pastga cho'zilib ketardi. Endi -- Instagram/Facebook o'rtasida
+   ODDIY TUGMA (JS bilan, sahifa qayta yuklanmasdan) almashtiriladi, ma'lumot
+   allaqachon ikkalasi uchun ham serverda tayyor bo'lgani uchun. #}
+<div class="tabs" id="smmPlatformTabs" style="margin-bottom:0">
+  <button type="button" class="smm-tab-btn active" data-platform="instagram">Instagram</button>
+  <button type="button" class="smm-tab-btn" data-platform="facebook">Facebook</button>
+</div>
+
 {% for key, label, color in [('instagram', 'Instagram', '#DB2777'), ('facebook', 'Facebook', '#2563EB')] %}
 {% set p = platforms[key] %}
-<div class="card" style="margin-bottom:20px">
+<div class="card smm-platform-panel" data-platform="{{ key }}" style="margin:20px 0 20px{{ '; display:none' if key != 'instagram' }}">
   <h2 style="display:flex; align-items:center; gap:8px">
     <span style="width:10px; height:10px; border-radius:50%; background:{{ color }}; display:inline-block"></span>
     {{ label }}
@@ -74,8 +84,24 @@
       {% if p.growth_month is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
     </div>
     <div class="kpi-card"><div class="kpi-label">Postlar ({{ days }} kun)</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Umumiy qamrov</div><div class="kpi-value">{{ p.total_reach }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Umumiy ko'rishlar</div><div class="kpi-value">{{ p.total_impressions }}</div></div>
+    <div class="kpi-card">
+      <div class="kpi-label">Umumiy qamrov</div>
+      <div class="kpi-value">{{ p.total_reach if p.total_reach is not none else '—' }}</div>
+      {% if p.total_reach is none and p.posts_in_period_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ 'Instagram' if key=='instagram' else 'Facebook' }} bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      {% elif p.reach_missing_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.reach_missing_count }} ta postda bu ma'lumot yo'q</div>
+      {% endif %}
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Umumiy ko'rishlar</div>
+      <div class="kpi-value">{{ p.total_impressions if p.total_impressions is not none else '—' }}</div>
+      {% if p.total_impressions is none and p.posts_in_period_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ 'Instagram' if key=='instagram' else 'Facebook' }} bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      {% elif p.impressions_missing_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.impressions_missing_count }} ta postda bu ma'lumot yo'q</div>
+      {% endif %}
+    </div>
     <div class="kpi-card"><div class="kpi-label">Engagement rate</div><div class="kpi-value">{{ (p.engagement_rate ~ '%') if p.engagement_rate is not none else '—' }}</div></div>
   </div>
 
@@ -152,17 +178,44 @@
 </div>
 {% endfor %}
 
+<script>
+(function () {
+  // 2026-08, foydalanuvchi so'rovi: Instagram/Facebook endi tugma orqali
+  // (sahifa qayta yuklanmasdan) almashtiriladi -- ikkalasi ham allaqachon
+  // serverda tayyor holda kelgani uchun shunchaki ko'rsatish/yashirish
+  // yetarli. Chart.js grafigi YASHIRIN panel ichida (display:none) 0x0
+  // o'lchamda chizilib qolishi mumkin -- shuning uchun tabga birinchi
+  // marta o'tilganda tegishli chart.resize() chaqiriladi.
+  var tabsWrap = document.getElementById('smmPlatformTabs');
+  if (!tabsWrap) return;
+  var buttons = tabsWrap.querySelectorAll('.smm-tab-btn');
+  var panels = document.querySelectorAll('.smm-platform-panel');
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var platform = btn.dataset.platform;
+      buttons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+      panels.forEach(function (panel) {
+        panel.style.display = (panel.dataset.platform === platform) ? '' : 'none';
+      });
+      var chart = window._smmCharts && window._smmCharts[platform];
+      if (chart) chart.resize();
+    });
+  });
+})();
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 (function () {
   if (typeof Chart === 'undefined') return;
   Chart.defaults.font.family = "'IBM Plex Sans', -apple-system, sans-serif";
   Chart.defaults.color = '#64748B';
+  window._smmCharts = {};
 
   {% for key, label, color in [('instagram', 'Instagram', '#DB2777'), ('facebook', 'Facebook', '#2563EB')] %}
   {% set p = platforms[key] %}
   {% if p.chart|length > 1 %}
-  new Chart(document.getElementById('chart-{{ key }}'), {
+  window._smmCharts['{{ key }}'] = new Chart(document.getElementById('chart-{{ key }}'), {
     type: 'line',
     data: {
       labels: {{ p.chart|map(attribute='date')|list|tojson }},
