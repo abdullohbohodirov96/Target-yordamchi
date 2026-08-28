@@ -71,7 +71,19 @@ a { color: inherit; text-decoration: none; }
 
 .sidebar-top { padding: 16px 14px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+/* 2026-08, foydalanuvchi topgan bug: ikonka (28px) bilan "eplix" so'zi
+   orasida CSS `gap` (flat px qiymat) juda katta ko'rinardi -- chunki
+   logotipning haqiqiy dizaynida ikonka bilan matn orasidagi masofa
+   ikonka o'lchamiga NISBATAN juda kichik (taxminan 4%), flat 10px esa
+   28px ikonka yonida 36%dek bo'lib ko'rinardi. Endi -- ikkita alohida
+   elementni gap bilan yopishtirish o'rniga, sidebar OCHILGANDA ANIQ
+   logotipdagi kabi joylashtirilgan yagona "logo-full.png" (ikonka +
+   "eplix" ALLAQACHON to'g'ri nisbatda ulangan) ko'rsatiladi -- YOPIQ
+   holatda esa faqat ikonka. */
 .brand-icon { width: 28px; height: 28px; object-fit: contain; display: block; flex-shrink: 0; }
+.sidebar.open .brand-icon { display: none; }
+.brand-full-logo { display: none; height: 26px; width: auto; object-fit: contain; }
+.sidebar.open .brand-full-logo { display: block; }
 
 .sidebar-nav {
   flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px;
@@ -86,8 +98,6 @@ a { color: inherit; text-decoration: none; }
      screenshot bilan ko'rsatdi). Endi balandlik padding+line-height'ga mos. */
 }
 .sidebar.open .nav-group-label { opacity: 1; }
-.brand-wordmark { height: 18px; overflow: hidden; opacity: 0; width: 0; transition: opacity 0.1s; display: block; }
-.sidebar.open .brand-wordmark { opacity: 1; width: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius);
   color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 2px;

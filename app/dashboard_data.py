@@ -35,6 +35,8 @@ ko'rsatadi, "Meta natija" esa target qanday sozlangan bo'lsa o'sha natijani.
 """
 
 import datetime as dt
+import threading
+import time
 from collections import defaultdict
 
 import meta_api
@@ -42,6 +44,25 @@ import kpi_bonus
 from db import get_session, Lead, FunnelStage
 
 _TASHKENT_OFFSET = dt.timedelta(hours=5)
+
+# MUHIM (2026-08, foydalanuvchi so'rovi: "sayt sekinlashib qoldi, tezroq
+# ishlasin"): `get_kpis()` har chaqirilganda Meta Graph API'ga KAMIDA IKKITA
+# jonli HTTP so'rov yuboradi (`get_insights` + `get_account_structure`) --
+# bular soniya-ikki-uch soniya davom etishi mumkin. Bu funksiya "/target" VA
+# "/analitika" sahifalari ochilganda HAR SAFAR (foydalanuvchi shunchaki
+# ikki sahifa orasida yurganda ham) qayta chaqirilardi -- reklama
+# statistikasi soniyama-soniya o'zgarmasligi uchun bunga hojat yo'q edi, shu
+# "qotib qolish" (freezing) hissi asosiy sababi shu edi. Endi natija bir
+# necha daqiqaga xotirada keshlanadi (parametrlar -- level/date_preset/
+# active_only -- bo'yicha alohida) -- shu oraliqda takroriy chaqiruvlar
+# Meta'ga umuman murojaat qilmasdan darhol qaytadi. Gunicorn shu loyihada
+# `--workers 1` bilan ishlaydi (APScheduler ikki nusxada ishlab ketmasligi
+# uchun ataylab shunday, `Dockerfile`ga qarang), shuning uchun oddiy
+# jarayon-ichi (in-memory) lug'at kifoya -- alohida Redis/tashqi kesh shart
+# emas.
+_KPI_CACHE_TTL_SECONDS = 120
+_kpi_cache: dict[tuple, tuple[float, dict]] = {}
+_kpi_cache_lock = threading.Lock()
 
 
 def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime] | None:
@@ -233,6 +254,25 @@ def _resolve_meta_result(goal: str, actions: list[dict] | None, reach: int, impr
 
 
 def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False) -> dict:
+    """`_get_kpis_uncached()`ning keshlangan qatlami -- pastdagi izohga
+    qarang. Xato natija (`"error"` kaliti bilan) HECH QACHON keshlanmaydi,
+    shunda vaqtinchalik Meta xatosi keshda "muzlab" qolmaydi."""
+    cache_key = (level, date_preset, active_only)
+    now = time.monotonic()
+    with _kpi_cache_lock:
+        cached = _kpi_cache.get(cache_key)
+    if cached and (now - cached[0]) < _KPI_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    result = _get_kpis_uncached(level=level, date_preset=date_preset, active_only=active_only)
+
+    if not result.get("error"):
+        with _kpi_cache_lock:
+            _kpi_cache[cache_key] = (now, result)
+    return result
+
+
+def _get_kpis_uncached(level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False) -> dict:
     """Qaytaradi: {"rows": [...], "totals": {...}, "goal_breakdown": [...],
     "generated_at": ISO, "level": level}
 
