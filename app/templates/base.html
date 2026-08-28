@@ -34,7 +34,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <a href="{{ url_for('dashboard') }}" class="brand">
-        <span class="brand-mark">T</span><span class="brand-text">Target CRM</span>
+        <img class="brand-mark" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Target CRM logo"><span class="brand-text">Target CRM</span>
       </a>
     </div>
 
@@ -184,14 +184,7 @@
   {% if current_user.is_authenticated %}
   <div id="ai-assistant-root">
     <button id="ai-assistant-toggle" type="button" aria-label="AI yordamchi">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <rect x="4" y="7" width="16" height="12" rx="4"/>
-        <path stroke-linecap="round" d="M12 7V4"/>
-        <circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none"/>
-        <circle cx="9" cy="13" r="1.4" fill="currentColor" stroke="none"/>
-        <circle cx="15" cy="13" r="1.4" fill="currentColor" stroke="none"/>
-        <path stroke-linecap="round" d="M9 16.5c1 .8 5 .8 6 0"/>
-      </svg>
+      <img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="" width="30" height="30">
     </button>
 
     <div id="ai-assistant-panel" hidden>

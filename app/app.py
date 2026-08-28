@@ -274,7 +274,7 @@ def _run_heavy_in_background(chat_id: int, user_text: str, history_text: str, ve
         result = orchestrator.execute_intent(verdict, user_text, history_text, chat_id)
     except Exception as e:
         logger.exception("Fon ishida xatolik")
-        tg_send(chat_id, f"⚠️ Fon ishida kutilmagan xatolik yuz berdi: {e}")
+        tg_send(chat_id, orchestrator.friendly_error_message(e))
         return
     if result is None:
         result = "Tushunmadim, aniqroq yozib qayta yuboring."
@@ -309,7 +309,7 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         verdict, history_text = orchestrator.classify_intent(user_text, history)
     except Exception as e:
         logger.exception("classify_intent xatosi")
-        tg_send(chat_id, f"⚠️ Xabarni tushunishda xatolik: {e}")
+        tg_send(chat_id, orchestrator.friendly_error_message(e))
         return
 
     history.append({"role": "user", "content": user_text})
@@ -329,7 +329,7 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         result = orchestrator.execute_intent(verdict, user_text, history_text, chat_id)
     except Exception as e:
         logger.exception("execute_intent xatosi")
-        tg_send(chat_id, f"⚠️ Buyruqni bajarishda xatolik: {e}")
+        tg_send(chat_id, orchestrator.friendly_error_message(e))
         return
 
     if result is not None:
@@ -343,7 +343,7 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         answer = orchestrator.call_light_chat(KNOWLEDGE_BASE, history, max_tokens=1000)
     except Exception as e:
         logger.exception("Yengil chat xatosi")
-        answer = f"⚠️ Xatolik yuz berdi: {e}"
+        answer = orchestrator.friendly_error_message(e)
     history.append({"role": "assistant", "content": answer})
     save_history(chat_id, history)
     tg_send(chat_id, answer)
@@ -493,7 +493,7 @@ def api_assistant():
         verdict, history_text = orchestrator.classify_intent(user_text, history)
     except Exception as e:
         logger.exception("Web yordamchi: classify_intent xatosi")
-        return jsonify({"reply": f"⚠️ Xabarni tushunishda xatolik: {e}"})
+        return jsonify({"reply": orchestrator.friendly_error_message(e)})
 
     history.append({"role": "user", "content": user_text})
 
@@ -521,7 +521,7 @@ def api_assistant():
         result = orchestrator.execute_intent(verdict, user_text, history_text, web_chat_id)
     except Exception as e:
         logger.exception("Web yordamchi: execute_intent xatosi")
-        result = f"⚠️ Buyruqni bajarishda xatolik: {e}"
+        result = orchestrator.friendly_error_message(e)
 
     unanswered = False
     if result is None:
@@ -529,7 +529,7 @@ def api_assistant():
             result = orchestrator.call_light_chat(_web_assistant_system_prompt(), history, max_tokens=800)
         except Exception as e:
             logger.exception("Web yordamchi: call_light_chat xatosi")
-            result = f"⚠️ Xatolik yuz berdi: {e}"
+            result = orchestrator.friendly_error_message(e)
         if result and "[[UNANSWERED]]" in result:
             unanswered = True
             result = result.replace("[[UNANSWERED]]", "").strip()

@@ -95,6 +95,61 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 # sozlanishi kerak, aks holda shu yo'nalishdagi so'rovlar xato beradi.
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
+# OG'IR vazifalar (Targetolog/Marketolog action_plan) uchun ZAXIRA yo'l.
+# 2026-08, foydalanuvchi so'rovi: yuqoridagi "ATAYLAB fallback yo'q" qarori
+# amalda Anthropic hisobida balans tugab qolganda BUTUN botni ishlamay
+# qo'yardi (xom "credit balance is too low" xatosi to'g'ridan-to'g'ri
+# foydalanuvchiga ko'rinardi) -- bu yengil so'rovlar uchun maqsadli
+# xarajat tejashdan farqli, kutilmagan uzilish edi. Endi: ANTHROPIC hamon
+# BIRINCHI navbatda ishlatiladi (sifati yaxshiroq, bilim bazasiga
+# chuqurroq tayanadi), lekin `anthropic.APIError` (balans tugashi, rate
+# limit, xizmat vaqtincha ishlamasligi va h.k.) ko'tarilsa, xuddi shu
+# so'rov OpenAI'ga (ATAYLAB yengil `OPENAI_MODEL` emas, kuchliroq
+# `OPENAI_FALLBACK_MODEL` -- standart gpt-4o) qayta yuboriladi, shunda bot
+# butunlay to'xtab qolmaydi.
+OPENAI_FALLBACK_MODEL = os.environ.get("OPENAI_FALLBACK_MODEL", "gpt-4o")
+
+_ANTHROPIC_FALLBACK_MESSAGE = (
+    "Kechirasiz, hozir AI xizmatida vaqtinchalik uzilish bor — balans "
+    "tugagan yoki xizmat javob bermayotgan bo'lishi mumkin. Administrator "
+    "hisobni tekshirib to'ldirsin, birozdan so'ng qayta urinib ko'ring \U0001F64F"
+)
+
+
+class AgentUnavailableError(Exception):
+    """Anthropic HAM, OpenAI zaxira yo'li HAM ishlamasa (masalan ikkalasining
+    ham balansi tugagan yoki kaliti yo'q) ko'tariladi. Xabar matni ODAM
+    O'QIYDIGAN va muloyim -- chaqiruvchi joylar buni to'g'ridan-to'g'ri
+    foydalanuvchiga ko'rsatishi mumkin, xom texnik xato emas."""
+
+
+def friendly_error_message(e: Exception) -> str:
+    """Telegram yoki veb AI-yordamchi orqali foydalanuvchiga ko'rsatish
+    uchun XAVFSIZ matn qaytaradi. Anthropic/OpenAI'dan kelgan xom texnik
+    xatolarni (masalan "credit balance is too low", HTTP status kodi,
+    Python traceback matni) HECH QACHON to'g'ridan-to'g'ri ko'rsatmaydi --
+    ular uchun muloyim umumiy xabar beradi. Boshqa (masalan MetaAPIError,
+    TargetologFormatError) xatolar allaqachon odam o'qiydigan bo'lgani
+    uchun o'zgarishsiz qaytariladi."""
+    if isinstance(e, AgentUnavailableError):
+        return str(e)
+    if isinstance(e, anthropic.APIError):
+        return _ANTHROPIC_FALLBACK_MESSAGE
+    lowered = str(e).lower()
+    if (
+        isinstance(e, requests.exceptions.RequestException)
+        or "openai_api_key" in lowered
+        or "credit" in lowered
+        or "balance" in lowered
+        or "quota" in lowered
+    ):
+        return (
+            "Kechirasiz, hozir AI xizmatida vaqtinchalik muammo bor — "
+            "balans tugagan yoki xizmat javob bermayapti. Administrator "
+            "tekshirib qo'ysin, birozdan so'ng qayta urinib ko'ring \U0001F64F"
+        )
+    return f"⚠️ Xatolik: {e}"
+
 
 def call_light(system_prompt: str, user_content: str, max_tokens: int = 500) -> str:
     """Bitta-turli (single-turn) YENGIL chaqiruv: intent aniqlash, byudjet
@@ -948,20 +1003,27 @@ def _call_agent(system_prompt: str, user_content: str) -> dict:
     # qayta ishlatadi (to'liq narx emas). Bitta foydalanuvchi buyrug'i uchun bir
     # nechta chaqiruv (masalan geo-lookup ikkinchi bosqichi) bo'lsa ham, faqat
     # birinchisi to'liq narxda hisoblanadi.
-    response = client.messages.create(
-        model=MODEL,
-        # MUHIM: 2500 token bilan ba'zan (ayniqsa ikki bosqichli aniqlashtirish
-        # so'rovida, xabar kattaroq bo'lganda) javob o'rtada kesilib qolib,
-        # JSON buzilib, "Targetolog JSON qaytarmadi" xatosiga olib kelardi.
-        # 4000ga oshirildi — bu MAX chegara, real xarajat qancha token
-        # ishlatilganiga bog'liq (kesilib ketmasa, ko'pincha ancha kamroq
-        # ishlatiladi), shuning uchun xarajatni sezilarli oshirmaydi, lekin
-        # muvaffaqiyatsiz/qayta urinishlarni oldini oladi.
-        max_tokens=4000,
-        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_content}],
-    )
-    text = response.content[0].text
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            # MUHIM: 2500 token bilan ba'zan (ayniqsa ikki bosqichli aniqlashtirish
+            # so'rovida, xabar kattaroq bo'lganda) javob o'rtada kesilib qolib,
+            # JSON buzilib, "Targetolog JSON qaytarmadi" xatosiga olib kelardi.
+            # 4000ga oshirildi — bu MAX chegara, real xarajat qancha token
+            # ishlatilganiga bog'liq (kesilib ketmasa, ko'pincha ancha kamroq
+            # ishlatiladi), shuning uchun xarajatni sezilarli oshirmaydi, lekin
+            # muvaffaqiyatsiz/qayta urinishlarni oldini oladi.
+            max_tokens=4000,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_content}],
+        )
+        text = response.content[0].text
+    except anthropic.APIError as e:
+        # Anthropic balansi tugagan/rate-limit/xizmat vaqtincha ishlamayapti
+        # va h.k. -- botni butunlay to'xtatib qo'ymaslik uchun OpenAI'ga
+        # (kuchliroq OPENAI_FALLBACK_MODEL bilan) qayta so'raymiz.
+        logger.warning("Anthropic ishlamadi (%s: %s), OpenAI zaxira yo'liga o'tyapmiz", type(e).__name__, e)
+        text = _call_agent_openai_fallback(system_prompt, user_content)
     # Model ba'zan JSON'ni ```json ... ``` bloki ichida qaytarishi mumkin
     text = text.strip()
     if text.startswith("```"):
@@ -972,6 +1034,38 @@ def _call_agent(system_prompt: str, user_content: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError as e:
         raise TargetologFormatError(text) from e
+
+
+def _call_agent_openai_fallback(system_prompt: str, user_content: str) -> str:
+    """`_call_agent()` uchun ZAXIRA yo'l -- Anthropic ishlamay qolganda
+    ishga tushadi. Xuddi shu tizim prompti (bilim bazasi bilan) va
+    foydalanuvchi xabarini OpenAI'ga yuboradi. Agar OPENAI_API_KEY
+    sozlanmagan bo'lsa yoki OpenAI so'rovi ham xato bersa -- xom texnik
+    xato o'rniga `AgentUnavailableError` (muloyim, odam o'qiydigan xabar
+    bilan) ko'taradi."""
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_key:
+        raise AgentUnavailableError(_ANTHROPIC_FALLBACK_MESSAGE)
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {openai_key}"},
+            json={
+                "model": OPENAI_FALLBACK_MODEL,
+                "temperature": 0,
+                "max_tokens": 4000,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+            },
+            timeout=55,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.warning("OpenAI zaxira yo'li ham ishlamadi: %s", e)
+        raise AgentUnavailableError(_ANTHROPIC_FALLBACK_MESSAGE) from e
 
 
 SNAPSHOT_KV_KEY = "orchestrator_daily_snapshot"
