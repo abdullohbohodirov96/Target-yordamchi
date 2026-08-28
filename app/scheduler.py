@@ -228,7 +228,18 @@ def job_call_sync() -> dict:
     qo'ng'iroqlarni tortib olgandan keyin `reconcile_existing_records()`
     ham chaqiriladi -- shu bilan menejer telefon raqami keyinroq
     o'zgartirilsa/to'ldirilsa ham, bazadagi ESKI yozuvlar avtomatik
-    to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas)."""
+    to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas).
+
+    2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("audio tushsa DARHOL
+    tahlil qilinsin, schedulerni kutmasdan"): avval yangi qo'ng'iroqlar
+    FAQAT alohida `job_call_analysis` cron'i (soatning :10/:30/:50
+    daqiqalarida) orqali tahlil qilinardi -- ya'ni yangi yozuv bilan
+    tahlil orasida 20 daqiqagacha kechikish bo'lishi mumkin edi. ENDI,
+    agar shu sinxronizatsiya YANGI yozuv(lar) qo'shgan bo'lsa, DARHOL
+    (shu job ichida, `job_call_analysis`ni kutmasdan) tahlil navbati
+    ishga tushiriladi -- `job_call_analysis` cron'i baribir QOLADI
+    (xavfsizlik to'ri sifatida -- masalan avvalgi urinish xato bergan
+    "qayta urinish" navbatini tozalash uchun)."""
     try:
         result = call_sync.sync_once()
         if not result.get("configured"):
@@ -237,6 +248,20 @@ def job_call_sync() -> dict:
             result["reconcile"] = call_sync.reconcile_existing_records()
         except Exception:
             logger.exception("Qo'ng'iroq yozuvlarini tozalashda xatolik")
+        if result.get("new_calls"):
+            try:
+                # Portlash/keskin ko'tarilishning oldini olish uchun BIR
+                # martalik yuqori chegara -- odatiy holatda yangi
+                # qo'ng'iroqlar soni buncha ko'p bo'lmaydi (bir necha
+                # daqiqada bir nechta qo'ng'iroq), lekin xavfsizlik uchun.
+                immediate_limit = min(result["new_calls"], 15)
+                session = db.get_session()
+                try:
+                    result["immediate_analysis"] = call_analysis.run_pending_analysis(session, limit=immediate_limit)
+                finally:
+                    session.close()
+            except Exception:
+                logger.exception("Yangi qo'ng'iroqlarni DARHOL tahlil qilishda xatolik")
         return result
     except Exception as e:
         logger.exception("Qo'ng'iroq sync xatosi")

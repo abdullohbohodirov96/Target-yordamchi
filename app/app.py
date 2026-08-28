@@ -22,6 +22,7 @@ from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
 )
+from sqlalchemy import or_
 
 import meta_api
 import orchestrator
@@ -38,6 +39,7 @@ import call_analysis
 import kpi_bonus
 import smm_sync
 import smm_analytics
+from phone_utils import phone_key9
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("target-crm")
@@ -2121,7 +2123,9 @@ def _build_ai_analysis_view(session, since) -> dict:
     pending_count = (
         session.query(CallRecord)
         .filter(
-            CallRecord.recording_url.isnot(None),
+            # 2026-08 V6.1: qo'lda yuklangan (Moi Zvonki'siz, `recording_url`
+            # yo'q) yozuvlar ham "navbatda" hisobiga kirishi kerak.
+            or_(CallRecord.recording_url.isnot(None), CallRecord.uploaded_audio_format.isnot(None)),
             CallRecord.ai_analyzed_at.is_(None),
             CallRecord.duration_seconds >= min_seconds,
             CallRecord.started_at >= since,
@@ -2165,6 +2169,16 @@ def _build_ai_analysis_view(session, since) -> dict:
         rows.append({
             "id": c.id,
             "started_at": (c.started_at + dt.timedelta(hours=5)) if c.started_at else None,
+            # 2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("tahlil qilingan
+            # yangiligini bilish osonroq bo'lsin"): oxirgi 1 soat ichida
+            # tahlil qilingan yozuvlar ro'yxatda "Yangi" nishonchasi bilan
+            # ajratib ko'rsatiladi.
+            "is_new": bool(c.ai_analyzed_at and (dt.datetime.utcnow() - c.ai_analyzed_at) <= dt.timedelta(hours=1)),
+            # `uploaded_audio_format` (engil ustun) orqali tekshiramiz,
+            # OG'IR `uploaded_audio_data` (deferred) ustunini EMAS -- aks
+            # holda ro'yxatdagi HAR BIR qator uchun alohida (N+1) so'rov
+            # kerak bo'lardi.
+            "is_manual_upload": c.recording_url is None and bool(c.uploaded_audio_format),
             "phone_number": c.phone_number,
             "lead_name": lead.full_name if lead else None,
             "lead_id": lead.id if lead else None,
@@ -2230,6 +2244,134 @@ def _run_ai_analysis_in_background(limit: int) -> None:
         session.close()
 
 
+def _analyze_single_call_in_background(call_id: int) -> None:
+    """2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan audio qo'shsam,
+    darhol tahlil qilinsin"): `individual_check_upload_audio()` orqali
+    QO'LDA yuklangan BITTA yozuvni DARHOL, fon oqimida tahlil qiladi --
+    `run_pending_analysis()`dagi kabi "haqiqiy suhbat" davomiylik chegarasi
+    (`min_real_talk_seconds`) BILAN CHEKLANMAYDI, chunki admin buni ANIQ,
+    ATAYLAB yuklagan (masalan muammoli qo'ng'iroqni qo'lda sinash uchun)."""
+    from db import CallRecord
+
+    session = get_session()
+    try:
+        call = session.get(CallRecord, call_id)
+        if not call:
+            logger.warning("Qo'lda yuklangan qo'ng'iroq #%s topilmadi (fon tahlili bekor qilindi).", call_id)
+            return
+        call_analysis.analyze_call_record(session, call)
+    except Exception:
+        logger.exception("Qo'lda yuklangan qo'ng'iroq #%s tahlilida xato", call_id)
+    finally:
+        session.close()
+
+
+_MANUAL_UPLOAD_ALLOWED_EXTENSIONS = (".mp3", ".wav", ".ogg", ".oga", ".m4a", ".mp4", ".webm")
+_MANUAL_UPLOAD_MAX_BYTES = 30 * 1024 * 1024  # 30 MB -- oddiy qo'ng'iroq yozuvi uchun yetarlicha keng chegara
+
+
+def _manual_upload_audio_format(filename: str, data: bytes) -> str:
+    """Fayl kengaytmasidan ANIQ format nomini oladi; noaniq/yo'q bo'lsa
+    magic-byte orqali (`call_analysis._detect_magic_format`) aniqlashga
+    urinadi, u ham ishlamasa "mp3" (eng keng tarqalgan) ga tushadi --
+    `_download_audio()`ning `_sniff_audio_format()` bilan BIR XIL mantiq."""
+    ext = os.path.splitext(filename or "")[1].lower().lstrip(".")
+    if ext in ("mp3", "wav", "ogg", "oga", "m4a", "mp4", "webm"):
+        return "ogg" if ext == "oga" else ext
+    return call_analysis._detect_magic_format(data) or "mp3"
+
+
+@app.route("/individual-tekshirish/audio-yuklash", methods=["GET", "POST"])
+@login_required
+@admin_required
+def individual_check_upload_audio():
+    """2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan ham audio
+    qo'shish mumkin bo'lsin"): Moi Zvonki sinxronizatsiyasidan TASHQARI,
+    admin panelda BITTA audio faylni qo'lda yuklab, YANGI qo'ng'iroq
+    yozuvi sifatida DARHOL (fon oqimida) tahlil qilish -- masalan
+    muammoli/shubhali haqiqiy qo'ng'iroq namunasini ishlab chiqarish (V6
+    arxitekturasi) bilan sinash uchun, skript ishga tushirish shart
+    bo'lmasin deb."""
+    from db import Manager as ManagerModel
+
+    if request.method == "GET":
+        session = get_session()
+        try:
+            managers = session.query(ManagerModel).filter_by(is_active=True).order_by(ManagerModel.full_name).all()
+            managers_view = [{"id": m.id, "name": m.full_name or m.username} for m in managers]
+        finally:
+            session.close()
+        return render_template("individual_check_upload_audio.html", managers=managers_view)
+
+    file = request.files.get("audio_file")
+    if not file or not file.filename:
+        flash("Audio fayl tanlanmadi.", "error")
+        return redirect(url_for("individual_check_upload_audio"))
+    if not file.filename.lower().endswith(_MANUAL_UPLOAD_ALLOWED_EXTENSIONS):
+        flash(
+            f"Fayl formati qo'llab-quvvatlanmaydi -- ruxsat etilgan kengaytmalar: {', '.join(_MANUAL_UPLOAD_ALLOWED_EXTENSIONS)}",
+            "error",
+        )
+        return redirect(url_for("individual_check_upload_audio"))
+
+    data = file.read()
+    if not data:
+        flash("Fayl bo'sh.", "error")
+        return redirect(url_for("individual_check_upload_audio"))
+    if len(data) > _MANUAL_UPLOAD_MAX_BYTES:
+        flash(f"Fayl juda katta (maksimal {_MANUAL_UPLOAD_MAX_BYTES // (1024*1024)} MB).", "error")
+        return redirect(url_for("individual_check_upload_audio"))
+
+    audio_format = _manual_upload_audio_format(file.filename, data)
+    phone_number = (request.form.get("phone_number") or "").strip() or None
+    direction = request.form.get("direction") or None
+    if direction not in ("incoming", "outgoing"):
+        direction = None
+    manager_id = request.form.get("manager_id") or None
+    try:
+        manager_id = int(manager_id) if manager_id else None
+    except (TypeError, ValueError):
+        manager_id = None
+
+    metadata = call_analysis.probe_audio_metadata(data, audio_format)
+    duration_seconds = int(metadata["duration_sec"]) if metadata and metadata.get("duration_sec") else 0
+
+    session = get_session()
+    try:
+        lead_id = None
+        if phone_number:
+            key = phone_key9(phone_number)
+            if key:
+                lead = session.query(Lead).filter(Lead.phone.ilike(f"%{key}%")).first()
+                if lead:
+                    lead_id = lead.id
+
+        call = CallRecord(
+            manager_id=manager_id,
+            lead_id=lead_id,
+            phone_number=phone_number,
+            direction=direction,
+            duration_seconds=duration_seconds,
+            started_at=dt.datetime.utcnow(),
+            uploaded_audio_data=data,
+            uploaded_audio_format=audio_format,
+        )
+        session.add(call)
+        session.commit()
+        call_id = call.id
+    finally:
+        session.close()
+
+    thread = threading.Thread(target=_analyze_single_call_in_background, args=(call_id,), daemon=True)
+    thread.start()
+    flash(
+        f"Audio yuklandi (#{call_id}) -- tahlil fon jarayonida DARHOL boshlandi. "
+        "Bir necha daqiqadan so'ng natijani AI analiz ro'yxatida ko'rasiz.",
+        "success",
+    )
+    return redirect(url_for("individual_check", tab="ai"))
+
+
 @app.route("/individual-tekshirish/ai-tahlil-boshlash", methods=["POST"])
 @login_required
 @admin_required
@@ -2252,6 +2394,38 @@ def individual_check_run_ai_analysis():
     return redirect(url_for("individual_check", days=days, tab="ai"))
 
 
+def _serve_bytes_with_range(data: bytes, content_type: str) -> Response:
+    """2026-08 V6.1: qo'lda yuklangan audio (bazada, xotirada BOR --
+    tashqi HTTP yo'q) uchun oddiy, to'g'ri HTTP Range (`Range:
+    bytes=start-end`) qo'llab-quvvatlashi -- brauzer pleer davomiylikni
+    to'g'ri aniqlashi uchun (`individual_check_audio_proxy`dagi V5 izohiga
+    qarang -- xuddi shu bug turi uchun)."""
+    total = len(data)
+    range_header = request.headers.get("Range")
+    if not range_header or not range_header.startswith("bytes="):
+        return Response(data, status=200, headers={
+            "Content-Type": content_type, "Accept-Ranges": "bytes",
+            "Content-Length": str(total), "Cache-Control": "private, max-age=3600",
+        })
+    try:
+        rng = range_header.split("=", 1)[1]
+        start_s, end_s = (rng.split("-", 1) + [""])[:2]
+        start = int(start_s) if start_s else 0
+        end = int(end_s) if end_s else total - 1
+        end = min(end, total - 1)
+        start = max(0, start)
+    except (ValueError, IndexError):
+        start, end = 0, total - 1
+    if start > end or start >= total:
+        return Response(status=416, headers={"Content-Range": f"bytes */{total}"})
+    chunk = data[start:end + 1]
+    return Response(chunk, status=206, headers={
+        "Content-Type": content_type, "Accept-Ranges": "bytes",
+        "Content-Length": str(len(chunk)), "Content-Range": f"bytes {start}-{end}/{total}",
+        "Cache-Control": "private, max-age=3600",
+    })
+
+
 @app.route("/individual-tekshirish/audio/<int:call_id>")
 @login_required
 def individual_check_audio_proxy(call_id):
@@ -2266,7 +2440,14 @@ def individual_check_audio_proxy(call_id):
     FORWARD qilib) va TO'G'RI `Content-Type`/`Accept-Ranges`/
     `Content-Range` bilan qayta uzatadi. `recording_url`ning o'zi HECH
     QACHON brauzerga to'g'ridan-to'g'ri berilmaydi (login talab qilinishi
-    ham shu bilan bog'liq -- ochiq/anonim audio-ulashish EMAS)."""
+    ham shu bilan bog'liq -- ochiq/anonim audio-ulashish EMAS).
+
+    2026-08 V6.1: admin panelda QO'LDA yuklangan (Moi Zvonki'siz,
+    `recording_url` yo'q) yozuvlar uchun -- audio bazadan (`uploaded_audio_data`)
+    o'qiladi, tashqi HTTP so'rov UMUMAN kerak emas; Range so'rovi ham
+    xotiradagi baytlarni bo'lib qaytarish orqali TO'G'RIDAN-TO'G'RI
+    qo'llab-quvvatlanadi (audio pleer "0:00/0:00" bugidan qochish uchun
+    yuqoridagi V5 yechimi bilan bir xil talab)."""
     import requests as _requests
     from db import CallRecord
 
@@ -2274,8 +2455,17 @@ def individual_check_audio_proxy(call_id):
     try:
         call = session.get(CallRecord, call_id)
         recording_url = call.recording_url if call else None
+        uploaded_data = None
+        uploaded_format = None
+        if call and not recording_url and call.uploaded_audio_format:
+            uploaded_data = bytes(call.uploaded_audio_data) if call.uploaded_audio_data else None
+            uploaded_format = call.uploaded_audio_format
     finally:
         session.close()
+
+    if uploaded_data:
+        return _serve_bytes_with_range(uploaded_data, f"audio/{'mpeg' if uploaded_format == 'mp3' else uploaded_format}")
+
     if not recording_url:
         abort(404)
 

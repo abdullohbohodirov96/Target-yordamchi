@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Audio yuklash — Target CRM{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('individual_check', tab='ai') }}" class="back-link">&larr; AI analiz ro'yxatiga qaytish</a>
+<h1>Bitta audio qo'shish</h1>
+<p class="page-subtitle">
+  Moi Zvonki sinxronizatsiyasidan TASHQARI, bitta audio faylni qo'lda yuklab, yangi qo'ng'iroq
+  yozuvi sifatida DARHOL (fon jarayonida) tahlil qilish -- masalan muammoli/shubhali haqiqiy
+  qo'ng'iroq namunasini sinash uchun.
+</p>
+
+<div class="card" style="max-width:480px">
+  <form method="post" enctype="multipart/form-data">
+    <div class="field">
+      <label>Audio fayl</label>
+      <input type="file" name="audio_file" accept="audio/*,.mp3,.wav,.ogg,.oga,.m4a,.mp4,.webm" required autofocus>
+    </div>
+    <div class="field">
+      <label>Telefon raqami (ixtiyoriy)</label>
+      <input type="text" name="phone_number" placeholder="+998...">
+    </div>
+    <div class="field">
+      <label>Menejer (ixtiyoriy)</label>
+      <select name="manager_id">
+        <option value="">— Tanlanmagan —</option>
+        {% for m in managers %}
+        <option value="{{ m.id }}">{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Yo'nalish (ixtiyoriy)</label>
+      <select name="direction">
+        <option value="">— Noma'lum —</option>
+        <option value="incoming">Kiruvchi</option>
+        <option value="outgoing">Chiquvchi</option>
+      </select>
+    </div>
+    <button type="submit" class="block">Yuklash va darhol tahlil qilish</button>
+  </form>
+</div>
+
+{% endblock %}

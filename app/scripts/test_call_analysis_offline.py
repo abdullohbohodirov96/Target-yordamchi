@@ -831,6 +831,78 @@ def test_extract_responses_output_text():
     print("OK: Responses API javobidan output_text to'g'ri chiqariladi")
 
 
+# ---------------------------------------------------------------------------
+# 2026-08 V6.1 -- qo'lda yuklangan audio (`uploaded_audio_data`) yo'li
+# (`analyze_call_record` -- "bittadan ham audio qo'shish mumkin bo'lsin")
+# ---------------------------------------------------------------------------
+
+class _FakeCall:
+    """`db.CallRecord`ning HAQIQIY SQLAlchemy modeliga tayanmasdan
+    `analyze_call_record()`ni sinash uchun oddiy (duck-typed) o'rinbosar --
+    funksiya faqat oddiy atribut o'qish/yozish qiladi, ORM'ga xos hech
+    narsaga bog'liq emas."""
+    def __init__(self, **kwargs):
+        self.id = 1
+        self.recording_url = None
+        self.uploaded_audio_data = None
+        self.uploaded_audio_format = None
+        self.direction = None
+        self.ai_raw_transcription = None
+        self.ai_transcription_quality = None
+        self.ai_stage = None
+        self.ai_error = None
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class _FakeSession:
+    def commit(self):
+        pass
+
+
+def test_analyze_call_record_raises_without_recording_url_or_uploaded_audio():
+    call = _FakeCall()  # recording_url=None, uploaded_audio_data=None
+    try:
+        ca.analyze_call_record(_FakeSession(), call)
+        assert False, "ValueError kutilgan edi"
+    except ValueError:
+        pass
+    print("OK: analyze_call_record na recording_url na uploaded_audio_data bo'lmasa ValueError tashlaydi")
+
+
+def test_analyze_call_record_uses_uploaded_audio_bytes_not_download():
+    # 2026-08 V6.1: admin panelda qo'lda yuklangan audio uchun
+    # `_download_audio()` UMUMAN chaqirilmasligi kerak -- baytlar
+    # ALLAQACHON bazada (`uploaded_audio_data`).
+    call = _FakeCall(uploaded_audio_data=b"fake-wav-bytes", uploaded_audio_format="wav")
+    good_outcome = {
+        "text": "Manager: Assalomu alaykum\nMijoz: Salom",
+        "model": "gpt-4o-transcribe", "quality_status": "good", "confidence": 0.9,
+        "quality_reasons": [], "attempts": [{"attempt": 1, "model": "gpt-4o-transcribe", "quality": "good"}],
+        "diarized_raw_json": None, "segment_debug_json": None, "operator_channel_used": None,
+    }
+    analysis_result = {
+        "overview": "x", "score": 7, "scoreReasons": [], "status": "good", "color": "green",
+        "customerRequest": {}, "operatorMistakes": [], "positivePoints": [],
+        "conversationResult": "unknown", "callbackRequired": False, "callbackReason": None,
+        "recommendedAction": None, "analysisConfidence": 0.8,
+    }
+    with mock.patch.object(ca, "_download_audio") as mock_download, \
+         mock.patch.object(ca, "probe_audio_metadata", return_value=None), \
+         mock.patch.object(ca, "transcribe_with_quality_gate", return_value=good_outcome) as mock_gate, \
+         mock.patch.object(ca, "_analyze_transcript", return_value=analysis_result), \
+         mock.patch.object(ca, "_build_result_summary", return_value="Natija: x"):
+        ca.analyze_call_record(_FakeSession(), call)
+
+    mock_download.assert_not_called()
+    assert call.ai_stage == "completed"
+    assert call.ai_transcription == good_outcome["text"]
+    # audio_bytes/format ALLAQACHON bazadagi qiymatlardan olinganini tasdiqlaymiz.
+    gate_args = mock_gate.call_args[0]
+    assert gate_args[0] == b"fake-wav-bytes" and gate_args[1] == "wav"
+    print("OK: qo'lda yuklangan audio uchun _download_audio ISHLATILMAYDI -- bazadagi baytlar to'g'ridan-to'g'ri ishlatiladi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

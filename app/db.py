@@ -16,9 +16,9 @@ import datetime as dt
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, Float, DateTime, Boolean,
-    ForeignKey, UniqueConstraint, Index, inspect as sa_inspect, text as sa_text,
+    ForeignKey, UniqueConstraint, Index, LargeBinary, inspect as sa_inspect, text as sa_text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, deferred
 from werkzeug.security import generate_password_hash, check_password_hash
 
 logger = logging.getLogger("db")
@@ -184,6 +184,25 @@ class CallRecord(Base):
     recording_url = Column(Text, nullable=True)
     raw_data = Column(Text, nullable=True)  # xizmatdan kelgan to'liq JSON (keyinchalik kerak bo'lsa)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    # 2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan ham audio qo'shish
+    # mumkin bo'lsin"): admin panelda QO'LDA yuklangan (Moi Zvonki'dan EMAS)
+    # yozuvlar uchun -- bularda `recording_url` YO'Q (uzoq server havolasi
+    # yo'q), audio BAYTLARINING O'ZI shu yerda saqlanadi. Render'ning Docker
+    # runtime'i EFEMER disk ishlatadi (har deploy/restart'da fayllar
+    # yo'qoladi), shuning uchun faylni diskka yozish O'RNIGA baza (Postgres
+    # BYTEA) ishlatiladi -- shu bilan audio ham tinglash, ham keyinroq qayta
+    # tahlil qilish uchun DOIMIY saqlanadi. `call_analysis.analyze_call_record()`
+    # `recording_url` bo'sh bo'lsa, ENDI shu maydonlardan audio o'qiydi.
+    # `deferred()`: bu ustun OG'IR (bir necha MB gacha audio baytlari) --
+    # oddiy `session.query(CallRecord)...` bilan RO'YXAT ko'rsatilganda
+    # (masalan "AI analiz" tab'ida 200 tagacha yozuv) HAR SAFAR bu katta
+    # ustunni ham yuklab olish keraksiz tarmoq/xotira sarfini keltirib
+    # chiqarardi -- `deferred` FAQAT haqiqatda `call.uploaded_audio_data`ga
+    # murojaat qilinganda (masalan tahlil/audio-proxy paytida) alohida
+    # so'rov bilan yuklaydi.
+    uploaded_audio_data = deferred(Column(LargeBinary, nullable=True))
+    uploaded_audio_format = Column(String(16), nullable=True)  # masalan "mp3"/"wav"/"m4a" (kengaytmadan olingan)
 
     # AI qo'ng'iroq tahlili (2026-08, foydalanuvchi bergan audio-tahlil
     # prompti asosida, `call_analysis.py`) -- `ai_analyzed_at` NULL bo'lsa,

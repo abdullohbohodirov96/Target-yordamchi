@@ -132,10 +132,13 @@
       <p class="page-subtitle" style="margin:4px 0 0">Har bir "haqiqiy" (shubhali bo'lmagan) qo'ng'iroq yozuvi avtomatik navbat bo'yicha, soatiga bir necha marta (soat :10, :30, :50 da) tahlil qilinadi -- transkripsiya, qisqa xulosa va 1-10 baho bilan.</p>
     </div>
     {% if ai.openai_configured %}
-    <form method="post" action="{{ url_for('individual_check_run_ai_analysis') }}" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.dataset.origText=b.innerHTML; b.innerHTML='<span class=\'btn-spinner\'></span> Boshlandi...'; return true;">
-      <input type="hidden" name="days" value="{{ days }}">
-      <button type="submit" class="btn">Hoziroq tahlil qilish{% if ai.pending_count %} ({{ ai.pending_count }} navbatda){% endif %}</button>
-    </form>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
+      <form method="post" action="{{ url_for('individual_check_run_ai_analysis') }}" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.dataset.origText=b.innerHTML; b.innerHTML='<span class=\'btn-spinner\'></span> Boshlandi...'; return true;">
+        <input type="hidden" name="days" value="{{ days }}">
+        <button type="submit" class="btn">Hoziroq tahlil qilish{% if ai.pending_count %} ({{ ai.pending_count }} navbatda){% endif %}</button>
+      </form>
+    </div>
     {% endif %}
   </div>
 
@@ -145,7 +148,11 @@
     <tbody>
       {% for c in ai.rows %}
       <tr>
-        <td class="text-dim">{{ c.started_at.strftime('%Y-%m-%d %H:%M') if c.started_at else '—' }}</td>
+        <td class="text-dim">
+          {{ c.started_at.strftime('%Y-%m-%d %H:%M') if c.started_at else '—' }}
+          {% if c.is_new %}<span class="badge badge-color-good" style="margin-left:4px" title="Oxirgi 1 soat ichida tahlil qilingan">Yangi</span>{% endif %}
+          {% if c.is_manual_upload %}<span class="text-faint" style="font-size:10px; display:block; margin-top:2px">qo'lda yuklangan</span>{% endif %}
+        </td>
         <td>
           {% if c.lead_id %}<a href="{{ url_for('lead_detail', lead_id=c.lead_id) }}" class="text-blue">{{ c.lead_name or c.phone_number or '—' }}</a>
           {% else %}{{ c.lead_name or c.phone_number or '—' }}{% endif %}
@@ -179,7 +186,7 @@
           <details>
             <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">Batafsil</summary>
             <div style="margin-top:10px; max-width:560px">
-              {% if c.recording_url %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ url_for('individual_check_audio_proxy', call_id=c.id) }}"></audio>{% endif %}
+              {% if c.recording_url or c.is_manual_upload %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ url_for('individual_check_audio_proxy', call_id=c.id) }}"></audio>{% endif %}
 
               {% if c.transcription_failed %}
               <div class="card" style="border-color:#FCA5A5; padding:10px; margin-bottom:10px">

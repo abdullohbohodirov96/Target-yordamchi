@@ -174,6 +174,25 @@ V6 (2026-08, HOZIRGI, V5 production'ga chiqqandan KEYIN foydalanuvchi
   - Stereo (jismoniy 2-kanalli) yo'l ENG YUQORI USTUVORLIKDA qoladi --
     haqiqiy stereo bo'lsa, diarizatsiya/segment-qayta-transkripsiya
     UMUMAN chaqirilmaydi (regressiya testi bilan tekshirilgan).
+V6.1 (2026-08, HOZIRGI, V6 deploy qilingandan keyin -- foydalanuvchi
+    ishlab chiqarishda `analyze_call_record()`ni ANIQ ko'rsatgan uchta
+    qo'shimcha so'rovi asosida): quyidagilar qo'shildi:
+  - `analyze_call_record()` ENDI ikkita audio manbasini qo'llab-quvvatlaydi:
+    Moi Zvonki'dan kelgan `recording_url` (avvalgidek, `_download_audio()`
+    orqali) VA admin panelda QO'LDA yuklangan `uploaded_audio_data`/
+    `uploaded_audio_format` (bazada saqlangan baytlar, tarmoqdan yuklab
+    olish SHART emas) -- ikkalasi ham BIR XIL pipeline (sifat darvozasi,
+    tahlil) orqali ishlaydi. Yangi admin marshruti
+    (`/individual-tekshirish/audio-yuklash`) orqali bitta audio faylni
+    qo'lda yuklab, YANGI yozuv sifatida DARHOL (fon oqimida) tahlil qilish
+    mumkin -- masalan muammoli haqiqiy namunani skriptsiz sinash uchun.
+  - `scheduler.py`dagi `job_call_sync()` ENDI yangi qo'ng'iroq(lar)
+    sinxronlangandan KEYIN DARHOL (shu job ichida, alohida
+    `job_call_analysis` cron'ini -- soatning :10/:30/:50 daqiqalarini --
+    kutmasdan) tahlil navbatini ishga tushiradi -- yangi audio bilan
+    tahlil orasidagi kechikish (avval 20 daqiqagacha) YO'QOLADI.
+  - "AI analiz" ro'yxatida oxirgi 1 soat ichida tahlil qilingan yozuvlar
+    endi yashil "Yangi" nishonchasi bilan ajratib ko'rsatiladi.
 
 MUHIM CHEKLOV (foydalanuvchi talabi bilan): faqat OpenAI ishlatiladi.
 Boshqa transkripsiya provayderi (AssemblyAI, Deepgram, Google Speech,
@@ -1680,8 +1699,14 @@ def analyze_call_record(session, call) -> dict:
     transkripsiya SIFATSIZ deb topilgani uchun -- AUDIO QAYTADAN TO'LIQ
     (boshidan) qayta ishlanadi."""
     now = dt.datetime.utcnow()
-    if not call.recording_url:
-        raise ValueError("Bu qo'ng'iroqda yozuv (recording_url) yo'q.")
+    # 2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan ham audio
+    # qo'shish mumkin bo'lsin"): Moi Zvonki'dan kelgan yozuvlar
+    # `recording_url` orqali (HTTP) yuklab olinadi, ADMIN qo'lda yuklagan
+    # yozuvlar esa audio BAYTLARINI to'g'ridan-to'g'ri bazadan
+    # (`uploaded_audio_data`) oladi -- IKKALASI HAM shu funksiya orqali,
+    # BIR XIL pipeline (sifat darvozasi, tahlil) bilan ishlanadi.
+    if not call.recording_url and not call.uploaded_audio_data:
+        raise ValueError("Bu qo'ng'iroqda yozuv (recording_url) ham, qo'lda yuklangan audio ham yo'q.")
 
     resume_from_transcript = (
         bool(call.ai_raw_transcription)
@@ -1702,7 +1727,13 @@ def analyze_call_record(session, call) -> dict:
             call.ai_stage = "processing_audio"
             session.commit()
             t0 = time.monotonic()
-            audio_bytes, audio_format = _download_audio(call.recording_url)
+            if call.recording_url:
+                audio_bytes, audio_format = _download_audio(call.recording_url)
+            else:
+                # Qo'lda yuklangan audio -- tarmoqdan yuklab olish SHART
+                # emas, baytlar ALLAQACHON bazada.
+                audio_bytes = bytes(call.uploaded_audio_data)
+                audio_format = call.uploaded_audio_format or "mp3"
 
             metadata = probe_audio_metadata(audio_bytes, audio_format)
             channels = metadata.get("channels") if metadata else None
