@@ -83,16 +83,32 @@
 </div>
 
 <div class="card">
-  <h2>Normallashtirilgan transkripsiya (ai_transcription)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Bu -- tahlil modeli tomonidan Manager/Mijoz yorliqlari bilan qayta formatlangan versiya (operator UI'da "To'liq transkripsiya" sifatida shu ko'rsatiladi).</p>
+  <h2>Yorliqlangan transkripsiya (ai_transcription)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">2026-08 V6: bu ENDI tahlil modeli tomonidan qayta yozilgan/qayta-yorliqlangan matn EMAS -- transkripsiya pipeline'ining O'ZI aniqlagan (Manager/Mijoz/Speaker N) yorliqlar bilan, o'zgarmas holatda (operator UI'da "To'liq transkripsiya" sifatida shu ko'rsatiladi). Tahlil modeli bu yorliqlarni HECH QACHON o'zgartirmaydi.</p>
   <pre style="white-space:pre-wrap; font-size:13px; background:var(--bg-subtle,#f7f7f8); padding:12px; border-radius:8px; max-height:400px; overflow:auto">{{ d.normalized_transcription or 'Hali mavjud emas.' }}</pre>
 </div>
 
 {% if d.diarized_json %}
 <div class="card" style="margin-top:20px">
   <h2>Diarizatsiya API xom javobi (ai_diarized_json)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Faqat bu yozuv haqiqiy diarizatsiya (`gpt-4o-transcribe-diarize`) orqali ishlangan bo'lsa ko'rinadi.</p>
+  <p class="page-subtitle" style="margin-top:-6px">Faqat bu yozuv haqiqiy diarizatsiya (`gpt-4o-transcribe-diarize`) orqali ishlangan bo'lsa ko'rinadi. MUHIM: bu yerdagi `text` maydonlari HECH QACHON yakuniy transkriptga ishlatilmagan -- faqat gapiruvchi ID va vaqt chegaralari uchun ishlatilgan (pastdagi "Segment-darajasidagi qayta transkripsiya" bo'limiga qarang).</p>
   <pre style="white-space:pre-wrap; font-size:12px; background:var(--bg-subtle,#f7f7f8); padding:12px; border-radius:8px; max-height:300px; overflow:auto">{{ d.diarized_json }}</pre>
+</div>
+{% endif %}
+
+{% if d.segment_debug_json %}
+<div class="card" style="margin-top:20px">
+  <h2>Segment-darajasidagi qayta transkripsiya (2026-08 V6, ai_segment_debug_json)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">
+    Diarizatsiya FAQAT gapiruvchi ID + vaqt uchun ishlatilgan; HAQIQIY matn har bir
+    guruhlangan bo'lakni (padding bilan) ffmpeg orqali original audiodan kesib, alohida
+    `gpt-4o-transcribe`ga yuborish orqali olingan. Quyida: xom diarizatsiya segmentlari
+    necha marta guruhlanganligi, har bir guruh uchun yuborilgan chegaralar, urinishlar/
+    qayta-urinishlar soni, tanlangan yakuniy matn (yoki <code>[noaniq]</code>) va
+    gapiruvchi-xaritalash ishonchi (Manager/Mijoz ga <code>call_direction</code> qanchalik
+    hisobga olinganligi bilan birga).
+  </p>
+  <pre style="white-space:pre-wrap; font-size:11.5px; background:var(--bg-subtle,#f7f7f8); padding:12px; border-radius:8px; max-height:500px; overflow:auto">{{ d.segment_debug_json }}</pre>
 </div>
 {% endif %}
 

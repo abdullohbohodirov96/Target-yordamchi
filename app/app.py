@@ -2315,6 +2315,20 @@ def individual_check_audio_proxy(call_id):
     )
 
 
+def _pretty_json_or_raw(raw: "str | None") -> "str | None":
+    """Debug ko'rinishida JSON matnini o'qish OSON bo'lishi uchun
+    (2026-08 V6, segment-darajasidagi debug JSON odatda katta/chuqur
+    ichma-ich bo'ladi) -- imkon bo'lsa `indent=2` bilan qayta formatlaydi,
+    JSON bo'lmasa yoki xato bo'lsa XOM qiymatni o'zgarishsiz qaytaradi
+    (hech qachon istisno tashlamaydi)."""
+    if not raw:
+        return raw
+    try:
+        return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+    except (TypeError, ValueError):
+        return raw
+
+
 @app.route("/individual-tekshirish/ai-debug/<int:call_id>")
 @login_required
 @admin_required
@@ -2359,6 +2373,10 @@ def individual_check_ai_debug(call_id):
             "raw_transcription": call.ai_raw_transcription,
             "normalized_transcription": call.ai_transcription,
             "diarized_json": call.ai_diarized_json,
+            # 2026-08 V6 (spec-bo'lim 14, "DEBUG INFORMATION"): o'qish
+            # qulayligi uchun (agar imkoni bo'lsa) chiroyli formatlangan
+            # JSON -- xom qatorni saqlangandek EMAS, indent bilan.
+            "segment_debug_json": _pretty_json_or_raw(call.ai_segment_debug_json),
             "customer_request": call.ai_customer_request,
             "operator_mistakes": call.ai_operator_mistakes,
             "positive_points": call.ai_positive_points,

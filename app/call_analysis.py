@@ -113,6 +113,67 @@ V5 (2026-08, HOZIRGI, foydalanuvchi HAQIQIY production bug'ini ko'rsatgach
     ishlardi). `/api/health` endi `ffmpeg_available`/`ffprobe_available`ni
     ko'rsatadi, `log_model_config()` ishga tushganda qaysi model
     ishlatilayotganini logga yozadi.
+V6 (2026-08, HOZIRGI, V5 production'ga chiqqandan KEYIN foydalanuvchi
+    HALI HAM ikkita jiddiy muammoni ko'rsatgach: (1) ba'zan BUTUN
+    qo'ng'iroq "Mijoz" deb belgilanardi, (2) matnda ma'nosiz "to'qilgan"
+    so'zlar chiqardi -- masalan "duxovoy karina labarakam"): ILDIZ
+    SABABLAR IKKITA BUTUNLAY BOSHQA joyda topildi va IKKALASI HAM
+    tuzatildi:
+  - ILDIZ SABAB #1 (nonsense so'zlar): `gpt-4o-transcribe-diarize`ning
+    O'Z MATNI (garchi gapiruvchi/vaqt ajratishi to'g'ri bo'lsa ham) ba'zan
+    hallyusinatsiya qilardi. TUZATISH: diarizatsiya ENDI FAQAT gapiruvchi
+    ID + boshlanish/tugash vaqti uchun ishlatiladi -- uning `text` maydoni
+    HECH QACHON o'qilmaydi/ishlatilmaydi. HAQIQIY matn: (a) ketma-ket bir
+    xil gapiruvchi bo'laklari ~5-15s guruhlarga BIRLASHTIRILADI
+    (`_group_diarization_segments`, qisqa 0.5-2s bo'lakni ALOHIDA
+    transkripsiya qilish kontekstni buzib hallyusinatsiyani oshiradi),
+    (b) har bir guruh chegarasiga ~0.35s padding qo'shiladi (audio
+    chegarasidan tashqariga chiqmaydi, `_compute_padded_bounds`),
+    (c) ffmpeg bilan ORIGINAL audiodan shu oraliq kesib olinadi
+    (`_cut_audio_segment_bytes`), (d) har bir kesilgan bo'lak ALOHIDA,
+    MUSTAQIL ravishda `_mono_transcribe_ladder` orqali (max 2 qayta
+    urinish bilan) qayta transkripsiya qilinadi (`_transcribe_segment_group`) --
+    bitta bo'lakning muvaffaqiyatsizligi boshqa bo'lakka TA'SIR qilmaydi.
+    Agar HECH BIR urinish "good" bermasa -- TO'QILGAN matn SAQLANMAYDI,
+    o'rniga `[noaniq]` markeri qo'yiladi (xom/rad etilgan matn FAQAT
+    debug maydonida ko'rinadi). Butun qo'ng'iroq bo'yicha `[noaniq]`
+    ulushi 40%dan oshsa -- sifat "failed" (tahlil UMUMAN chaqirilmaydi),
+    15-40% oralig'ida "suspicious" deb belgilanadi. Bularning barchasi
+    `_reassemble_call_from_diarization()`da orkestratsiya qilinadi.
+  - ILDIZ SABAB #2 (butun qo'ng'iroq "Mijoz"): bu V5'da "tuzatilgan"
+    deb o'ylangan diarizatsiya-qatlamidagi kod EMAS edi -- aksincha,
+    TAHLIL MODELINING O'ZI, `normalizedTranscript` maydoni orqali,
+    transkripsiya pipeline'i ALLAQACHON (to'g'ri yoki "unknown" sifatida)
+    belgilagan gapiruvchi yorliqlarini MUSTAQIL RAVISHDA QAYTA TOPARDI --
+    va ko'pincha noto'g'ri, hammasini "mijoz" deb qayta yozib yuborardi.
+    TUZATISH: `_ANALYSIS_JSON_SCHEMA`dan `normalizedTranscript` BUTUNLAY
+    OLIB TASHLANDI. Tahlil modeliga ENDI transkripsiya PIPELINE'ining
+    o'zi ishlab chiqargan, `[N] Yorliq: matn` bilan INDEKSLANGAN
+    (`_render_indexed_transcript`), O'ZGARMAS matn beriladi -- model
+    FAQAT mazmunni tahlil qiladi, `evidenceTurnIds` uchun shu tashqi
+    indekslardan foydalanadi, lekin yorliqlarni QAYTA CHIQARMAYDI/
+    O'ZGARTIRMAYDI (buyruq `_ANALYSIS_SYSTEM_PROMPT` qoida-5da ANIQ
+    taqiqlangan). `analyze_call_record()`da `call.ai_transcription`
+    ENDI to'g'ridan-to'g'ri pipeline matnidan (`transcript_text`)
+    o'rnatiladi -- modelning "normalizatsiya qilingan" versiyasi ENDI
+    UMUMAN mavjud emas.
+  - `_guess_operator_speaker()`ga (V5'dan) `call_direction`/`first_speaker`
+    parametrlari qo'shildi -- LEKIN faqat SO'Z-DALILI ORQALI
+    ALLAQACHON aniq (boshqalardan qat'iy ko'p) YETAKCHI bo'lgan nomzod
+    borida, uning ustunligini SAL kuchaytiradi; hech qachon 0-0 yoki N-N
+    TENGLIKNI (yoki dalilsiz holatni) yo'nalish/tartib orqali "hal
+    qilib" YUBORMAYDI (bu aynan diarizatsiya-darajasida "birinchi
+    gapiruvchi=Manager" xatosining boshqa shakli bo'lardi).
+  - `_TURN_RE` (matn-parsing regex) `Speaker\\s*1`/`Speaker\\s*2`dan
+    `Speaker\\s*\\d+`ga UMUMLASHTIRILDI -- diarizatsiya 3+ xom gapiruvchi
+    ID chiqarsa ham to'g'ri ishlaydi.
+  - Yangi `ai_segment_debug_json` ustuni (db.py) -- xom diarizatsiya
+    segmentlari, guruhlangan chegaralar, har bir guruh uchun urinishlar/
+    qayta-urinishlar/tanlangan matn, va gapiruvchi-xaritalash ishonchi
+    (admin debug ko'rinishida, `individual_check_ai_debug.html`).
+  - Stereo (jismoniy 2-kanalli) yo'l ENG YUQORI USTUVORLIKDA qoladi --
+    haqiqiy stereo bo'lsa, diarizatsiya/segment-qayta-transkripsiya
+    UMUMAN chaqirilmaydi (regressiya testi bilan tekshirilgan).
 
 MUHIM CHEKLOV (foydalanuvchi talabi bilan): faqat OpenAI ishlatiladi.
 Boshqa transkripsiya provayderi (AssemblyAI, Deepgram, Google Speech,
@@ -179,6 +240,50 @@ CHANNEL_OPERATOR_INDEX = int(os.environ.get("CALL_OPERATOR_CHANNEL", "0") or "0"
 # Vaqtinchalik (tarmoq/5xx) xatolarda necha marta qayta urinish.
 _MAX_RETRIES = 2
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+
+# ---------------------------------------------------------------------------
+# 2026-08 V6, foydalanuvchi HAQIQIY production bug'ini (2) ko'rsatgach --
+# diarizatsiya matnini "master transkript" sifatida ISHLATISH xato ekani
+# aniqlandi: `gpt-4o-transcribe-diarize` gapiruvchi/vaqt chegaralarini
+# YAXSHI aniqlaydi, lekin uning O'Z MATNI ko'pincha ma'nosiz so'zlar
+# "to'qib chiqaradi" ("duxovoy karina labarakam" kabi). Shuning uchun
+# ENDI diarizatsiya FAQAT gapiruvchi ID + boshlanish/tugash vaqtini
+# berish uchun ishlatiladi; HAQIQIY matn har bir gapiruvchi bo'lagini
+# ffmpeg bilan ORIGINAL AUDIODAN kesib olib, ALOHIDA `gpt-4o-transcribe`ga
+# yuborish orqali OLINADI (pastga qarang, "SEGMENT DARAJASIDA QAYTA
+# TRANSKRIPSIYA").
+# ---------------------------------------------------------------------------
+
+# Ketma-ket bir xil gapiruvchi bo'laklarini BITTA guruhga birlashtirish
+# uchun maksimal natija davomiyligi (soniya) -- juda uzun guruh audio
+# konteksti/API cheklovlarini buzmasin uchun yumshoq yuqori chegara.
+_SEGMENT_GROUP_TARGET_MAX_SEC = 15.0
+# Bir xil gapiruvchining ikkita ketma-ket bo'lagi orasidagi TANAFFUS shu
+# qiymatdan katta bo'lsa -- ular ENDI bitta "navbat" (turn) deb
+# hisoblanmaydi, guruh ALOHIDA boshlanadi (tabiiy navbat chegarasi saqlanadi).
+_SEGMENT_GROUP_MAX_GAP_SEC = 1.5
+# Har bir kesilgan segmentga ffmpeg bilan qo'shiladigan yostiqcha (birinchi/
+# oxirgi bo'g'in "kesilib qolishi"ning oldini olish uchun) -- audio
+# chegaralaridan tashqariga chiqmaydi.
+_SEGMENT_PAD_BEFORE_SEC = 0.35
+_SEGMENT_PAD_AFTER_SEC = 0.35
+# Bitta segment uchun MAKSIMAL qayta urinishlar (foydalanuvchi ANIQ
+# so'ragan: "Maximum 2 retries per segment" -- ya'ni birinchi urinish +
+# 2 qayta urinish = jami 3, `_mono_transcribe_ladder` bilan BIR XIL
+# zanjir qayta ishlatiladi, chunki mantiq aynan mos keladi).
+_SEGMENT_MAX_RETRIES = 2
+# Aniqlanmagan/ishonchsiz deb topilgan segment o'rniga qo'yiladigan
+# belgi -- foydalanuvchi ANIQ so'ragan: "TO'QIB CHIQARISHDAN ko'ra shu
+# afzal".
+_NOANIQ_MARKER = "[noaniq]"
+# Yakuniy transkriptning necha ulushi `_NOANIQ_MARKER` bo'lsa -- butun
+# qo'ng'iroq sifati "failed" (tahlil UMUMAN chaqirilmaydi) deb
+# belgilanadi (foydalanuvchi ANIQ so'ragan: "ko'p qismi noaniq bo'lsa,
+# ishonchli savdo-tahlili YASAMA").
+_SEGMENT_NOANIQ_BLOCK_RATIO = 0.40
+# Bundan yuqori (lekin bloklash chegarasidan past) ulush -- "suspicious"ga
+# tushiriladi (hatto umumiy matn sifat tekshiruvi "good" desa ham).
+_SEGMENT_NOANIQ_WARN_RATIO = 0.15
 
 def is_configured() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY"))
@@ -714,94 +819,342 @@ _OPERATOR_EVIDENCE_PHRASES = [
 ]
 
 
-def _guess_operator_speaker(speaker_texts: dict) -> "str | None":
-    """Har bir xom gapiruvchi ID uchun to'plangan matndan operatorga XOS
+def _guess_operator_speaker(speaker_texts: dict, first_speaker: "str | None" = None, call_direction: "str | None" = None) -> "str | None":
+    """Har bir xom gapiruvchi ID uchun to'plangan (QAYTA TRANSKRIPSIYA
+    QILINGAN, diarizatsiyaning o'z matni EMAS) matndan operatorga XOS
     iboralar sonini hisoblaydi. FAQAT bitta gapiruvchi ANIQ ko'proq
     (kamida 1ta va boshqasidan ko'p) mos kelsa -- o'sha operator deb
     ISHONCH bilan qaytariladi. Teng bo'lsa yoki hech kimda topilmasa --
-    `None` (noaniq, chaqiruvchi "Speaker 1/2" saqlaydi)."""
+    `None` (noaniq, chaqiruvchi "Speaker 1/2" saqlaydi).
+
+    2026-08 V6, foydalanuvchi ANIQ so'ragan ("CallRecord.direction'ni BIR
+    signal sifatida ishlat, lekin YAGONA signal sifatida EMAS; gapiruvchi
+    shaxsini FAQAT navbat tartibi+yo'nalish orqali QATTIQ belgilama"):
+    `call_direction`/`first_speaker` HECH QACHON yolg'iz o'zi ishonch
+    yaratmaydi VA HATTO TENGLIKNI (tie) ham hal qilmaydi -- nudge FAQAT
+    `first_speaker` so'z-dalili bo'yicha ALLAQACHON (nudge'siz) BOSHQA
+    HAR BIR nomzoddan QAT'IY ko'proq bo'lsa qo'llaniladi (ya'ni natijaga
+    umuman TA'SIR qilmaydi, faqat ishonch farqini SAL kengaytiradi) --
+    shu bilan 0-0 yoki N-N tenglik holatida yo'nalish HECH QACHON
+    "g'olibni" o'zi belgilay olmaydi."""
     hits = {speaker: sum(1 for p in _OPERATOR_EVIDENCE_PHRASES if p in text.lower()) for speaker, text in speaker_texts.items()}
+    if call_direction == "outgoing" and first_speaker and first_speaker in hits:
+        others = [v for k, v in hits.items() if k != first_speaker]
+        if others and hits[first_speaker] > max(others):
+            hits[first_speaker] += 0.5
     ranked = sorted(hits.items(), key=lambda kv: kv[1], reverse=True)
     if len(ranked) >= 2 and ranked[0][1] > 0 and ranked[0][1] > ranked[1][1]:
         return ranked[0][0]
     return None
 
 
-def _build_labeled_transcript_from_segments(segments: list) -> "tuple[str, bool] | None":
-    """`diarized_json`dagi `segments`ni "Manager:/Mijoz:" (yoki, dalil
-    yetarli bo'lmasa, "Speaker 1:/Speaker 2:") formatiga aylantiradi.
-    Ikkinchi qaytarilgan qiymat -- `confident: bool`."""
+# ---------------------------------------------------------------------------
+# SEGMENT DARAJASIDA QAYTA TRANSKRIPSIYA (2026-08 V6)
+# ---------------------------------------------------------------------------
+# Foydalanuvchi HAQIQIY production misoli bilan ko'rsatdi: `gpt-4o-transcribe-
+# diarize`ning O'Z MATNI ba'zan ma'nosiz so'zlar "to'qib chiqaradi" ("duxovoy
+# karina labarakam", "Bitonkarige bargo" va h.k.) -- garchi gapiruvchi/vaqt
+# ajratishi TO'G'RI bo'lsa ham. ENDI diarizatsiya FAQAT quyidagilar uchun
+# ishlatiladi: gapiruvchi ID + boshlanish/tugash vaqti. HAQIQIY matn har bir
+# gapiruvchi bo'lagini (guruhlangan, yostiqchali) ffmpeg bilan ORIGINAL
+# audiodan kesib olib, alohida `gpt-4o-transcribe`ga yuborish orqali olinadi.
+
+
+def _group_diarization_segments(segments: list) -> list:
+    """Diarizatsiya `segments`ini ("speaker","start","end") ketma-ket BIR
+    XIL gapiruvchi bo'laklarini BITTA guruhga birlashtiradi -- foydalanuvchi
+    ANIQ so'ragan: "0.5-2 soniyalik har bir bo'lakni ALOHIDA transkripsiya
+    qilish KONTEKSTNI buzadi va hallyusinatsiyani oshiradi". Guruhlash
+    qoidasi: FAQAT bir xil gapiruvchi VA orasidagi tanaffus juda katta
+    bo'lmasa (`_SEGMENT_GROUP_MAX_GAP_SEC`) VA natija davomiyligi
+    `_SEGMENT_GROUP_TARGET_MAX_SEC`dan oshib ketmasa -- birlashtiriladi.
+    Gapiruvchi almashishi HAR DOIM tabiiy navbat (turn) chegarasi sifatida
+    SAQLANADI (hech qachon kesib o'tilmaydi)."""
     if not segments:
-        return None
-    speaker_order = []
-    speaker_texts: dict = {}
+        return []
+    groups = []
+    current = None
     for seg in segments:
-        raw_speaker = str(seg.get("speaker", "")).strip() or "?"
-        text = (seg.get("text") or "").strip()
-        if raw_speaker not in speaker_order:
-            speaker_order.append(raw_speaker)
-        speaker_texts[raw_speaker] = speaker_texts.get(raw_speaker, "") + " " + text
-
-    operator_speaker = _guess_operator_speaker(speaker_texts) if len(speaker_order) == 2 else None
-    confident = operator_speaker is not None
-
-    lines = []
-    for seg in segments:
-        raw_speaker = str(seg.get("speaker", "")).strip() or "?"
-        text = (seg.get("text") or "").strip()
-        if not text:
+        speaker = str(seg.get("speaker", "")).strip() or "?"
+        try:
+            start = float(seg.get("start", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            start = 0.0
+        try:
+            end = float(seg.get("end", start) or start)
+        except (TypeError, ValueError):
+            end = start
+        if end < start:
+            end = start
+        if current is None:
+            current = {"speaker": speaker, "start": start, "end": end, "diar_segments": [seg]}
             continue
-        if confident:
-            label = "Manager" if raw_speaker == operator_speaker else "Mijoz"
+        gap = start - current["end"]
+        prospective_duration = end - current["start"]
+        same_speaker = speaker == current["speaker"]
+        if same_speaker and gap <= _SEGMENT_GROUP_MAX_GAP_SEC and prospective_duration <= _SEGMENT_GROUP_TARGET_MAX_SEC:
+            current["end"] = max(current["end"], end)
+            current["diar_segments"].append(seg)
         else:
-            idx = speaker_order.index(raw_speaker)
-            label = f"Speaker {idx + 1}"
-        lines.append(f"{label}: {text}")
-    return ("\n".join(lines), confident) if lines else None
+            groups.append(current)
+            current = {"speaker": speaker, "start": start, "end": end, "diar_segments": [seg]}
+    if current:
+        groups.append(current)
+    return groups
 
 
-def _try_diarized_transcription(audio_bytes: bytes, audio_format: str) -> "tuple[str, str] | None":
-    """Muvaffaqiyatli bo'lsa `(labeled_text, raw_json_str)` qaytaradi --
-    `raw_json_str` faqat DEBUG maqsadida (`ai_diarized_json` ustuniga)
-    saqlanadi, tahlil mantiqiga ta'sir qilmaydi."""
+def _compute_padded_bounds(start: float, end: float, total_duration_sec: "float | None") -> "tuple[float, float]":
+    """Segment chegaralariga yostiqcha (padding) qo'shadi (birinchi/oxirgi
+    bo'g'in kesilib qolmasligi uchun) -- audio chegaralaridan (0 va umumiy
+    davomiylik) TASHQARIGA HECH QACHON chiqmaydi. `total_duration_sec`
+    noma'lum bo'lsa (ffprobe mavjud emas) -- faqat pastki chegara (0)
+    qo'llaniladi, yuqori chegara ffmpeg'ning o'ziga (fayl oxirigacha)
+    qoldiriladi."""
+    padded_start = max(0.0, start - _SEGMENT_PAD_BEFORE_SEC)
+    padded_end = end + _SEGMENT_PAD_AFTER_SEC
+    if total_duration_sec is not None and total_duration_sec > 0:
+        padded_end = min(padded_end, total_duration_sec)
+    if padded_end <= padded_start:
+        padded_end = padded_start + 0.05
+    return padded_start, padded_end
+
+
+def _cut_audio_segment_bytes(src_path: str, start: float, end: float, total_duration_sec: "float | None") -> "bytes | None":
+    """ffmpeg bilan `src_path`dagi ORIGINAL audiodan `[start,end]` (+
+    yostiqcha) oralig'ini 16kHz mono WAV sifatida kesib oladi. Original
+    fayl o'zgartirilmaydi (faqat o'qiladi); natija vaqtinchalik faylga
+    yozilib, o'qilgach DARHOL o'chiriladi. Muvaffaqiyatsiz bo'lsa `None`."""
+    padded_start, padded_end = _compute_padded_bounds(start, end, total_duration_sec)
+    duration = max(0.05, padded_end - padded_start)
+    out_path = None
+    try:
+        out_fd, out_path = tempfile.mkstemp(suffix=".wav")
+        os.close(out_fd)
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", f"{padded_start:.3f}", "-i", src_path,
+                "-t", f"{duration:.3f}", "-ar", "16000", "-ac", "1", out_path,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode != 0:
+            logger.warning("ffmpeg segment kesishda xato: %s", (proc.stderr or "")[:300])
+            return None
+        with open(out_path, "rb") as f:
+            data = f.read()
+        return data or None
+    except Exception as e:
+        logger.warning("Segment kesishda kutilmagan xato: %s", e)
+        return None
+    finally:
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+
+
+def _transcribe_segment_group(group: dict, group_index: int) -> dict:
+    """Bitta guruhlangan segmentni (ORIGINAL audiodan allaqachon ffmpeg
+    bilan kesilgan, `group["audio_bytes"]`da) `_mono_transcribe_ladder`
+    orqali transkripsiya qiladi -- bu ZANJIR ALLAQACHON foydalanuvchi
+    so'ragan "maksimal 2 qayta urinish" qoidasiga mos (1-urinish oddiy +
+    2-urinish kuchli kontekst + 3-urinish zaxira model = 1 boshlang'ich +
+    2 qayta urinish). Agar HECH BIRI "good" bermasa -- matn o'rniga
+    `_NOANIQ_MARKER` qo'yiladi (foydalanuvchi ANIQ so'ragan: "TO'QIB
+    CHIQARISHDAN ko'ra noaniqlikni saqlash AFZAL"). Qaytaradi: to'liq
+    DEBUG lug'ati (section 14 talabiga mos)."""
+    segment_attempts: list = []
+    audio_bytes = group.get("audio_bytes")
+    segment_duration = group["end"] - group["start"]
+    debug = {
+        "group_index": group_index,
+        "raw_speaker": group["speaker"],
+        "start": round(group["start"], 2),
+        "end": round(group["end"], 2),
+        "duration_sec": round(segment_duration, 2),
+        "diar_segment_count": len(group.get("diar_segments") or []),
+        "diar_text_preview": " ".join((s.get("text") or "").strip() for s in (group.get("diar_segments") or []))[:200],
+    }
+    if not audio_bytes:
+        debug.update({"attempts": [], "retries": 0, "final_text": _NOANIQ_MARKER, "used_noaniq": True, "quality": "error", "reason": "ffmpeg segmentni kesa olmadi"})
+        return debug
+    try:
+        best = _mono_transcribe_ladder(audio_bytes, "wav", segment_duration, segment_attempts)
+    except RuntimeError as e:
+        debug.update({"attempts": segment_attempts, "retries": len(segment_attempts), "final_text": _NOANIQ_MARKER, "used_noaniq": True, "quality": "error", "reason": str(e)})
+        return debug
+    debug["attempts"] = segment_attempts
+    debug["retries"] = max(0, len(segment_attempts) - 1)
+    if best and call_quality.is_acceptable(best[2]):
+        text, model, quality, confidence, reasons = best
+        debug.update({"final_text": text, "used_noaniq": False, "quality": quality, "confidence": confidence, "model": model})
+    elif best:
+        # Sifat darvozasi HECH BIR urinishni "good" deb topmadi -- garbage
+        # matnni SAQLAMAYMIZ (faqat debug uchun preview'da ko'rsatamiz),
+        # yakuniy transkriptga `_NOANIQ_MARKER` qo'yamiz.
+        text, model, quality, confidence, reasons = best
+        debug.update({
+            "final_text": _NOANIQ_MARKER, "used_noaniq": True, "quality": quality, "confidence": confidence,
+            "model": model, "rejected_text_preview": text[:200] if text else "",
+        })
+    else:
+        debug.update({"final_text": _NOANIQ_MARKER, "used_noaniq": True, "quality": "empty", "confidence": 0.0, "reason": "Hech qanday urinish natija bermadi."})
+    return debug
+
+
+def _reassemble_call_from_diarization(audio_bytes: bytes, audio_format: str, audio_duration_sec: "float | None", call_direction: "str | None" = None) -> "dict | None":
+    """Diarizatsiya + segment darajasida qayta transkripsiya -- 2026-08 V6
+    arxitekturasining markazi. Muvaffaqiyatsiz bo'lsa (ffmpeg yo'q,
+    diarizatsiya so'rovi ishlamadi, hech qanday guruh chiqmadi) `None`
+    qaytaradi -- chaqiruvchi ODDIY mono zanjirga (`_mono_transcribe_ladder`)
+    o'tishi kerak. MUHIM: diarizatsiyaning O'Z MATNI HECH QACHON yakuniy
+    transkriptga ishlatilmaydi -- faqat gapiruvchi ID va vaqt chegaralari
+    uchun.
+
+    Qaytaradi (muvaffaqiyatli bo'lsa):
+      {
+        "text": str, "model": str, "quality_status": ..., "confidence": ...,
+        "quality_reasons": [...], "diarized_raw_json": str,
+        "segment_debug_json": str,  # section 14 -- to'liq debug JSON
+      }
+    """
+    if not _ffmpeg_available():
+        logger.info("ffmpeg mavjud emas -- segment darajasida qayta transkripsiya o'tkazib yuboriladi (oddiy zanjirga o'tiladi).")
+        return None
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
+    diar_model = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
     try:
-        resp = _post_diarized_transcription(api_key, model, audio_bytes, audio_format)
+        resp = _post_diarized_transcription(api_key, diar_model, audio_bytes, audio_format)
     except requests.RequestException as e:
-        logger.warning("Diarizatsiya so'rovi (model=%s) tarmoq xatosi bilan tugadi: %s", model, e)
+        logger.warning("Diarizatsiya so'rovi (model=%s) tarmoq xatosi bilan tugadi: %s", diar_model, e)
         return None
     if not resp.ok:
-        err_msg = _extract_openai_error(resp)
         logger.warning(
             "Diarizatsiya modeli '%s' ishlamadi (HTTP %s): %s -- oddiy transkripsiya yo'liga o'tilmoqda.",
-            model, resp.status_code, err_msg,
+            diar_model, resp.status_code, _extract_openai_error(resp),
         )
         return None
     try:
         raw_json = resp.json()
-        segments = raw_json.get("segments") or []
+        raw_segments = raw_json.get("segments") or []
     except Exception:
         logger.warning("Diarizatsiya javobini JSON qilib o'qib bo'lmadi -- oddiy transkripsiya yo'liga o'tilmoqda.")
         return None
-    built = _build_labeled_transcript_from_segments(segments)
-    if not built:
+    if not raw_segments:
         return None
-    text, _confident = built
     try:
-        raw_json_str = json.dumps(raw_json, ensure_ascii=False)[:20000]
+        diarized_raw_json = json.dumps(raw_json, ensure_ascii=False)[:20000]
     except Exception:
-        raw_json_str = ""
-    return text, raw_json_str
+        diarized_raw_json = ""
+
+    groups = _group_diarization_segments(raw_segments)
+    if not groups:
+        return None
+
+    # Original audio'ni BITTA vaqtinchalik faylga yozamiz (har bir segment
+    # uchun qayta yozmaslik uchun) -- original bayt-massiv o'zgartirilmaydi.
+    src_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f".{audio_format}", delete=False) as src:
+            src.write(audio_bytes)
+            src_path = src.name
+
+        for group in groups:
+            group["audio_bytes"] = _cut_audio_segment_bytes(src_path, group["start"], group["end"], audio_duration_sec)
+    finally:
+        if src_path:
+            try:
+                os.unlink(src_path)
+            except OSError:
+                pass
+
+    # Har bir guruhni CHRONOLOGIK tartibda (allaqachon shunday, chunki
+    # diarizatsiya segmentlari vaqt bo'yicha keladi) qayta transkripsiya
+    # qilamiz -- gapiruvchi almashishi TABIIY navbat chegarasi sifatida
+    # saqlanadi, boshqa segmentga TA'SIR qilmaydi (har biri MUSTAQIL).
+    group_debugs = [_transcribe_segment_group(g, i) for i, g in enumerate(groups)]
+
+    noaniq_count = sum(1 for d in group_debugs if d["used_noaniq"])
+    noaniq_ratio = noaniq_count / len(group_debugs) if group_debugs else 1.0
+
+    # Gapiruvchi-rolini (Manager/Mijoz) FAQAT haqiqiy (qayta transkripsiya
+    # qilingan, `[noaniq]` EMAS) matndan to'plangan dalil asosida aniqlaymiz --
+    # diarizatsiyaning o'z (ehtimol yaramas) matnidan EMAS.
+    speaker_order = []
+    speaker_texts: dict = {}
+    for g, d in zip(groups, group_debugs):
+        raw_speaker = g["speaker"]
+        if raw_speaker not in speaker_order:
+            speaker_order.append(raw_speaker)
+        if not d["used_noaniq"]:
+            speaker_texts[raw_speaker] = speaker_texts.get(raw_speaker, "") + " " + d["final_text"]
+
+    operator_speaker = None
+    if len(speaker_order) == 2:
+        operator_speaker = _guess_operator_speaker(speaker_texts, first_speaker=speaker_order[0], call_direction=call_direction)
+    speaker_mapping_confident = operator_speaker is not None
+
+    lines = []
+    for g, d in zip(groups, group_debugs):
+        raw_speaker = g["speaker"]
+        if speaker_mapping_confident:
+            label = "Manager" if raw_speaker == operator_speaker else "Mijoz"
+        else:
+            label = f"Speaker {speaker_order.index(raw_speaker) + 1}"
+        d["speaker_label"] = label
+        lines.append(f"{label}: {d['final_text']}")
+    final_text = "\n".join(lines)
+
+    # Umumiy sifat: standart matn-darajasidagi tekshiruv (skript/harf/
+    # takrorlanish) VA `[noaniq]` ulushi -- IKKALASIDAN ENG YOMONI olinadi
+    # (foydalanuvchi ANIQ so'ragan: "ko'p qismi noaniq bo'lsa, ishonchli
+    # tahlil YASAMA").
+    generic_q = call_quality.evaluate_transcription_quality(final_text, audio_duration_sec)
+    status, confidence, reasons = generic_q["status"], generic_q["confidence"], list(generic_q["reasons"])
+    if noaniq_ratio >= _SEGMENT_NOANIQ_BLOCK_RATIO:
+        status = "failed"
+        confidence = min(confidence, 1.0 - noaniq_ratio)
+        reasons.append(f"Bo'laklarning {noaniq_ratio:.0%} qismi aniqlanmadi ([noaniq]) -- ishonchli tahlil uchun yetarli emas.")
+    elif noaniq_ratio >= _SEGMENT_NOANIQ_WARN_RATIO and status == "good":
+        status = "suspicious"
+        confidence = min(confidence, 1.0 - noaniq_ratio)
+        reasons.append(f"Bo'laklarning {noaniq_ratio:.0%} qismi aniqlanmadi ([noaniq]).")
+
+    segment_debug = {
+        "diarize_model": diar_model,
+        "groups": group_debugs,
+        "noaniq_ratio": round(noaniq_ratio, 3),
+        "speaker_mapping": {
+            "confident": speaker_mapping_confident,
+            "mapped_operator_raw_speaker": operator_speaker,
+            "raw_speakers_found": speaker_order,
+            "call_direction_considered": call_direction,
+        },
+    }
+    try:
+        segment_debug_json = json.dumps(segment_debug, ensure_ascii=False)[:20000]
+    except Exception:
+        segment_debug_json = ""
+
+    return {
+        "text": final_text,
+        "model": "gpt-4o-transcribe (diarizatsiya + segment darajasida qayta transkripsiya)",
+        "quality_status": status,
+        "confidence": round(max(0.0, min(1.0, confidence)), 2),
+        "quality_reasons": reasons,
+        "diarized_raw_json": diarized_raw_json,
+        "segment_debug_json": segment_debug_json,
+    }
 
 
 # ---------------------------------------------------------------------------
 # TO'LIQ transkripsiya orkestratsiyasi -- SIFAT DARVOZASI bilan
 # ---------------------------------------------------------------------------
 
-def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_duration_sec: "float | None", channels: "int | None") -> dict:
+def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_duration_sec: "float | None", channels: "int | None", call_direction: "str | None" = None) -> dict:
     """2026-08, foydalanuvchi haqiqiy muammoni ko'rsatgach QO'SHILDI:
     ba'zi qo'ng'iroqlar TURKCHA/ma'nosiz matnga transkripsiya qilinib,
     keyin tahlil modeli shu yaramas matndan umumiy/noto'g'ri xulosa
@@ -814,9 +1167,14 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
     Urinish tartibi (eng ishonchlidan boshlab):
       1) 2-kanalli (stereo) bo'lsa -- kanal bo'yicha ajratib transkripsiya
          (jismoniy kanalga asoslangan, taxminsiz -- eng ishonchli).
-      2) Diarizatsiya (`gpt-4o-transcribe-diarize`) -- mono/aralash uchun.
+      2) Diarizatsiya + SEGMENT DARAJASIDA QAYTA TRANSKRIPSIYA (2026-08 V6):
+         diarizatsiya FAQAT gapiruvchi/vaqt uchun ishlatiladi, HAQIQIY matn
+         har bir guruhlangan bo'lakni ffmpeg bilan kesib, alohida
+         `gpt-4o-transcribe`ga yuborish orqali olinadi (diarizatsiyaning o'z
+         matni HECH QACHON ishlatilmaydi).
       3) Oddiy transkripsiya 3-bosqichli SIFAT-nazorat zanjiri
-         (`_mono_transcribe_ladder`).
+         (`_mono_transcribe_ladder`) -- agar (2) ffmpeg yo'qligi yoki
+         diarizatsiya so'rovi ishlamagani sababli o'tkazib yuborilgan bo'lsa.
 
     Qaytaradi:
       {
@@ -827,6 +1185,7 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
         "quality_reasons": [str, ...],  # tanlangan variant uchun sabablar (ai_transcription_quality_reasons uchun)
         "attempts": [...],             # barcha urinishlar (debug/UI uchun)
         "diarized_raw_json": str | None,
+        "segment_debug_json": str | None,  # section 14 -- to'liq segment-darajasidagi debug
         "operator_channel_used": int | None,  # stereo-split ishlatilgan bo'lsa CHANNEL_OPERATOR_INDEX, aks holda None
       }
 
@@ -834,8 +1193,9 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
     yuborishi kerak -- boshqa holatda `ai_stage = "transcription_failed"`
     qo'yilishi va tahlil UMUMAN chaqirilmasligi kerak."""
     attempts_log = []
-    candidates = []  # (text, model, quality_status, confidence, reasons, operator_channel_used)
+    candidates = []  # (text, model, quality_status, confidence, reasons, operator_channel_used, segment_debug_json)
     diarized_raw_json = None
+    segment_debug_json = None
 
     if channels == 2:
         stereo_text = try_stereo_channel_transcription(audio_bytes, audio_format, channels)
@@ -850,29 +1210,36 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
                 return {
                     "text": stereo_text, "model": model_label, "quality_status": "good",
                     "confidence": q["confidence"], "quality_reasons": q["reasons"],
-                    "attempts": attempts_log, "diarized_raw_json": None,
+                    "attempts": attempts_log, "diarized_raw_json": None, "segment_debug_json": None,
                     "operator_channel_used": CHANNEL_OPERATOR_INDEX,
                 }
-            candidates.append((stereo_text, model_label, q["status"], q["confidence"], q["reasons"], CHANNEL_OPERATOR_INDEX))
+            candidates.append((stereo_text, model_label, q["status"], q["confidence"], q["reasons"], CHANNEL_OPERATOR_INDEX, None))
 
-    diarize_result = _try_diarized_transcription(audio_bytes, audio_format)
-    if diarize_result:
-        diarize_text, diarize_raw_json = diarize_result
-        diarize_model = os.environ.get("OPENAI_DIARIZE_MODEL", "gpt-4o-transcribe-diarize")
-        q = call_quality.assess_quality(diarize_text, audio_duration_sec)
+    # 2026-08 V6: haqiqiy stereo bo'lmasa (yoki stereo natija yetarli
+    # bo'lmasa) -- diarizatsiyani NOKERAK ishlatmaslik o'rniga (foydalanuvchi
+    # ANIQ so'ragan: "jismoniy kanal ALLAQACHON gapiruvchini aniqlasa,
+    # diarizatsiyani ISHLATMA") biz baribir davom etamiz, chunki bu yerga
+    # yetib kelgan bo'lsak jismoliy kanal YO'Q yoki yetarli emas edi.
+    segment_result = _reassemble_call_from_diarization(audio_bytes, audio_format, audio_duration_sec, call_direction)
+    if segment_result:
         attempts_log.append({
-            "attempt": len(attempts_log) + 1, "model": diarize_model, "note": "diarizatsiya",
-            "quality": q["status"], "confidence": q["confidence"], "reasons": q["reasons"], "preview": diarize_text[:200],
+            "attempt": len(attempts_log) + 1, "model": segment_result["model"], "note": "diarizatsiya + segment qayta transkripsiya",
+            "quality": segment_result["quality_status"], "confidence": segment_result["confidence"],
+            "reasons": segment_result["quality_reasons"], "preview": (segment_result["text"] or "")[:200],
         })
-        if call_quality.is_acceptable(q["status"]):
+        diarized_raw_json = segment_result["diarized_raw_json"]
+        segment_debug_json = segment_result["segment_debug_json"]
+        if call_quality.is_acceptable(segment_result["quality_status"]):
             return {
-                "text": diarize_text, "model": diarize_model, "quality_status": "good",
-                "confidence": q["confidence"], "quality_reasons": q["reasons"],
-                "attempts": attempts_log, "diarized_raw_json": diarize_raw_json,
+                "text": segment_result["text"], "model": segment_result["model"], "quality_status": "good",
+                "confidence": segment_result["confidence"], "quality_reasons": segment_result["quality_reasons"],
+                "attempts": attempts_log, "diarized_raw_json": diarized_raw_json, "segment_debug_json": segment_debug_json,
                 "operator_channel_used": None,
             }
-        candidates.append((diarize_text, diarize_model, q["status"], q["confidence"], q["reasons"], None))
-        diarized_raw_json = diarize_raw_json  # debug uchun saqlab qo'yamiz, hatto sifatsiz bo'lsa ham
+        candidates.append((
+            segment_result["text"], segment_result["model"], segment_result["quality_status"],
+            segment_result["confidence"], segment_result["quality_reasons"], None, segment_debug_json,
+        ))
 
     mono_best = _mono_transcribe_ladder(audio_bytes, audio_format, audio_duration_sec, attempts_log)
     if mono_best:
@@ -881,10 +1248,10 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
             return {
                 "text": mono_text, "model": mono_model, "quality_status": "good",
                 "confidence": mono_confidence, "quality_reasons": mono_reasons,
-                "attempts": attempts_log, "diarized_raw_json": None,
+                "attempts": attempts_log, "diarized_raw_json": None, "segment_debug_json": None,
                 "operator_channel_used": None,
             }
-        candidates.append((mono_text, mono_model, mono_quality, mono_confidence, mono_reasons, None))
+        candidates.append((mono_text, mono_model, mono_quality, mono_confidence, mono_reasons, None, None))
 
     # Hech biri "good" bermadi -- ENG YAXSHI (eng kam yomon) variantni
     # DEBUG/qo'lda-tekshirish uchun qaytaramiz, lekin chaqiruvchi buni
@@ -894,13 +1261,13 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
         return {
             "text": best[0], "model": best[1], "quality_status": best[2],
             "confidence": best[3], "quality_reasons": best[4],
-            "attempts": attempts_log, "diarized_raw_json": diarized_raw_json,
+            "attempts": attempts_log, "diarized_raw_json": diarized_raw_json, "segment_debug_json": best[6],
             "operator_channel_used": best[5],
         }
     return {
         "text": None, "model": None, "quality_status": "failed",
         "confidence": 0.0, "quality_reasons": ["Hech qanday transkripsiya urinishi natija bermadi."],
-        "attempts": attempts_log, "diarized_raw_json": None,
+        "attempts": attempts_log, "diarized_raw_json": None, "segment_debug_json": None,
         "operator_channel_used": None,
     }
 
@@ -910,8 +1277,8 @@ def transcribe_with_quality_gate(audio_bytes: bytes, audio_format: str, audio_du
 # ---------------------------------------------------------------------------
 
 _TURN_RE = re.compile(
-    r"(?m)^(Manager|Mijoz|Speaker\s*1|Speaker\s*2)\s*:\s*"
-    r"(.*(?:\n(?!(?:Manager|Mijoz|Speaker\s*1|Speaker\s*2)\s*:).*)*)"
+    r"(?m)^(Manager|Mijoz|Speaker\s*\d+)\s*:\s*"
+    r"(.*(?:\n(?!(?:Manager|Mijoz|Speaker\s*\d+)\s*:).*)*)"
 )
 
 
@@ -983,7 +1350,7 @@ _EVIDENCE_ITEM_SCHEMA = {
         "text": {"type": "string", "description": "ANIQ, transkriptga asoslangan band (umumiy/mavhum gap emas)."},
         "evidenceTurnIds": {
             "type": "array", "items": {"type": "integer"},
-            "description": "normalizedTranscript ro'yxatidagi (0 dan boshlab) qaysi bo'lak(lar) shu bandga dalil ekani.",
+            "description": "Foydalanuvchi xabarida berilgan, [N] bilan indekslangan transkript bo'laklaridan (0 dan boshlab) qaysi biri(lari) shu bandga dalil ekani.",
         },
     },
 }
@@ -1010,7 +1377,7 @@ _ANALYSIS_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "overview", "scoreReasons", "normalizedTranscript", "customerRequest",
+        "overview", "scoreReasons", "customerRequest",
         "operatorMistakes", "positivePoints", "conversationResult",
         "callbackRequired", "callbackReason", "recommendedAction", "analysisConfidence",
     ],
@@ -1021,19 +1388,6 @@ _ANALYSIS_JSON_SCHEMA = {
             "additionalProperties": False,
             "required": [k for k, _l, _m in RUBRIC],
             "properties": _rubric_schema_properties(),
-        },
-        "normalizedTranscript": {
-            "type": "array",
-            "description": "Suhbat, gap-bo'lib-gap, gapiruvchi bilan (0 dan boshlab indekslanadi -- operatorMistakes/positivePoints/scoreReasons shu indekslarga ishora qiladi).",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["speaker", "text"],
-                "properties": {
-                    "speaker": {"type": "string", "enum": ["manager", "mijoz", "unknown"]},
-                    "text": {"type": "string"},
-                },
-            },
         },
         "customerRequest": {
             "type": "object",
@@ -1063,7 +1417,7 @@ _RUBRIC_CRITERIA_TEXT = "\n".join(f'- "{key}" (max {maxp} ball): {label}' for ke
 
 _ANALYSIS_SYSTEM_PROMPT = f"""Sen professional savdo va mijoz bilan suhbatlarni tahlil qiluvchi AI assistentsan.
 
-Senga qo'ng'iroq suhbatining TAYYOR TRANSKRIPSIYASI (matn ko'rinishida, avtomatik nutqni-matnga aylantirish xizmati orqali olingan, allaqachon SIFATI tekshirilgan) beriladi. Matn asosan o'zbek tilida bo'lishi mumkin, lekin ruscha, inglizcha yoki boshqa so'zlar aralashishi mumkin.
+Senga qo'ng'iroq suhbatining TAYYOR TRANSKRIPSIYASI beriladi -- HAR BIR gap `[N] Gapiruvchi: matn` ko'rinishida, 0 dan boshlab INDEKSLANGAN (N -- shu gapning "turn ID"si, `evidenceTurnIds` maydonlarida shu indekslarga ishora qilasan). Matn asosan o'zbek tilida bo'lishi mumkin, lekin ruscha, inglizcha yoki boshqa so'zlar aralashishi mumkin.
 
 QAT'IY QOIDALAR (buzilmasin):
 
@@ -1071,8 +1425,8 @@ QAT'IY QOIDALAR (buzilmasin):
 2. Transkripsiyada YO'Q ma'lumotni o'zingdan qo'shib chiqarma yoki umumiy bilimingdan foydalanib "to'ldirma" (masalan "8 sm bazalt albatta mavjud" kabi tasdiqni faqat MATNDA aniq aytilgan bo'lsagina yoz -- kompaniyaning ICHKI mahsulot ma'lumoti tasdiqlamasa, buni "menejer noto'g'ri ma'lumot berdi" deb DA'VO QILMA, faqat "menejer shunday javob berdi" deb KUZATUV sifatida yoz).
 3. Noaniq/eshitilmagan/uzilgan joylarni "[noaniq]" deb belgila -- o'zingdan taxmin qilib to'ldirma.
 4. Mahsulot/brend nomini ANIQ bilmasang yoki noaniq eshitilgan bo'lsa -- "eng yaqin" nomga zo'rma-zo'raki moslashtirma, transkripsiyada qanday kelgan bo'lsa saqla yoki "[noaniq]" deb belgila.
-5. Gapiruvchilarni imkon qadar "manager"/"mijoz" deb ajrat; aniqlab bo'lmasa "unknown" qoldir -- taxmin bilan noto'g'ri belgilashdan ko'ra "unknown" afzal.
-6. HAR BIR "operatorMistakes"/"positivePoints" bandi ANIQ transkript qismiga asoslangan bo'lishi kerak -- umumiy/mavhum gap YOZMA. YOMON misol: "Manager mijozga yaxshi xizmat ko'rsatmadi." YAXSHI misol: "Manager mijoz 8 sm mahsulot so'raganida alternativani tekshirishni taklif qilmadi." HAR BIR bandning "evidenceTurnIds" maydonida `normalizedTranscript` ro'yxatidagi (0 dan boshlab hisoblanadigan) QAYSI bo'lak(lar) shu bandga DALIL ekanini ko'rsat.
+5. GAPIRUVCHI YORLIQLARI (Manager/Mijoz/Speaker N) SENGA ALLAQACHON BERILGAN -- ularni maxsus transkripsiya pipeline'i (diarizatsiya + audio-darajasidagi dalillar asosida) aniqlagan. SEN BU YORLIQLARNI HECH QACHON O'ZGARTIRMAYSAN, QAYTA TAXMIN QILMAYSAN yoki "tuzatmaysan" -- hatto notekis/tushunarsiz ko'rinsa ham (masalan bitta "Speaker 1" juda ko'p gapirgandek tuyulsa ham, buni "aslida Manager/Mijoz" deb o'zgartirma). Sening vazifang FAQAT berilgan yorliqlar asosida MAZMUNNI tahlil qilish -- yorliqlarni QAYTA CHIQARMAYSAN va javobingda ularni takrorlamaysan.
+6. HAR BIR "operatorMistakes"/"positivePoints" bandi ANIQ transkript qismiga asoslangan bo'lishi kerak -- umumiy/mavhum gap YOZMA. YOMON misol: "Manager mijozga yaxshi xizmat ko'rsatmadi." YAXSHI misol: "Manager mijoz 8 sm mahsulot so'raganida alternativani tekshirishni taklif qilmadi." HAR BIR bandning "evidenceTurnIds" maydonida berilgan transkriptdagi (0 dan boshlab hisoblanadigan, `[N]` bilan ko'rsatilgan) QAYSI bo'lak(lar) shu bandga DALIL ekanini ko'rsat.
 
 {call_glossary.build_analysis_glossary_note()}
 
@@ -1112,7 +1466,13 @@ def _extract_responses_output_text(data: dict) -> str:
     raise ValueError("OpenAI Responses API javobidan matn topilmadi.")
 
 
-def _parse_analysis_json(raw_text: str) -> dict:
+def _parse_analysis_json(raw_text: str, turn_count: int) -> dict:
+    """`turn_count` -- ANALIZ CHAQIRUVCHISI (`_analyze_transcript`) modelga
+    yuborgan, PIPELINE tomonidan allaqachon aniqlangan (`parse_transcript_turns`)
+    gaplar soni. 2026-08 V6: model ENDI o'zi `normalizedTranscript` ishlab
+    chiqarmaydi (gapiruvchi yorliqlarini qayta o'ylab topmasligi uchun) --
+    shuning uchun `evidenceTurnIds` diapazoni ENDI shu TASHQARIDAN berilgan
+    sondan hisoblanadi, model javobidan EMAS."""
     text = (raw_text or "").strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1]
@@ -1122,9 +1482,6 @@ def _parse_analysis_json(raw_text: str) -> dict:
 
     if "scoreReasons" not in data or "overview" not in data:
         raise ValueError("Model javobida 'overview'/'scoreReasons' maydonlari yo'q.")
-
-    data.setdefault("normalizedTranscript", [])
-    turn_count = len(data["normalizedTranscript"])
 
     def _clean_evidence_ids(raw_ids) -> list:
         # Model TURN indekslarini "to'qib chiqarishi" (haqiqatda mavjud
@@ -1235,12 +1592,45 @@ def _build_result_summary(data: dict) -> str:
     return " ".join(parts)
 
 
-def _analyze_transcript(transcript_text: str) -> dict:
+def _render_indexed_transcript(turns: list) -> str:
+    """`parse_transcript_turns()`dan kelgan gaplarni `[N] Yorliq: matn`
+    ko'rinishiga o'tkazadi -- ANALIZ MODELIGA yuboriladigan matn shu
+    (xom "Manager: .../Mijoz: ..." matn EMAS), shunda model `evidenceTurnIds`
+    uchun ANIQ, deterministik indekslardan foydalana oladi va gapiruvchi
+    yorlig'ini o'zi "qayta o'ylab topish" o'rniga aynan shu yorliqni
+    ko'radi (2026-08 V6: model bu yorliqlarni ENDI o'zgartirmaydi)."""
+    label_map = {"manager": "Manager", "mijoz": "Mijoz"}
+    lines = []
+    for i, t in enumerate(turns or []):
+        speaker = (t.get("speaker") or "unknown").strip().lower()
+        raw_label = (t.get("raw_label") or "").strip()
+        label = label_map.get(speaker) or raw_label or "Speaker"
+        lines.append(f"[{i}] {label}: {t.get('text') or ''}")
+    return "\n".join(lines)
+
+
+def _analyze_transcript(transcript_text: str, turns: "list | None" = None) -> dict:
     """Matn -> tahlil. OpenAI Responses API + Structured Outputs (qat'iy
     JSON Schema) orqali -- erkin matnni qo'lda parslash EMAS. Chaqiruvchi
     (`analyze_call_record`) BU FUNKSIYANI FAQAT transkripsiya SIFATI
     "good" deb topilgandan keyin chaqiradi -- sifatsiz/shubhali
-    transkripsiya HECH QACHON shu yerga yetib kelmasligi kerak."""
+    transkripsiya HECH QACHON shu yerga yetib kelmasligi kerak.
+
+    2026-08 V6, foydalanuvchi ANIQ so'ragan MUHIM O'ZGARISH: gapiruvchi
+    yorliqlari (Manager/Mijoz/Speaker N) ENDI transkripsiya PIPELINE'i
+    tomonidan ALLAQACHON aniqlangan (`parse_transcript_turns` orqali) --
+    tahlil MODELIGA bu yorliqlarni QAYTA ISHLAB CHIQISH so'ralmaydi (avval
+    shunday edi -- `normalizedTranscript` maydoni orqali -- va aynan shu
+    sabab "butun qo'ng'iroq Mijoz deb belgilanadi" xatosining ILDIZI edi:
+    model o'z holicha, ko'pincha noto'g'ri, birinchi gapiruvchini yoki
+    barcha noaniq gaplarni "mijoz" deb qayta belgilab, pipeline'ning
+    to'g'ri/noaniq qoldirgan yorliqlarini "ustidan yozib" yuborardi).
+    Endi modelga FAQAT allaqachon `[N] Yorliq: matn` bilan indekslangan,
+    O'ZGARMAS matn beriladi -- model MAZMUNNI tahlil qiladi, yorliqlarni
+    EMAS."""
+    if turns is None:
+        turns = parse_transcript_turns(transcript_text)
+    indexed_transcript = _render_indexed_transcript(turns)
     api_key = os.environ.get("OPENAI_API_KEY")
     resp = _openai_request(
         "POST", "https://api.openai.com/v1/responses",
@@ -1250,7 +1640,7 @@ def _analyze_transcript(transcript_text: str) -> dict:
             "temperature": 0,
             "input": [
                 {"role": "system", "content": _ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transkripsiya matni:\n\n{transcript_text}"},
+                {"role": "user", "content": f"Transkripsiya matni (har bir gap [N] bilan indekslangan, N -- evidenceTurnIds uchun ishlatiladigan turn ID):\n\n{indexed_transcript}"},
             ],
             "text": {
                 "format": {
@@ -1267,7 +1657,7 @@ def _analyze_transcript(transcript_text: str) -> dict:
         err_msg = _extract_openai_error(resp)
         raise RuntimeError(f"OpenAI tahlil xatosi (model={OPENAI_ANALYSIS_MODEL}, HTTP {resp.status_code}): {err_msg}")
     raw_text = _extract_responses_output_text(resp.json())
-    return _parse_analysis_json(raw_text)
+    return _parse_analysis_json(raw_text, len(turns))
 
 
 # ---------------------------------------------------------------------------
@@ -1331,7 +1721,10 @@ def analyze_call_record(session, call) -> dict:
             call.ai_stage = "transcribing"
             session.commit()
 
-            outcome = transcribe_with_quality_gate(audio_bytes, audio_format, duration_sec, channels)
+            outcome = transcribe_with_quality_gate(
+                audio_bytes, audio_format, duration_sec, channels,
+                call_direction=getattr(call, "direction", None),
+            )
             transcribe_elapsed = time.monotonic() - t0
 
             call.ai_raw_transcription = outcome["text"]
@@ -1344,6 +1737,8 @@ def analyze_call_record(session, call) -> dict:
             call.ai_operator_channel = outcome.get("operator_channel_used")
             if outcome["diarized_raw_json"]:
                 call.ai_diarized_json = outcome["diarized_raw_json"]
+            if outcome.get("segment_debug_json"):
+                call.ai_segment_debug_json = outcome["segment_debug_json"]
 
             logger.info(
                 "Qo'ng'iroq #%s transkripsiya tugadi: %s urinish, tanlangan model=%s, sifat=%s, %.1fs, %s belgi",
@@ -1372,22 +1767,28 @@ def analyze_call_record(session, call) -> dict:
             call.ai_stage = "analyzing"
             session.commit()
 
+        turns = parse_transcript_turns(transcript_text)
         t1 = time.monotonic()
-        result = _analyze_transcript(transcript_text)
+        result = _analyze_transcript(transcript_text, turns)
         analyze_elapsed = time.monotonic() - t1
         logger.info(
             "Qo'ng'iroq #%s tahlil tugadi: model=%s, %.1fs, baho=%s, ishonch=%.2f",
             call.id, OPENAI_ANALYSIS_MODEL, analyze_elapsed, result.get("score"), result.get("analysisConfidence", 0),
         )
 
-        normalized_text = _turns_to_labeled_text(result["normalizedTranscript"])
+        # 2026-08 V6: `ai_transcription` ENDI modelning o'zi qayta yozgan
+        # ("normalizedTranscript") versiya EMAS -- transkripsiya PIPELINE'i
+        # o'zi ishlab chiqargan, ALLAQACHON gapiruvchi-yorliqlangan matn
+        # (`transcript_text`) TO'G'RIDAN-TO'G'RI ko'rsatiladi. Bu -- "gapiruvchi
+        # yorliqlarini tahlil modeli hech qachon o'zgartirmasligi" qoidasining
+        # bevosita natijasi (endi o'zgartirishga IMKONIYATI ham yo'q).
         call.ai_overview = result["overview"]
         call.ai_score = result["score"]
         call.ai_score_reasons = json.dumps(result["scoreReasons"], ensure_ascii=False)
         call.ai_status = result["status"]
         call.ai_color = result["color"]
         call.ai_result = _build_result_summary(result)
-        call.ai_transcription = normalized_text or transcript_text
+        call.ai_transcription = transcript_text
         call.ai_customer_request = json.dumps(result["customerRequest"], ensure_ascii=False)
         call.ai_operator_mistakes = json.dumps(result["operatorMistakes"], ensure_ascii=False)
         call.ai_positive_points = json.dumps(result["positivePoints"], ensure_ascii=False)

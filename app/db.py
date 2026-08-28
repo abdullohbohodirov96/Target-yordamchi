@@ -193,7 +193,14 @@ class CallRecord(Base):
     ai_status = Column(String(16), nullable=True)  # bad | average | good
     ai_color = Column(String(16), nullable=True)  # red | yellow | green
     ai_result = Column(Text, nullable=True)
-    ai_transcription = Column(Text, nullable=True)  # NORMALIZATSIYA qilingan (Manager/Mijoz yorliqli, tozalangan) matn
+    # 2026-08 V6, foydalanuvchi ANIQ so'ragan MUHIM O'ZGARISH: bu ENDI
+    # tahlil MODELI tomonidan qayta yozilgan/qayta-yorliqlangan matn EMAS --
+    # transkripsiya PIPELINE'ining O'ZI ishlab chiqargan, ALLAQACHON
+    # gapiruvchi-yorliqlangan (Manager/Mijoz/Speaker N) YAKUNIY matn
+    # (`ai_raw_transcription` bilan BIR XIL qiymat). Avval tahlil modeli
+    # `normalizedTranscript` orqali bu yorliqlarni O'ZI QAYTA TOPARDI --
+    # aynan shu narsa "butun qo'ng'iroq Mijoz" xatosining ILDIZI edi.
+    ai_transcription = Column(Text, nullable=True)
     ai_error = Column(Text, nullable=True)
     ai_analyzed_at = Column(DateTime, nullable=True, index=True)
 
@@ -249,6 +256,15 @@ class CallRecord(Base):
     # asosida, kontent-taxmin EMAS, lekin baribir "tekshirilmagan taxmin"
     # ekanini debug ko'rinishida aniq ko'rsatish uchun saqlanadi.
     ai_operator_channel = Column(Integer, nullable=True)
+
+    # 2026-08 V6 (foydalanuvchi ANIQ so'ragan "DEBUG INFORMATION" bo'limi):
+    # diarizatsiya + segment-darajasida qayta transkripsiya arxitekturasining
+    # TO'LIQ debug JSON'i -- xom diarizatsiya segmentlari, guruhlangan
+    # segment chegaralari, har bir guruh uchun gpt-transcribe'ga yuborilgan
+    # audio/urinishlar/qayta-urinishlar soni, tanlangan yakuniy matn
+    # (yoki [noaniq]), va gapiruvchi-xaritalash ishonchi. Faqat diarizatsiya
+    # yo'li ishlatilganda to'ldiriladi (stereo-split/oddiy mono yo'lda `None`).
+    ai_segment_debug_json = Column(Text, nullable=True)
 
 
 class SmmSnapshot(Base):

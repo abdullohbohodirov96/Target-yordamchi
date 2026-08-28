@@ -44,7 +44,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import call_analysis as ca
 from db import init_db, get_session, CallRecord
 
-_KNOWN_BUG_MARKERS = ["allah'a", "düğün", "sığındık", "kılıç mı"]
+_KNOWN_BUG_MARKERS = [
+    "allah'a", "düğün", "sığındık", "kılıç mı",
+    # 2026-08 V6, foydalanuvchi HAQIQIY production misolidan (gpt-4o-transcribe-diarize'ning
+    # o'z matnidan chiqqan hallyusinatsiya) -- yordamchi belgi sifatida qo'shildi.
+    "duxovoy karina", "bitonkarige", "kachina aslam",
+]
 
 
 def _is_bad_candidate(call: CallRecord) -> bool:
@@ -57,6 +62,13 @@ def _is_bad_candidate(call: CallRecord) -> bool:
     text = ((call.ai_raw_transcription or "") + " " + (call.ai_transcription or "")).lower()
     if any(marker in text for marker in _KNOWN_BUG_MARKERS):
         return True
+    # 2026-08 V6, foydalanuvchi ANIQ ko'rsatgan bug: BUTUN qo'ng'iroq
+    # "Mijoz:" deb belgilangan (bironta ham "Manager:"/"Speaker" yorlig'i
+    # yo'q) -- bu ESKI (V6'gacha bo'lgan) tahlil-modeli-relabel xatosiga
+    # xos aniq izdir, YANGI kod bilan qayta ishlashga arziydi.
+    turns = ca.parse_transcript_turns(call.ai_transcription or "")
+    if turns and all(t["speaker"] == "mijoz" for t in turns):
+        return True
     return False
 
 
@@ -68,6 +80,7 @@ def _reset_for_full_reprocess(call: CallRecord) -> None:
     call.ai_transcription_quality = None
     call.ai_transcription_confidence = None
     call.ai_transcription_quality_reasons = None
+    call.ai_segment_debug_json = None  # 2026-08 V6 -- eski segment-debug'ni ham tozalab, YANGI pipeline bilan qayta yozdiramiz
     call.ai_stage = "uploaded"
     call.ai_error = None
 
