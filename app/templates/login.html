@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Kirish — Target CRM{% endblock %}
+{% block title %}Kirish — Replix{% endblock %}
 {% block flash %}{% endblock %}
 {% block content %}
 <div class="login-shell">
   <div class="login-card">
-    <div class="login-brand"><img class="brand-mark" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Target CRM logo"> Target CRM</div>
+    <div class="login-brand"><img class="brand-mark" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Replix logo"> Replix</div>
     <p class="login-subtitle">Kirish uchun login/parolingizni kiriting</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

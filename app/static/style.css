@@ -1,4 +1,4 @@
-/* Target CRM — self-contained stylesheet (no external JS/CSS framework at
+/* Replix — self-contained stylesheet (no external JS/CSS framework at
    runtime). Google Fonts is the only external dependency; a solid system
    font stack is the fallback so the page still looks correct if that
    request is blocked on some network. */

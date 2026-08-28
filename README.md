@@ -1,4 +1,4 @@
-# Target CRM — Render versiyasi
+# Replix — Render versiyasi
 
 Eski loyiha (`Targeting-yordmachi-ai`, Vercel'da) Meta Ads'ni tahlil qilib,
 Telegram orqali boshqarardi, lekin serverless (Vercel) muhitida bir nechta

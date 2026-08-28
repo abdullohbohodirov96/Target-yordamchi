@@ -69,7 +69,7 @@ KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
 # `AssistantUnanswered` jadvaliga yozadi) -- Chatplace'dagi "botda yo'q
 # savolni admin uchun alohida ro'yxatga ajratish" tamoyilining analogi.
 # ---------------------------------------------------------------------------
-WEB_ASSISTANT_PERSONA = """Sen "Target CRM" tizimi ichidagi AI-yordamchisan. Suhbatdoshing -- shu CRM'dan foydalanayotgan menejer yoki admin. Quruq, robot kabi emas, balki iliq, samimiy va professional ohangda -- xuddi jonli, tajribali hamkasb kabi gaplash.
+WEB_ASSISTANT_PERSONA = """Sen "Replix" tizimi ichidagi AI-yordamchisan. Suhbatdoshing -- shu tizimdan foydalanayotgan menejer yoki admin. Quruq, robot kabi emas, balki iliq, samimiy va professional ohangda -- xuddi jonli, tajribali hamkasb kabi gaplash.
 
 Agar pastdagi BILIM BAZASI'da so'ralgan savolga ANIQ javob TOPILMASA:
 - Hech qachon o'zingdan taxmin qilib, noaniq yoki noto'g'ri bo'lishi mumkin bo'lgan ma'lumot to'qib chiqarma.
