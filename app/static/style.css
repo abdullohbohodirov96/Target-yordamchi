@@ -12,7 +12,10 @@
   --text: #1E293B;
   --text-dim: #64748B;
   --text-faint: #94A3B8;
-  --blue: #2563EB;
+  /* 2026-08, foydalanuvchi so'rovi: "dizayn ham logoga to'g'ri kelsin" --
+     asosiy accent rang endi Replix logotipidagi ko'k bilan bir xil (avval
+     #2563EB edi, deyarli farqsiz lekin endi logo bilan pikselma-piksel mos). */
+  --blue: #2B6EF5;
   --blue-bg: #EFF6FF;
   --good: #059669;
   --good-bg: #ECFDF5;
@@ -254,6 +257,12 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
 .tabs a.active, .tabs button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--blue); }
 .tabs a:hover:not(.active), .tabs button:hover:not(.active) { color: var(--text); }
 
+/* 2026-08, foydalanuvchi so'rovi: "Smm hisobotida ig FB otkazvotkanda
+   animatsiya bilan chiqib kesin" -- panel almashtirilganda oddiy
+   ko'rinish/yashirish o'rniga yengil fade+slide-up bilan "chiqib keladi". */
+.smm-platform-panel { opacity: 1; transform: translateY(0); transition: opacity 0.22s ease, transform 0.22s ease; }
+.smm-platform-panel.smm-panel-entering { opacity: 0; transform: translateY(8px); }
+
 /* ---------- Search box ---------- */
 .searchbar { padding: 14px 16px; border-bottom: 1px solid var(--border-light); }
 .search-input-wrap { position: relative; max-width: 280px; }
@@ -375,12 +384,17 @@ form input[type="date"]::-webkit-calendar-picker-indicator {
 }
 form input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; background: var(--border-light); }
 form input[type="date"]::-webkit-datetime-edit { padding: 0; }
+/* 2026-08, foydalanuvchi so'rovi: "dizayn ham logoga to'g'ri kelsin" --
+   asosiy tugmalar avval quyuq (deyarli qora) rangda edi, endi Replix
+   logotipining ko'k rangiga mos qilib qayta ranglandi (AI yordamchining
+   to'liq rangli gradienti esa faqat o'sha widget uchun o'ziga xos belgi
+   bo'lib qoladi -- har bir tugmani rang-barang qilish ortiqcha bo'lardi). */
 button, .btn {
-  display: inline-block; background: var(--ink); color: #fff; border: none; font-family: inherit;
+  display: inline-block; background: var(--blue); color: #fff; border: none; font-family: inherit;
   padding: 10px 16px; border-radius: 6px; font-size: 13.5px; font-weight: 500; cursor: pointer;
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s; box-shadow: var(--shadow-sm);
 }
-button:hover, .btn:hover { background: #1E293B; box-shadow: var(--shadow-md); transform: translateY(-1px); }
+button:hover, .btn:hover { background: #1E56C4; box-shadow: var(--shadow-md); transform: translateY(-1px); }
 button:active, .btn:active { transform: translateY(0); }
 button.block { width: 100%; }
 button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none; box-shadow: var(--shadow-sm); }
@@ -409,7 +423,9 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .login-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-  background: linear-gradient(90deg, var(--ink) 0%, var(--blue) 100%);
+  /* 2026-08: logotipdagi gradient bilan bir xil (AI yordamchi widgeti ham
+     shu gradientni ishlatadi) -- kirish sahifasi ham "logoga mos" bo'lsin. */
+  background: linear-gradient(90deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
 }
 .login-brand { display: flex; align-items: center; margin-bottom: 6px; }
 .login-logo { height: 44px; width: auto; object-fit: contain; display: block; }

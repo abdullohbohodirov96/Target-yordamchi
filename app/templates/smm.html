@@ -190,15 +190,40 @@
   if (!tabsWrap) return;
   var buttons = tabsWrap.querySelectorAll('.smm-tab-btn');
   var panels = document.querySelectorAll('.smm-platform-panel');
+  var switching = false;
   buttons.forEach(function (btn) {
     btn.addEventListener('click', function () {
+      if (switching || btn.classList.contains('active')) return;
+      switching = true;
       var platform = btn.dataset.platform;
       buttons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+
+      // 2026-08, foydalanuvchi so'rovi: "IG FB otkazvotkanda animatsiya
+      // bilan chiqib kesin" -- oddiy display:none/'' almashinuvi o'rniga
+      // yangi panel yengil fade+slide-up bilan "chiqib keladi".
+      var nextPanel = null;
       panels.forEach(function (panel) {
-        panel.style.display = (panel.dataset.platform === platform) ? '' : 'none';
+        if (panel.dataset.platform === platform) {
+          nextPanel = panel;
+        } else {
+          panel.classList.remove('smm-panel-visible');
+          panel.style.display = 'none';
+        }
       });
+      if (nextPanel) {
+        nextPanel.style.display = '';
+        nextPanel.classList.add('smm-panel-entering');
+        // reflow majburlash -- shundan keyingina klass olib tashlansa CSS
+        // transition ishga tushadi (aks holda animatsiyasiz sakrab qoladi)
+        void nextPanel.offsetWidth;
+        requestAnimationFrame(function () {
+          nextPanel.classList.remove('smm-panel-entering');
+        });
+      }
+
       var chart = window._smmCharts && window._smmCharts[platform];
       if (chart) chart.resize();
+      setTimeout(function () { switching = false; }, 220);
     });
   });
 })();

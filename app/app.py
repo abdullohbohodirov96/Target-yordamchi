@@ -12,6 +12,7 @@ gunicorn orqali). Uch narsani birlashtiradi:
 import os
 import re
 import json
+import time
 import logging
 import threading
 import datetime as dt
@@ -46,6 +47,12 @@ logger = logging.getLogger("target-crm")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+# 2026-08, foydalanuvchi so'rovi: "sayt azgina qotvoti" -- brauzer statik
+# fayllarni (logo PNG'lari, va h.k.) har sahifa o'tishida qayta so'ramasin
+# deb keshlash muddatini uzaytiramiz (standart Flask minimal/keshsiz rejimda
+# ishlaydi). 7 kun -- deploy qilinganda fayl nomi o'zgarmasa ham brauzer
+# keshi juda uzoq "eskirib" qolmasligi uchun yetarlicha qisqa muddat.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 7
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -1884,6 +1891,20 @@ def _followups_due_count(session, manager_id: int | None = None) -> int:
     return q.count()
 
 
+# 2026-08, foydalanuvchi so'rovi: "bolimdan bolimga toishda sal qotvoti" --
+# quyidagi context processor HAR BIR sahifa ochilganda (butun sayt bo'ylab)
+# ishga tushadi va alohida DB sessiya ochib 1-2 so'rov yuboradi. Bu o'zi
+# tezkor so'rovlar bo'lsa-da, foydalanuvchi bir necha bo'lim/tugmani ketma-ket
+# bosganda har safar qo'shimcha DB borish-kelishi umumiy "sekinlik" hissini
+# kuchaytiradi. Badge raqami soniyama-soniya aniq bo'lishi shart emas --
+# shuning uchun `dashboard_data.get_kpis()`dagi bilan bir xil, foydalanuvchi
+# bo'yicha QISQA MUDDATLI (TTL) keshni qo'llaymiz (bitta gunicorn worker
+# bo'lgani uchun xavfsiz -- Dockerfile/render.yaml'da tasdiqlangan).
+_FOLLOWUPS_BADGE_CACHE_TTL_SECONDS = 30
+_followups_badge_cache: dict[str, tuple[float, int]] = {}
+_followups_badge_cache_lock = threading.Lock()
+
+
 @app.context_processor
 def _inject_followups_badge():
     """Har bir sahifada navbar'dagi "Qayta aloqa" havolasiga qizil raqamli
@@ -1892,13 +1913,24 @@ def _inject_followups_badge():
     (alohida Qayta aloqa sahifasiga kirmasdan ham)."""
     if not (current_user.is_authenticated and permissions.has_module(current_user, "leads")):
         return {}
+
+    cache_key = current_user.username
+    now = time.monotonic()
+    with _followups_badge_cache_lock:
+        cached = _followups_badge_cache.get(cache_key)
+    if cached and (now - cached[0]) < _FOLLOWUPS_BADGE_CACHE_TTL_SECONDS:
+        return {"followups_due_count": cached[1]}
+
     session = get_session()
     try:
         manager_id = None
         if current_user.role != "admin":
             m = session.query(Manager).filter_by(username=current_user.username).first()
             manager_id = m.id if m else None
-        return {"followups_due_count": _followups_due_count(session, manager_id)}
+        count = _followups_due_count(session, manager_id)
+        with _followups_badge_cache_lock:
+            _followups_badge_cache[cache_key] = (now, count)
+        return {"followups_due_count": count}
     except Exception:
         logger.exception("Qayta aloqa belgisini hisoblashda xatolik")
         return {}
