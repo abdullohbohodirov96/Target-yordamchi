@@ -31,6 +31,15 @@
   {% endif %}{% endmacro %}
 
   {% if current_user.is_authenticated %}
+  <!-- 2026-08, foydalanuvchi so'rovi: "web telefondayam to'liq ochilsin" --
+       sidebar mobil ekranda (<=720px) kengligi 0 bo'lib yashiringan edi,
+       lekin uni OCHISH uchun hech qanday tugma yo'q edi (hover faqat
+       sichqonchada ishlaydi, sensorli ekranda esa ochish imkoni umuman
+       bo'lmagan) -- foydalanuvchi telefonda menyuga kira olmagan. Endi
+       shu tugma orqali ochiladi/yopiladi. -->
+  <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menyu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <a href="{{ url_for('dashboard') }}" class="brand">
@@ -132,6 +141,7 @@
     var main = document.getElementById('mainContent');
     var pinBtn = document.getElementById('sidebarPin');
     var backdrop = document.getElementById('sidebarBackdrop');
+    var mobileBtn = document.getElementById('mobileMenuBtn');
     if (!sidebar || !pinBtn) return;
     var KEY = 'target_crm_sidebar_pinned';
     var pinned = false;
@@ -178,6 +188,23 @@
       try { localStorage.setItem(KEY, pinned ? '1' : '0'); } catch (e) {}
       applyPinned();
     });
+
+    // Mobil "hamburger" tugmasi -- menyuni ochadi/yopadi (sensorli
+    // ekranda hover ishlamagani uchun bu yagona kirish yo'li).
+    if (mobileBtn) {
+      mobileBtn.addEventListener('click', function () {
+        setOpen(!sidebar.classList.contains('open'));
+      });
+    }
+    // Menyudagi havolaga bosilganda (mobil'da) menyu yopilib qolsin --
+    // sahifa qayta yuklanguncha ochiq turib qolmasin (backdrop tagida
+    // ko'zga tashlanib ketmasligi uchun, sahifa o'tishi biroz vaqt olishi
+    // mumkin).
+    if (!pinned) {
+      sidebar.querySelectorAll('.nav-item[href]').forEach(function (link) {
+        link.addEventListener('click', function () { setOpen(false); });
+      });
+    }
   })();
   </script>
   {% endif %}

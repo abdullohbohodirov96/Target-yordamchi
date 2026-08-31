@@ -117,6 +117,21 @@
     (audio tahlili faqat OpenAI'ning audio modeli orqali ishlaydi).
   </p>
 </div>
+{% elif ai.credit_exhausted_count %}
+<!-- 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
+     ishlamayapti" -- ILDIZ SABAB avval ham (V6) OpenAI balansi tugashi
+     bo'lgan, lekin bu oddiy "sifat past" xatosi bilan aralashib ketib,
+     Uzbek transkripsiya buzilgandek ko'ringan edi. Endi bu holat aniq
+     ajratilib, o'z-o'zidan tushunarli xabar bilan ko'rsatiladi. -->
+<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
+  <h2 class="text-bad">OpenAI balansi/krediti tugagan</h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
+    Bu Uzbek transkripsiyaning o'zi buzilgani EMAS -- OpenAI hisobida kredit qolmagani uchun so'nggi
+    {{ ai.credit_exhausted_count }} ta qo'ng'iroqda audio tahlili to'xtab qoldi. Administrator OpenAI
+    hisobini to'ldirsin -- kredit tiklangach, qolgan qo'ng'iroqlar navbat bo'yicha avtomatik qayta tahlil qilinadi
+    (qo'lda hech narsa qilish shart emas).
+  </p>
+</div>
 {% endif %}
 
 <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:20px">
@@ -161,6 +176,8 @@
         <td>
           {% if c.transcription_failed %}
           <span class="badge badge-color-warn" title="Transkripsiya sifati yetarli emas">sifat past</span>
+          {% elif c.stage == 'credit_exhausted' %}
+          <span class="badge badge-color-bad" title="OpenAI balansi tugagan">kredit tugagan</span>
           {% elif c.error %}
           <span class="badge badge-color-bad">xatolik</span>
           {% elif c.score %}

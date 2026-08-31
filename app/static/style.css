@@ -140,6 +140,24 @@ a { color: inherit; text-decoration: none; }
   .container.with-sidebar, .container.with-sidebar.sidebar-pinned { margin-left: 0; }
 }
 
+/* 2026-08, foydalanuvchi so'rovi: "web telefondayam to'liq ochilsin" --
+   mobil ekranda sidebar'ni ochish uchun alohida tugma (avval hech qanday
+   ochish yo'li yo'q edi -- hover sensorli ekranda ishlamaydi). Faqat
+   <=720px'da ko'rinadi, kattaroq ekranda sidebar'ning o'zi hover bilan
+   ishlaydi va bu tugma keraksiz. */
+.mobile-menu-btn {
+  display: none; position: fixed; top: 12px; left: 12px; z-index: 31;
+  width: 40px; height: 40px; align-items: center; justify-content: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--ink); box-shadow: var(--shadow-sm); padding: 0; cursor: pointer;
+}
+.mobile-menu-btn svg { width: 20px; height: 20px; }
+.mobile-menu-btn:hover { background: var(--border-light); box-shadow: var(--shadow-sm); transform: none; }
+@media (max-width: 720px) {
+  .mobile-menu-btn { display: flex; }
+  .container.with-sidebar { padding-top: 68px; }
+}
+
 /* Sidebar backdrop -- tor (mobil) ekranda menyu ochilganda, orqadagi sahifa
    kontenti (matn, jadval va h.k.) siqilib, menyu bilan "aralashib" ko'rinib
    qolmasligi uchun (2026-08, foydalanuvchi "html dizayn bir-biriga kirib

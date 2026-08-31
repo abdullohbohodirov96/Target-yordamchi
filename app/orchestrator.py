@@ -84,7 +84,17 @@ MARKETOLOG_SYSTEM = f"{MARKETOLOG_ROLE}\n\n---\n\n{ACTION_SCHEMA}"
 #     `OPENAI_API_KEY` sozlanmagan yoki OpenAI so'rovi xato bersa, funksiya
 #     xato qaytaradi (Claude Haiku'ga sirli tushib qolmaydi) -- chaqiruvchi
 #     joy buni ushlab, foydalanuvchiga tushunarli xabar ko'rsatadi.
-MODEL = "claude-sonnet-4-5"
+# 2026-08, foydalanuvchi so'rovi ("AI tokenlarni ko'p ichvoyapti, ekonom
+# ishlasin"): tahlil paytida aniqlandi -- `claude-sonnet-4-5` (versiya
+# raqamisiz "alias") Anthropic'ning rasmiy narx sahifasida ENDI asosiy
+# API'da ko'rsatilmaydi (faqat Bedrock/Google Cloud'da qoldirilgan),
+# o'rniga `claude-sonnet-5` YANGI standart model bo'lgan -- HAM arzonroq
+# ($2/$10 har MTok, avvalgisi $3/$15 edi -- kirish/chiqish narxi ~33%
+# past), HAM yangiroq avlod (sifat pasaymaydi, aksincha). Shuning uchun
+# Targetolog/Marketolog OG'IR chaqiruvlari endi shu modelga o'tkazildi --
+# bu HECH QANDAY sifat yo'qotmasdan (aksincha) darhol ~33% xarajat
+# tejaydi, kod/mantiqda boshqa hech narsa o'zgarmaydi.
+MODEL = "claude-sonnet-5"
 LIGHT_MODEL = "claude-haiku-4-5-20251001"  # endi ishlatilmaydi -- moslik uchun saqlangan
 INTENT_MODEL = LIGHT_MODEL  # eski nom -- moslik uchun saqlangan
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -1218,16 +1228,42 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
     `business_rules.json` dagi `skip_marketolog: true` bo'lsa, Marketolog
     bosqichi butunlay o'tkazib yuboriladi — Targetolog taklif qilgan HAMMA
     action to'g'ridan-to'g'ri ijroga yuboriladi (tezroq, lekin ikkinchi nazorat
-    qatlamisiz)."""
-    skip_marketolog = bool(BUSINESS_RULES.get("skip_marketolog"))
+    qatlamisiz).
 
-    if skip_marketolog:
-        logger.info("skip_marketolog=true — Marketolog bosqichi o'tkazib yuborildi.")
+    2026-08, foydalanuvchi so'rovi ("AI tokenlarni ko'p ichvoyapti, ekonom
+    ishlasin"): tahlil qildik -- `job_watch_cycle` HAR SOATDA (kuniga 24
+    marta) `_run_pipeline` orqali Targetolog'ni chaqiradi, va avval bu safar
+    Targetolog nima topmasin (hatto HAMMA taklifi shunchaki "no_action"
+    bo'lsa ham) Marketolog HAR DOIM to'liq qayta tekshirib chiqardi -- bu
+    kuniga 24 ta QO'SHIMCHA, HECH NARSANI TASDIQLAMAYDIGAN Claude
+    chaqiruvini anglatardi (Marketolog'ning vazifasi -- TAKLIF QILINGAN
+    o'zgarishni tekshirish; agar hech qanday haqiqiy o'zgarish taklif
+    qilinmagan bo'lsa, tekshirishning o'zi ma'nosiz). Endi -- agar
+    Targetolog'ning BARCHA action'lari `type == "no_action"` bo'lsa,
+    Marketolog chaqiruvi ATLAB o'tkazib yuboriladi (xuddi `skip_marketolog`
+    kabi, lekin FAQAT shu holatda -- haqiqiy o'zgarish taklif qilinsa,
+    Marketolog ODATDAGIDEK to'liq ishlaydi, ikkinchi nazorat qatlami
+    SAQLANADI)."""
+    skip_marketolog = bool(BUSINESS_RULES.get("skip_marketolog"))
+    proposed_actions = targetolog_plan.get("actions") or []
+    all_no_action = bool(proposed_actions) and all(a.get("type") == "no_action" for a in proposed_actions)
+
+    if skip_marketolog or all_no_action:
+        if skip_marketolog:
+            reason = "business_rules.json: skip_marketolog=true"
+            logger.info("skip_marketolog=true — Marketolog bosqichi o'tkazib yuborildi.")
+        else:
+            reason = "barcha takliflar 'no_action' — tekshirishga hech narsa yo'q"
+            logger.info(
+                "Targetolog'ning barcha takliflari 'no_action' — Marketolog chaqiruvi "
+                "(Claude, ~%s belgi tizim prompti) tejash uchun o'tkazib yuborildi.",
+                len(MARKETOLOG_SYSTEM),
+            )
         marketolog_review = {
-            "review_summary": "(Marketolog o'tkazib yuborildi — business_rules.json: skip_marketolog=true)",
+            "review_summary": f"(Marketolog o'tkazib yuborildi — {reason})",
             "decisions": [
-                {"action_index": i, "type": a["type"], "decision": "approved", "comment": "auto (skip_marketolog)"}
-                for i, a in enumerate(targetolog_plan.get("actions", []))
+                {"action_index": i, "type": a["type"], "decision": "approved", "comment": "auto (marketolog skipped)"}
+                for i, a in enumerate(proposed_actions)
             ],
         }
     else:

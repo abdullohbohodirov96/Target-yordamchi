@@ -336,6 +336,16 @@ def _openai_request(method: str, url: str, *, headers: dict, json_body=None, dat
                 time.sleep(wait)
                 continue
             raise
+        if resp.status_code == 429 and _is_quota_exhausted_response(resp):
+            # Kredit tugagan -- bu DOIMIY holat, qayta urinish faqat
+            # vaqtni behuda sarflaydi (har bir navbatdagi qo'ng'iroq uchun
+            # ham alohida-alohida). Darhol qaytariladi, chaqiruvchi
+            # `OpenAICreditExhaustedError` ko'tarishi kerak.
+            logger.error(
+                "OpenAI kredit/balans tugagan (HTTP 429, %s) -- qayta urinilmaydi: %s",
+                url, _extract_openai_error(resp),
+            )
+            return resp
         if resp.status_code in _TRANSIENT_STATUS_CODES and attempt < _MAX_RETRIES:
             wait = 1.5 * (attempt + 1)
             logger.warning(
@@ -406,6 +416,47 @@ class AudioDownloadError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+# 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
+# ishlamayapti" -- V6 hisobotida allaqachon aniqlangan ILDIZ SABAB QAYTA
+# TAKRORLANDI: OpenAI balansi/krediti tugaganda ham server HTTP 429
+# qaytaradi (xuddi oddiy "rate limit" bilan bir xil kod!), lekin bu
+# ikkalasi TUBDAN BOSHQA holat -- rate limit vaqtinchalik (bir necha
+# soniyadan keyin qayta urinish yordam beradi), kredit tugashi esa DOIMIY
+# (admin hisobni to'ldirmaguncha HECH QANCHA qayta urinish yordam
+# bermaydi). Avval ikkalasi ham bir xil "vaqtinchalik xato" deb
+# _openai_request() ichida qayta-qayta (har bir HTTP so'rov uchun alohida,
+# navbatdagi HAR BIR qo'ng'iroq uchun ham alohida) urinilardi -- bu ham
+# vaqtni behuda sarflardi (har bir urinish orasida kutish bilan), ham
+# UI'da "Uzbek transkripsiya buzilgan" kabi noaniq umumiy xatoga
+# aylanardi, aslida sabab shunchaki hisobda pul yo'qligi edi. Endi bu
+# holat ALOHIDA aniqlanadi va DARHOL to'xtatiladi (qayta urinilmaydi),
+# aniq "balans tugagan" xabari bilan.
+class OpenAICreditExhaustedError(RuntimeError):
+    """OpenAI hisobida kredit/balans qolmagan (HTTP 429, lekin oddiy
+    tezlik-chegarasi EMAS -- `error.code == "insufficient_quota"` yoki
+    xabar matnida shunga mos belgilar). Qayta urinish FOYDASIZ."""
+
+
+_QUOTA_EXHAUSTED_MARKERS = (
+    "insufficient_quota", "exceeded your current quota", "no credits remaining",
+    "you have no credits", "billing", "quota exceeded",
+)
+
+
+def _is_quota_exhausted_response(resp) -> bool:
+    if getattr(resp, "status_code", None) != 429:
+        return False
+    try:
+        body = resp.json()
+        code = ((body.get("error") or {}).get("code") or "").lower()
+        if code == "insufficient_quota":
+            return True
+        msg = ((body.get("error") or {}).get("message") or "").lower()
+    except Exception:
+        msg = (resp.text or "").lower()
+    return any(marker in msg for marker in _QUOTA_EXHAUSTED_MARKERS)
 
 
 _AUDIO_EXPIRED_MARKERS = ("expired", "muddati", "eskirgan", "not found", "404", "link is no longer valid")
@@ -749,6 +800,11 @@ def _call_transcribe_model(api_key: str, model: str, audio_bytes: bytes, audio_f
             logger.warning("OpenAI transkripsiya modeli '%s' topilmadi (404): %s", model, _extract_openai_error(resp))
             return None
         if not resp.ok:
+            if _is_quota_exhausted_response(resp):
+                raise OpenAICreditExhaustedError(
+                    "OpenAI balansi/krediti tugagan -- transkripsiya vaqtincha ishlamaydi. "
+                    "Administrator OpenAI hisobini to'ldirishi kerak, keyin qo'ng'iroqlar avtomatik qayta tahlil qilinadi."
+                )
             raise RuntimeError(f"OpenAI transkripsiya xatosi (model={model}, HTTP {resp.status_code}): {_extract_openai_error(resp)}")
         return (resp.text or "").strip() or None
     return None
@@ -791,6 +847,11 @@ def _mono_transcribe_ladder(audio_bytes: bytes, audio_format: str, audio_duratio
     for model, strong, note in plan:
         try:
             text = _call_transcribe_model(api_key, model, audio_bytes, audio_format, strong=strong)
+        except OpenAICreditExhaustedError:
+            # Kredit tugagan -- boshqa model/urinish bilan sinash HAM
+            # foydasiz (bir xil hisobning krediti), shuning uchun
+            # zanjirni davom ettirmasdan DARHOL yuqoriga ko'tariladi.
+            raise
         except RuntimeError as e:
             attempts_log.append({"attempt": len(attempts_log) + 1, "model": model, "note": note, "quality": "error", "confidence": 0.0, "reasons": [str(e)]})
             continue
@@ -1000,6 +1061,12 @@ def _transcribe_segment_group(group: dict, group_index: int) -> dict:
         return debug
     try:
         best = _mono_transcribe_ladder(audio_bytes, "wav", segment_duration, segment_attempts)
+    except OpenAICreditExhaustedError:
+        # Har bir segment uchun alohida-alohida (o'nlab bo'lishi mumkin)
+        # bir xil "kredit tugagan" xatosini qayta urinib chiqishning
+        # ma'nosi yo'q -- darhol yuqoriga ko'tariladi, butun qo'ng'iroq
+        # DARHOL "credit_exhausted" deb belgilanadi.
+        raise
     except RuntimeError as e:
         debug.update({"attempts": segment_attempts, "retries": len(segment_attempts), "final_text": _NOANIQ_MARKER, "used_noaniq": True, "quality": "error", "reason": str(e)})
         return debug
@@ -1673,6 +1740,11 @@ def _analyze_transcript(transcript_text: str, turns: "list | None" = None) -> di
         timeout=90,
     )
     if not resp.ok:
+        if _is_quota_exhausted_response(resp):
+            raise OpenAICreditExhaustedError(
+                "OpenAI balansi/krediti tugagan -- tahlil bosqichi vaqtincha ishlamaydi. "
+                "Administrator OpenAI hisobini to'ldirishi kerak, keyin qo'ng'iroq avtomatik qayta tahlil qilinadi."
+            )
         err_msg = _extract_openai_error(resp)
         raise RuntimeError(f"OpenAI tahlil xatosi (model={OPENAI_ANALYSIS_MODEL}, HTTP {resp.status_code}): {err_msg}")
     raw_text = _extract_responses_output_text(resp.json())
@@ -1841,6 +1913,19 @@ def analyze_call_record(session, call) -> dict:
         call.ai_analyzed_at = now
         session.commit()
         raise
+    except OpenAICreditExhaustedError as e:
+        # 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
+        # ishlamayapti" -- V6'da bir marta ko'rilgan holat qayta chiqdi.
+        # Aniq, o'z-o'zidan tushunarli xato + ALOHIDA bosqich beriladi
+        # (`credit_exhausted`) shunda UI "Uzbek transkripsiya buzilgan"
+        # emas, aynan "balans tugagan" deb ko'rsata oladi, va navbatdagi
+        # qo'ng'iroqlarni behuda urinib ko'rmaydi (`run_pending_analysis`).
+        logger.error("Qo'ng'iroq #%s: OpenAI krediti tugagan -- %s", call.id, e)
+        call.ai_error = str(e)[:2000]
+        call.ai_stage = "credit_exhausted"
+        call.ai_analyzed_at = now
+        session.commit()
+        raise
     except Exception as e:
         logger.exception("Qo'ng'iroq #%s tahlilida xato", call.id)
         call.ai_error = f"{type(e).__name__}: {e}"[:2000]
@@ -1879,10 +1964,23 @@ def run_pending_analysis(session, limit: int = 10) -> dict:
     )
 
     analyzed, failed = 0, 0
+    credit_exhausted = False
     for call in never_tried + to_retry:
         try:
             analyze_call_record(session, call)
             analyzed += 1
+        except OpenAICreditExhaustedError:
+            # 2026-08: bitta qo'ng'iroqda kredit tugagani aniqlansa, shu
+            # OpenAI hisobidagi QOLGAN navbatdagi qo'ng'iroqlar ham
+            # DAROLIQ bir xil sababdan muvaffaqiyatsiz bo'ladi -- ularni
+            # ham birma-bir (har biri o'zining ichki qayta-urinishlari
+            # bilan) sinab ko'rish vaqtni behuda sarflaydi va foydasiz.
+            # Shuning uchun bu partiyani (batch) DARHOL to'xtatamiz;
+            # kredit tiklangach keyingi chaqiruv ularni qayta sinaydi.
+            failed += 1
+            credit_exhausted = True
+            logger.error("run_pending_analysis: OpenAI krediti tugagani uchun partiya to'xtatildi (qo'ng'iroq #%s).", call.id)
+            break
         except Exception:
             failed += 1
 
@@ -1891,4 +1989,5 @@ def run_pending_analysis(session, limit: int = 10) -> dict:
         "failed": failed,
         "remaining": never_tried_q.count(),
         "retry_remaining": retry_q.count(),
+        "credit_exhausted": credit_exhausted,
     }

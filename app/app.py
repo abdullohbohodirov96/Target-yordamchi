@@ -2254,12 +2254,21 @@ def _build_ai_analysis_view(session, since) -> dict:
             "callback_reason": c.ai_callback_reason,
             "recommended_response": c.ai_recommended_response,
         })
+    # 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
+    # ishlamayapti" -- V6'da bir marta ko'rilgan holat (OpenAI balansi
+    # tugashi HTTP 429 sifatida qaytib, oddiy "Sifat past" xatosi bilan
+    # aralashib ketgani) qayta yuz berdi. Endi bu holat ALOHIDA
+    # `ai_stage == "credit_exhausted"` bilan belgilanadi -- shablon buni
+    # ko'rib, "Uzbek transkripsiya buzilgan" degan noaniq taassurot
+    # o'rniga aynan "balans tugagan" xabarini aniq ko'rsata oladi.
+    credit_exhausted_count = sum(1 for r in rows if r["stage"] == "credit_exhausted")
     return {
         "rows": rows,
         "analyzed_count": len(rows),
         "error_count": error_count,
         "pending_count": pending_count,
         "openai_configured": call_analysis.is_configured(),
+        "credit_exhausted_count": credit_exhausted_count,
     }
 
 

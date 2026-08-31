@@ -752,6 +752,107 @@ def test_openai_request_does_not_retry_on_400():
 
 
 # ---------------------------------------------------------------------------
+# 2026-08: OpenAI kredit/balans tugashi (HTTP 429, lekin oddiy tezlik-
+# chegarasi EMAS) -- "individual tekshiruv hech narsa ishlamayapti"
+# bug'ining ILDIZ SABABI (V6 hisobotida bir marta ko'rilgan, qayta chiqdi).
+# ---------------------------------------------------------------------------
+
+def test_is_quota_exhausted_detects_insufficient_quota_code():
+    class FakeResp:
+        status_code = 429
+        def json(self):
+            return {"error": {"code": "insufficient_quota", "message": "You exceeded your current quota."}}
+    assert ca._is_quota_exhausted_response(FakeResp()) is True
+    print("OK: error.code == 'insufficient_quota' -- kredit tugagan deb aniq topiladi")
+
+
+def test_is_quota_exhausted_detects_credit_message_without_code():
+    class FakeResp:
+        status_code = 429
+        def json(self):
+            return {"error": {"message": "You have no credits remaining."}}
+    assert ca._is_quota_exhausted_response(FakeResp()) is True
+    print("OK: xabar matnida 'no credits remaining' bo'lsa ham kredit tugagani aniqlanadi")
+
+
+def test_is_quota_exhausted_false_for_plain_rate_limit():
+    class FakeResp:
+        status_code = 429
+        def json(self):
+            return {"error": {"code": "rate_limit_exceeded", "message": "Rate limit reached for requests"}}
+    assert ca._is_quota_exhausted_response(FakeResp()) is False
+    print("OK: oddiy tezlik-chegarasi (rate_limit_exceeded) kredit tugashi bilan ARALASHTIRILMAYDI (hali ham vaqtinchalik)")
+
+
+def test_is_quota_exhausted_false_for_non_429():
+    class FakeResp:
+        status_code = 500
+        def json(self):
+            return {"error": {"message": "insufficient_quota mentioned but wrong status"}}
+    assert ca._is_quota_exhausted_response(FakeResp()) is False
+    print("OK: faqat HTTP 429'da tekshiriladi -- boshqa status kodlar bilan aralashtirilmaydi")
+
+
+def test_openai_request_does_not_retry_on_quota_exhausted_429():
+    calls = {"n": 0}
+
+    class FakeResp:
+        status_code = 429
+        ok = False
+        text = '{"error": {"code": "insufficient_quota", "message": "You have no credits remaining."}}'
+        def json(self):
+            return {"error": {"code": "insufficient_quota", "message": "You have no credits remaining."}}
+
+    def fake_request(method, url, **kwargs):
+        calls["n"] += 1
+        return FakeResp()
+
+    with mock.patch("requests.request", side_effect=fake_request), mock.patch("time.sleep", return_value=None):
+        resp = ca._openai_request("POST", "https://api.openai.com/v1/x", headers={})
+    assert calls["n"] == 1, "kredit tugagan 429'da qayta urinish FOYDASIZ -- darhol qaytarilishi kerak"
+    assert resp.status_code == 429
+    print("OK: kredit tugagan 429'da QAYTA URINILMAYDI (har bir urinish bir xil natija berardi)")
+
+
+def test_call_transcribe_model_raises_credit_exhausted_error():
+    class FakeResp:
+        status_code = 429
+        ok = False
+        text = ""
+        def json(self):
+            return {"error": {"code": "insufficient_quota", "message": "You have no credits remaining."}}
+
+    with mock.patch.object(ca, "_openai_request", return_value=FakeResp()):
+        try:
+            ca._call_transcribe_model("test-key", "gpt-4o-transcribe", b"fake-audio", "mp3")
+            assert False, "OpenAICreditExhaustedError kutilgan edi"
+        except ca.OpenAICreditExhaustedError:
+            pass
+    print("OK: _call_transcribe_model kredit tugaganda ALOHIDA OpenAICreditExhaustedError ko'taradi (oddiy RuntimeError emas)")
+
+
+def test_mono_transcribe_ladder_aborts_immediately_on_credit_exhausted():
+    # Kredit tugagan bo'lsa, zanjir boshqa model/urinish bilan DAVOM
+    # ETMASLIGI kerak (barchasi bir xil hisobning krediti, qayta urinish
+    # foydasiz) -- faqat 1 marta chaqirilishi va DARHOL ko'tarilishi kerak.
+    calls = {"n": 0}
+
+    def fake_call_transcribe_model(api_key, model, audio_bytes, audio_format, strong=False):
+        calls["n"] += 1
+        raise ca.OpenAICreditExhaustedError("OpenAI balansi tugagan")
+
+    with mock.patch.object(ca, "_call_transcribe_model", side_effect=fake_call_transcribe_model), \
+         mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        try:
+            ca._mono_transcribe_ladder(b"fake-audio", "mp3", 10.0, [])
+            assert False, "OpenAICreditExhaustedError kutilgan edi"
+        except ca.OpenAICreditExhaustedError:
+            pass
+    assert calls["n"] == 1, f"zanjir kredit tugaganda DARHOL to'xtashi kerak edi, lekin {calls['n']} marta chaqirildi"
+    print("OK: _mono_transcribe_ladder kredit tugaganda 3 bosqichning HAMMASINI sinamay, DARHOL to'xtaydi")
+
+
+# ---------------------------------------------------------------------------
 # JSON Schema shakli
 # ---------------------------------------------------------------------------
 
@@ -901,6 +1002,25 @@ def test_analyze_call_record_uses_uploaded_audio_bytes_not_download():
     gate_args = mock_gate.call_args[0]
     assert gate_args[0] == b"fake-wav-bytes" and gate_args[1] == "wav"
     print("OK: qo'lda yuklangan audio uchun _download_audio ISHLATILMAYDI -- bazadagi baytlar to'g'ridan-to'g'ri ishlatiladi")
+
+
+def test_analyze_call_record_marks_credit_exhausted_stage_distinctly():
+    # 2026-08: "individual tekshiruv hech narsa ishlamayapti" bug'i --
+    # kredit tugaganda `ai_stage` oddiy "failed"/"transcription_failed"
+    # bilan ARALASHIB ketmasligi, ALOHIDA "credit_exhausted" bo'lishi
+    # kerak (UI aynan shu holatni ko'rsatishi uchun).
+    call = _FakeCall(recording_url="https://example.com/rec.mp3")
+    with mock.patch.object(ca, "_download_audio", return_value=(b"fake-audio", "mp3")), \
+         mock.patch.object(ca, "probe_audio_metadata", return_value=None), \
+         mock.patch.object(ca, "transcribe_with_quality_gate", side_effect=ca.OpenAICreditExhaustedError("OpenAI balansi tugagan")):
+        try:
+            ca.analyze_call_record(_FakeSession(), call)
+            assert False, "OpenAICreditExhaustedError qayta ko'tarilishi kerak edi"
+        except ca.OpenAICreditExhaustedError:
+            pass
+    assert call.ai_stage == "credit_exhausted", f"kutilgan ai_stage='credit_exhausted', olindi: {call.ai_stage!r}"
+    assert "balans" in (call.ai_error or "").lower()
+    print("OK: analyze_call_record kredit tugaganda ai_stage='credit_exhausted' (oddiy 'failed'dan ALOHIDA) qo'yadi")
 
 
 def run_all():
