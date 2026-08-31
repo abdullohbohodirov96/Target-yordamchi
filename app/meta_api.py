@@ -788,23 +788,63 @@ def get_instagram_media(ig_user_id: str, limit: int = 25) -> list[dict]:
     # muqova sifatida ishlatiladi (2026-08, foydalanuvchi so'rovi: "eng
     # faol postlar" jadvalida qaysi post ekanini bilish uchun kichik
     # rasm/video muqovasi ko'rsatilsin).
-    fields = "id,caption,timestamp,permalink,media_type,media_url,thumbnail_url,like_count,comments_count"
+    # `media_product_type` -- Meta'ning INSIGHTS METRIKALARINI TANLASH uchun
+    # ishlatadigan HAQIQIY maydoni (FEED | REELS | STORY | AD). 2026-08
+    # (item 6, foydalanuvchi shikoyati -- SMM ma'lumotlari "notori"):
+    # avval bu maydon UMUMAN so'ralmas edi, kod noto'g'ri ravishda
+    # `media_type` (IMAGE/VIDEO/CAROUSEL_ALBUM)ga qarab metrika tanlardi --
+    # bu ikkisi BOSHQA-BOSHQA narsa (masalan oddiy FEED'ga joylangan VIDEO
+    # bilan REELS'ga joylangan VIDEO uchun Meta turli metrikalarni
+    # qo'llab-quvvatlaydi). Pastdagi `get_instagram_media_insights()` endi
+    # to'g'ri `media_product_type`ga qarab ishlaydi.
+    fields = "id,caption,timestamp,permalink,media_type,media_product_type,media_url,thumbnail_url,like_count,comments_count"
     data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token())
     return data.get("data", [])
 
 
-def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE") -> dict:
-    """Bitta Instagram post/media uchun qamrov (reach) va saqlanganlar
-    (saved) sonini qaytaradi. VIDEO/REEL turlari uchun "impressions" o'rniga
-    "plays" metrikasi ishlatiladi (Meta bu ikkisini turga qarab farqli
-    qo'llab-quvvatlaydi). Chaqiruvchi (`smm_sync.py`) bu funksiyani har bir
-    media uchun ALOHIDA, xatoni tutib chaqiradi -- bitta postning insights
-    so'rovi muvaffaqiyatsiz bo'lsa ham, qolgan postlar sinxronlanishda
-    davom etadi."""
-    if media_type in ("VIDEO", "REEL"):
-        metrics = "reach,plays,saved"
-    else:
-        metrics = "reach,impressions,saved"
+def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE", media_product_type: str | None = None) -> dict:
+    """Bitta Instagram post/media uchun qamrov (reach), ko'rishlar (views),
+    saqlanganlar (saved), repost (shares) va postdan qo'shilgan yangi
+    obunachilar (follows) sonini qaytaradi.
+
+    MUHIM TUZATISH (2026-08, item 6 -- foydalanuvchi shikoyati: "SMM
+    hisobotdagi malumotla notori, nechta like coment repost va nechta
+    obunachi qo'shildi videodan aniq korsinsin"): bu funksiya AVVAL
+    Meta tomonidan 2025-yil aprelidan BEKOR QILINGAN metrikalarni
+    ("plays" -- video/reel uchun, "impressions" -- 2024-yil iyuldan
+    keyin joylangan HAR QANDAY media uchun) so'rar edi. Meta Graph
+    API'da ro'yxatdagi metrikalardan BITTASI ham noto'g'ri/bekor
+    qilingan bo'lsa, BUTUN so'rov xato qaytaradi (qisman natija emas) --
+    demak deyarli HAR BIR (ayniqsa 2024-yil iyuldan keyingi, ya'ni
+    amalda HAMMA joriy) post uchun bu chaqiruv butunlay muvaffaqiyatsiz
+    bo'lib, `except MetaAPIError: pass` orqali JIM yutilib ketgan, natijada
+    reach/saqlangan/qamrov ko'rsatkichlari deyarli hech qachon
+    to'lmagan. Bundan tashqari "shares" (repost) va "follows" (postdan
+    kelgan yangi obunachi) metrikalari UMUMAN so'ralmagan edi.
+
+    Metrikalar Meta'ning HAQIQIY qo'llab-quvvatlash jadvaliga mos ravishda
+    `media_product_type`ga (media_type'ga EMAS) qarab tanlanadi:
+      - REELS: reach, saved, shares, total_interactions, views ("follows"
+        REELS uchun Meta tomonidan berilmaydi -- bu Meta'ning o'zining
+        cheklovi, kod xatosi emas).
+      - STORY: reach, shares, follows, total_interactions, views ("saved"
+        tushunchasi Story uchun mavjud emas).
+      - FEED (standart/boshqa hollarda ham shu): reach, saved, shares,
+        follows, total_interactions, views.
+    "impressions" ENDI hech qanday holatda so'ralmaydi (bekor qilingan);
+    o'rniga zamonaviy "views" metrikasi ishlatiladi -- chaqiruvchi
+    (`smm_sync.py`) buni bazaning `impressions` ustuniga yozadi.
+
+    Chaqiruvchi (`smm_sync.py`) bu funksiyani har bir media uchun ALOHIDA,
+    xatoni tutib chaqiradi -- bitta postning insights so'rovi
+    muvaffaqiyatsiz bo'lsa ham, qolgan postlar sinxronlanishda davom
+    etadi."""
+    if media_product_type == "REELS":
+        metrics = "reach,saved,shares,total_interactions,views"
+    elif media_product_type == "STORY":
+        metrics = "reach,shares,follows,total_interactions,views"
+    else:  # FEED, "AD", yoki noma'lum/berilmagan -- eng keng tarqalgan holat
+        metrics = "reach,saved,shares,follows,total_interactions,views"
     data = _get(f"{media_id}/insights", {"metric": metrics}, token=_get_page_access_token())
     out = {}
     for item in data.get("data", []):

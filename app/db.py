@@ -387,10 +387,23 @@ class SmmPost(Base):
     posted_at = Column(DateTime, nullable=True, index=True)
     like_count = Column(Integer, nullable=True, default=0)
     comments_count = Column(Integer, nullable=True, default=0)
-    shares_count = Column(Integer, nullable=True, default=0)  # faqat Facebook
-    saved_count = Column(Integer, nullable=True, default=0)   # faqat Instagram
+    # 2026-08 (item 6, foydalanuvchi shikoyati -- "nechta repost" ko'rinmasdi):
+    # avval BU FAQAT Facebook uchun to'g'ri hisoblanardi -- Instagram tomonida
+    # `shares_count` doim 0 bilan qattiq yozib qo'yilgan edi (`smm_sync.py`),
+    # chunki Instagram insights so'rovi bu metrikani UMUMAN so'ramas edi.
+    # Endi ikkalasi uchun ham haqiqiy qiymat (`meta_api.get_instagram_media_insights`
+    # yangilangan metrikalar ro'yxati orqali).
+    shares_count = Column(Integer, nullable=True, default=0)
+    saved_count = Column(Integer, nullable=True)   # faqat Instagram (FEED/REELS) -- Facebook uchun bu tushuncha yo'q, shuning uchun None ("—"), 0 emas
+    # 2026-08 (item 6): "nechta obunachi qo'shildi videodan" -- Instagram
+    # Graph API'ning "follows" metrikasi (FAQAT FEED va STORY turidagi media
+    # uchun mavjud -- REELS uchun Meta bu metrikani UMUMAN bermaydi, va
+    # Facebook'da ham post darajasida bunday metrika yo'q). NULL = "bu
+    # media turi/platforma uchun Meta bu ma'lumotni bermaydi" (haqiqiy 0
+    # bilan chalkashtirmaslik uchun, xuddi `reach`/`impressions`dagi kabi).
+    follows_count = Column(Integer, nullable=True)
     reach = Column(Integer, nullable=True)
-    impressions = Column(Integer, nullable=True)
+    impressions = Column(Integer, nullable=True)  # 2026-08dan: Instagram uchun bu ustunga endi "views" metrikasi yoziladi (eski "impressions"/"plays" metrikalari Meta tomonidan bekor qilingan -- pastga, meta_api.py'ga qarang)
     raw_data = Column(Text, nullable=True)
     last_synced_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
     created_at = Column(DateTime, default=dt.datetime.utcnow)

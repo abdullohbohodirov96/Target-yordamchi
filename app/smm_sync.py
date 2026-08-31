@@ -168,8 +168,16 @@ def _sync_facebook(session, result: dict) -> None:
             posted_at=_parse_dt(p.get("created_time")),
             like_count=((p.get("likes") or {}).get("summary") or {}).get("total_count", 0),
             comments_count=((p.get("comments") or {}).get("summary") or {}).get("total_count", 0),
+            # Facebook'da "repost" (share) haqiqiy, to'g'ridan-to'g'ri
+            # `/posts` maydoni -- insights'ga bog'liq emas, shuning uchun
+            # bu HAR DOIM to'g'ri ishlagan (item 6 tuzatishi Instagram
+            # tomoniga tegishli edi, bu yerga emas).
             shares_count=(p.get("shares") or {}).get("count", 0),
-            saved_count=0,
+            # "Saqlangan" (bookmark/save) -- Instagram'ga xos tushuncha,
+            # Facebook Page post'ida bunday metrika yo'q. 0 emas None --
+            # "haqiqatan nol" bilan "bu platformada mavjud emas"ni
+            # aralashtirib yubormaslik uchun (reach/impressions'dagi kabi).
+            saved_count=None,
             reach=insights.get("post_impressions"),
             impressions=insights.get("post_impressions"),
             raw_data=json.dumps(p, ensure_ascii=False),
@@ -218,7 +226,11 @@ def _sync_instagram(session, result: dict) -> None:
             continue
         insights = {}
         try:
-            insights = meta_api.get_instagram_media_insights(media_id, media_type=m.get("media_type", "IMAGE"))
+            insights = meta_api.get_instagram_media_insights(
+                media_id,
+                media_type=m.get("media_type", "IMAGE"),
+                media_product_type=m.get("media_product_type"),
+            )
         except meta_api.MetaAPIError:
             pass
         _upsert_post(
@@ -234,10 +246,17 @@ def _sync_instagram(session, result: dict) -> None:
             posted_at=_parse_dt(m.get("timestamp")),
             like_count=m.get("like_count", 0),
             comments_count=m.get("comments_count", 0),
-            shares_count=0,
+            # 2026-08 (item 6 tuzatishi): avval har doim 0 -- endi Meta'ning
+            # "shares" (repost) metrikasidan haqiqiy qiymat.
+            shares_count=insights.get("shares", 0) or 0,
             saved_count=insights.get("saved"),
+            # 2026-08 (item 6 tuzatishi): "follows" -- FAQAT FEED/STORY turi
+            # uchun Meta beradi, REELS uchun None qoladi (Meta'ning o'z
+            # cheklovi -- shablon buni "—" deb ko'rsatadi, "0" emas).
+            follows_count=insights.get("follows"),
             reach=insights.get("reach"),
-            impressions=insights.get("impressions") or insights.get("plays"),
+            # 2026-08: bekor qilingan "impressions"/"plays" o'rniga "views".
+            impressions=insights.get("views"),
             raw_data=json.dumps(m, ensure_ascii=False),
         )
         synced += 1

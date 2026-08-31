@@ -26,6 +26,7 @@ def _post_to_dict(p) -> dict:
         "comments_count": p.comments_count or 0,
         "shares_count": p.shares_count or 0,
         "saved_count": p.saved_count or 0,
+        "follows_count": p.follows_count,
         "reach": p.reach,
         "impressions": p.impressions,
         "engagement": _engagement(p),
@@ -116,6 +117,16 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     total_saved = sum(p.saved_count or 0 for p in period_posts)
     total_engagement = total_likes + total_comments + total_shares + total_saved
 
+    # 2026-08 (item 6, foydalanuvchi so'rovi: "nechta obunachi qo'shildi
+    # videodan aniq korsinsin"): `follows_count` HAR BIR post uchun Meta
+    # tomonidan berilmasligi mumkin (masalan REELS turi uchun umuman
+    # berilmaydi, Facebook'da esa bu ko'rsatkich UMUMAN yo'q) -- shuning
+    # uchun reach/impressions'dagi kabi "haqiqiy 0" bilan "ma'lumot yo'q"ni
+    # aniq ajratamiz (None -- shablon "—" ko'rsatadi).
+    follows_values = [p.follows_count for p in period_posts if p.follows_count is not None]
+    total_follows = sum(follows_values) if follows_values else None
+    follows_missing_count = len(period_posts) - len(follows_values)
+
     engagement_rate = None
     if latest_followers and period_posts:
         avg_engagement_per_post = total_engagement / len(period_posts)
@@ -141,6 +152,8 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
         "total_comments": total_comments,
         "total_shares": total_shares,
         "total_saved": total_saved,
+        "total_follows": total_follows,
+        "follows_missing_count": follows_missing_count,
         "total_engagement": total_engagement,
         "engagement_rate": engagement_rate,
         "top_posts": [_post_to_dict(p) for p in top_posts],

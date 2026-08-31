@@ -103,18 +103,27 @@
       {% endif %}
     </div>
     <div class="kpi-card"><div class="kpi-label">Engagement rate</div><div class="kpi-value">{{ (p.engagement_rate ~ '%') if p.engagement_rate is not none else '—' }}</div></div>
+    <div class="kpi-card">
+      <div class="kpi-label">Yangi obunachi (postlardan)</div>
+      <div class="kpi-value">{{ p.total_follows if p.total_follows is not none else '—' }}</div>
+      {% if key == 'facebook' %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">Facebook bu ko'rsatkichni post darajasida bermaydi</div>
+      {% elif p.total_follows is none and p.posts_in_period_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">Reels turidagi videolarda bu ko'rsatkichni Meta umuman bermaydi</div>
+      {% elif p.follows_missing_count %}
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.follows_missing_count }} ta postda bu ma'lumot yo'q (asosan Reels)</div>
+      {% endif %}
+    </div>
   </div>
 
-  <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:16px">
+  <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:16px">
     <div class="kpi-card"><div class="kpi-label">Like</div><div class="kpi-value">{{ p.total_likes }}</div></div>
     <div class="kpi-card"><div class="kpi-label">Komment</div><div class="kpi-value">{{ p.total_comments }}</div></div>
-    {% if key == 'facebook' %}
-    <div class="kpi-card"><div class="kpi-label">Share</div><div class="kpi-value">{{ p.total_shares }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Jami faollik</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
-    {% else %}
+    <div class="kpi-card"><div class="kpi-label">Share (repost)</div><div class="kpi-value">{{ p.total_shares }}</div></div>
+    {% if key == 'instagram' %}
     <div class="kpi-card"><div class="kpi-label">Saqlangan</div><div class="kpi-value">{{ p.total_saved }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Jami faollik</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
     {% endif %}
+    <div class="kpi-card"><div class="kpi-label">Jami faollik</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
   </div>
 
   {% if p.chart|length > 1 %}
@@ -124,7 +133,7 @@
   <h3 style="margin:0 0 8px">Eng faol postlar</h3>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Sana</th><th>Muqova</th><th>Turi</th><th>Matn</th><th class="num">Like</th><th class="num">Komment</th><th class="num">{{ 'Share' if key=='facebook' else 'Saqlangan' }}</th><th class="num">Qamrov</th><th class="num">Jami faollik</th><th></th></tr></thead>
+    <thead><tr><th>Sana</th><th>Muqova</th><th>Turi</th><th>Matn</th><th class="num">Like</th><th class="num">Komment</th><th class="num">Share</th>{% if key == 'instagram' %}<th class="num">Saqlangan</th>{% endif %}<th class="num">Yangi obunachi</th><th class="num">Qamrov</th><th class="num">Jami faollik</th><th></th></tr></thead>
     <tbody>
       {% for post in p.top_posts %}
       {% set mt = post.media_type or 'STATUS' %}
@@ -162,13 +171,15 @@
         <td>{{ post.caption or '—' }}</td>
         <td class="num">{{ post.like_count }}</td>
         <td class="num">{{ post.comments_count }}</td>
-        <td class="num">{{ post.shares_count if key=='facebook' else post.saved_count }}</td>
+        <td class="num">{{ post.shares_count }}</td>
+        {% if key == 'instagram' %}<td class="num">{{ post.saved_count if post.saved_count is not none else '—' }}</td>{% endif %}
+        <td class="num">{{ post.follows_count if post.follows_count is not none else '—' }}</td>
         <td class="num">{{ post.reach if post.reach is not none else '—' }}</td>
         <td class="num text-good-strong">{{ post.engagement }}</td>
         <td>{% if post.permalink %}<a href="{{ post.permalink }}" target="_blank" rel="noopener" class="text-blue">ko'rish</a>{% endif %}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="10">Bu davr uchun post topilmadi.</td></tr>
+      <tr class="empty-row"><td colspan="{{ 12 if key == 'instagram' else 11 }}">Bu davr uchun post topilmadi.</td></tr>
       {% endfor %}
     </tbody>
   </table>
