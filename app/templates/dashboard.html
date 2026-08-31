@@ -163,6 +163,74 @@
 
 </div>
 
+{% if o.target_summary or o.smm_summary or o.dm_summary %}
+<!-- Target / SMM / Instagram DM -- QISQACHA ko'rinish (2026-08, foydalanuvchi
+     so'rovi: "dashboardga ham hamma malumotlani qoshib qoygin, hamma narsani
+     qosh, toliq malumotlar bolsin" -- ilgari bularni ko'rish uchun alohida
+     /target, /smm, /instagram-xabarlar sahifalariga o'tish kerak edi. Faqat
+     "target" modul huquqi bor foydalanuvchiga ko'rinadi -- xuddi o'sha
+     sahifalar kabi. -->
+<div class="page-head" style="margin-top:4px; margin-bottom:0">
+  <h2 style="font-size:16px; margin:0">Target / SMM / Instagram &mdash; to'liq ko'rinish <span class="text-faint" style="font-weight:400; font-size:12px">(so'nggi 30 kun)</span></h2>
+</div>
+
+<div class="kpidash">
+
+  {% if o.target_summary %}
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Target (Meta reklama)</div>
+      <a href="{{ url_for('target_page') }}" class="text-dim" style="font-size:12px">Batafsil &rarr;</a>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:0">
+      <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(o.target_summary.spend or 0) }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(o.target_summary.cpl or 0) }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Lidlar (CRM)</div><div class="kpi-value">{{ o.target_summary.crm_leads_total }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Sotildi</div><div class="kpi-value good">{{ o.target_summary.sold }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (o.target_summary.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(o.target_summary.roi_percent or 0) }}%</div></div>
+      <div class="kpi-card"><div class="kpi-label">Faol kampaniya</div><div class="kpi-value">{{ o.target_summary.active_campaigns }}</div></div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if o.smm_summary %}
+  {% for platform_key, platform_label in [("instagram", "Instagram"), ("facebook", "Facebook")] %}
+  {% set p = o.smm_summary.get(platform_key) %}
+  {% if p and p.has_snapshots %}
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">SMM &mdash; {{ platform_label }}</div>
+      <a href="{{ url_for('smm_report') }}" class="text-dim" style="font-size:12px">Batafsil &rarr;</a>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:0">
+      <div class="kpi-card"><div class="kpi-label">Obunachilar</div><div class="kpi-value">{{ p.followers_count if p.followers_count is not none else '—' }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Bu oy o'sish</div><div class="kpi-value {{ 'good' if (p.growth_month or 0) > 0 else '' }}">{{ '%+d'|format(p.growth_month) if p.growth_month is not none else '—' }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Jami faollik</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Engagement rate</div><div class="kpi-value">{{ (p.engagement_rate ~ '%') if p.engagement_rate is not none else '—' }}</div></div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+
+  {% if o.dm_summary %}
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Instagram xabarlar (DM)</div>
+      <a href="{{ url_for('instagram_dm') }}" class="text-dim" style="font-size:12px">Batafsil &rarr;</a>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:0">
+      <div class="kpi-card"><div class="kpi-label">Jami suhbatlar</div><div class="kpi-value">{{ o.dm_summary.total_conversations }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Javobsiz</div><div class="kpi-value {{ 'bad' if o.dm_summary.unanswered_count else '' }}">{{ o.dm_summary.unanswered_count }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">"Issiq" lidlar</div><div class="kpi-value good">{{ o.dm_summary.hot_count }}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Bugun yangi xabar</div><div class="kpi-value">{{ o.dm_summary.new_customer_messages_today }}</div></div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 (function () {

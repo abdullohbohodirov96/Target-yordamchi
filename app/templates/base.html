@@ -181,9 +181,21 @@
     });
     // Sensorli ekranda "mouseenter" ishonchli ishlamaydi -- shuning uchun
     // menyu ustiga bosilganda ham (agar hali ochilmagan bo'lsa) ochiladi.
+    //
+    // MUHIM BUG FIX (2026-08, foydalanuvchi shikoyati: "side bar tugmalari
+    // hech qaysi ishlamayapti"): avval bu yerda HAR DOIM `e.preventDefault()`
+    // chaqirilardi -- shu sababli menyu yopiq/tor holatda bo'lsa, nav-item
+    // havolasiga (masalan "Target", "SMM hisobot") bosilganda navigatsiya
+    // BEKOR qilinardi, faqat menyu vizual ochilardi. Foydalanuvchi o'sha
+    // tugmaga IKKINCHI marta bosishi kerak edi -- aks holda "tugma
+    // ishlamayapti" deb ko'rinardi. Endi: haqiqiy havolaga (<a href>) bosilsa
+    // preventDefault QILINMAYDI -- brauzer o'zi navigatsiya qiladi, menyu esa
+    // baribir vizual ochiladi (sahifa allaqachon o'zgarayotgani uchun bu
+    // muhim emas). preventDefault faqat havola BO'LMAGAN joyga (sidebar fon/
+    // bo'sh joyiga) bosilganda ishlatilmaydi ham -- chunki u yerda hech qanday
+    // "standart harakat"ning o'zi yo'q, oldini olishga hojat yo'q.
     sidebar.addEventListener('click', function (e) {
       if (!pinned && !sidebar.classList.contains('open')) {
-        e.preventDefault();
         setOpen(true);
       }
     });

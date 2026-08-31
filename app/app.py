@@ -852,6 +852,48 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
         "is_overdue": l.next_contact_at.date() < now.date(),
     } for l in due_followups[:6]]
 
+    # 6) Target (Meta reklama) / SMM / Instagram DM -- QISQACHA ko'rinish
+    # (2026-08, foydalanuvchi so'rovi: "dashboardga ham hamma malumotlani
+    # qoshib qoygin, hamma narsani qosh, toliq malumotlar bolsin" --
+    # ilgari bularni ko'rish uchun alohida /target, /smm, /instagram-
+    # xabarlar sahifalariga o'tish kerak edi, Dashboard'da hech narsa
+    # ko'rinmasdi). Uchalasi ham xuddi o'sha sahifalar kabi "target"
+    # modul huquqiga bog'liq -- shu huquq yo'q foydalanuvchiga bu
+    # bo'limlar umuman ko'rsatilmaydi (na so'rov yuboriladi, na panel
+    # chiqadi), xatoga chidamli: Meta API vaqtincha ishlamay qolsa ham
+    # butun Dashboard "Internal Server Error" bo'lib qolmasligi kerak.
+    target_summary = None
+    smm_summary = None
+    dm_summary = None
+    if permissions.has_module(current_user, "target"):
+        try:
+            target_data = get_kpis(level="campaign", date_preset="last_30d", active_only=True)
+            if not target_data.get("error"):
+                t = target_data["totals"]
+                target_summary = {
+                    "spend": t.get("spend", 0.0),
+                    "meta_leads": t.get("meta_leads", 0),
+                    "crm_leads_total": t.get("crm_leads_total", 0),
+                    "cpl": t.get("cpl", 0.0),
+                    "sold": t.get("sold", 0),
+                    "roi_percent": t.get("roi_percent", 0.0),
+                    "active_campaigns": len(target_data.get("rows", [])),
+                }
+        except Exception:
+            logger.exception("Dashboard: Target qisqacha ma'lumotini olishda xato")
+
+        try:
+            smm_report_data = smm_analytics.build_smm_report(session, days=30)
+            smm_summary = smm_report_data["platforms"]
+        except Exception:
+            logger.exception("Dashboard: SMM qisqacha ma'lumotini olishda xato")
+
+        try:
+            dm_report_data = ig_dm_analytics.build_dm_report(session, limit=200)
+            dm_summary = dm_report_data["stats"]
+        except Exception:
+            logger.exception("Dashboard: Instagram DM qisqacha ma'lumotini olishda xato")
+
     return {
         "generated_at": now.isoformat(),
         "total_leads": total_leads,
@@ -873,6 +915,9 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
         "followups_overdue": followups_overdue,
         "followups_today": followups_today,
         "followups_preview": followups_preview,
+        "target_summary": target_summary,
+        "smm_summary": smm_summary,
+        "dm_summary": dm_summary,
     }
 
 
