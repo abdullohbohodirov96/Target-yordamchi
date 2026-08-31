@@ -15,6 +15,12 @@ Jadval (standart, ENV orqali sozlanadi):
     oshirish/kamaytirish, pause/resume) -- FAQAT diqqatga loyiq narsa bo'lsa
     Telegram'ga yuboradi.
   - Har 4 soatda -- byudjet balansi ogohlantirishi.
+  - Har 15 daqiqada -- CPL hard-kill: LLM'siz, deterministik tekshiruv --
+    bugungi kunda `cpl_hard_kill_usd` chegarasidan oshgan (yoki hali
+    birorta lead kelmasdan ancha xarajat qilingan) FAOL reklamalarni
+    DARHOL pauza qiladi (soatlik LLM audit tsiklidan mustaqil, 2026-08,
+    foydalanuvchi shikoyati asosida qo'shildi -- `orchestrator.py`dagi
+    `enforce_cpl_hard_kill()`ga qarang).
   - Har 15 daqiqada -- Meta Lead Ads'dan yangi lidlarni CRM bazasiga tortish.
   - Har 5 daqiqada -- foydalanuvchi Telegram orqali qo'ygan DOIMIY vazifalarni
     (schedule_on_off: har kuni belgilangan vaqtda avtomatik yoqish/o'chirish,
@@ -211,6 +217,39 @@ def job_budget_check() -> str:
         _tg_send(alert["chat_id"], alert["message"])
         return "ogohlantirish yuborildi"
     return "hammasi joyida"
+
+
+def job_cpl_hard_kill() -> dict:
+    """Har 15 daqiqada -- CPL hard-kill deterministik (LLM'siz) tekshiruvi
+    (`orchestrator.enforce_cpl_hard_kill`). Soatlik LLM audit tsiklidan
+    (`job_watch_cycle`) BUTUNLAY MUSTAQIL, ancha tezroq ishlaydigan
+    xavfsizlik qatlami (2026-08, foydalanuvchi shikoyati: "cpl kottalashib
+    ketvoti targetni ochirmayapti hech narsa qimayapti kech qivoti" --
+    LLM soatlik tsiklda `last_7d` o'rtachasiga qarab xulosa chiqargani
+    uchun bitta kunlik keskin sakrash "yuvilib" ketishi mumkin edi)."""
+    try:
+        result = orchestrator.enforce_cpl_hard_kill()
+    except Exception as e:
+        logger.exception("CPL hard-kill tekshiruvida kutilmagan xatolik")
+        return {"error": str(e)}
+
+    paused = result.get("paused") or []
+    errors = result.get("errors") or []
+    if paused or errors:
+        targets = _full_activity_targets()
+        lines = []
+        if paused:
+            lines.append(f"\U0001F6D1 CPL chegarasi oshgani uchun {len(paused)} ta reklama AVTOMATIK pauza qilindi (LLM'siz, darhol):\n")
+            for p in paused:
+                lines.append(f"- {p['name']} ({p['ad_id']}): {p['reason']}")
+        if errors:
+            lines.append("\n⚠️ Pauza qilishga urinishda xatoliklar:")
+            for e in errors:
+                lines.append(f"- {e}")
+        message = "\n".join(lines)
+        for cid in targets:
+            _tg_send(cid, message)
+    return result
 
 
 def job_lead_sync() -> dict:
@@ -586,6 +625,7 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_admin_report, CronTrigger(hour=9, minute=0, timezone=TIMEZONE), id="admin-report")
     scheduler.add_job(job_watch_cycle, CronTrigger(minute=5, timezone=TIMEZONE), id="watch")  # har soatning 5-daqiqasida
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
+    scheduler.add_job(job_cpl_hard_kill, CronTrigger(minute="*/15", timezone=TIMEZONE), id="cpl-hard-kill")  # LLM'siz, tez CPL xavfsizlik qatlami
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")

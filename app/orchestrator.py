@@ -1103,6 +1103,118 @@ def _crm_leads_count_today() -> int:
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# CPL HARD-KILL -- DETERMINISTIK (LLM'siz) XAVFSIZLIK QATLAMI
+# ---------------------------------------------------------------------------
+# MUHIM (2026-08, foydalanuvchi shikoyati -- "target limitlani ushashni
+# bilsin cpl kottalashib ketvoti targetni ochirmayapti hech narsa qimayapti
+# kech qivoti"): oldin CPL hard-kill mantig'i BUTUNLAY
+# `targetolog_system_prompt.md`dagi prompt matniga -- ya'ni LLM'ning har
+# safar bu qoidani "eslab qolib" to'g'ri qo'llashiga -- tayangan edi, VA
+# `gather_data()`dagi ad-darajasidagi ma'lumot FAQAT `last_7d` oynasi bilan
+# kelardi (ad-darajasida alohida "bugun" ma'lumoti yo'q edi). Ikkalasi
+# birgalikda bitta kunlik keskin CPL sakrashini soatlab sezmasdan
+# qoldirishi mumkin edi (soatlik LLM audit tsikli 7 kunlik o'rtachaga
+# qaraganda kunlik chetlanishni "yuvib" yuborardi).
+#
+# Bu funksiya LLM'ga BUTUNLAY BOG'LIQ EMAS -- to'g'ridan-to'g'ri kod bilan,
+# dashboard'ning o'zi ishlatadigan (`dashboard_data.get_kpis`, allaqachon
+# CRM lead'lariga asoslangan, tekshirilgan) CPL hisobidan foydalanib, HAR
+# BIR FAOL reklamani "bugun" (`date_preset="today"`) darajasida tekshiradi
+# va `cpl_hard_kill_usd` chegarasidan oshgan (yoki hali birorta lead
+# kelmasdanoq ancha xarajat qilingan) reklamani DARHOL (LLM javobini
+# kutmasdan) pauza qiladi. `scheduler.py`da bu alohida, TEZ-TEZ (har 15
+# daqiqada) ishlaydigan cron sifatida ro'yxatga olinadi -- soatlik LLM
+# audit tsiklidan (`job_watch_cycle`) MUSTAQIL.
+# ---------------------------------------------------------------------------
+
+def enforce_cpl_hard_kill() -> dict:
+    """Bugungi (server vaqti bo'yicha "today") faol reklamalarni CPL
+    hard-kill chegarasi bo'yicha tekshiradi va chegaradan oshganlarini
+    DARHOL pauza qiladi -- Targetolog/Marketolog LLM tsiklidan mustaqil.
+
+    Qaytaradi: {"checked": N, "paused": [...], "errors": [...]}.
+    Har bir "paused" elementi: {"ad_id", "name", "reason", "cpl", "spend"}.
+    """
+    cpl_hard_kill = float(BUSINESS_RULES.get("cpl_hard_kill_usd") or 0)
+    if cpl_hard_kill <= 0:
+        return {"checked": 0, "paused": [], "errors": [], "note": "cpl_hard_kill_usd sozlanmagan -- tekshiruv o'tkazib yuborildi"}
+
+    # Juda kichik hajmdagi "shovqin"dan (masalan bitta erta/tasodifiy qimmat
+    # lead) asossiz pauza qilib yubormaslik uchun minimal xarajat bo'sag'asi
+    # -- shu summagacha reklama hali "sinov" bosqichida deb hisoblanadi.
+    min_spend = float(BUSINESS_RULES.get("cpl_hard_kill_min_spend_usd", 3.0))
+    # Hali BIRORTA HAM lead kelmagan, lekin xarajat allaqachon baland bo'lgan
+    # reklama uchun alohida qoida (CPL bu holda 0'ga bo'linish tufayli
+    # hisoblanmaydi -- dashboard_data shunday qaytaradi).
+    zero_lead_multiplier = float(BUSINESS_RULES.get("cpl_hard_kill_zero_lead_multiplier", 3.0))
+    protected_campaign_ids = set(BUSINESS_RULES.get("protected_campaign_ids") or [])
+
+    result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True)
+    if result.get("error"):
+        logger.error("CPL hard-kill: bugungi ad ma'lumotini olishda xato: %s", result["error"])
+        return {"checked": 0, "paused": [], "errors": [result["error"]]}
+
+    campaign_by_ad = {}
+    if protected_campaign_ids:
+        try:
+            structure = meta_api.get_account_structure(active_only=True)
+            campaign_by_ad = {a["id"]: a.get("campaign_id") for a in structure.get("ads", [])}
+        except meta_api.MetaAPIError as e:
+            logger.warning(
+                "CPL hard-kill: account_structure olinmadi (protected_campaign_ids "
+                "tekshiruvi shu safar o'tkazib yuborildi): %s", e,
+            )
+
+    checked = 0
+    paused = []
+    errors = []
+    for row in result.get("rows", []):
+        if row.get("status") != "ACTIVE":
+            continue
+        checked += 1
+        ad_id = row["id"]
+        campaign_id = campaign_by_ad.get(ad_id)
+        if campaign_id and campaign_id in protected_campaign_ids:
+            continue
+
+        spend = row.get("spend", 0.0)
+        cpl = row.get("cpl", 0.0)
+        # `dashboard_data._get_kpis_uncached()` bilan BIR XIL mantiq --
+        # effektiv lead soni CRM'dagi haqiqiy yozuvlar, yoki (CRM hali
+        # ulgurmagan bo'lsa) Lead-turi target uchun Meta'ning o'z natijasi.
+        effective_leads = row.get("crm_leads_total", 0)
+        if not effective_leads and row.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
+            effective_leads = max(row.get("meta_result") or 0, row.get("meta_leads") or 0)
+
+        reason = None
+        if effective_leads > 0 and spend >= min_spend and cpl > cpl_hard_kill:
+            reason = (
+                f"CPL ${cpl:.2f} (chegara: ${cpl_hard_kill:.2f}dan yuqori), "
+                f"bugun sarflandi ${spend:.2f}, {effective_leads} ta lead."
+            )
+        elif effective_leads == 0 and spend >= cpl_hard_kill * zero_lead_multiplier:
+            reason = (
+                f"Bugun ${spend:.2f} sarflandi, lekin HALI BIRORTA lead "
+                f"kelmadi (chegara: ${cpl_hard_kill * zero_lead_multiplier:.2f})."
+            )
+        if not reason:
+            continue
+
+        try:
+            _execute_and_verify_status(ad_id, "PAUSED")
+            paused.append({
+                "ad_id": ad_id, "name": row.get("name", ad_id),
+                "reason": reason, "cpl": cpl, "spend": spend,
+            })
+            logger.warning("CPL hard-kill: reklama pauza qilindi -- %s (%s): %s", row.get("name", ad_id), ad_id, reason)
+        except meta_api.MetaAPIError as e:
+            errors.append(f"{row.get('name', ad_id)} ({ad_id}): {e}")
+            logger.error("CPL hard-kill: pauza qilishda xato -- %s: %s", ad_id, e)
+
+    return {"checked": checked, "paused": paused, "errors": errors}
+
+
 def gather_data() -> dict:
     """Meta API'dan tahlil uchun kerakli barcha ma'lumotni yig'adi.
 

@@ -1,6 +1,8 @@
 {
   "target_cpa_usd": 1.0,
   "cpl_hard_kill_usd": 1.5,
+  "cpl_hard_kill_min_spend_usd": 3.0,
+  "cpl_hard_kill_zero_lead_multiplier": 3.0,
   "target_roas": 3.0,
   "monthly_budget_cap_usd": 3000,
   "max_daily_budget_change_percent": 20,
@@ -10,5 +12,5 @@
   ],
   "auto_approve_low_risk": false,
   "skip_marketolog": true,
-  "notes": "Bu faylni o'z biznesingiz raqamlariga moslab tahrirlang. Marketolog agent har bir tekshiruvda shu qoidalarga tayanadi. skip_marketolog=true bo'lsa, Targetolog taklif qilgan HAMMA action to'g'ridan-to'g'ri (Marketolog tekshiruvisiz) ijro etiladi — tezroq ishlaydi, lekin ikkinchi nazorat qatlami o'chadi. Xavfsizlikni qaytarish uchun false qiling. target_cpa_usd=1.0 -- IDEAL/norma CPL (2026-08, foydalanuvchi so'rovi bilan $2.6'dan tushirildi). cpl_hard_kill_usd=1.5 -- shu chegaradan OShGAN yoki sifati aniq yomon bo'lgan reklama Targetolog tomonidan bosqichlarni kutmasdan DARHOL pauza qilinadi (targetolog_system_prompt.md'dagi 2-band severity fork'ga qara); target_cpa_usd bilan cpl_hard_kill_usd orasidagi ozgina oshish esa asta-sekin, sinab-kutib tuzatiladi."
+  "notes": "Bu faylni o'z biznesingiz raqamlariga moslab tahrirlang. Marketolog agent har bir tekshiruvda shu qoidalarga tayanadi. skip_marketolog=true bo'lsa, Targetolog taklif qilgan HAMMA action to'g'ridan-to'g'ri (Marketolog tekshiruvisiz) ijro etiladi — tezroq ishlaydi, lekin ikkinchi nazorat qatlami o'chadi. Xavfsizlikni qaytarish uchun false qiling. target_cpa_usd=1.0 -- IDEAL/norma CPL (2026-08, foydalanuvchi so'rovi bilan $2.6'dan tushirildi). cpl_hard_kill_usd=1.5 -- shu chegaradan OShGAN reklama DARHOL pauza qilinadi -- ENDI (2026-08dan) buni FAQAT Targetolog LLM emas, ALOHIDA deterministik kod (`orchestrator.enforce_cpl_hard_kill`, har 15 daqiqada `scheduler.py` orqali) ham tekshiradi, LLM tsiklini kutmasdan. cpl_hard_kill_min_spend_usd=3.0 -- shu summagacha reklama hali 'sinov' bosqichida hisoblanadi, bitta erta qimmat lead uchun asossiz pauza qilinmaydi. cpl_hard_kill_zero_lead_multiplier=3.0 -- hali birorta lead kelmagan reklama uchun 'juda ko'p xarajat' chegarasi = cpl_hard_kill_usd shu songa ko'paytirilgani (masalan 1.5 x 3 = $4.5)."
 }
