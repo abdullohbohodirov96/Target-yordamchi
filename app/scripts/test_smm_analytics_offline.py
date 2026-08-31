@@ -125,10 +125,67 @@ def test_facebook_has_no_follows_or_saved_concept():
             fb = report["platforms"]["facebook"]
             assert fb["total_shares"] == 5, "Facebook share -- haqiqiy /posts maydoni, bu HAR DOIM ishlashi kerak"
             assert fb["total_follows"] is None, "Facebook uchun follows umuman mavjud emas -- None bo'lishi kerak"
-            assert fb["total_saved"] == 0, "saved_count None bo'lganda yig'indi 0 (Facebook uchun bu ustun ishlatilmaydi)"
+            # MUHIM BUG FIX (2026-08, foydalanuvchi shikoyati: "smm haliyam
+            # notori ishlayapti"): avval bu yerda `total_saved == 0` kutilardi
+            # -- bu ESKI, NOTO'G'RI xulq-atvor edi (saved_count=None bo'lsa
+            # ham "0" ko'rsatilardi, xuddi reach/follows'dagi buglar kabi).
+            # Endi total_saved/total_shares HAM reach/follows bilan bir xil
+            # "None = ma'lumot yo'q" qoidasiga bo'ysunadi.
+            assert fb["total_saved"] is None, "saved_count HAMMASI None bo'lsa, umumiy son HAM None bo'lishi kerak (0 emas)"
+            assert fb["saved_missing_count"] == 1
         finally:
             session.close()
     print("OK: Facebook uchun 'yangi obunachi'/'saqlangan' None sifatida to'g'ri ishlanadi (mavjud bo'lmagan metrika sifatida)")
+
+
+def test_shares_and_saved_none_when_insights_entirely_failed():
+    # MUHIM BUG FIX (2026-08, foydalanuvchi shikoyati: "smm haliyam notori
+    # ishlayapti, videodan nechta obunachi kelganini ko'rsatmayapti"):
+    # Instagram insights so'rovi BUTUNLAY muvaffaqiyatsiz bo'lganda (masalan
+    # ruxsat muammosi) `shares_count`/`saved_count` ENDI to'g'ridan-to'g'ri
+    # `None` bo'lishi kerak -- avval `db.SmmPost.shares_count`dagi
+    # `default=0` tufayli bu qiymat "0" (soxta "tasdiqlangan nol repost")
+    # bo'lib qolar edi, garchi `smm_sync.py` ATAYLAB `None` yozmoqchi
+    # bo'lsa ham.
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module = _fresh_db_module(os.path.join(tmp, "t4.db"))
+        db_module.init_db()
+        import smm_analytics
+
+        session = db_module.get_session()
+        try:
+            now = dt.datetime.utcnow()
+            # `smm_sync.py`dagi kabi -- insights so'rovi xato qaytarganda
+            # `shares_count`/`saved_count`/`follows_count`/`reach`/
+            # `impressions` HAMMASI ATAYLAB None qilib yuboriladi.
+            post = db_module.SmmPost(
+                platform="instagram", external_id="ig_insights_failed", media_type="REEL",
+                posted_at=now, like_count=300, comments_count=25,
+                shares_count=None, saved_count=None, follows_count=None,
+                reach=None, impressions=None,
+            )
+            session.add(post)
+            session.commit()
+
+            # Baza darajasida ham `default=0` qayta paydo bo'lib qolmaganini
+            # tekshiramiz (SQLAlchemy `default` ATAYLAB berilgan None'ni
+            # "berilmagan" bilan aralashtirib yuborishi mumkin edi).
+            session.refresh(post)
+            assert post.shares_count is None, f"DB darajasida ham None saqlanishi kerak, olindi: {post.shares_count}"
+
+            report = smm_analytics.build_smm_report(session, days=30)
+            ig = report["platforms"]["instagram"]
+            assert ig["total_shares"] is None, f"insights butunlay ishlamagan bo'lsa total_shares None bo'lishi kerak, olindi: {ig['total_shares']}"
+            assert ig["total_saved"] is None
+            assert ig["shares_missing_count"] == 1
+            assert ig["saved_missing_count"] == 1
+            # "Jami faollik" (tarkibiy ko'rsatkich) baribir like/commentni
+            # ko'rsatishi kerak -- None qismlar tufayli butunlay yiqilmasligi
+            # yoki "—" bo'lib qolmasligi kerak.
+            assert ig["total_engagement"] == 300 + 25
+        finally:
+            session.close()
+    print("OK: Instagram insights so'rovi butunlay ishlamaganda shares/saved DB darajasida ham HAQIQIY None bo'lib qoladi (soxta '0' emas), 'Jami faollik' baribir hisoblanadi")
 
 
 def run_all():

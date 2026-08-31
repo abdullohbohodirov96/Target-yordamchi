@@ -24,8 +24,12 @@ def _post_to_dict(p) -> dict:
         "posted_at": p.posted_at,
         "like_count": p.like_count or 0,
         "comments_count": p.comments_count or 0,
-        "shares_count": p.shares_count or 0,
-        "saved_count": p.saved_count or 0,
+        # MUHIM BUG FIX (2026-08): avval `or 0` bilan None'ni "0"ga
+        # aylantirardi -- endi reach/follows kabi xom (None-able) qiymat
+        # o'tadi, shablon "—" (ma'lumot yo'q) bilan haqiqiy "0"ni ANIQ
+        # ajratib ko'rsatadi.
+        "shares_count": p.shares_count,
+        "saved_count": p.saved_count,
         "follows_count": p.follows_count,
         "reach": p.reach,
         "impressions": p.impressions,
@@ -113,9 +117,28 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     impressions_missing_count = len(period_posts) - len(impressions_values)
     total_likes = sum(p.like_count or 0 for p in period_posts)
     total_comments = sum(p.comments_count or 0 for p in period_posts)
-    total_shares = sum(p.shares_count or 0 for p in period_posts)
-    total_saved = sum(p.saved_count or 0 for p in period_posts)
-    total_engagement = total_likes + total_comments + total_shares + total_saved
+
+    # MUHIM BUG FIX (2026-08, foydalanuvchi shikoyati: "smm haliyam notori
+    # ishlayapti"): avval `sum(p.shares_count or 0 ...)` edi -- bu Instagram
+    # insights so'rovi BUTUNLAY muvaffaqiyatsiz bo'lib `shares_count`/
+    # `saved_count` HAMMASI `None` (ma'lumot yo'q) bo'lganda ham "0" (ya'ni
+    # "tasdiqlangan nol repost/saqlash") ko'rsatardi -- reach/follows uchun
+    # ALLAQACHON qo'llanilgan "None = ma'lumot yo'q, 0 = tasdiqlangan nol"
+    # qoidasi endi bularga ham qo'llanildi.
+    shares_values = [p.shares_count for p in period_posts if p.shares_count is not None]
+    total_shares = sum(shares_values) if shares_values else None
+    shares_missing_count = len(period_posts) - len(shares_values)
+
+    saved_values = [p.saved_count for p in period_posts if p.saved_count is not None]
+    total_saved = sum(saved_values) if saved_values else None
+    saved_missing_count = len(period_posts) - len(saved_values)
+
+    # "Jami faollik" -- tarkibiy (composite) ko'rsatkich, aniq bitta
+    # metrikaning o'zi emas -- shuning uchun bu yerda `None` qismlar 0
+    # sifatida hisoblanadi (aks holda insights vaqtincha ishlamay qolganda
+    # butun "jami faollik" karta ham "—" bo'lib qolib, hali ISHLAYOTGAN
+    # like/comment ma'lumotini ham yashirib qo'yardi).
+    total_engagement = total_likes + total_comments + (total_shares or 0) + (total_saved or 0)
 
     # 2026-08 (item 6, foydalanuvchi so'rovi: "nechta obunachi qo'shildi
     # videodan aniq korsinsin"): `follows_count` HAR BIR post uchun Meta
@@ -151,7 +174,9 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
         "total_likes": total_likes,
         "total_comments": total_comments,
         "total_shares": total_shares,
+        "shares_missing_count": shares_missing_count,
         "total_saved": total_saved,
+        "saved_missing_count": saved_missing_count,
         "total_follows": total_follows,
         "follows_missing_count": follows_missing_count,
         "total_engagement": total_engagement,

@@ -220,6 +220,8 @@ def _sync_instagram(session, result: dict) -> None:
         return
 
     synced = 0
+    insights_error_count = 0
+    insights_error_sample = None
     for m in media_list:
         media_id = m.get("id")
         if not media_id:
@@ -231,8 +233,22 @@ def _sync_instagram(session, result: dict) -> None:
                 media_type=m.get("media_type", "IMAGE"),
                 media_product_type=m.get("media_product_type"),
             )
-        except meta_api.MetaAPIError:
-            pass
+        except meta_api.MetaAPIError as e:
+            # MUHIM (2026-08, foydalanuvchi shikoyati: "smm haliyam notori
+            # ishlavoti, videodan nechta obunachi kelganini ko'rsatmayapti"):
+            # AVVAL bu yerda xato JIM yutilardi (`pass`) -- reach/views/
+            # shares/saved/follows HAMMASI doim None qolib, foydalanuvchiga
+            # "Meta bermadi (ruxsat/API cheklovi)" degan UMUMIY, tekshirib
+            # bo'lmaydigan xabar ko'rsatilardi, HAQIQIY sabab (masalan qaysi
+            # aniq ruxsat yetishmayotgani) HECH QAYERDA ko'rinmasdi. Endi bu
+            # xato ushlanib, sync_status'ga (va shu orqali /smm sahifasidagi
+            # "Sinxronizatsiya holati" paneliga) chiqariladi -- shunda
+            # foydalanuvchi ANIQ Meta xato matnini ko'rib, kerak bo'lsa
+            # menga yuborishi yoki Meta Business Manager'da tegishli
+            # ruxsatni yoqishi mumkin.
+            insights_error_count += 1
+            if insights_error_sample is None:
+                insights_error_sample = _friendly_meta_error(e)
         _upsert_post(
             session,
             platform="instagram",
@@ -246,9 +262,14 @@ def _sync_instagram(session, result: dict) -> None:
             posted_at=_parse_dt(m.get("timestamp")),
             like_count=m.get("like_count", 0),
             comments_count=m.get("comments_count", 0),
-            # 2026-08 (item 6 tuzatishi): avval har doim 0 -- endi Meta'ning
-            # "shares" (repost) metrikasidan haqiqiy qiymat.
-            shares_count=insights.get("shares", 0) or 0,
+            # MUHIM BUG FIX (2026-08): avval `insights.get("shares", 0) or 0`
+            # edi -- bu insights so'rovi BUTUNLAY MUVAFFAQIYATSIZ bo'lganda
+            # ham (yuqoridagi except -- `insights` bo'sh {} qoladi) "0"
+            # (ya'ni "aniq bilamiz -- repost yo'q") deb yozib qo'yardi,
+            # aslida bu holatda biz HECH NARSANI bilmaymiz. Endi reach/
+            # follows/saved bilan BIR XIL qoidaga bo'ysunadi: `None` =
+            # "ma'lumot yo'q/olinmadi", haqiqiy `0` = "tasdiqlangan nol".
+            shares_count=insights.get("shares"),
             saved_count=insights.get("saved"),
             # 2026-08 (item 6 tuzatishi): "follows" -- FAQAT FEED/STORY turi
             # uchun Meta beradi, REELS uchun None qoladi (Meta'ning o'z
@@ -261,6 +282,12 @@ def _sync_instagram(session, result: dict) -> None:
         )
         synced += 1
     result["instagram"]["posts_synced"] = synced
+    if insights_error_count:
+        result["errors"].append(
+            f"{insights_error_count}/{synced} ta Instagram postining statistikasi (qamrov/ko'rish/share/"
+            f"saqlangan/obunachi) olinmadi -- Meta xatosi: \"{insights_error_sample}\". Shu postlar uchun "
+            "eski/bo'sh qiymat qoladi, keyingi sinxronizatsiyada avtomatik qayta uriniladi."
+        )
 
 
 def sync_once() -> dict:

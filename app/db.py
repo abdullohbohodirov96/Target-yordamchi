@@ -417,7 +417,17 @@ class SmmPost(Base):
     # chunki Instagram insights so'rovi bu metrikani UMUMAN so'ramas edi.
     # Endi ikkalasi uchun ham haqiqiy qiymat (`meta_api.get_instagram_media_insights`
     # yangilangan metrikalar ro'yxati orqali).
-    shares_count = Column(Integer, nullable=True, default=0)
+    #
+    # MUHIM BUG FIX (2026-08, foydalanuvchi shikoyati: "smm haliyam notori
+    # ishlayapti"): bu ustunda ILGARI `default=0` bor edi -- SQLAlchemy'da
+    # bu FAQAT "ustun umuman berilmagan"da EMAS, balki qiymat ATAYLAB
+    # `None` qilib berilganda ham ishga tushadi (ORM "berilmagan" bilan
+    # "ataylab None" ni farqlay olmaydi) -- shuning uchun Instagram
+    # insights so'rovi MUVAFFAQIYATSIZ bo'lib `smm_sync.py` ATAYLAB `None`
+    # yozmoqchi bo'lganda ham, bazaga baribir "0" (soxta "tasdiqlangan
+    # nol") yozilib qolar edi. `default` olib tashlandi -- endi `saved_count`/
+    # `follows_count`/`reach`/`impressions` bilan BIR XIL qoidaga bo'ysunadi.
+    shares_count = Column(Integer, nullable=True)
     saved_count = Column(Integer, nullable=True)   # faqat Instagram (FEED/REELS) -- Facebook uchun bu tushuncha yo'q, shuning uchun None ("—"), 0 emas
     # 2026-08 (item 6): "nechta obunachi qo'shildi videodan" -- Instagram
     # Graph API'ning "follows" metrikasi (FAQAT FEED va STORY turidagi media
