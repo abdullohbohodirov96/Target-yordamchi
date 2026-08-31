@@ -34,11 +34,72 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False) if e
 Base = declarative_base()
 
 
+class Company(Base):
+    """Multi-tenant SaaS asosi -- HAR BIR mijoz-kompaniya (masalan boshqa
+    biznes, o'z Meta/IG/FB akkaunti bilan) shu jadvalda bitta qator bo'ladi.
+
+    MUHIM (2026-08, foydalanuvchi so'rovi -- "vena ai digan web bor
+    bizanikiga oxshagan shunaqa qil ... kop kompaniyalar ishlatolidigan
+    qil"): bu FAQAT 1-BOSQICH -- ma'lumotlar bazasi negizi (`Company`
+    jadvali + boshqa jadvallarga `company_id`). Quyidagilar HALI qo'shilmagan
+    -- foydalanuvchi bilan kelishilgan bosqichma-bosqich, kam xavfli
+    yondashuvga ko'ra KEYINGI bosqichlarda qo'shiladi:
+      - Ro'yxatdan o'tish/login sahifasi (`password_hash`/`email` maydonlari
+        shu uchun endi tayyor turibdi, lekin hali hech qanday route ulardan
+        foydalanmaydi).
+      - Har bir kompaniyaning o'z Meta/IG/FB akkauntini ulash oqimi.
+      - `meta_api.py`/`orchestrator.py`/`scheduler.py`/`dashboard_data.py`
+        HOZIRGI bitta GLOBAL Meta akkaunt (ENV o'zgaruvchilari orqali)
+        o'rniga har bir so'rov/fon vazifasi uchun TO'G'RI kompaniyaning
+        `meta_access_token`/`meta_ad_account_id`sidan foydalanadigan qilib
+        qayta ishlanishi kerak -- bu eng katta va eng xavfli qism, shuning
+        uchun ALOHIDA bosqichga qoldirildi.
+      - `FunnelStage.key`/`CustomField.key` kabi hozir GLOBAL unique
+        bo'lgan maydonlar `(company_id, key)` bo'yicha unique bo'lishi kerak
+        (hozircha ustunlar shunchaki qo'shildi, eski unique cheklov
+        tegilmadi -- ishlab turgan production bazasida cheklovni xavfsiz
+        o'zgartirish alohida, ehtiyotkorlik bilan qilinadigan migratsiya).
+
+    Hozircha bu jadval yaratilgani va `ensure_default_company()` orqali
+    MAVJUD hamma eski qator "Company #1"ga biriktirilgani uchun sayt HECH
+    QANDAY xatti-harakatini o'zgartirmaydi -- bu sof QO'SHIMCHA (additive)
+    sxema, hech bir route/so'rov hali `company_id` bo'yicha filtrlamaydi."""
+    __tablename__ = "companies"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(64), unique=True, nullable=True)  # kelajakda URL/subdomain uchun, masalan "acme"
+    email = Column(String(255), unique=True, nullable=True)  # kompaniya egasining login email'i (ro'yxatdan o'tish -- keyingi bosqich)
+    password_hash = Column(String(255), nullable=True)
+    phone = Column(String(32), nullable=True)
+    plan = Column(String(32), nullable=False, default="trial")  # trial | start | business | unlimited -- aniq tariflar hali loyihalashtirilmagan (9-band)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    # Har bir kompaniyaning O'Z Meta (Facebook/Instagram) reklama hisobi --
+    # keyingi bosqichda meta_api.py shu maydonlardan (hozirgi global ENV
+    # o'zgaruvchilari o'rniga) foydalanadigan qilib qayta ishlanadi.
+    meta_access_token = Column(Text, nullable=True)
+    meta_ad_account_id = Column(String(32), nullable=True)
+    meta_page_id = Column(String(32), nullable=True)
+    ig_business_id = Column(String(32), nullable=True)
+    telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
+
+    trial_ends_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    def set_password(self, raw: str) -> None:
+        self.password_hash = generate_password_hash(raw)
+
+    def check_password(self, raw: str) -> bool:
+        return check_password_hash(self.password_hash, raw) if self.password_hash else False
+
+
 class Manager(Base):
     """Admin yoki menejer hisobi -- dashboard/CRM'ga kirish uchun."""
     __tablename__ = "managers"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     username = Column(String(64), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(128), nullable=False, default="")
@@ -66,6 +127,7 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     meta_lead_id = Column(String(64), unique=True, nullable=True)  # Meta'dan kelgan asl ID (dublikatni oldini olish)
     campaign_id = Column(String(64), nullable=True, index=True)
     campaign_name = Column(String(255), nullable=True)
@@ -171,6 +233,7 @@ class CallRecord(Base):
     __tablename__ = "call_records"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     external_id = Column(String(64), unique=True, nullable=True)  # Moi Zvonki'dagi asl qo'ng'iroq ID'i (dublikatni oldini olish)
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
     manager = relationship("Manager")
@@ -295,6 +358,7 @@ class SmmSnapshot(Base):
     __tablename__ = "smm_snapshots"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     platform = Column(String(16), nullable=False, index=True)  # "instagram" | "facebook"
     date = Column(String(10), nullable=False, index=True)  # "YYYY-MM-DD" (Toshkent kuni)
     followers_count = Column(Integer, nullable=True)
@@ -313,6 +377,7 @@ class SmmPost(Base):
     __tablename__ = "smm_posts"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     platform = Column(String(16), nullable=False, index=True)  # "instagram" | "facebook"
     external_id = Column(String(64), unique=True, nullable=False)  # IG media id / FB post id
     caption = Column(Text, nullable=True)
@@ -339,6 +404,7 @@ class Competitor(Base):
     __tablename__ = "competitors"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     name = Column(String(255), nullable=False)  # ko'rinadigan nom, masalan "Arboss"
     domain = Column(String(255), nullable=True)  # veb-sayt, masalan "arboss.uz"
     search_term = Column(String(255), nullable=True)  # Ad Library'da qidiriladigan kalit so'z -- bo'sh bo'lsa `name` ishlatiladi
@@ -374,6 +440,7 @@ class AssistantUnanswered(Base):
     __tablename__ = "assistant_unanswered"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
     manager_name = Column(String(255), nullable=True)  # kesh -- manager keyin o'chsa ham savol tarixi tushunarli qolsin
     question = Column(Text, nullable=False)
@@ -389,6 +456,7 @@ class CustomField(Base):
     __tablename__ = "custom_fields"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- `key` hali GLOBAL unique (pastdagi Company docstring'ga qarang), keyingi bosqichda (company_id, key) bo'lishi kerak
     key = Column(String(64), unique=True, nullable=False)  # extra_data JSON kaliti (masalan "byudjet")
     label = Column(String(255), nullable=False)  # ko'rinadigan savol matni
     field_type = Column(String(16), nullable=False, default="text")  # text | number | select
@@ -412,6 +480,7 @@ class FunnelStage(Base):
     __tablename__ = "funnel_stages"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- `key` hali GLOBAL unique (pastdagi Company docstring'ga qarang), keyingi bosqichda (company_id, key) bo'lishi kerak
     key = Column(String(32), unique=True, nullable=False)
     label = Column(String(64), nullable=False)
     category = Column(String(16), nullable=False)  # active | qualified | unqualified | sold
@@ -455,6 +524,7 @@ class StandingTask(Base):
     __tablename__ = "standing_tasks"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     chat_id = Column(String(32), nullable=False, index=True)  # buyruq qaysi Telegram chatdan kelgan
     object_id = Column(String(64), nullable=False)  # Meta campaign/adset/ad ID
     object_name = Column(String(255), nullable=True)
@@ -475,6 +545,7 @@ class StandingReport(Base):
     __tablename__ = "standing_reports"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     chat_id = Column(String(32), nullable=False, index=True)
     time_hhmm = Column(String(5), nullable=False)  # "HH:MM"
     label = Column(String(255), nullable=True)
@@ -555,6 +626,73 @@ def _migrate_widen_columns() -> None:
                 logger.error("Migratsiya XATOSI (ustun turini kengaytirish): %s.%s -- %s", table, col, e)
 
 
+# 2026-08 multi-tenant 1-bosqich: `company_id` ustuni qo'shilgan HAMMA
+# jadvallar -- `ensure_default_company()` shu ro'yxat bo'yicha eski (hali
+# `company_id IS NULL` bo'lgan) qatorlarni standart kompaniyaga biriktiradi.
+_COMPANY_SCOPED_MODELS = [
+    Manager, Lead, CallRecord, SmmSnapshot, SmmPost, Competitor,
+    AssistantUnanswered, CustomField, FunnelStage, StandingTask, StandingReport,
+]
+
+DEFAULT_COMPANY_NAME = "Asosiy kompaniya"
+
+
+def ensure_default_company() -> None:
+    """MUHIM (2026-08, multi-tenant asosi -- 1-bosqich): `Company` jadvali
+    yangi qo'shildi, lekin loyihada ALLAQACHON ko'p yillik haqiqiy ma'lumot
+    bor (lidlar, menejerlar, qo'ng'iroqlar...) -- shularning HAMMASI, agar
+    hech narsa qilinmasa, "kompaniyasiz" (`company_id IS NULL`) holda
+    qolib ketardi. Bu funksiya HAR ISHGA TUSHISHDA (`init_db()` orqali)
+    chaqiriladi va:
+
+      1. Agar `companies` jadvali BO'SH bo'lsa -- joriy (hozirgi, yagona)
+         biznesni ANIQ "Company #1" sifatida yaratadi (mavjud Meta/Telegram
+         ENV o'zgaruvchilaridan meta_access_token/ad_account_id/telegram
+         guruhini nusxalab, "unlimited" tarifda -- bu SIZNING o'z
+         biznesingiz, mijoz emas).
+      2. `company_id IS NULL` bo'lgan HAR BIR eski qatorni (barcha
+         "company-scoped" jadvallarda, yuqoridagi `_COMPANY_SCOPED_MODELS`)
+         shu Company #1'ga biriktiradi.
+
+    Natijada: sayt xatti-harakati BUTUNLAY o'zgarmaydi (hech qayerda hali
+    `company_id` bo'yicha filtr YO'Q -- bu keyingi bosqich), lekin
+    ro'yxatdan o'tish/yangi kompaniyalar qo'shilishi uchun ma'lumotlar
+    bazasi negizi tayyor bo'ladi."""
+    session = get_session()
+    try:
+        default_company = session.query(Company).order_by(Company.id.asc()).first()
+        if default_company is None:
+            default_company = Company(
+                name=os.environ.get("DEFAULT_COMPANY_NAME") or DEFAULT_COMPANY_NAME,
+                plan="unlimited",
+                is_active=True,
+                meta_access_token=os.environ.get("META_ACCESS_TOKEN") or None,
+                meta_ad_account_id=os.environ.get("META_AD_ACCOUNT_ID") or None,
+                telegram_group_id=os.environ.get("TELEGRAM_AGENTS_GROUP_ID") or None,
+            )
+            session.add(default_company)
+            session.commit()
+            logger.warning(
+                "Multi-tenant: standart '%s' yaratildi (id=%s)",
+                default_company.name, default_company.id,
+            )
+
+        for model in _COMPANY_SCOPED_MODELS:
+            updated = (
+                session.query(model)
+                .filter(model.company_id.is_(None))
+                .update({model.company_id: default_company.id}, synchronize_session=False)
+            )
+            if updated:
+                logger.warning(
+                    "Multi-tenant: %s.company_id -- %s ta eski qator '%s'ga biriktirildi",
+                    model.__tablename__, updated, default_company.name,
+                )
+        session.commit()
+    finally:
+        session.close()
+
+
 def init_db() -> None:
     """Jadvallarni yaratadi (agar hali yo'q bo'lsa) va mavjud jadvallarga
     yetishmayotgan ustunlarni qo'shadi (`_migrate_add_missing_columns`).
@@ -568,6 +706,7 @@ def init_db() -> None:
     _migrate_add_missing_columns()
     _migrate_widen_columns()
     seed_default_funnel_stages()
+    ensure_default_company()
 
 
 def get_session():
