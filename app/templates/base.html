@@ -29,6 +29,7 @@
   {% elif name == 'logout' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5H6a1.5 1.5 0 00-1.5 1.5v12A1.5 1.5 0 006 19.5h3M15.5 16l4-4-4-4M19 12H9"/></svg>
   {% elif name == 'chevron' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
   {% elif name == 'companies' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V6.5a1.5 1.5 0 011.5-1.5h6a1.5 1.5 0 011.5 1.5V20M14 20v-8.5a1.5 1.5 0 011.5-1.5h3a1.5 1.5 0 011.5 1.5V20M2.5 20h19M7 9h1.5M7 12.5h1.5M7 16h1.5"/></svg>
+  {% elif name == 'message' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5.5h16A1.5 1.5 0 0121.5 7v9a1.5 1.5 0 01-1.5 1.5H8l-4 3.5V7A1.5 1.5 0 015.99 5.5z"/></svg>
   {% endif %}{% endmacro %}
 
   {% if current_user.is_authenticated %}
@@ -89,6 +90,9 @@
       </a>
       <a href="{{ url_for('smm_report') }}" class="nav-item {{ 'active' if request.endpoint=='smm_report' }}" title="SMM hisobot">
         <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">SMM hisobot</span>
+      </a>
+      <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint=='instagram_dm' }}" title="Instagram xabarlar">
+        <span class="nav-icon">{{ navicon('message') }}</span><span class="nav-text">Instagram xabarlar</span>
       </a>
       {% endif %}
 

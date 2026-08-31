@@ -31,6 +31,12 @@ Jadval (standart, ENV orqali sozlanadi):
     adminlarga umumiy xulosa.
   - Har 3 soatda -- Instagram Business + Facebook Page uchun SMM statistikasi
     (obunachilar, postlar, qamrov) -- "SMM hisobot" (`/smm`) sahifasi uchun.
+  - Har 15 daqiqada -- Instagram DM (Direct) suhbatlarini tortish + uzoq
+    vaqt javobsiz qolgan suhbatlarni Telegram'ga ogohlantirish (AI'siz,
+    bepul -- `ig_dm_sync.py`).
+  - Har 3 soatda -- Instagram DM suhbatlariga gpt-4o-mini bilan lid-sifat
+    bahosi (FAQAT yangi xabar kelgan suhbatlar uchun, xarajatni nazorat
+    qilish uchun ATAYLAB davriy -- `ig_dm_analysis.py`).
   - 10:00 Toshkent -- Raqobatchilar tahlili: `Competitor` jadvaliga qo'shilgan
     har bir raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi
     va qisqa amaliy hisobot tayyorlanadi (2026-08, foydalanuvchi so'rovi).
@@ -63,6 +69,8 @@ import lead_sync
 import call_sync
 import call_analysis
 import smm_sync
+import ig_dm_sync
+import ig_dm_analysis
 import competitor_sync
 import competitor_analytics
 import meta_api
@@ -373,6 +381,52 @@ def job_smm_sync() -> dict:
         return {"error": str(e)}
 
 
+def job_ig_dm_sync() -> dict:
+    """Har 15 daqiqada -- Instagram DM suhbatlarini Meta'dan tortib
+    yangilaydi (2026-08, foydalanuvchi so'rovi: "ig chatlarni tahlilini
+    ham qoshish kerak"). Bu job AI ISHLATMAYDI (bepul) -- faqat
+    yangi xabarlarni yozadi va uzoq vaqt javobsiz qolgan suhbatlarni
+    aniqlaydi (`orchestrator.enforce_cpl_hard_kill`/`job_cpl_hard_kill`
+    bilan bir xil naqsh: biznes-mantiq `ig_dm_sync.py`da, Telegram
+    yuborish shu yerda).
+    META_ACCESS_TOKEN/META_PAGE_ID sozlanmagan yoki Instagram Business
+    akkaunt ulanmagan bo'lsa jim qaytadi (xato emas, ixtiyoriy)."""
+    try:
+        result = ig_dm_sync.sync_once()
+    except Exception as e:
+        logger.exception("Instagram DM sync xatosi")
+        return {"error": str(e)}
+
+    overdue = result.get("overdue") or []
+    if overdue:
+        targets = _full_activity_targets()
+        lines = [f"\U0001F4E9 {len(overdue)} ta Instagram DM {ig_dm_sync.UNANSWERED_ALERT_MINUTES}+ daqiqadan beri javobsiz:\n"]
+        for o in overdue:
+            lines.append(f"- {o['customer']}: \"{o['preview']}\" ({o['since_minutes']} daqiqadan beri)")
+        message = "\n".join(lines)
+        sent_ok = False
+        for cid in targets:
+            tg_result = _tg_send(cid, message)
+            sent_ok = sent_ok or tg_result.get("ok")
+        if sent_ok:
+            for o in overdue:
+                ig_dm_sync.mark_alert_sent(o["conversation_id"])
+    return result
+
+
+def job_ig_dm_analysis() -> dict:
+    """Har 3 soatda -- Instagram DM suhbatlariga gpt-4o-mini bilan
+    lid-sifat bahosi beradi (2026-08, foydalanuvchi so'rovi, xarajatni
+    nazorat qilish uchun ATAYLAB davriy, real-vaqtda EMAS -- `ig_dm_analysis.py`
+    modul izohiga qarang). FAQAT oxirgi tahlildan beri yangi xabar kelgan
+    suhbatlar tahlil qilinadi -- o'zgarmagan suhbat qayta ishlanmaydi."""
+    try:
+        return ig_dm_analysis.analyze_pending_conversations()
+    except Exception as e:
+        logger.exception("Instagram DM tahlilida xatosi")
+        return {"error": str(e)}
+
+
 def job_competitor_analysis() -> str:
     """Har kuni soat 10:00 -- admin qo'shgan raqobatchilarning Meta Ad
     Library'dagi joriy reklamalarini yangilaydi va qisqa amaliy hisobot
@@ -597,6 +651,8 @@ JOBS = {
     "call-debug": job_call_debug,
     "followup-reminders": job_followup_reminders,
     "smm-sync": job_smm_sync,
+    "ig-dm-sync": job_ig_dm_sync,
+    "ig-dm-analysis": job_ig_dm_analysis,
     "competitor-analysis": job_competitor_analysis,
 }
 
@@ -633,6 +689,8 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # call-sync'dan keyin
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
+    scheduler.add_job(job_ig_dm_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="ig-dm-sync")  # AI'siz, tez -- yangi xabar/javobsizlik tekshiruvi
+    scheduler.add_job(job_ig_dm_analysis, CronTrigger(hour="*/3", minute=20, timezone=TIMEZONE), id="ig-dm-analysis")  # gpt-4o-mini, davriy, xarajatni nazorat qilish uchun
     scheduler.add_job(job_competitor_analysis, CronTrigger(hour=10, minute=0, timezone=TIMEZONE), id="competitor-analysis")
     scheduler.start()
     logger.info("Scheduler ishga tushdi (timezone=%s)", TIMEZONE)

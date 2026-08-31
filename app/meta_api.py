@@ -851,3 +851,52 @@ def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE", media
         values = item.get("values") or []
         out[item.get("name")] = values[0].get("value") if values else None
     return out
+
+
+# ---------------------------------------------------------------------------
+# INSTAGRAM DIRECT (DM) -- 2026-08, foydalanuvchi so'rovi ("ig chatlarni
+# tahlilini ham qoshish kerak"). Meta Instagram Messaging API orqali
+# ishlaydi -- ODDIY SMM/Instant-Form funksiyalari kabi, ALLAQACHON sozlangan
+# META_ACCESS_TOKEN + META_PAGE_ID yetarli (Page Access Token orqali).
+#
+# MUHIM (Meta ruxsat nozikligi -- foydalanuvchiga aniq tushuntirish kerak):
+# xabarlarni O'QISH uchun `instagram_manage_messages` permission kerak.
+# Bu ODDIY reklama/lead ruxsatlaridan (ads_management va h.k.) FARQLI
+# o'laroq, System User token BIZNES-MENEJERNING O'Z Instagram akkaunti
+# uchun bo'lsa ham, ba'zan alohida yoqilishi kerak bo'lishi mumkin:
+#   - O'Z akkauntingiz uchun (bugungi holat -- yagona kompaniya): odatda
+#     Meta App Dashboard -> App Roles -> "Instagram Testers" bo'limiga
+#     o'zingizning Instagram Business akkauntingizni tester sifatida
+#     qo'shish YETARLI -- to'liq ommaviy App Review SHART EMAS.
+#   - Agar KELAJAKDA bu CRM boshqa mijozlarning (boshqa Business Manager
+#     ostidagi) Instagram akkauntlariga ham ulanadigan bo'lsa (multi-tenant,
+#     har bir mijoz o'z akkauntini ulaydi) -- O'SHANDA Meta'ning to'liq App
+#     Review (Business Verification + screencast namoyishi) TALAB QILINADI.
+# Bu funksiya ruxsat yo'qligida oddiy `MetaAPIError` ko'taradi (masalan
+# "(#10) permission denied") -- chaqiruvchi (`ig_dm_sync.py`) buni tutib,
+# aniq xabar bilan jim to'xtaydi (butun sinxronizatsiya jarayonini
+# to'xtatmaydi).
+# ---------------------------------------------------------------------------
+
+def get_instagram_conversations(limit: int = 50) -> list[dict]:
+    """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
+    ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
+    Ishtirokchilarning IGSID/username'i shu yerda keladi, lekin xabarlar
+    matni EMAS -- ular alohida `get_instagram_conversation_messages()`
+    orqali so'raladi (Meta shunday ikki bosqichli ishlaydi)."""
+    data = _get(f"{PAGE_ID}/conversations", {
+        "platform": "instagram",
+        "fields": "id,updated_time,participants",
+        "limit": limit,
+    }, token=_get_page_access_token())
+    return data.get("data", [])
+
+
+def get_instagram_conversation_messages(conversation_id: str, limit: int = 40) -> list[dict]:
+    """Bitta suhbatning so'nggi xabarlarini (eng yangisi birinchi) qaytaradi:
+    har birida `id`, `message` (matn), `created_time`, `from` (yuboruvchi
+    IGSID/ism) bor."""
+    data = _get(conversation_id, {
+        "fields": f"messages.limit({limit}){{id,message,created_time,from,to}}",
+    }, token=_get_page_access_token())
+    return ((data.get("messages") or {}).get("data")) or []

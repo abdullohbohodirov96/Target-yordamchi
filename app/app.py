@@ -40,6 +40,8 @@ import call_analysis
 import kpi_bonus
 import smm_sync
 import smm_analytics
+import ig_dm_sync
+import ig_dm_analytics
 from phone_utils import phone_key9
 
 logging.basicConfig(level=logging.INFO)
@@ -2986,6 +2988,30 @@ def smm_report():
         "smm.html",
         configured=smm_sync.is_configured(),
         sync_status=smm_sync.get_last_status(),
+        **report,
+    )
+
+
+@app.route("/instagram-xabarlar")
+@login_required
+@module_required("target")
+def instagram_dm():
+    """Instagram Direct (DM) suhbatlari -- lid-sifat bahosi (AI, davriy) va
+    javobsiz qolgan xabarlar ro'yxati (2026-08, foydalanuvchi so'rovi: "ig
+    chatlarni tahlilini ham qoshish kerak"). `ig_dm_sync.py` har 15
+    daqiqada Meta'dan yangilaydi, `ig_dm_analysis.py` har 2-3 soatda AI
+    bahosini yangilaydi -- bu sahifa faqat ALLAQACHON saqlangan holatni
+    ko'rsatadi (o'zi hech qanday tashqi so'rov yubormaydi)."""
+    session = get_session()
+    try:
+        report = ig_dm_analytics.build_dm_report(session)
+    finally:
+        session.close()
+    return render_template(
+        "instagram_dm.html",
+        configured=ig_dm_sync.is_configured(),
+        sync_status=ig_dm_sync.get_last_status(),
+        unanswered_alert_minutes=ig_dm_sync.UNANSWERED_ALERT_MINUTES,
         **report,
     )
 

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Instagram xabarlar — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Instagram xabarlar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Instagram Direct (DM) suhbatlar -- javobsiz qolgan xabarlar va AI lid-sifat bahosi. Xarajatni nazorat qilish uchun AI bahosi DAVRIY (har 2-3 soatda) yangilanadi, real-vaqtda emas.</p>
+  </div>
+</div>
+
+{% if not configured %}
+<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
+  <h2 class="text-bad">Instagram DM ulanmagan</h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
+    Bu bo'lim ishlashi uchun <code>META_ACCESS_TOKEN</code>/<code>META_PAGE_ID</code> allaqachon sozlangan bo'lishi
+    (SMM hisobot bilan bir xil), VA Instagram Business akkauntga xabar o'qish ruxsati
+    (<code>instagram_manage_messages</code>) berilgan bo'lishi kerak. O'z akkauntingiz uchun bu odatda Meta App
+    Dashboard → App Roles → "Instagram Testers" bo'limiga akkauntingizni tester sifatida qo'shish orqali (to'liq
+    ommaviy App Review shart emas) yoqiladi.
+  </p>
+</div>
+{% endif %}
+
+{% if sync_status and sync_status.errors %}
+<details class="card" style="margin-bottom:20px" open>
+  <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
+    <span><strong>Sinxronizatsiya holati</strong>
+      {% if sync_status.last_run_at %}<span class="text-faint" style="font-weight:400">(oxirgi: {{ sync_status.last_run_at[:16].replace('T',' ') }} UTC)</span>{% endif %}
+      <span class="badge badge-color-bad" style="margin-left:8px">{{ sync_status.errors|length }} xato</span>
+    </span>
+    <span class="text-faint" style="font-size:12px; font-weight:400">bosib ochish/yopish</span>
+  </summary>
+  <div class="flash flash-error" style="margin-top:12px">
+    {% for e in sync_status.errors %}<div>{{ e }}</div>{% endfor %}
+  </div>
+</details>
+{% endif %}
+
+<div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:20px">
+  <div class="kpi-card"><div class="kpi-label">Jami suhbatlar</div><div class="kpi-value">{{ stats.total_conversations }}</div></div>
+  <div class="kpi-card">
+    <div class="kpi-label">Javobsiz</div>
+    <div class="kpi-value {{ 'bad' if stats.unanswered_count else '' }}">{{ stats.unanswered_count }}</div>
+    <div class="text-faint" style="font-size:11px; margin-top:2px">{{ unanswered_alert_minutes }}+ daqiqa javobsiz bo'lsa Telegram'ga ogohlantirish boradi</div>
+  </div>
+  <div class="kpi-card"><div class="kpi-label">Bugungi yangi mijoz xabari</div><div class="kpi-value">{{ stats.new_customer_messages_today }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">🔥 Issiq lidlar</div><div class="kpi-value good">{{ stats.hot_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">🌤 Iliq</div><div class="kpi-value">{{ stats.warm_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">❄️ Sovuq</div><div class="kpi-value text-dim">{{ stats.cold_count }}</div></div>
+</div>
+
+<div class="panel">
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Mijoz</th>
+        <th>Oxirgi xabar</th>
+        <th>Kimdan</th>
+        <th>Holat</th>
+        <th>Lid sifati (AI)</th>
+        <th>Xulosa (AI)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in conversations %}
+      <tr>
+        <td>{{ c.customer }}</td>
+        <td class="text-dim" style="max-width:280px; white-space:normal">
+          {{ c.last_message_text or '—' }}
+          {% if c.last_message_at %}<div class="text-faint" style="font-size:11px">{{ c.last_message_at.strftime('%d.%m %H:%M') }}</div>{% endif %}
+        </td>
+        <td>{% if c.last_message_from == 'customer' %}<span class="badge badge-color-blue">Mijoz</span>{% elif c.last_message_from == 'business' %}<span class="badge badge-color-dim">Biz</span>{% else %}—{% endif %}</td>
+        <td>
+          {% if c.is_unanswered %}
+          <span class="badge badge-color-bad">Javobsiz</span>
+          {% if c.unanswered_since %}<div class="text-faint" style="font-size:11px">{{ c.unanswered_since.strftime('%d.%m %H:%M') }}dan beri</div>{% endif %}
+          {% else %}
+          <span class="badge badge-color-good">Javob berilgan</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.ai_lead_quality == 'hot' %}<span class="badge badge-color-good">🔥 Issiq</span>
+          {% elif c.ai_lead_quality == 'warm' %}<span class="badge badge-color-blue">🌤 Iliq</span>
+          {% elif c.ai_lead_quality == 'cold' %}<span class="badge badge-color-dim">❄️ Sovuq</span>
+          {% else %}<span class="text-faint">{{ 'tahlil navbatida' if c.needs_analysis else 'hali tahlil qilinmagan' }}</span>{% endif %}
+          {% if c.ai_error %}<div class="text-bad" style="font-size:11px; margin-top:2px" title="{{ c.ai_error }}">AI xatosi</div>{% endif %}
+        </td>
+        <td class="text-dim" style="max-width:320px; white-space:normal">{{ c.ai_summary or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="6">Hali Instagram DM suhbati yo'q (yoki hali sinxronlanmagan).</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

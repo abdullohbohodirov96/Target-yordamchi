@@ -485,6 +485,74 @@ class AssistantUnanswered(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
 
+class IgDmConversation(Base):
+    """Instagram Direct (DM) suhbatlarining ENG OXIRGI holati -- 2026-08,
+    foydalanuvchi so'rovi ("ig chatlarni tahlilini ham qoshish kerak, lekin
+    byudjetni yo'lini top, qimmat bo'p ketmasin"). `external_id` bo'yicha
+    upsert qilinadi (SmmPost bilan bir xil naqsh).
+
+    XARAJATNI NAZORAT QILISH STRATEGIYASI (ATAYLAB IKKI QATLAMGA
+    AJRATILGAN):
+      1. Ushbu jadvalning `last_message_from`/`is_unanswered`/`unanswered_since`
+         maydonlari `ig_dm_sync.py` tomonidan HAR SAFAR (har 15 daqiqada)
+         HECH QANDAY AI CHAQIRILMASDAN, oddiy vaqt/tomon solishtirish orqali
+         hisoblanadi -- "menejer javob bermadi" ogohlantirishi UMUMAN AI
+         talab qilmaydi, shuning uchun bu qism DEYARLI BEPUL.
+      2. Faqat "lid sifati qanday" (`ai_lead_quality`/`ai_summary`) haqiqatan
+         ham AI (gpt-4o-mini, arzon) talab qiladi -- va bu ham HAR xabar
+         uchun EMAS, balki DAVRIY (odatda har 2-3 soatda, `ig_dm_analysis.py`)
+         va FAQAT oxirgi tahlildan beri YANGI mijoz xabari kelgan suhbatlar
+         uchun ishga tushadi (`ai_analyzed_message_count < message_count`
+         solishtiruvi orqali -- o'zgarmagan suhbat qayta-qayta tahlil
+         qilinib, pul isrof qilinmaydi)."""
+    __tablename__ = "ig_dm_conversations"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
+    external_id = Column(String(64), unique=True, nullable=False)  # Meta Graph API suhbat (conversation) ID'i
+    customer_ig_id = Column(String(64), nullable=True, index=True)  # mijozning Instagram-Scoped ID'i (IGSID)
+    customer_username = Column(String(255), nullable=True)  # ma'lum bo'lsa (Meta har doim ham bermaydi)
+
+    message_count = Column(Integer, nullable=False, default=0)  # shu suhbatda hozircha sinxronlangan JAMI xabar soni
+    last_message_at = Column(DateTime, nullable=True, index=True)
+    last_message_text = Column(Text, nullable=True)  # oxirgi xabar matni -- ro'yxatda "oldindan ko'rish" uchun
+    last_message_from = Column(String(16), nullable=True)  # "customer" | "business"
+
+    # Javobsiz-xabar holati -- FAQAT deterministik (AI ishtirokisiz) hisoblanadi.
+    is_unanswered = Column(Boolean, nullable=False, default=False)  # oxirgi xabar mijozdan va biznes hali javob bermagan
+    unanswered_since = Column(DateTime, nullable=True)  # mijozning javobsiz qolgan birinchi xabari vaqti
+    unanswered_alert_sent_at = Column(DateTime, nullable=True)  # shu "javobsizlik davri" uchun Telegram ogohlantirishi allaqachon yuborilganmi (qayta-qayta yubormaslik uchun)
+
+    # AI (gpt-4o-mini) davriy lid-sifat tahlili -- ixtiyoriy, faqat yangi
+    # xabar bo'lsa yangilanadi.
+    ai_lead_quality = Column(String(16), nullable=True)  # "hot" | "warm" | "cold" | None (hali tahlil qilinmagan)
+    ai_summary = Column(Text, nullable=True)  # 1-2 gapli xulosa (nima haqida so'rayapti, nimani xohlaydi)
+    ai_reasons = Column(Text, nullable=True)  # JSON ro'yxat -- bahoning qisqa sabablari
+    ai_analyzed_message_count = Column(Integer, nullable=False, default=0)  # oxirgi AI tahlil paytida nechta xabar bor edi (o'zgarish borligini aniqlash uchun)
+    ai_analyzed_at = Column(DateTime, nullable=True)
+    ai_model = Column(String(64), nullable=True)
+    ai_error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    last_synced_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+
+class IgDmMessage(Base):
+    """Bitta Instagram DM xabari -- `IgDmConversation.message_count`/
+    `last_message_*` shu jadvaldan HISOBLANADI, lekin AI tahlili uchun
+    (`ig_dm_analysis.py`) suhbatning so'nggi xabarlari matn sifatida
+    kerak bo'ladi, shuning uchun alohida saqlanadi (faqat metadata emas)."""
+    __tablename__ = "ig_dm_messages"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("ig_dm_conversations.id"), nullable=False, index=True)
+    external_id = Column(String(64), unique=True, nullable=True)  # Meta xabar ID'i (dublikatni oldini olish uchun; ba'zan bo'sh kelishi mumkin)
+    sender = Column(String(16), nullable=False)  # "customer" | "business"
+    text = Column(Text, nullable=True)
+    sent_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
 class CustomField(Base):
     """Admin CRM anketa savollarini (lead'ni to'ldirishda menejer javob berishi
     kerak bo'lgan qo'shimcha maydonlarni) o'zi qo'sha/tahrirlay oladi -- kodga
@@ -669,6 +737,7 @@ def _migrate_widen_columns() -> None:
 _COMPANY_SCOPED_MODELS = [
     Manager, Lead, CallRecord, SmmSnapshot, SmmPost, Competitor,
     AssistantUnanswered, CustomField, FunnelStage, StandingTask, StandingReport,
+    IgDmConversation,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

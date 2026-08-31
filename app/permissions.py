@@ -26,7 +26,7 @@ MODULES = [
     ("dashboard", "Dashboard (umumiy ko'rinish)"),
     ("leads", "Lidlar"),
     ("analytics", "Analitika (hisobotlar)"),
-    ("target", "Target (Meta Ads + SMM hisobot)"),
+    ("target", "Target (Meta Ads + SMM hisobot + Instagram xabarlar)"),
     ("individual_check", "Individual tekshirish (qo'ng'iroq nazorati)"),
     ("settings", "Sozlamalar (voronka, kvalifikatsiya savollari, doimiy vazifalar)"),
 ]
