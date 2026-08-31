@@ -31,7 +31,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_sync
 import call_sync
@@ -139,6 +139,10 @@ class ManagerUser(UserMixin):
         self.role = manager.role
         self.phone_number = manager.phone_number
         self.allowed_modules = permissions.parse_allowed_modules(manager.allowed_modules)
+        # 2026-08 (multi-tenant, item 5 -- obuna/to'lov tekshiruvi uchun kerak):
+        # `Manager.company_id` hozircha DEYARLI barcha eski qatorlarda
+        # "Company #1"ga (`ensure_default_company()`) ishora qiladi.
+        self.company_id = manager.company_id
 
 
 @login_manager.user_loader
@@ -601,6 +605,70 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("login"))
+
+
+# ---------------------------------------------------------------------------
+# Obuna/to'lov tekshiruvi -- 2026-08, foydalanuvchi so'rovi: "hammasini
+# akkauntlani tarif asosida ishlidigan qilib ber tolovsiz ishlamasin".
+#
+# MUHIM: bu FAQAT web-kirishni (login qilingan sahifalar) to'xtatadi.
+# Telegram bot buyruqlari va fon vazifalari (scheduler.py) hali BUTUN
+# hisob uchun umumiy (ENV o'zgaruvchilar orqali) ishlaydi -- bularni ham
+# kompaniya bo'yicha to'xtatish item 5'ning KEYINGI bosqichi (meta_api.py
+# refaktori bilan bir vaqtda, `Company.meta_access_token`ga o'tilganda)
+# amalga oshiriladi. Hozircha yagona kompaniya (Company #1, sizning o'z
+# biznesingiz) `paid_until=NULL` (muddat cheklovisiz) bo'lgani uchun bu
+# tekshiruv HOZIRGI ishlashga HECH QANDAY ta'sir qilmaydi.
+# ---------------------------------------------------------------------------
+_SUBSCRIPTION_EXEMPT_ENDPOINTS = {
+    "login", "logout", "subscription_expired", "static",
+    # Telegram server-server webhook -- login_required'siz, o'z ichki
+    # tekshiruvi (CRON_SECRET yo'q, lekin Telegram tomonidan kelgan update)
+    # bilan ishlaydi -- bu web-sessiya orqali kirilmaydigan endpoint.
+    "webhook",
+    # `/api/health` -- Render/monitoring uchun umumiy holat tekshiruvi.
+    "health",
+    # `/api/trigger/<job_name>` -- o'z CRON_SECRET tekshiruvi bilan
+    # himoyalangan (login_required emas), qo'lda/monitoring uchun fallback.
+    "manual_trigger",
+    # MUHIM: `api_assistant` ATAYLAB bu ro'yxatda YO'Q -- bu login qilingan
+    # foydalanuvchining AI-yordamchisi (OpenAI xarajati bor), obuna
+    # tugagach BOSHQA hamma narsa kabi to'xtatilishi kerak.
+}
+
+
+def _endpoint_is_exempt(endpoint: str | None) -> bool:
+    return not endpoint or endpoint in _SUBSCRIPTION_EXEMPT_ENDPOINTS
+
+
+@app.before_request
+def _enforce_subscription():
+    if not current_user.is_authenticated:
+        return None
+    if _endpoint_is_exempt(request.endpoint):
+        return None
+    company_id = getattr(current_user, "company_id", None)
+    if company_id is None:
+        # Eski/noma'lum holat (masalan hali migratsiya to'liq o'tmagan) --
+        # xavfsiz tomonga: TO'XTATMAYDI (kirishni rad etish o'rniga o'tkazib
+        # yuboradi), chunki bu ATAYLAB qo'shilgan yangi tekshiruv -- hech
+        # qachon aniqlanmagan sabab bilan mavjud mijozni saytdan chiqarib
+        # tashlamasligi kerak.
+        return None
+    session = get_session()
+    try:
+        company = session.get(Company, company_id)
+        if company is not None and not company.is_paid_up():
+            return redirect(url_for("subscription_expired"))
+    finally:
+        session.close()
+    return None
+
+
+@app.route("/obuna-tugagan")
+@login_required
+def subscription_expired():
+    return render_template("subscription_expired.html")
 
 
 # ---------------------------------------------------------------------------
@@ -2103,6 +2171,139 @@ def manager_edit(manager_id):
     finally:
         session.close()
     return render_template("manager_edit.html", m=m_view, modules=permissions.MODULES)
+
+
+# ---------------------------------------------------------------------------
+# Kompaniyalar (multi-tenant, item 5 + obuna/to'lov, 2026-08 foydalanuvchi
+# so'rovi: "hammasini akkauntlani tarif asosida ishlidigan qilib ber
+# tolovsiz ishlamasin"). BU SAHIFA FAQAT PLATFORMA EGASI uchun -- ya'ni
+# "Company #1" (`ensure_default_company()` yaratgan, sizning o'z
+# biznesingiz) admin(lar)i uchun. Har bir mijoz-kompaniyaning o'z admini
+# BU SAHIFANI KO'RMASLIGI kerak (aks holda boshqa kompaniyalarning
+# to'lov holatini ko'rib/o'zgartirib qo'yishi mumkin edi).
+#
+# MUHIM (ATAYLAB SODDALASHTIRISH, hozircha): "platforma egasi" ekanini
+# aniqlash uchun ALOHIDA maydon/rol hali yo'q -- shunchaki "company_id == 1"
+# ekanini tekshiramiz (bitta kompaniya bo'lgan hozirgi bosqichda bu har
+# doim to'g'ri). Item 5'ning keyingi bosqichida (ro'yxatdan o'tish orqali
+# HAQIQIY 2-3-4-... kompaniya paydo bo'lganda) buni aniq `is_platform_owner`
+# bayrog'iga almashtirish kerak -- hozirgi "id==1" konventsiyasi ishlaydi,
+# lekin keyinchalik xatoga moyil (masalan kimdir Company #1'ni o'chirib,
+# qayta yaratsa, yangi ID 1 bo'lmasligi mumkin).
+# ---------------------------------------------------------------------------
+
+def _is_platform_owner() -> bool:
+    return current_user.is_authenticated and current_user.role == "admin" and getattr(current_user, "company_id", None) == 1
+
+
+def platform_owner_required(fn):
+    from functools import wraps
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not _is_platform_owner():
+            flash("Bu sahifa faqat platforma egasi uchun.", "error")
+            return redirect(url_for("dashboard"))
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+@app.route("/companies", methods=["GET", "POST"])
+@login_required
+@platform_owner_required
+def companies():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            email = request.form.get("email", "").strip() or None
+            plan = request.form.get("plan", "trial")
+            if not name:
+                flash("Kompaniya nomi bo'sh bo'lishi mumkin emas.", "error")
+            elif email and session.query(Company).filter_by(email=email).first():
+                flash("Bu email allaqachon boshqa kompaniyada ishlatilgan.", "error")
+            else:
+                c = Company(name=name, email=email, plan=plan, is_active=True)
+                # Yangi mijoz-kompaniya standart holatda 14 kunlik bepul
+                # sinov muddati bilan boshlaydi -- to'lov kelgach, admin
+                # buni pastdagi tahrirlash sahifasida uzaytiradi.
+                c.paid_until = dt.datetime.utcnow() + dt.timedelta(days=14)
+                session.add(c)
+                session.commit()
+                flash(f"'{name}' kompaniyasi qo'shildi (14 kunlik sinov muddati bilan).", "success")
+        all_companies = session.query(Company).order_by(Company.created_at).all()
+        now = dt.datetime.utcnow()
+        rows = [{
+            "id": c.id, "name": c.name, "email": c.email, "plan": c.plan,
+            "is_active": c.is_active, "paid_until": c.paid_until,
+            "is_paid_up": c.is_paid_up(now), "created_at": c.created_at,
+        } for c in all_companies]
+    finally:
+        session.close()
+    return render_template("companies.html", companies=rows)
+
+
+@app.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])
+@login_required
+@platform_owner_required
+def company_edit(company_id):
+    session = get_session()
+    try:
+        c = session.get(Company, company_id)
+        if not c:
+            flash("Kompaniya topilmadi.", "error")
+            return redirect(url_for("companies"))
+
+        if request.method == "POST":
+            action = request.form.get("action", "save")
+            if action == "extend_30":
+                # Tez-tez ishlatiladigan amal: to'lov kelganda 30 kunga
+                # uzaytirish -- joriy `paid_until`dan (agar hali o'tmagan
+                # bo'lsa) yoki bugundan (agar allaqachon tugagan bo'lsa)
+                # hisoblanadi, shunda ketma-ket to'lovlar bir-birining
+                # ustiga to'g'ri qo'shiladi.
+                base = c.paid_until if (c.paid_until and c.paid_until > dt.datetime.utcnow()) else dt.datetime.utcnow()
+                c.paid_until = base + dt.timedelta(days=30)
+                c.is_active = True
+                session.commit()
+                flash(f"'{c.name}' uchun 30 kunga uzaytirildi (yangi muddat: {c.paid_until.strftime('%Y-%m-%d')}).", "success")
+            elif action == "suspend":
+                c.is_active = False
+                session.commit()
+                flash(f"'{c.name}' hisobi to'xtatildi -- endi kirish yopiq.", "success")
+            elif action == "remove_limit":
+                c.paid_until = None
+                c.is_active = True
+                session.commit()
+                flash(f"'{c.name}' uchun muddat cheklovi olib tashlandi (cheksiz).", "success")
+            else:
+                c.name = request.form.get("name", c.name).strip() or c.name
+                c.email = request.form.get("email", "").strip() or None
+                c.plan = request.form.get("plan", c.plan)
+                c.is_active = request.form.get("is_active") == "on"
+                paid_until_str = request.form.get("paid_until", "").strip()
+                if paid_until_str:
+                    try:
+                        c.paid_until = dt.datetime.strptime(paid_until_str, "%Y-%m-%d")
+                    except ValueError:
+                        flash("Sana formati noto'g'ri (YYYY-MM-DD kerak).", "error")
+                        session.rollback()
+                        return redirect(url_for("company_edit", company_id=company_id))
+                else:
+                    c.paid_until = None
+                session.commit()
+                flash(f"'{c.name}' yangilandi.", "success")
+            return redirect(url_for("companies"))
+
+        c_view = {
+            "id": c.id, "name": c.name, "email": c.email, "plan": c.plan,
+            "is_active": c.is_active, "paid_until": c.paid_until,
+            "is_paid_up": c.is_paid_up(),
+        }
+    finally:
+        session.close()
+    return render_template("company_edit.html", c=c_view)
 
 
 # ---------------------------------------------------------------------------

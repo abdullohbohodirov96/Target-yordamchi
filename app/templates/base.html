@@ -28,6 +28,7 @@
   {% elif name == 'cart' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16l-1.4 10.2a2 2 0 01-2 1.8H7.4a2 2 0 01-2-1.8L4 8z"/><path stroke-linecap="round" d="M8 8V6.5a4 4 0 018 0V8"/></svg>
   {% elif name == 'logout' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5H6a1.5 1.5 0 00-1.5 1.5v12A1.5 1.5 0 006 19.5h3M15.5 16l4-4-4-4M19 12H9"/></svg>
   {% elif name == 'chevron' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+  {% elif name == 'companies' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V6.5a1.5 1.5 0 011.5-1.5h6a1.5 1.5 0 011.5 1.5V20M14 20v-8.5a1.5 1.5 0 011.5-1.5h3a1.5 1.5 0 011.5 1.5V20M2.5 20h19M7 9h1.5M7 12.5h1.5M7 16h1.5"/></svg>
   {% endif %}{% endmacro %}
 
   {% if current_user.is_authenticated %}
@@ -101,6 +102,11 @@
       {% if current_user.role == 'admin' %}
       <a href="{{ url_for('managers') }}" class="nav-item {{ 'active' if request.endpoint in ('managers','manager_edit') }}" title="Menejerlar">
         <span class="nav-icon">{{ navicon('managers') }}</span><span class="nav-text">Menejerlar</span>
+      </a>
+      {% endif %}
+      {% if current_user.role == 'admin' and current_user.company_id == 1 %}
+      <a href="{{ url_for('companies') }}" class="nav-item {{ 'active' if request.endpoint in ('companies','company_edit') }}" title="Kompaniyalar">
+        <span class="nav-icon">{{ navicon('companies') }}</span><span class="nav-text">Kompaniyalar</span>
       </a>
       {% endif %}
       {% endif %}

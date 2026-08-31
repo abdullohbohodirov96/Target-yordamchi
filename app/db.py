@@ -85,10 +85,34 @@ class Company(Base):
     telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
 
     trial_ends_at = Column(DateTime, nullable=True)
+    # 2026-08 (foydalanuvchi so'rovi -- "hammasini akkauntlani tarif asosida
+    # ishlidigan qilib ber tolovsiz ishlamasin"): to'lov qilingan MUDDAT.
+    # `NULL` = "muddat cheklovi yo'q" -- SIZNING o'z kompaniyangiz
+    # (`ensure_default_company()` shuni qo'yadi) va admin qo'lda "cheksiz"
+    # deb belgilagan kompaniyalar uchun. Yangi (kelajakda ro'yxatdan
+    # o'tadigan) mijoz-kompaniyalar uchun bu sana bo'lishi SHART -- shu
+    # sanadan o'tsa, `is_paid_up()` False qaytaradi va `app.py`dagi
+    # to'lov-tekshiruvi (`_enforce_subscription`) web kirishni to'xtatadi.
+    # HALI to'liq avtomatik to'lov integratsiyasi (Payme/Click) yo'q --
+    # hozircha bu sanani ADMIN qo'lda (`/companies` sahifasi orqali)
+    # to'lov kelganda yangilaydi.
+    paid_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     def set_password(self, raw: str) -> None:
         self.password_hash = generate_password_hash(raw)
+
+    def is_paid_up(self, now: "dt.datetime | None" = None) -> bool:
+        """True -- bu kompaniya HOZIR saytdan foydalanishi mumkin.
+        `is_active=False` (admin qo'lda o'chirgan) bo'lsa -- HAR DOIM False.
+        `paid_until` bo'lmasa (NULL) -- muddat cheklovi yo'q, True. Aks
+        holda -- muddat hali o'tmagan bo'lsa True."""
+        if not self.is_active:
+            return False
+        if self.paid_until is None:
+            return True
+        now = now or dt.datetime.utcnow()
+        return self.paid_until >= now
 
     def check_password(self, raw: str) -> bool:
         return check_password_hash(self.password_hash, raw) if self.password_hash else False

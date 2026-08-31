@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} — Kompaniya — Replix{% endblock %}
+{% block content %}
+<h1>{{ c.name }}</h1>
+<p class="page-subtitle">
+  Holat:
+  {% if not c.is_active %}<span class="badge badge-color-dim">to'xtatilgan</span>
+  {% elif c.is_paid_up %}<span class="badge badge-color-good">faol</span>
+  {% else %}<span class="badge badge-color-bad">to'lov tugagan</span>{% endif %}
+</p>
+
+<div class="card" style="max-width:420px; margin-bottom:20px">
+  <h2>Tezkor amallar</h2>
+  <p class="page-subtitle" style="margin-top:-6px">To'lov Payme/Click orqali qo'lda tekshirilib, shu yerda belgilanadi (avtomatik integratsiya hali yo'q).</p>
+  <div style="display:flex; flex-direction:column; gap:8px">
+    <form method="post"><input type="hidden" name="action" value="extend_30">
+      <button type="submit" class="block">+ 30 kunga uzaytirish (to'lov keldi)</button>
+    </form>
+    {% if c.id != 1 %}
+    <form method="post"><input type="hidden" name="action" value="remove_limit">
+      <button type="submit" class="block" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">Muddat cheklovini olib tashlash (cheksiz)</button>
+    </form>
+    <form method="post" onsubmit="return confirm('Rostdan ham to\'xtatilsinmi? Bu kompaniyaning HAMMA foydalanuvchisi CRM\'ga kira olmay qoladi.')"><input type="hidden" name="action" value="suspend">
+      <button type="submit" class="block" style="background:var(--bad, #DC2626)">Hisobni to'xtatish</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width:420px">
+  <h2>Tafsilotlar</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="save">
+    <div class="field"><label>Nomi</label><input type="text" name="name" value="{{ c.name }}" required></div>
+    <div class="field"><label>Email</label><input type="email" name="email" value="{{ c.email or '' }}"></div>
+    <div class="field">
+      <label>Tarif</label>
+      <select name="plan">
+        <option value="trial" {{ 'selected' if c.plan == 'trial' }}>Sinov (trial)</option>
+        <option value="start" {{ 'selected' if c.plan == 'start' }}>Boshlang'ich</option>
+        <option value="business" {{ 'selected' if c.plan == 'business' }}>Biznes</option>
+        <option value="unlimited" {{ 'selected' if c.plan == 'unlimited' }}>Cheklovsiz</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>To'lov muddati (bo'sh -- cheklovsiz)</label>
+      <input type="date" name="paid_until" value="{{ c.paid_until.strftime('%Y-%m-%d') if c.paid_until else '' }}">
+    </div>
+    <div class="field">
+      <label style="display:flex; align-items:center; gap:8px; font-weight:400">
+        <input type="checkbox" name="is_active" style="width:auto" {{ 'checked' if c.is_active }}> Hisob faol
+      </label>
+    </div>
+    <button type="submit" class="block">Saqlash</button>
+  </form>
+</div>
+
+<p class="page-subtitle" style="margin-top:20px">
+  <a href="{{ url_for('companies') }}" class="text-blue">&larr; Kompaniyalar ro'yxatiga qaytish</a>
+</p>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Obuna muddati tugagan — Replix{% endblock %}
+{% block flash %}{% endblock %}
+{% block content %}
+<div class="login-shell">
+  <div class="login-card">
+    <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
+    <h1 style="font-size:20px; margin:0 0 8px; text-align:center">Obuna muddati tugagan</h1>
+    <p class="login-subtitle" style="text-align:center">
+      Bu kompaniyaning tarif to'lovi muddati tugagan yoki hisob vaqtincha to'xtatilgan --
+      shuning uchun CRM'ga kirish hozircha yopilgan.
+    </p>
+    <p class="page-subtitle" style="text-align:center; margin-top:16px">
+      Davom etish uchun administratorga (loyiha egasiga) murojaat qiling -- to'lov
+      qabul qilingach, hisobingiz qayta faollashtiriladi.
+    </p>
+    <a href="{{ url_for('logout') }}" class="block" style="display:block; text-align:center; margin-top:16px; padding:10px; border-radius:8px; background:var(--card); border:1px solid var(--border)">Chiqish</a>
+  </div>
+</div>
+{% endblock %}
