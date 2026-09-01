@@ -234,6 +234,9 @@ def get_insights(
     fields: list[str] | None = None,
     time_range: dict | None = None,   # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD"}
     time_increment: int | str | None = None,   # 1 = har kun uchun alohida qator
+    *,
+    access_token: str | None = None,
+    ad_account_id: str | None = None,
 ) -> list[dict]:
     """Kampaniya/adset/ad darajasidagi statistikani qaytaradi.
 
@@ -246,7 +249,17 @@ def get_insights(
 
     `time_increment=1` bersangiz, natija BIR QATOR o'rniga HAR KUN uchun
     alohida qator (`date_start`/`date_stop` maydonlari bilan) qaytaradi --
-    oylik hisobotdagi "kunlik jadval" uchun ishlatiladi (monthly_report.py)."""
+    oylik hisobotdagi "kunlik jadval" uchun ishlatiladi (monthly_report.py).
+
+    `access_token`/`ad_account_id` -- 2026-09, multi-tenant to'g'rilash
+    (foydalanuvchi shikoyati: "targeting ma'lumotlari boshqa loyihadan
+    chiqib qolyapti"): BERILSA, shu ANIQ kompaniyaning O'Z Meta hisobidan
+    so'raladi; BERILMASA (None), eski xatti-harakat -- global ENV
+    o'zgaruvchilar (`ACCESS_TOKEN`/`AD_ACCOUNT_ID`, sizning o'z biznesingiz
+    -- Company #1) ishlatiladi. Chaqiruvchi (`dashboard_data.py`) HECH
+    QACHON "ulanmagan" kompaniya uchun bu ikkalasini bo'sh qoldirib
+    chaqirmasligi kerak -- aks holda global (boshqa kompaniyaning) hisob
+    ma'lumoti qaytib, xuddi shu leak yana takrorlanadi."""
     params = {
         "level": level,
         "fields": ",".join(fields or DEFAULT_FIELDS),
@@ -260,11 +273,11 @@ def get_insights(
         params["breakdowns"] = ",".join(breakdowns)
     if time_increment:
         params["time_increment"] = time_increment
-    data = _get(f"{AD_ACCOUNT_ID}/insights", params)
+    data = _get(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
     return data.get("data", [])
 
 
-def get_account_spend(since: str, until: str) -> float:
+def get_account_spend(since: str, until: str, *, access_token: str | None = None, ad_account_id: str | None = None) -> float:
     """Berilgan sana oralig'ida (YYYY-MM-DD, ikkalasi ham kiritiladi) butun
     hisobning (barcha kampaniyalar) umumiy xarajatini qaytaradi. Byudjet
     balansini kuzatish (budget_tracker.py) uchun ishlatiladi."""
@@ -273,12 +286,12 @@ def get_account_spend(since: str, until: str) -> float:
         "time_range": {"since": since, "until": until},  # _get avtomatik JSON'ga o'giradi
         "fields": "spend",
     }
-    data = _get(f"{AD_ACCOUNT_ID}/insights", params)
+    data = _get(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
     rows = data.get("data", [])
     return sum(float(r.get("spend", 0)) for r in rows)
 
 
-def get_account_daily_spend_avg(days: int = 3) -> float:
+def get_account_daily_spend_avg(days: int = 3, *, access_token: str | None = None, ad_account_id: str | None = None) -> float:
     """So'nggi N kunlik o'rtacha KUNLIK xarajatni qaytaradi (byudjet necha
     kunga/qachon tugashini hisoblash uchun burn-rate)."""
     params = {
@@ -286,7 +299,7 @@ def get_account_daily_spend_avg(days: int = 3) -> float:
         "date_preset": f"last_{days}d",
         "fields": "spend",
     }
-    data = _get(f"{AD_ACCOUNT_ID}/insights", params)
+    data = _get(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
     rows = data.get("data", [])
     total = sum(float(r.get("spend", 0)) for r in rows)
     return total / days if days > 0 else 0.0
@@ -314,7 +327,7 @@ def get_active_ads(adset_id: str | None = None) -> list[dict]:
     return data.get("data", [])
 
 
-def get_account_structure(active_only: bool = True) -> dict:
+def get_account_structure(active_only: bool = True, *, access_token: str | None = None, ad_account_id: str | None = None) -> dict:
     """Kampaniya -> Adset -> Ad daraxtini FAQAT NOM va ID bilan qaytaradi (yengil).
 
     Bu funksiya juda muhim: foydalanuvchi Telegramda "AB | Traffic | IG" kabi
@@ -345,10 +358,11 @@ def get_account_structure(active_only: bool = True) -> dict:
     # (Vercel'ning 60 soniyalik funksiya limitiga urilib qolish xavfini
     # kamaytirish uchun muhim -- bu funksiya deyarli har bir amaliy buyruq
     # oldidan chaqiriladi).
+    acct = ad_account_id or AD_ACCOUNT_ID
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        campaigns_future = pool.submit(_get, f"{AD_ACCOUNT_ID}/campaigns", campaign_params)
-        adsets_future = pool.submit(_get, f"{AD_ACCOUNT_ID}/adsets", adset_params)
-        ads_future = pool.submit(_get, f"{AD_ACCOUNT_ID}/ads", ad_params)
+        campaigns_future = pool.submit(_get, f"{acct}/campaigns", campaign_params, access_token)
+        adsets_future = pool.submit(_get, f"{acct}/adsets", adset_params, access_token)
+        ads_future = pool.submit(_get, f"{acct}/ads", ad_params, access_token)
         campaigns = campaigns_future.result().get("data", [])
         adsets = adsets_future.result().get("data", [])
         ads = ads_future.result().get("data", [])

@@ -163,7 +163,7 @@
 
 </div>
 
-{% if o.target_summary or o.smm_summary or o.dm_summary %}
+{% if o.target_summary or o.target_not_connected or o.smm_summary or o.dm_summary %}
 <!-- Target / SMM / Instagram DM -- QISQACHA ko'rinish (2026-08, foydalanuvchi
      so'rovi: "dashboardga ham hamma malumotlani qoshib qoygin, hamma narsani
      qosh, toliq malumotlar bolsin" -- ilgari bularni ko'rish uchun alohida
@@ -190,6 +190,14 @@
       <div class="kpi-card"><div class="kpi-label">ROI</div><div class="kpi-value {{ 'good' if (o.target_summary.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(o.target_summary.roi_percent or 0) }}%</div></div>
       <div class="kpi-card"><div class="kpi-label">Faol kampaniya</div><div class="kpi-value">{{ o.target_summary.active_campaigns }}</div></div>
     </div>
+  </div>
+  {% elif o.target_not_connected %}
+  <div class="kpidash-card span-2">
+    <div class="kpidash-card-head">
+      <div class="kpidash-card-title">Target (Meta reklama)</div>
+    </div>
+    <p class="page-subtitle" style="margin:0 0 10px">Hali Meta (Facebook/Instagram) hisobingiz ulanmagan.</p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn" style="display:inline-block">Akkauntni ulash</a>
   </div>
   {% endif %}
 

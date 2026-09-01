@@ -1,7 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Replix — Meta Ads + CRM bitta tizimda{% endblock %}
 {% block flash %}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Replix",
+  "url": "{{ request.url_root }}",
+  "logo": "{{ url_for('static', filename='brand/logo-full.png', _external=True) }}"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Replix",
+  "url": "{{ request.url_root }}"
+}
+</script>
+{% endblock %}
 {% block content %}
 
 <nav class="lp-nav">
@@ -9,13 +27,18 @@
     <img src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix">
   </div>
   <div class="lp-nav-links">
-    <a href="#imkoniyatlar">Imkoniyatlar</a>
-    <a href="#qanday-ishlaydi">Qanday ishlaydi</a>
-    <a href="{{ url_for('pricing') }}">Tariflar</a>
+    <a href="#imkoniyatlar">{{ t('nav.features') }}</a>
+    <a href="#qanday-ishlaydi">{{ t('nav.how') }}</a>
+    <a href="{{ url_for('pricing') }}">{{ t('nav.pricing') }}</a>
   </div>
   <div class="lp-nav-cta">
-    <a href="{{ url_for('login') }}" class="btn btn-ghost">Kirish</a>
-    <a href="{{ url_for('signup') }}" class="btn">Bepul boshlash</a>
+    <div class="lp-lang-switch">
+      {% for code in supported_langs %}
+      <a href="?lang={{ code }}" class="{{ 'active' if current_lang() == code else '' }}">{{ code|upper }}</a>{% if not loop.last %}<span>/</span>{% endif %}
+      {% endfor %}
+    </div>
+    <a href="{{ url_for('login') }}" class="btn btn-ghost">{{ t('nav.login') }}</a>
+    <a href="{{ url_for('signup') }}" class="btn">{{ t('nav.signup') }}</a>
   </div>
 </nav>
 
@@ -23,105 +46,134 @@
   <div>
     <div class="lp-eyebrow">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
-      O'zbekiston bizneslari uchun CRM
+      {{ t('hero.eyebrow') }}
     </div>
-    <h1>Reklamadan kelgan lidni <span>sotuvgacha</span> bitta tizimda kuzating</h1>
-    <p class="lp-hero-sub">Replix — Instagram va Facebook reklamalaringizni, sotuv jamoangizni va mijozlar bazangizni bitta joyda birlashtiradi. Har bir so'm qayerga ketayotgani, har bir menejer qancha sotuv qilayotgani va har bir qo'ng'iroq qanchalik sifatli o'tgani — barchasi bir ekranda.</p>
+    <h1>{{ t('hero.h1')|safe }}</h1>
+    <p class="lp-hero-sub">{{ t('hero.sub') }}</p>
     <div class="lp-hero-actions">
-      <a href="{{ url_for('signup', plan='trial') }}" class="btn">14 kun bepul sinash</a>
-      <a href="{{ url_for('pricing') }}" class="btn btn-ghost">Tariflarni ko'rish</a>
+      <a href="{{ url_for('signup', plan='trial') }}" class="btn">{{ t('hero.cta_trial') }}</a>
+      <a href="{{ url_for('pricing') }}" class="btn btn-ghost">{{ t('hero.cta_pricing') }}</a>
     </div>
     <div class="lp-hero-note">
-      <span>✓ Karta shart emas</span>
-      <span>✓ 5 daqiqada ishga tushiriladi</span>
-      <span>✓ O'zbek tilida to'liq qo'llab-quvvatlash</span>
+      <span>{{ t('hero.note1') }}</span>
+      <span>{{ t('hero.note2') }}</span>
+      <span>{{ t('hero.note3') }}</span>
     </div>
   </div>
 
   <div class="lp-mock" aria-hidden="true">
     <div class="lp-mock-bar"><span></span><span></span><span></span></div>
     <div class="lp-mock-kpis">
-      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">Yangi lidlar</div><div class="lp-mock-kpi-value">128</div></div>
-      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">CPL</div><div class="lp-mock-kpi-value">11 200 so'm</div></div>
-      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">Sotuv</div><div class="lp-mock-kpi-value good">34</div></div>
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.new_leads') }}</div><div class="lp-mock-kpi-value">128</div></div>
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.cpl') }}</div><div class="lp-mock-kpi-value">11 200 so'm</div></div>
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.sales') }}</div><div class="lp-mock-kpi-value good">34</div></div>
     </div>
-    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--good)"></span>Kamola A.</span><span class="lp-mock-tag" style="background:var(--good-bg);color:var(--good)">sotildi</span></div>
-    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--blue)"></span>Diyorbek T.</span><span class="lp-mock-tag" style="background:var(--blue-bg);color:var(--blue)">malakali</span></div>
-    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--warn)"></span>Sardor Q.</span><span class="lp-mock-tag" style="background:var(--warn-bg);color:var(--warn)">aloqa qilindi</span></div>
-    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--text-faint)"></span>Nilufar S.</span><span class="lp-mock-tag" style="background:var(--border-light);color:var(--text-dim)">yangi</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--good)"></span>Kamola A.</span><span class="lp-mock-tag" style="background:var(--good-bg);color:var(--good)">{{ t('mock.status_sold') }}</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--blue)"></span>Diyorbek T.</span><span class="lp-mock-tag" style="background:var(--blue-bg);color:var(--blue)">{{ t('mock.status_qualified') }}</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--warn)"></span>Sardor Q.</span><span class="lp-mock-tag" style="background:var(--warn-bg);color:var(--warn)">{{ t('mock.status_contacted') }}</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--text-faint)"></span>Nilufar S.</span><span class="lp-mock-tag" style="background:var(--border-light);color:var(--text-dim)">{{ t('mock.status_new') }}</span></div>
   </div>
 </header>
 
 <section class="lp-section lp-section-alt" id="imkoniyatlar">
   <div class="lp-section-head">
-    <h2>Bitta tizim — butun sotuv jarayoni</h2>
-    <p>Alohida-alohida jadval va Excel fayllar o'rniga, reklamadan sotuvgacha bo'lgan yo'lning har bosqichi shu yerda.</p>
+    <h2>{{ t('features.h2') }}</h2>
+    <p>{{ t('features.sub') }}</p>
   </div>
   <div class="lp-features">
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path stroke-linecap="round" d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><path stroke-linecap="round" d="M16 4.3c1.5.5 2.5 1.9 2.5 3.5S17.5 10.8 16 11.3"/></svg></div>
-      <h3>Lidlar va CRM voronkasi</h3>
-      <p>Meta Lead Ads'dan avtomatik kelgan va qo'lda kiritilgan lidlarni bitta voronkada boshqaring: yangi → aloqa qilindi → malakali → sotildi.</p>
+      <h3>{{ t('features.f1_title') }}</h3>
+      <p>{{ t('features.f1_desc') }}</p>
     </div>
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg></div>
-      <h3>Target monitoring</h3>
-      <p>Xarajat, lead soni, CPL va konversiya — kampaniya kesimida, real vaqtda. Byudjet oshib ketishidan oldin ogohlantirish oladi.</p>
+      <h3>{{ t('features.f2_title') }}</h3>
+      <p>{{ t('features.f2_desc') }}</p>
     </div>
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5.5h16A1.5 1.5 0 0121.5 7v9a1.5 1.5 0 01-1.5 1.5H8l-4 3.5V7A1.5 1.5 0 015.99 5.5z"/></svg></div>
-      <h3>SMM hisobot va Instagram xabarlar</h3>
-      <p>Obunachilar dinamikasi, kontent samaradorligi va Instagram Direct xabarlar bitta joyda — javobsiz qolgan mijoz yo'qolmaydi.</p>
+      <h3>{{ t('features.f3_title') }}</h3>
+      <p>{{ t('features.f3_desc') }}</p>
     </div>
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2.5" y="14" width="4" height="6" rx="1.5"/><rect x="17.5" y="14" width="4" height="6" rx="1.5"/></svg></div>
-      <h3>AI qo'ng'iroq tahlili</h3>
-      <p>Har bir sotuv qo'ng'irog'i avtomatik tinglanadi va tahlil qilinadi — sifat balli, kamchiliklar va tavsiyalar bilan (Biznes va Ekspert tarifida).</p>
+      <h3>{{ t('features.f4_title') }}</h3>
+      <p>{{ t('features.f4_desc') }}</p>
     </div>
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 20V10M11 20V4M18 20v-7"/></svg></div>
-      <h3>Menejerlar KPI va bonus</h3>
-      <p>Har oy avtomatik hisoblanadigan reja-bajarilish jadvali — kim qancha sotdi, bonus qancha bo'lishi bir qarashda ko'rinadi.</p>
+      <h3>{{ t('features.f5_title') }}</h3>
+      <p>{{ t('features.f5_desc') }}</p>
     </div>
     <div class="lp-feature">
       <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
-      <h3>Telegram bot orqali hisobot</h3>
-      <p>Kuniga bir marta, jamoangiz Telegram guruhiga avtomatik yuboriladigan holat hisoboti — hech kim CRM'ni ochmasa ham xabardor bo'ladi.</p>
+      <h3>{{ t('features.f6_title') }}</h3>
+      <p>{{ t('features.f6_desc') }}</p>
+    </div>
+  </div>
+</section>
+
+<section class="lp-section">
+  <div class="lp-section-head">
+    <h2>{{ t('compare.h2') }}</h2>
+    <p>{{ t('compare.sub') }}</p>
+  </div>
+  <div class="lp-compare">
+    <div class="lp-compare-col">
+      <div class="lp-compare-head">{{ t('compare.separate_head') }}</div>
+      <ul>
+        <li><span>{{ t('compare.item1') }}</span><b>{{ t('compare.item1_price') }}</b></li>
+        <li><span>{{ t('compare.item2') }}</span><b>{{ t('compare.item2_price') }}</b></li>
+        <li><span>{{ t('compare.item3') }}</span><b>{{ t('compare.item3_price') }}</b></li>
+        <li><span>{{ t('compare.item4') }}</span><b>{{ t('compare.item4_price') }}</b></li>
+      </ul>
+      <div class="lp-compare-total">{{ t('compare.total_separate') }}</div>
+    </div>
+    <div class="lp-compare-col lp-compare-win">
+      <div class="lp-compare-head">{{ t('compare.replix_head') }}</div>
+      <ul>
+        <li><span>{{ t('compare.item1') }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></li>
+        <li><span>{{ t('compare.item2') }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></li>
+        <li><span>{{ t('compare.item3') }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></li>
+        <li><span>{{ t('compare.item4') }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></li>
+      </ul>
+      <div class="lp-compare-total win">{{ t('compare.total_replix') }}</div>
     </div>
   </div>
 </section>
 
 <section class="lp-section" id="qanday-ishlaydi">
   <div class="lp-section-head">
-    <h2>4 qadamda ishga tushiring</h2>
-    <p>Alohida sozlash mutaxassisi kerak emas — ro'yxatdan o'tgach, o'zingiz 5-10 daqiqada tayyorlaysiz.</p>
+    <h2>{{ t('steps.h2') }}</h2>
+    <p>{{ t('steps.sub') }}</p>
   </div>
   <div class="lp-steps">
-    <div class="lp-step"><h4>Ro'yxatdan o'ting</h4><p>Kompaniya nomi, login va parol — shu qadar, karta kerak emas.</p></div>
-    <div class="lp-step"><h4>Akkauntingizni ulang</h4><p>Instagram (va tarifga qarab Facebook reklama hisobingizni) ulang.</p></div>
-    <div class="lp-step"><h4>Jamoangizni qo'shing</h4><p>Menejerlaringizga login yarating, kimga qaysi bo'lim ochiq ekanini belgilang.</p></div>
-    <div class="lp-step"><h4>Natijalarni kuzating</h4><p>Lidlar, xarajat va sotuvlar real vaqtda bir ekranda to'planadi.</p></div>
+    <div class="lp-step"><h4>{{ t('steps.s1_title') }}</h4><p>{{ t('steps.s1_desc') }}</p></div>
+    <div class="lp-step"><h4>{{ t('steps.s2_title') }}</h4><p>{{ t('steps.s2_desc') }}</p></div>
+    <div class="lp-step"><h4>{{ t('steps.s3_title') }}</h4><p>{{ t('steps.s3_desc') }}</p></div>
+    <div class="lp-step"><h4>{{ t('steps.s4_title') }}</h4><p>{{ t('steps.s4_desc') }}</p></div>
   </div>
 </section>
 
 <section class="lp-section lp-section-alt" id="tariflar">
   <div class="lp-section-head">
-    <h2>Har bosqich uchun aniq tarif</h2>
-    <p>Sinovdan boshlang, jamoangiz o'sgani sayin tarifni oshiring — yashirin to'lov yo'q.</p>
+    <h2>{{ t('pricing.h2') }}</h2>
+    <p>{{ t('pricing.sub') }}</p>
   </div>
   <div class="lp-pricing">
     {% for plan in plans %}
     <div class="lp-plan{{ ' highlight' if plan.highlight }}">
-      {% if plan.highlight %}<div class="lp-plan-badge">Eng ommabop</div>{% endif %}
+      {% if plan.highlight %}<div class="lp-plan-badge">{{ t('pricing.badge_popular') }}</div>{% endif %}
       <div class="lp-plan-name">{{ plan.name }}</div>
       <p class="lp-plan-tagline">{{ plan.tagline }}</p>
       <div class="lp-plan-price">
-        {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>/oy</span>
-        {% else %}<b>Bepul</b>{% endif %}
+        {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>{{ t('pricing.per_month') }}</span>
+        {% else %}<b>{{ t('pricing.free') }}</b>{% endif %}
       </div>
-      <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} kun{% else %}har oy yangilanadi{% endif %}</div>
+      <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} {{ t('pricing.days') }}{% else %}{{ t('pricing.monthly_renew') }}{% endif %}</div>
       <div class="lp-plan-cta">
-        <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ 'Bepul boshlash' if plan.key == 'trial' else "Ro'yxatdan o'tish" }}</a>
+        <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ t('pricing.cta_trial') if plan.key == 'trial' else t('pricing.cta_signup') }}</a>
       </div>
       <ul>
         {% for f in plan.features %}
@@ -135,14 +187,14 @@
 
 <div class="lp-cta-band">
   <div class="lp-cta-card">
-    <h2>Reklama byudjetingiz oqilona ishlayaptimi?</h2>
-    <p>Bugun ro'yxatdan o'ting, Instagram akkauntingizni ulang va birinchi natijalarni bugunoq ko'ring.</p>
-    <a href="{{ url_for('signup', plan='trial') }}" class="btn" style="padding:13px 26px">14 kun bepul boshlash</a>
+    <h2>{{ t('cta_band.h2') }}</h2>
+    <p>{{ t('cta_band.sub') }}</p>
+    <a href="{{ url_for('signup', plan='trial') }}" class="btn" style="padding:13px 26px">{{ t('cta_band.button') }}</a>
   </div>
 </div>
 
 <footer class="lp-footer">
-  © {{ current_year() }} Replix. Barcha huquqlar himoyalangan. &middot; <a href="{{ url_for('login') }}" class="text-blue">Kirish</a>
+  © {{ current_year() }} Replix. {{ t('footer.rights') }} &middot; <a href="{{ url_for('login') }}" class="text-blue">{{ t('footer.login') }}</a>
 </footer>
 
 {% endblock %}

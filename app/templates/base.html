@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="uz">
+<html lang="{{ current_lang() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Replix{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 14 kun bepul sinov.{% endblock %}">
+  <link rel="canonical" href="{{ request.url_root.rstrip('/') + request.path }}">
+  <meta property="og:site_name" content="Replix">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
+  <meta property="og:title" content="{% block og_title %}Replix — reklama, CRM va AI tahlil bitta tizimda{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}Instagram/Facebook reklama monitoring, lidlar CRM'i, SMM hisobot va AI qo'ng'iroq tahlili — bitta obunada, $50/oydan.{% endblock %}">
+  <meta property="og:image" content="{{ url_for('static', filename='brand/logo-full.png', _external=True) }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{% block og_title2 %}Replix — reklama, CRM va AI tahlil bitta tizimda{% endblock %}">
+  <meta name="twitter:image" content="{{ url_for('static', filename='brand/logo-full.png', _external=True) }}">
+  {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon/favicon-16x16.png') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon/favicon-32x32.png') }}">

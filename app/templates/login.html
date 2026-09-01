@@ -4,8 +4,13 @@
 {% block content %}
 <div class="login-shell">
   <div class="login-card">
+    <div class="auth-lang-switch">
+      {% for code in supported_langs %}
+      <a href="?lang={{ code }}" class="{{ 'active' if current_lang() == code else '' }}">{{ lang_labels[code] }}</a>
+      {% endfor %}
+    </div>
     <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
-    <p class="login-subtitle">Kirish uchun login/parolingizni kiriting</p>
+    <p class="login-subtitle">{{ t('login.subtitle') }}</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -19,13 +24,13 @@
     {% endwith %}
 
     <form method="post">
-      <div class="field"><label>Login</label><input type="text" name="username" value="{{ request.form.get('username', '') }}" autofocus required></div>
-      <div class="field"><label>Parol</label><input type="password" name="password" required></div>
-      <button type="submit" class="block">Kirish</button>
+      <div class="field"><label>{{ t('login.username') }}</label><input type="text" name="username" value="{{ request.form.get('username', '') }}" autofocus required></div>
+      <div class="field"><label>{{ t('login.password') }}</label><input type="password" name="password" required></div>
+      <button type="submit" class="block">{{ t('login.submit') }}</button>
     </form>
 
     <p style="text-align:center; font-size:13px; color:var(--text-dim); margin:18px 0 0">
-      Hali kompaniyangiz yo'qmi? <a href="{{ url_for('signup') }}" class="text-blue">Ro'yxatdan o'ting</a>
+      {{ t('login.no_account') }} <a href="{{ url_for('signup') }}" class="text-blue">{{ t('login.signup_link') }}</a>
     </p>
   </div>
 </div>

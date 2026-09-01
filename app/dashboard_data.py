@@ -253,18 +253,33 @@ def _resolve_meta_result(goal: str, actions: list[dict] | None, reach: int, impr
     return impressions or 0, GOAL_LABELS["IMPRESSIONS"]
 
 
-def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False) -> dict:
+def get_kpis(
+    level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False,
+    *, access_token: str | None = None, ad_account_id: str | None = None,
+) -> dict:
     """`_get_kpis_uncached()`ning keshlangan qatlami -- pastdagi izohga
     qarang. Xato natija (`"error"` kaliti bilan) HECH QACHON keshlanmaydi,
-    shunda vaqtinchalik Meta xatosi keshda "muzlab" qolmaydi."""
-    cache_key = (level, date_preset, active_only)
+    shunda vaqtinchalik Meta xatosi keshda "muzlab" qolmaydi.
+
+    MUHIM (2026-09, foydalanuvchi shikoyati: "targeting ma'lumotlari
+    boshqa loyihadan chiqib qolyapti" -- HAQIQIY topilgan sabab): kesh
+    kaliti ILGARI `ad_account_id`ni UMUMAN o'z ichiga OLMAS edi -- ya'ni
+    Kompaniya A Target sahifasini ochsa, natija 120 soniyaga keshlanardi,
+    va shu 120 soniya ichida Kompaniya B ham Target sahifasini ochsa, u
+    Kompaniya A'ning (yoki teskarisi) keshlangan ma'lumotini ko'rardi,
+    HATTO ikkalasi turli `ad_account_id` bilan chaqirilgan bo'lsa ham!
+    Endi kesh kaliti aniq qaysi hisob so'ralganini o'z ichiga oladi."""
+    cache_key = (level, date_preset, active_only, ad_account_id or "__default__")
     now = time.monotonic()
     with _kpi_cache_lock:
         cached = _kpi_cache.get(cache_key)
     if cached and (now - cached[0]) < _KPI_CACHE_TTL_SECONDS:
         return cached[1]
 
-    result = _get_kpis_uncached(level=level, date_preset=date_preset, active_only=active_only)
+    result = _get_kpis_uncached(
+        level=level, date_preset=date_preset, active_only=active_only,
+        access_token=access_token, ad_account_id=ad_account_id,
+    )
 
     if not result.get("error"):
         with _kpi_cache_lock:
@@ -272,7 +287,10 @@ def get_kpis(level: str = "campaign", date_preset: str = "last_30d", active_only
     return result
 
 
-def _get_kpis_uncached(level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False) -> dict:
+def _get_kpis_uncached(
+    level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False,
+    *, access_token: str | None = None, ad_account_id: str | None = None,
+) -> dict:
     """Qaytaradi: {"rows": [...], "totals": {...}, "goal_breakdown": [...],
     "generated_at": ISO, "level": level}
 
@@ -288,6 +306,7 @@ def _get_kpis_uncached(level: str = "campaign", date_preset: str = "last_30d", a
             level=level,
             date_preset=date_preset,
             fields=[id_field, name_field, "spend", "impressions", "reach", "actions"],
+            access_token=access_token, ad_account_id=ad_account_id,
         )
     except meta_api.MetaAPIError as e:
         return {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
@@ -296,7 +315,7 @@ def _get_kpis_uncached(level: str = "campaign", date_preset: str = "last_30d", a
     goal_by_id = {}
     child_count_by_id = {}
     try:
-        structure = meta_api.get_account_structure(active_only=False)
+        structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
         key = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}[level]
         status_by_id = {o["id"]: o.get("status", "") for o in structure.get(key, [])}
 

@@ -119,6 +119,18 @@
 .lp-plan li { font-size: 12.8px; color: var(--text); display: flex; gap: 8px; line-height: 1.4; }
 .lp-plan li svg { width: 15px; height: 15px; color: var(--good); flex-shrink: 0; margin-top: 1px; }
 
+.lp-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 820px; margin: 0 auto; }
+.lp-compare-col { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; background: var(--card); }
+.lp-compare-col.lp-compare-win { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.lp-compare-head { font-size: 13.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 14px; }
+.lp-compare-win .lp-compare-head { color: var(--blue); }
+.lp-compare-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.lp-compare-col li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--text); gap: 10px; }
+.lp-compare-col li b { color: var(--text-faint); font-weight: 600; white-space: nowrap; }
+.lp-compare-win li svg { width: 17px; height: 17px; color: var(--good); flex-shrink: 0; }
+.lp-compare-total { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); font-size: 12.5px; color: var(--text-faint); }
+.lp-compare-total.win { color: var(--blue); font-weight: 600; }
+
 .lp-cta-band {
   max-width: 1180px; margin: 0 auto; padding: 0 24px 72px;
 }
@@ -139,6 +151,7 @@
   .lp-features { grid-template-columns: 1fr; }
   .lp-steps { grid-template-columns: 1fr 1fr; }
   .lp-pricing { grid-template-columns: 1fr 1fr; }
+  .lp-compare { grid-template-columns: 1fr; }
   .lp-hero h1 { font-size: 32px; }
   .lp-nav-links { display: none; }
 }
@@ -168,6 +181,62 @@
 .auth-form-grid .field.full { grid-column: 1 / -1; }
 .auth-foot-link { text-align: center; font-size: 13px; color: var(--text-dim); margin-top: 16px; }
 
+/* 2026-09, foydalanuvchi shikoyati: "регистрация панелида Gmail maydoni
+   kichkina va dizayni xunuk" -- sabab: umumiy `style.css`dagi `form input`
+   qoidalari ICHKI (dense) CRM jadval-shakllari uchun mo'ljallangan (kichik
+   padding/shrift). Ochiq ro'yxatdan o'tish/to'lov sahifalari esa MIJOZGA
+   ko'rinadigan "sotuv" sahifasi -- shuning uchun shu maydonlar ATAYLAB
+   kattaroq, bo'shliqli va zamonaviy SaaS ko'rinishida qayta belgilanadi. */
+.auth-card form input[type="text"],
+.auth-card form input[type="email"],
+.auth-card form input[type="password"] {
+  padding: 12px 14px; font-size: 14.5px; border-radius: 9px; border-color: var(--border);
+  transition: border-color .15s, box-shadow .15s;
+}
+.auth-card form input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.auth-card form label { font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.auth-card form .field { margin-bottom: 18px; }
+.auth-card button.block { padding: 13px; font-size: 14.5px; border-radius: 9px; }
+
+/* Kirish sahifasi ham xuddi shu "sotuv sifatli" muomala-maydonlarini
+   olsin -- `.login-card` ham `.auth-card` bilan bir xil qoidalarni ishlatadi. */
+.login-card form input[type="text"],
+.login-card form input[type="password"] {
+  padding: 12px 14px; font-size: 14.5px; border-radius: 9px;
+}
+.login-card form label { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.login-card button.block { padding: 13px; font-size: 14.5px; border-radius: 9px; }
+
+/* Yengil kirish animatsiyasi -- sahifa ochilganda elementlar birma-bir
+   pastdan yumshoq suzib chiqadi (ko'p AI-generatsiya qilingan sahifalarda
+   uchraydigan "hammasi bir zumda qattiq paydo bo'ladi" taassurotining
+   aksi). `prefers-reduced-motion` yoqilgan foydalanuvchilar uchun butunlay
+   o'chiriladi (UX-standart, harakat kasalligi/e'tibor buzilishi bo'lgan
+   odamlar uchun). */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-eyebrow, .lp-hero h1, .lp-hero-sub, .lp-hero-actions, .lp-hero-note, .lp-mock,
+  .auth-card, .lp-feature, .lp-step, .lp-plan {
+    animation: lp-rise .55s cubic-bezier(.16,1,.3,1) both;
+  }
+  .lp-hero h1 { animation-delay: .04s; }
+  .lp-hero-sub { animation-delay: .1s; }
+  .lp-hero-actions { animation-delay: .16s; }
+  .lp-hero-note { animation-delay: .22s; }
+  .lp-mock { animation-delay: .12s; }
+  .lp-feature:nth-child(2), .lp-step:nth-child(2), .lp-plan:nth-child(2) { animation-delay: .06s; }
+  .lp-feature:nth-child(3), .lp-step:nth-child(3), .lp-plan:nth-child(3) { animation-delay: .12s; }
+  .lp-feature:nth-child(4), .lp-step:nth-child(4), .lp-plan:nth-child(4) { animation-delay: .18s; }
+  .lp-feature:nth-child(5) { animation-delay: .24s; }
+  .lp-feature:nth-child(6) { animation-delay: .3s; }
+  .lp-plan.highlight { animation-delay: .09s; }
+}
+@keyframes lp-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.btn, .lp-plan, .lp-feature { transition: transform .15s ease, box-shadow .15s ease; }
+.lp-feature:hover, .lp-plan:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+
 @media (max-width: 560px) {
   .lp-steps { grid-template-columns: 1fr; }
   .lp-pricing { grid-template-columns: 1fr; }
@@ -176,4 +245,48 @@
   .plan-picker { grid-template-columns: 1fr 1fr; }
   .auth-form-grid { grid-template-columns: 1fr; }
   .auth-card { padding: 26px 20px; }
+}
+
+/* Til almashtirgich -- lp-nav va auth-card (login/signup) sarlavhalarida
+   ko'rinadigan kichik UZ/RU almashtirgich. */
+.lp-lang-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: 6px;
+}
+.lp-lang-switch a {
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.lp-lang-switch a.active {
+  color: var(--blue, #2563eb);
+}
+.lp-lang-switch a:hover {
+  color: var(--text);
+}
+.lp-lang-switch span {
+  color: var(--border);
+}
+.auth-lang-switch {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.auth-lang-switch a {
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.auth-lang-switch a.active {
+  color: var(--blue, #2563eb);
+  background: var(--blue-bg, #eef4ff);
 }

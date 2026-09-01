@@ -20,6 +20,7 @@ import datetime as dt
 from collections import defaultdict
 
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort, g
+from flask import session as flask_session  # noqa: F401 -- ATAYLAB alias: `session` nomi butun faylda SQLAlchemy DB sessiyasi (`session = get_session()`) uchun ishlatiladi, Flask'ning o'z (cookie) sessiyasi bilan chalkashmasin
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
@@ -33,6 +34,7 @@ import kv_store
 import monthly_report
 import permissions
 import plans
+import lang as lang_module
 import db
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
@@ -211,6 +213,27 @@ def _set_tenant_scope():
         db.set_current_company_id(getattr(current_user, "company_id", None))
 
 
+# ---------------------------------------------------------------------------
+# Ko'p tillilik (2026-09, foydalanuvchi so'rovi: "сделай на русском, на
+# узбекском и на всех") -- HOZIRCHA faqat mijoz birinchi ko'radigan
+# sahifalar uchun (bosh sahifa, kirish, ro'yxatdan o'tish; `lang.py`ga
+# qarang). `?lang=ru` bilan bir marta o'tilsa, tanlov cookie-sessiyada
+# saqlanadi -- keyingi sahifalarda qayta ko'rsatish shart emas.
+# ---------------------------------------------------------------------------
+@app.before_request
+def _set_language():
+    requested = request.args.get("lang")
+    if requested in lang_module.SUPPORTED_LANGS:
+        flask_session["lang"] = requested
+    g.lang = flask_session.get("lang", lang_module.DEFAULT_LANG)
+
+
+app.jinja_env.globals["t"] = lambda key: lang_module.translate(key, getattr(g, "lang", lang_module.DEFAULT_LANG))
+app.jinja_env.globals["current_lang"] = lambda: getattr(g, "lang", lang_module.DEFAULT_LANG)
+app.jinja_env.globals["supported_langs"] = lang_module.SUPPORTED_LANGS
+app.jinja_env.globals["lang_labels"] = lang_module.LANG_LABELS
+
+
 @app.teardown_request
 def _clear_tenant_scope(exception=None):
     db.set_current_company_id(None)
@@ -258,6 +281,34 @@ def _current_company():
     return g._company_cache
 
 
+def _company_meta_creds(company) -> tuple[str | None, str | None]:
+    """Joriy kompaniyaning O'Z Meta (access_token, ad_account_id) juftini
+    qaytaradi -- yoki hali ulanmagan bo'lsa `(None, None)`.
+
+    MUHIM (2026-09, foydalanuvchi shikoyati -- "targeting ma'lumotlari
+    boshqa loyihadan chiqib qolyapti", HAQIQIY topilgan sabab): `meta_api.py`
+    ilgari HAR DOIM global ENV o'zgaruvchilardan (`META_ACCESS_TOKEN`/
+    `META_AD_ACCOUNT_ID`) foydalanardi -- ya'ni QAYSI kompaniya kirmasin,
+    Target/Dashboard sahifasi doim BITTA (sizning, Company #1) haqiqiy
+    reklama hisobingizni ko'rsatardi. Yangi ro'yxatdan o'tgan mijoz o'zining
+    HALI HECH narsa ulamagan bo'lsa ham, sizning haqiqiy xarajat/lead
+    raqamlaringizni ko'rardi.
+
+    Endi qat'iy qoida: FAQAT kompaniyaning O'ZI `/connect-accounts`
+    orqali kiritgan `meta_access_token`+`meta_ad_account_id` bo'lsa,
+    o'sha ishlatiladi. Aks holda HECH QANDAY Meta so'rovi YUBORILMAYDI
+    (chaqiruvchi "ulanmagan" holatni ko'rsatishi kerak) -- global ENV'ga
+    ORQAGA QAYTIB (fallback) BO'LMAYDI, aks holda xuddi shu leak
+    takrorlanadi. (Company #1 buzilmaydi, chunki uning o'z
+    `meta_access_token`/`meta_ad_account_id`si `ensure_default_company()`
+    orqali ENV'dan ALLAQACHON DB'ga nusxalab qo'yilgan.)"""
+    if company is None:
+        return None, None
+    if company.meta_access_token and company.meta_ad_account_id:
+        return company.meta_access_token, company.meta_ad_account_id
+    return None, None
+
+
 def module_required(key: str):
     """Berilgan bo'lim (masalan "dashboard", "analytics") uchun kirish
     huquqini tekshiradi -- ADMIN uchun har doim ochiq, MENEJER uchun faqat
@@ -295,6 +346,14 @@ def module_required(key: str):
 app.jinja_env.globals["has_module"] = permissions.has_module
 app.jinja_env.globals["get_plan"] = plans.get_plan
 app.jinja_env.globals["current_year"] = lambda: dt.datetime.utcnow().year
+# 2026-09, foydalanuvchi so'rovi ("Google qidiruvda birinchi chiqishi
+# kerak... Google'ni ham qo'shish kerak"): Google Search Console orqali
+# domenni tasdiqlash uchun kerak bo'ladigan meta-teg. Qiymatni Search
+# Console'dan olib (https://search.google.com/search-console -> Domain
+# emas "URL prefix" usuli -> "HTML tag" varianti) Render'ga
+# `GOOGLE_SITE_VERIFICATION` muhit o'zgaruvchisi sifatida qo'shing --
+# bo'sh bo'lsa teg umuman chiqmaydi (xato bermaydi).
+app.jinja_env.globals["google_site_verification"] = os.environ.get("GOOGLE_SITE_VERIFICATION", "")
 
 
 def _format_som(value) -> str:
@@ -889,6 +948,52 @@ def connect_accounts():
 
 
 # ---------------------------------------------------------------------------
+# SEO -- 2026-09, foydalanuvchi so'rovi ("одон человек в поиск ввёл Replic,
+# надо вывести наш сайт первым"): Google'ga saytni to'g'ri indekslashga
+# yordam beruvchi ikkita standart fayl. E'TIBOR: bu ikkovi Google'da
+# BIRINCHI chiqishni KAFOLATLAMAYDI -- lekin brend nomi ("Replix") kabi
+# past-raqobatli so'rov uchun to'g'ri indekslash odatda YETARLI bo'ladi.
+# Umumiy so'z (masalan "Instagram") bo'yicha 1-o'ринга chiqish esa texnik
+# SEO bilan emas, faqat uzoq muddatli kontent/reklama bilan erishiladi --
+# buni halol aytish kerak.
+# ---------------------------------------------------------------------------
+@app.route("/robots.txt")
+def robots_txt():
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /companies",
+        "Disallow: /managers",
+        "Disallow: /leads",
+        "Disallow: /sozlamalar",
+        "Disallow: /individual-tekshirish",
+        "Disallow: /target",
+        "Disallow: /smm",
+        "Disallow: /instagram-xabarlar",
+        "Disallow: /tolov",
+        "Disallow: /connect-accounts",
+        f"Sitemap: {request.url_root.rstrip('/')}/sitemap.xml",
+    ]
+    return Response("\n".join(lines) + "\n", mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    base = request.url_root.rstrip('/')
+    public_paths = ["/", "/tariflar", "/login", "/signup"]
+    entries = "\n".join(
+        f"  <url><loc>{base}{p}</loc></url>" for p in public_paths
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{entries}\n"
+        "</urlset>\n"
+    )
+    return Response(xml, mimetype="application/xml")
+
+
+# ---------------------------------------------------------------------------
 # Tariflar (narxlar) -- ochiq (mehmon ham ko'ra oladi) taqqoslash sahifasi.
 # ---------------------------------------------------------------------------
 @app.route("/tariflar")
@@ -1245,24 +1350,33 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
     # chiqadi), xatoga chidamli: Meta API vaqtincha ishlamay qolsa ham
     # butun Dashboard "Internal Server Error" bo'lib qolmasligi kerak.
     target_summary = None
+    target_not_connected = False
     smm_summary = None
     dm_summary = None
     if permissions.has_module(current_user, "target"):
-        try:
-            target_data = get_kpis(level="campaign", date_preset="last_30d", active_only=True)
-            if not target_data.get("error"):
-                t = target_data["totals"]
-                target_summary = {
-                    "spend": t.get("spend", 0.0),
-                    "meta_leads": t.get("meta_leads", 0),
-                    "crm_leads_total": t.get("crm_leads_total", 0),
-                    "cpl": t.get("cpl", 0.0),
-                    "sold": t.get("sold", 0),
-                    "roi_percent": t.get("roi_percent", 0.0),
-                    "active_campaigns": len(target_data.get("rows", [])),
-                }
-        except Exception:
-            logger.exception("Dashboard: Target qisqacha ma'lumotini olishda xato")
+        meta_token, meta_account = _company_meta_creds(_current_company())
+        if not (meta_token and meta_account):
+            # 2026-09 -- "targeting ma'lumotlari boshqa loyihadan chiqib
+            # qolyapti" tuzatildi: hali O'Z Meta hisobini ulamagan
+            # kompaniyaga BOSHQA birovning (yoki sizning) ma'lumotini
+            # HECH QACHON ko'rsatmaymiz -- shunchaki "ulanmagan" belgisi.
+            target_not_connected = True
+        else:
+            try:
+                target_data = get_kpis(level="campaign", date_preset="last_30d", active_only=True, access_token=meta_token, ad_account_id=meta_account)
+                if not target_data.get("error"):
+                    t = target_data["totals"]
+                    target_summary = {
+                        "spend": t.get("spend", 0.0),
+                        "meta_leads": t.get("meta_leads", 0),
+                        "crm_leads_total": t.get("crm_leads_total", 0),
+                        "cpl": t.get("cpl", 0.0),
+                        "sold": t.get("sold", 0),
+                        "roi_percent": t.get("roi_percent", 0.0),
+                        "active_campaigns": len(target_data.get("rows", [])),
+                    }
+            except Exception:
+                logger.exception("Dashboard: Target qisqacha ma'lumotini olishda xato")
 
         try:
             smm_report_data = smm_analytics.build_smm_report(session, days=30)
@@ -1298,6 +1412,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
         "followups_today": followups_today,
         "followups_preview": followups_preview,
         "target_summary": target_summary,
+        "target_not_connected": target_not_connected,
         "smm_summary": smm_summary,
         "dm_summary": dm_summary,
     }
@@ -1318,11 +1433,20 @@ def target_page():
     if level not in ("campaign", "adset", "ad"):
         level = "campaign"
     show_all = request.args.get("show_all") == "1"
-    try:
-        data = get_kpis(level=level, date_preset=period, active_only=not show_all)
-    except Exception as e:
-        logger.exception("Target: Meta ma'lumotlarini olishda xato")
-        data = {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
+
+    meta_token, meta_account = _company_meta_creds(_current_company())
+    if not (meta_token and meta_account):
+        # 2026-09, foydalanuvchi shikoyati ("targeting ma'lumotlari boshqa
+        # loyihadan chiqib qolyapti") tuzatildi: O'Z Meta hisobi hali
+        # ulanmagan kompaniyaga BOSHQA hisobning ma'lumotini ko'rsatish
+        # o'rniga aniq "ulanmagan" holatini qaytaramiz.
+        data = {"not_connected": True, "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
+    else:
+        try:
+            data = get_kpis(level=level, date_preset=period, active_only=not show_all, access_token=meta_token, ad_account_id=meta_account)
+        except Exception as e:
+            logger.exception("Target: Meta ma'lumotlarini olishda xato")
+            data = {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
     return render_template("target.html", data=data, period=period, level=level, show_all=show_all)
 
 

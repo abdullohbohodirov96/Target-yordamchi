@@ -5,9 +5,14 @@
 {% block content %}
 <div class="auth-shell">
   <div class="auth-card">
+    <div class="auth-lang-switch">
+      {% for code in supported_langs %}
+      <a href="?lang={{ code }}{% if form.plan %}&plan={{ form.plan }}{% endif %}" class="{{ 'active' if current_lang() == code else '' }}">{{ lang_labels[code] }}</a>
+      {% endfor %}
+    </div>
     <div class="auth-brand"><img src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
-    <h1 class="auth-title">Kompaniyangizni ro'yxatdan o'tkazing</h1>
-    <p class="auth-subtitle">2 daqiqada tayyor bo'ladi — keyingi qadamda Instagram akkauntingizni ulaysiz.</p>
+    <h1 class="auth-title">{{ t('signup.title') }}</h1>
+    <p class="auth-subtitle">{{ t('signup.subtitle') }}</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -18,32 +23,32 @@
     {% endwith %}
 
     <form method="post">
-      <label style="font-size:12.5px; font-weight:600; color:var(--text-dim); display:block; margin-bottom:8px">Tarifni tanlang</label>
+      <label style="font-size:12.5px; font-weight:600; color:var(--text-dim); display:block; margin-bottom:8px">{{ t('signup.choose_plan') }}</label>
       <div class="plan-picker">
         {% for plan in plans %}
         <div class="plan-pick">
           <input type="radio" name="plan" id="plan_{{ plan.key }}" value="{{ plan.key }}" {{ 'checked' if form.plan == plan.key }}>
           <label for="plan_{{ plan.key }}">
             <div class="plan-pick-name">{{ plan.name }}</div>
-            <div class="plan-pick-price">{% if plan.price_usd %}${{ plan.price_usd }}/oy{% else %}Bepul{% endif %}</div>
+            <div class="plan-pick-price">{% if plan.price_usd %}${{ plan.price_usd }}{{ t('pricing.per_month') }}{% else %}{{ t('pricing.free') }}{% endif %}</div>
           </label>
         </div>
         {% endfor %}
       </div>
 
       <div class="auth-form-grid">
-        <div class="field full"><label>Kompaniya nomi</label><input type="text" name="company_name" value="{{ form.company_name }}" required autofocus></div>
-        <div class="field"><label>Admin login</label><input type="text" name="admin_username" value="{{ form.admin_username }}" placeholder="masalan: acme_admin" required></div>
-        <div class="field"><label>To'liq ism (ixtiyoriy)</label><input type="text" name="admin_full_name" value="{{ form.admin_full_name }}"></div>
-        <div class="field full"><label>Email (ixtiyoriy)</label><input type="email" name="email" value="{{ form.email }}" placeholder="siz@kompaniya.uz"></div>
-        <div class="field"><label>Parol</label><input type="password" name="password" required minlength="6"></div>
-        <div class="field"><label>Parolni tasdiqlang</label><input type="password" name="password2" required minlength="6"></div>
+        <div class="field full"><label>{{ t('signup.company_name') }}</label><input type="text" name="company_name" value="{{ form.company_name }}" required autofocus></div>
+        <div class="field"><label>{{ t('signup.admin_username') }}</label><input type="text" name="admin_username" value="{{ form.admin_username }}" placeholder="masalan: acme_admin" required></div>
+        <div class="field"><label>{{ t('signup.admin_full_name') }}</label><input type="text" name="admin_full_name" value="{{ form.admin_full_name }}"></div>
+        <div class="field full"><label>{{ t('signup.email') }}</label><input type="email" name="email" value="{{ form.email }}" placeholder="siz@kompaniya.uz"></div>
+        <div class="field"><label>{{ t('signup.password') }}</label><input type="password" name="password" required minlength="6"></div>
+        <div class="field"><label>{{ t('signup.password2') }}</label><input type="password" name="password2" required minlength="6"></div>
       </div>
 
-      <button type="submit" class="block">Ro'yxatdan o'tish</button>
+      <button type="submit" class="block">{{ t('signup.submit') }}</button>
     </form>
 
-    <p class="auth-foot-link">Allaqachon hisobingiz bormi? <a href="{{ url_for('login') }}" class="text-blue">Kirish</a></p>
+    <p class="auth-foot-link">{{ t('signup.have_account') }} <a href="{{ url_for('login') }}" class="text-blue">{{ t('signup.login_link') }}</a></p>
   </div>
 </div>
 {% endblock %}

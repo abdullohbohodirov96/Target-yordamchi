@@ -35,7 +35,13 @@
   {% endif %}
 </div>
 
-{% if data.error %}
+{% if data.not_connected %}
+  <div class="card" style="max-width:520px; margin-bottom:20px">
+    <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
+    <p class="page-subtitle" style="margin-top:-6px">Target xarajat/lead ma'lumotlarini ko'rish uchun avval reklama hisobingizni ulang.</p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+  </div>
+{% elif data.error %}
   <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
 {% endif %}
 
