@@ -50,6 +50,7 @@ import datetime as dt
 
 import meta_api
 import kv_store
+import db
 from db import get_session, Lead
 from phone_utils import normalize_phone, clean_phone_raw
 
@@ -311,6 +312,12 @@ def sync_once() -> dict:
                     raw_field_data=json.dumps(fd, ensure_ascii=False),
                     status="new",
                     lead_created_time=created_dt,
+                    # 2026-09 multi-tenant 2-bosqich: Meta ulanishi hozircha
+                    # GLOBAL (har kompaniya o'z akkauntini ulamagan), shuning
+                    # uchun yangi lidlar birinchi (standart) kompaniyaga
+                    # yoziladi -- `scheduler.py` bu vazifani shu kompaniya
+                    # konteksti bilan ishga tushiradi (`db.get_default_company_id()`).
+                    company_id=db.get_default_company_id(),
                 )
                 session.add(lead)
                 result["new_leads"] += 1

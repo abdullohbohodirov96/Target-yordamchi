@@ -3,14 +3,24 @@
    yana kichkina bo'lib periodni ko'rsatsin"). Ishlatilishi:
    {% include "_date_picker.html" %} -- ota-shablonda `days` (joriy tanlangan
    kun soni, masalan 30) o'zgaruvchisi mavjud bo'lishi kerak, filtr shu
-   sahifaning o'z URL'idagi `?days=N` parametrini o'zgartiradi. #}
+   sahifaning o'z URL'idagi `?days=N` parametrini o'zgartiradi.
+
+   2026-08, foydalanuvchi so'rovi ("SMM hisobotida kun bo'yicha qarash...
+   7-15-30-60-90 kunlar bo'lsin"): standart 4 ta variant (Bugun/7/30/90)
+   sahifadan sahifaga har xil ma'noga ega bo'lgani uchun (masalan
+   "Individual tekshirish"da "Bugun" muhim, SMM'da esa yo'q) preset
+   ro'yxati endi ixtiyoriy `date_picker_presets` o'zgaruvchisi orqali
+   sahifaga moslab beriladi -- berilmasa, ESKI standart ro'yxat ishlatiladi
+   (individual_check.html o'zgarishsiz qoladi). #}
+{% set _presets = date_picker_presets or [(1,'Bugun'), (7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
+{% set _preset_days = _presets|map(attribute=0)|list %}
 <div class="date-picker" id="datePicker">
   <button type="button" class="date-picker-trigger" id="datePickerTrigger">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
-    <span>{% if days==1 %}Bugun{% elif days==7 %}7 kun{% elif days==30 %}30 kun{% elif days==90 %}90 kun{% else %}{{ days }} kun{% endif %}</span>
+    <span>{% if days in _preset_days %}{{ _presets[_preset_days.index(days)][1] }}{% else %}{{ days }} kun{% endif %}</span>
   </button>
   <div class="date-picker-menu" id="datePickerMenu">
-    {% for d, label in [(1,'Bugun'), (7,'7 kun'), (30,'30 kun'), (90,'90 kun')] %}
+    {% for d, label in _presets %}
     <a href="?days={{ d }}" class="{{ 'active' if days==d }}">{{ label }}</a>
     {% endfor %}
     <div class="date-picker-divider"></div>

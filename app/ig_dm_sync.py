@@ -32,6 +32,7 @@ from pathlib import Path
 
 import meta_api
 import kv_store
+import db
 from db import get_session, IgDmConversation, IgDmMessage
 
 logger = logging.getLogger("ig_dm_sync")
@@ -100,7 +101,8 @@ def _upsert_conversation_and_messages(session, conv: dict, ig_business_id: "str 
 
     row = session.query(IgDmConversation).filter_by(external_id=external_id).first()
     if row is None:
-        row = IgDmConversation(external_id=external_id)
+        # Meta ulanishi hozircha GLOBAL (2026-09 multi-tenant 2-bosqich).
+        row = IgDmConversation(external_id=external_id, company_id=db.get_default_company_id())
         session.add(row)
         session.flush()  # id kerak (IgDmMessage.conversation_id uchun)
 
@@ -130,6 +132,7 @@ def _upsert_conversation_and_messages(session, conv: dict, ig_business_id: "str 
             sender=_message_sender(m, ig_business_id),
             text=m.get("message"),
             sent_at=_parse_dt(m.get("created_time")),
+            company_id=row.company_id,
         )
         session.add(msg_row)
         new_messages += 1

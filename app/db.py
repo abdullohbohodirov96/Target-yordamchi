@@ -12,13 +12,16 @@ DATABASE_URL Render'da Postgres qo'shganda avtomatik beriladi
 
 import os
 import logging
+import contextlib
+import contextvars
 import datetime as dt
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, Float, DateTime, Boolean,
     ForeignKey, UniqueConstraint, Index, LargeBinary, inspect as sa_inspect, text as sa_text,
+    event as sa_event,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship, deferred
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, deferred, with_loader_criteria, Session as _SASession
 from werkzeug.security import generate_password_hash, check_password_hash
 
 logger = logging.getLogger("db")
@@ -214,6 +217,7 @@ class Sale(Base):
     __tablename__ = "sales"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-09 multi-tenant 2-bosqich -- to'g'ridan-to'g'ri kompaniya bo'yicha filtrlash uchun (Lead orqali JOIN qilish o'rniga)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
     lead = relationship("Lead", backref="sales")
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
@@ -236,6 +240,7 @@ class LeadNote(Base):
     __tablename__ = "lead_notes"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-09 multi-tenant 2-bosqich
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
     text = Column(Text, nullable=False)
@@ -466,6 +471,7 @@ class CompetitorAd(Base):
     __tablename__ = "competitor_ads"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-09 multi-tenant 2-bosqich
     competitor_id = Column(Integer, ForeignKey("competitors.id"), nullable=False, index=True)
     external_id = Column(String(64), unique=True, nullable=False)
     page_name = Column(String(255), nullable=True)
@@ -555,6 +561,7 @@ class IgDmMessage(Base):
     __tablename__ = "ig_dm_messages"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-09 multi-tenant 2-bosqich
     conversation_id = Column(Integer, ForeignKey("ig_dm_conversations.id"), nullable=False, index=True)
     external_id = Column(String(64), unique=True, nullable=True)  # Meta xabar ID'i (dublikatni oldini olish uchun; ba'zan bo'sh kelishi mumkin)
     sender = Column(String(16), nullable=False)  # "customer" | "business"
@@ -571,14 +578,21 @@ class CustomField(Base):
     __tablename__ = "custom_fields"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- `key` hali GLOBAL unique (pastdagi Company docstring'ga qarang), keyingi bosqichda (company_id, key) bo'lishi kerak
-    key = Column(String(64), unique=True, nullable=False)  # extra_data JSON kaliti (masalan "byudjet")
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    # 2026-09 multi-tenant 2-bosqich: `key` ILGARI butun tizim bo'yicha
+    # global unique edi -- endi (company_id, key) juftligi unique (pastga,
+    # __table_args__'ga qarang), shunda har bir kompaniya xohlagan nomdagi
+    # maydonni o'z ichida erkin qo'sha oladi, boshqa kompaniya bilan
+    # to'qnashmasdan.
+    key = Column(String(64), nullable=False)  # extra_data JSON kaliti (masalan "byudjet")
     label = Column(String(255), nullable=False)  # ko'rinadigan savol matni
     field_type = Column(String(16), nullable=False, default="text")  # text | number | select
     options = Column(Text, nullable=True)  # field_type="select" bo'lsa, vergul bilan ajratilgan variantlar
     sort_order = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "key", name="uq_custom_fields_company_key"),)
 
 
 class FunnelStage(Base):
@@ -595,14 +609,21 @@ class FunnelStage(Base):
     __tablename__ = "funnel_stages"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- `key` hali GLOBAL unique (pastdagi Company docstring'ga qarang), keyingi bosqichda (company_id, key) bo'lishi kerak
-    key = Column(String(32), unique=True, nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    # 2026-09 multi-tenant 2-bosqich: xuddi CustomField.key kabi -- endi
+    # (company_id, key) unique, HAR BIR yangi kompaniya o'zining standart
+    # "new"/"contacted"/... kalitlariga ega bo'la oladi (avval bitta
+    # kompaniya bu kalitlarni band qilib qo'ygach, ikkinchisi urug'lantira
+    # olmasdi).
+    key = Column(String(32), nullable=False)
     label = Column(String(64), nullable=False)
     category = Column(String(16), nullable=False)  # active | qualified | unqualified | sold
     color = Column(String(16), nullable=False, default="blue")  # blue|good|bad|warn|dim (style.css badge ranglari)
     sort_order = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "key", name="uq_funnel_stages_company_key"),)
 
 
 DEFAULT_FUNNEL_STAGES = [
@@ -615,16 +636,21 @@ DEFAULT_FUNNEL_STAGES = [
 ]
 
 
-def seed_default_funnel_stages() -> None:
-    """Birinchi ishga tushirishda (yoki jadval bo'sh bo'lsa) standart 5 ta
-    voronka bosqichini yaratadi -- eski (funnel sozlamasi qo'shilishidan
-    oldingi) lead'lar statuslari bilan mos kelishi uchun key'lar o'zgarmas."""
+def seed_default_funnel_stages_for_company(company_id: int) -> None:
+    """Berilgan BITTA kompaniya uchun standart 5 ta voronka bosqichini
+    yaratadi -- FAQAT shu kompaniyada hali umuman bosqich yo'q bo'lsa.
+
+    2026-09 multi-tenant 2-bosqich: ilgari bu funksiya BUTUN `funnel_stages`
+    jadvali bo'sh bo'lsa-yoq deb tekshirardi (ya'ni FAQAT birinchi marta,
+    faqat "Company #1" uchun) -- endi HAR BIR yangi kompaniya yaratilganda
+    ham chaqiriladi (`/companies` POST), aks holda yangi kompaniyaning
+    voronkasi BUTUNLAY BO'SH qolib, lidlarga status berib bo'lmas edi."""
     session = get_session()
     try:
-        if session.query(FunnelStage).count() > 0:
+        if session.query(FunnelStage).filter_by(company_id=company_id).count() > 0:
             return
         for i, (key, label, category, color) in enumerate(DEFAULT_FUNNEL_STAGES):
-            session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=i))
+            session.add(FunnelStage(company_id=company_id, key=key, label=label, category=category, color=color, sort_order=i))
         session.commit()
     finally:
         session.close()
@@ -741,19 +767,21 @@ def _migrate_widen_columns() -> None:
                 logger.error("Migratsiya XATOSI (ustun turini kengaytirish): %s.%s -- %s", table, col, e)
 
 
-# 2026-08 multi-tenant 1-bosqich: `company_id` ustuni qo'shilgan HAMMA
-# jadvallar -- `ensure_default_company()` shu ro'yxat bo'yicha eski (hali
-# `company_id IS NULL` bo'lgan) qatorlarni standart kompaniyaga biriktiradi.
+# 2026-08/09 multi-tenant: `company_id` ustuni qo'shilgan HAMMA jadvallar --
+# `ensure_default_company()` shu ro'yxat bo'yicha eski (hali `company_id IS
+# NULL` bo'lgan) qatorlarni standart kompaniyaga biriktiradi, VA (2026-09,
+# 2-bosqich) xuddi shu ro'yxat endi HAR BIR so'rovga AVTOMATIK qo'llaniladigan
+# tenant-filtri (`_TENANT_FILTERED_MODELS`, pastga qarang) uchun ham asos.
 _COMPANY_SCOPED_MODELS = [
-    Manager, Lead, CallRecord, SmmSnapshot, SmmPost, Competitor,
-    AssistantUnanswered, CustomField, FunnelStage, StandingTask, StandingReport,
-    IgDmConversation,
+    Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost, Competitor,
+    CompetitorAd, AssistantUnanswered, CustomField, FunnelStage, StandingTask,
+    StandingReport, IgDmConversation, IgDmMessage,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"
 
 
-def ensure_default_company() -> None:
+def ensure_default_company() -> int:
     """MUHIM (2026-08, multi-tenant asosi -- 1-bosqich): `Company` jadvali
     yangi qo'shildi, lekin loyihada ALLAQACHON ko'p yillik haqiqiy ma'lumot
     bor (lidlar, menejerlar, qo'ng'iroqlar...) -- shularning HAMMASI, agar
@@ -770,10 +798,17 @@ def ensure_default_company() -> None:
          "company-scoped" jadvallarda, yuqoridagi `_COMPANY_SCOPED_MODELS`)
          shu Company #1'ga biriktiradi.
 
-    Natijada: sayt xatti-harakati BUTUNLAY o'zgarmaydi (hech qayerda hali
-    `company_id` bo'yicha filtr YO'Q -- bu keyingi bosqich), lekin
-    ro'yxatdan o'tish/yangi kompaniyalar qo'shilishi uchun ma'lumotlar
-    bazasi negizi tayyor bo'ladi."""
+    Qaytaradi: standart kompaniyaning id'si (`init_db()` shu id bilan
+    `seed_default_funnel_stages_for_company()`ni chaqiradi).
+
+    2026-09 YANGILANISH (2-bosqich, "hammasini hozir to'liq ajrat"): AVVAL
+    bu yerdagi izoh "sayt xatti-harakati BUTUNLAY o'zgarmaydi, hech qayerda
+    company_id bo'yicha filtr yo'q" derdi -- ENDI BU TO'G'RI EMAS: pastdagi
+    `_TENANT_FILTERED_MODELS` + `do_orm_execute` hodisasi HAR BIR so'rovga
+    (shu jumladan `session.get()`) avtomatik "company_id = joriy kompaniya"
+    filtrini qo'llaydi (`set_current_company_id()`ga qarang). Shuning uchun
+    bu funksiya endi ODDIY "eski ma'lumotni tozalash" emas, balki HAQIQIY
+    xavfsizlik/izolyatsiya asosi hisoblanadi."""
     session = get_session()
     try:
         default_company = session.query(Company).order_by(Company.id.asc()).first()
@@ -805,8 +840,152 @@ def ensure_default_company() -> None:
                     model.__tablename__, updated, default_company.name,
                 )
         session.commit()
+        return default_company.id
     finally:
         session.close()
+
+
+_default_company_id_cache: dict = {"id": None}
+
+
+def get_default_company_id() -> "int | None":
+    """Fon vazifalari (`scheduler.py`) VA Meta/webhook orqali kirgan
+    yozuvlar (masalan Lead Ads webhook) HOZIRCHA (2-bosqich, Meta/Moi
+    Zvonki ulanishlari hali GLOBAL) yangi qatorlarni QAYSI kompaniyaga
+    bog'lashni shu funksiya orqali biladi -- eng birinchi (id bo'yicha)
+    kompaniya, xuddi `ensure_default_company()` ishlatgani bilan bir xil.
+    Keyingi bosqichda (har bir kompaniya o'z Meta akkauntini ulaganda) bu
+    o'rniga HAQIQIY tegishli kompaniya ID'si ishlatiladigan bo'ladi."""
+    if _default_company_id_cache["id"] is None:
+        session = get_session()
+        try:
+            c = session.query(Company).order_by(Company.id.asc()).first()
+            _default_company_id_cache["id"] = c.id if c else None
+        finally:
+            session.close()
+    return _default_company_id_cache["id"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant 2-bosqich (2026-09, foydalanuvchi so'rovi: "hammasini hozir
+# to'liq ajrat"): HAR BIR so'rov (jumladan `session.get()`, lazy-load
+# relationshiplar) uchun AVTOMATIK "company_id = joriy kompaniya" filtri.
+#
+# Bu ilovadagi 70+ alohida so'rov joyining HAR BIRIGA qo'lda
+# ".filter(company_id=...)" qo'shish O'RNIGA (bunday usul BU HAJMDAGI kod
+# bazasida amalda o'ta xato-moyil bo'lardi -- bitta joy unutilsa, boshqa
+# kompaniyaning ma'lumoti sizib chiqadi/aralashadi) SQLAlchemy'ning RASMIY
+# tavsiya etilgan "global filtering" usuli (`with_loader_criteria` +
+# `do_orm_execute` hodisasi) -- markazlashtirilgan, BITTA joyda qo'llaniladi.
+#
+# Ishlash tartibi:
+#   1. Har bir HTTP so'rov BOSHIDA (`app.py`dagi `before_request`) joriy
+#      foydalanuvchining `company_id`si `set_current_company_id()` orqali
+#      shu contextvar'ga yoziladi (avval ANIQ `None`ga qaytarib, keyin
+#      haqiqiy qiymat qo'yiladi -- aks holda oldingi so'rovdan qolgan eski
+#      qiymat `current_user`ni yuklash uchun ishlatiladigan `session.get(
+#      Manager, ...)`ni NOTO'G'RI filtrlab, kutilmagan chiqishlarga olib
+#      kelishi mumkin edi).
+#   2. Fon vazifalari (`scheduler.py`) HAR BIR ishga tushishdan oldin xuddi
+#      shunday o'rnatadi -- hozircha (2-bosqich) ko'pchiligi standart
+#      kompaniyaga (`get_default_company_id()`) o'rnatiladi, chunki Meta/
+#      Moi Zvonki ulanishlari hali GLOBAL (bitta akkaunt) -- bu KEYINGI
+#      alohida bosqichda har bir kompaniyaning o'z ulanishiga almashtiriladi.
+#   3. `None` -- "filtrsiz" (masalan `/login` sahifasi -- foydalanuvchi
+#      HALI aniqlanmagan, `Manager`ni username bo'yicha GLOBAL qidirish
+#      kerak; yoki migratsiya/urug'lantirish kodi) -- contextvar standart
+#      holatda ham `None`.
+_current_company_id: contextvars.ContextVar = contextvars.ContextVar(
+    "current_company_id", default=None,
+)
+
+
+def set_current_company_id(company_id) -> None:
+    _current_company_id.set(company_id)
+
+
+def get_current_company_id():
+    return _current_company_id.get()
+
+
+@contextlib.contextmanager
+def unscoped():
+    """Vaqtincha (shu `with` bloki davomida) tenant-filtrni o'chiradi --
+    masalan `Manager.username` kabi ATAYLAB HALI GLOBAL unique qolgan
+    ustunni tekshirish uchun kerak (login formasi kompaniya tanlashni
+    talab qilmasligi uchun username'lar ATAYLAB kompaniyalar oralig'ida
+    ham noyob qoldirilgan -- shuning uchun "bu username band" tekshiruvi
+    ham GLOBAL bo'lishi kerak, aks holda ikkinchi kompaniya xuddi shu
+    username bilan menejer qo'shishga urinib, DB darajasidagi unique
+    cheklovga urilib, chiroyli xato xabari o'rniga xom IntegrityError
+    ko'rsatib qo'yardi)."""
+    token = _current_company_id.set(None)
+    try:
+        yield
+    finally:
+        _current_company_id.reset(token)
+
+
+_TENANT_FILTERED_MODELS = tuple(_COMPANY_SCOPED_MODELS)
+
+
+@sa_event.listens_for(_SASession, "do_orm_execute")
+def _apply_tenant_scope(execute_state) -> None:
+    if not execute_state.is_select:
+        return
+    company_id = _current_company_id.get()
+    if company_id is None:
+        return
+    for model in _TENANT_FILTERED_MODELS:
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(model, model.company_id == company_id, include_aliases=True)
+        )
+
+
+# 2026-09 multi-tenant 2-bosqich: `custom_fields.key`/`funnel_stages.key`
+# ILGARI butun tizim bo'yicha GLOBAL unique edi -- endi (company_id, key)
+# juftligi unique bo'lishi kerak (modeldagi `__table_args__`ga qarang), aks
+# holda ikkinchi kompaniya standart "new"/"contacted"/... bosqichlarini
+# urug'lantira olmas edi. Postgres'da eski cheklov nomi turlicha bo'lishi
+# mumkin -- aniq nom bilan emas, "aynan shu BITTA ustunga tegishli unique
+# cheklov"ni TOPIB o'chiramiz, so'ng yangisini QO'SHISHGA harakat qilamiz
+# (SQLite -- lokal testlarda -- bu ALTER'larni qo'llab-quvvatlamaydi, xato
+# jim log qilinadi, xavfsiz -- xuddi `_migrate_widen_columns()` kabi).
+_KEY_UNIQUENESS_MIGRATIONS = {
+    "custom_fields": "uq_custom_fields_company_key",
+    "funnel_stages": "uq_funnel_stages_company_key",
+}
+
+
+def _migrate_key_uniqueness_to_per_company() -> None:
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, new_name in _KEY_UNIQUENESS_MIGRATIONS.items():
+        if table not in existing_tables:
+            continue
+        try:
+            old_names = [
+                uc["name"] for uc in inspector.get_unique_constraints(table)
+                if uc["column_names"] == ["key"] and uc["name"]
+            ]
+        except Exception as e:
+            logger.error("Migratsiya XATOSI (%s eski unique cheklovni topishda): %s", table, e)
+            old_names = []
+        for old_name in old_names:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(sa_text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{old_name}"'))
+                logger.warning("Migratsiya: %s.%s (yagona-ustunli unique) olib tashlandi", table, old_name)
+            except Exception as e:
+                logger.error("Migratsiya XATOSI (%s.%s ni o'chirishda): %s", table, old_name, e)
+        try:
+            with engine.begin() as conn:
+                conn.execute(sa_text(f'ALTER TABLE "{table}" ADD CONSTRAINT "{new_name}" UNIQUE (company_id, key)'))
+            logger.warning("Migratsiya: %s ga (company_id, key) composite unique constraint qo'shildi", table)
+        except Exception as e:
+            # Qayta ishga tushirilganda constraint ALLAQACHON mavjud bo'lishi
+            # KUTILGAN holat -- xato emas, shuning uchun faqat info darajasida.
+            logger.info("Migratsiya: %s uchun composite unique constraint allaqachon bor (yoki qo'shib bo'lmadi): %s", table, e)
 
 
 def init_db() -> None:
@@ -821,8 +1000,9 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate_add_missing_columns()
     _migrate_widen_columns()
-    seed_default_funnel_stages()
-    ensure_default_company()
+    _migrate_key_uniqueness_to_per_company()
+    default_company_id = ensure_default_company()
+    seed_default_funnel_stages_for_company(default_company_id)
 
 
 def get_session():

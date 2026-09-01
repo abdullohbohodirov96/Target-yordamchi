@@ -13,6 +13,7 @@ import os
 import re
 import json
 import time
+import secrets
 import logging
 import threading
 import datetime as dt
@@ -31,6 +32,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
+import db
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_sync
@@ -96,6 +98,7 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
     try:
         manager_row = session.query(Manager).filter_by(username=current_user.username).first() if current_user.is_authenticated else None
         session.add(AssistantUnanswered(
+            company_id=getattr(current_user, "company_id", None) if current_user.is_authenticated else None,
             manager_id=manager_row.id if manager_row else None,
             manager_name=manager_name,
             question=question[:2000],
@@ -155,6 +158,37 @@ def load_user(user_id):
         return ManagerUser(m) if m and m.is_active else None
     finally:
         session.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant 2-bosqich (2026-09, foydalanuvchi so'rovi: "hammasini hozir
+# to'liq ajrat"): HAR BIR so'rov boshida joriy foydalanuvchining
+# `company_id`sini `db.py`dagi markazlashtirilgan tenant-filtriga
+# yetkazadi (`db._apply_tenant_scope()`ga qarang -- shu bitta joy orqali
+# Lidlar/Sotuvlar/Menejerlar/Qo'ng'iroqlar/... HAMMASI avtomatik faqat
+# JORIY kompaniya doirasida ko'rinadi).
+#
+# MUHIM: bu funksiya ENG BIRINCHI bo'lib ro'yxatdan o'tishi/ishlashi kerak
+# (shuning uchun fayl boshiga, `_enforce_subscription()`dan OLDIN joylashtirildi)
+# -- avval ANIQ `None`ga qaytarib, KEYIN haqiqiy qiymatni o'rnatadi. Bu
+# ikki qadamlilik ATAYLAB: `current_user.is_authenticated`ga birinchi
+# murojaat aynan shu yerda bo'ladi, bu esa Flask-Login'ning `load_user()`
+# (yuqorida) chaqirilishiga sabab bo'ladi -- u esa `session.get(Manager,
+# ...)` ishlatadi. Agar oldingi so'rovdan (xuddi shu OS thread'da) eski
+# `company_id` contextvar'da qolib ketgan bo'lsa, `load_user()` joriy
+# foydalanuvchini NOTO'G'RI kompaniya bilan filtrlab, uni "topolmay"
+# kutilmagan chiqishga (logout) olib kelishi mumkin edi -- avval None
+# qilib, keyin aniqlash bu xavfni bartaraf etadi.
+@app.before_request
+def _set_tenant_scope():
+    db.set_current_company_id(None)
+    if current_user.is_authenticated:
+        db.set_current_company_id(getattr(current_user, "company_id", None))
+
+
+@app.teardown_request
+def _clear_tenant_scope(exception=None):
+    db.set_current_company_id(None)
 
 
 def admin_required(fn):
@@ -1311,6 +1345,7 @@ def lead_new():
                 flash("Kamida ism yoki telefon kiriting.", "error")
             else:
                 lead = Lead(
+                    company_id=current_user.company_id,
                     full_name=full_name or None, phone=phone or None, email=email or None,
                     campaign_name=campaign_name or None, adset_name=adset_name or None, ad_name=ad_name or None,
                     source="manual", status="new",
@@ -1751,6 +1786,7 @@ def leads_import():
                         quality_note = f"{quality_note}\n{extra_note}" if quality_note else extra_note
 
                 lead = Lead(
+                    company_id=current_user.company_id,
                     meta_lead_id=meta_lead_id,
                     campaign_id=_import_strip_id_prefix(_import_get_cell(r, col_map.get("campaign_id"))),
                     campaign_name=_import_get_cell(r, col_map.get("campaign")),
@@ -1809,6 +1845,7 @@ def lead_detail(lead_id):
                 else:
                     existing_count = session.query(Sale).filter_by(lead_id=lead.id).count()
                     session.add(Sale(
+                        company_id=lead.company_id,
                         lead_id=lead.id,
                         manager_id=(manager_row.id if manager_row else lead.assigned_manager_id),
                         sale_number=existing_count + 1,
@@ -1925,7 +1962,7 @@ def lead_detail(lead_id):
                 lead.extra_data = json.dumps(extra, ensure_ascii=False)
 
             if note_text:
-                session.add(LeadNote(lead_id=lead.id, manager_id=manager_row.id if manager_row else None, text=note_text))
+                session.add(LeadNote(company_id=lead.company_id, lead_id=lead.id, manager_id=manager_row.id if manager_row else None, text=note_text))
             if manager_row and not lead.assigned_manager_id:
                 lead.assigned_manager_id = manager_row.id
             session.flush()
@@ -2109,8 +2146,10 @@ def followups_list():
 @admin_required
 def managers():
     session = get_session()
+    show_new_manager_modal = False
     try:
         if request.method == "POST":
+            show_new_manager_modal = True  # xato bo'lsa modal ochiq qoladi (pastda muvaffaqiyatda False bo'ladi)
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             full_name = request.form.get("full_name", "").strip()
@@ -2121,10 +2160,19 @@ def managers():
             hire_date_str = request.form.get("hire_date", "").strip()
             modules = request.form.getlist("allowed_modules")
             if username and password:
-                if session.query(Manager).filter_by(username=username).first():
+                # `username` HALI ATAYLAB GLOBAL unique (kompaniyalar
+                # oralig'ida ham) -- login formasi kompaniya tanlashni talab
+                # qilmasligi uchun. Shuning uchun "band" tekshiruvi ham
+                # GLOBAL bo'lishi kerak (`db.unscoped()`), aks holda boshqa
+                # kompaniyada band bo'lgan username bu yerda "bo'sh" ko'rinib,
+                # keyin DB darajasidagi unique cheklovga urilib xom xato
+                # (IntegrityError) chiqarardi.
+                with db.unscoped():
+                    username_taken = session.query(Manager).filter_by(username=username).first() is not None
+                if username_taken:
                     flash("Bu username allaqachon mavjud.", "error")
                 else:
-                    m = Manager(username=username, full_name=full_name, role=role)
+                    m = Manager(username=username, full_name=full_name, role=role, company_id=current_user.company_id)
                     m.set_password(password)
                     m.phone_number = phone_number or None
                     m.moizvonki_login = moizvonki_login or None
@@ -2138,11 +2186,15 @@ def managers():
                     session.add(m)
                     session.commit()
                     flash(f"{username} qo'shildi.", "success")
+                    show_new_manager_modal = False
         all_managers = session.query(Manager).order_by(Manager.created_at).all()
         rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date} for m in all_managers]
     finally:
         session.close()
-    return render_template("managers.html", managers=rows, modules=permissions.MODULES, default_modules=permissions.DEFAULT_MANAGER_MODULES)
+    return render_template(
+        "managers.html", managers=rows, modules=permissions.MODULES,
+        default_modules=permissions.DEFAULT_MANAGER_MODULES, show_new_manager_modal=show_new_manager_modal,
+    )
 
 
 @app.route("/managers/<int:manager_id>/edit", methods=["GET", "POST"])
@@ -2168,9 +2220,17 @@ def manager_edit(manager_id):
             new_modules = request.form.getlist("allowed_modules")
             is_active = request.form.get("is_active") == "on"
 
+            # `username` global unique -- shuning uchun "band" tekshiruvi ham
+            # `db.unscoped()` bilan GLOBAL bo'lishi kerak (managers() dagi
+            # izohga qarang).
+            with db.unscoped():
+                username_conflict = session.query(Manager).filter(
+                    Manager.username == new_username, Manager.id != m.id
+                ).first() is not None
+
             if not new_username:
                 flash("Username bo'sh bo'lishi mumkin emas.", "error")
-            elif session.query(Manager).filter(Manager.username == new_username, Manager.id != m.id).first():
+            elif username_conflict:
                 flash("Bu username boshqa hisobda band.", "error")
             else:
                 # O'zining yagona admin hisobini nofaol qilib qo'yishning oldini
@@ -2256,11 +2316,29 @@ def platform_owner_required(fn):
     return wrapper
 
 
+def _generate_company_admin_username(session, company_name: str, company_id: int) -> str:
+    """Yangi kompaniya uchun avtomatik admin username tanlaydi.
+
+    `Manager.username` ATAYLAB global unique (login sahifasi kompaniya
+    tanlashni talab qilmasligi uchun) -- shuning uchun bandlikni ham
+    `db.unscoped()` bilan GLOBAL tekshiramiz."""
+    base = re.sub(r"[^a-z0-9]+", "", company_name.lower())[:20] or "company"
+    candidate = f"{base}_admin"
+    with db.unscoped():
+        taken = session.query(Manager).filter_by(username=candidate).first() is not None
+    if not taken:
+        return candidate
+    # Nom asosidagi variant band bo'lsa -- kompaniya ID'si bilan kafolatlangan
+    # noyob variant (ID takrorlanmasligi sababli bu doim bo'sh bo'ladi).
+    return f"{base}{company_id}_admin"
+
+
 @app.route("/companies", methods=["GET", "POST"])
 @login_required
 @platform_owner_required
 def companies():
     session = get_session()
+    show_new_company_modal = False
     try:
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -2268,8 +2346,10 @@ def companies():
             plan = request.form.get("plan", "trial")
             if not name:
                 flash("Kompaniya nomi bo'sh bo'lishi mumkin emas.", "error")
+                show_new_company_modal = True
             elif email and session.query(Company).filter_by(email=email).first():
                 flash("Bu email allaqachon boshqa kompaniyada ishlatilgan.", "error")
+                show_new_company_modal = True
             else:
                 c = Company(name=name, email=email, plan=plan, is_active=True)
                 # Yangi mijoz-kompaniya standart holatda 14 kunlik bepul
@@ -2278,7 +2358,31 @@ def companies():
                 c.paid_until = dt.datetime.utcnow() + dt.timedelta(days=14)
                 session.add(c)
                 session.commit()
-                flash(f"'{name}' kompaniyasi qo'shildi (14 kunlik sinov muddati bilan).", "success")
+
+                # 2026-09, foydalanuvchi so'rovi ("kompaniya yaratgandan
+                # keyin unga admin ham yaratilsin, srazu u ozi
+                # managerlarini ochvoladi"): yangi kompaniya DARHOL o'zi
+                # kira oladigan admin hisobi va standart voronka
+                # bosqichlari bilan boshlanadi -- aks holda platforma
+                # egasi har safar qo'lda Manager yaratishi kerak bo'lardi.
+                admin_username = _generate_company_admin_username(session, name, c.id)
+                admin_password = secrets.token_urlsafe(6)
+                admin = Manager(
+                    username=admin_username, role="admin", company_id=c.id,
+                    full_name=f"{name} -- admin",
+                )
+                admin.set_password(admin_password)
+                session.add(admin)
+                session.commit()
+                db.seed_default_funnel_stages_for_company(c.id)
+
+                flash(
+                    f"'{name}' kompaniyasi qo'shildi (14 kunlik sinov muddati bilan). "
+                    f"Uning admin kirish ma'lumotlari -- login: \"{admin_username}\", "
+                    f"parol: \"{admin_password}\". Buni albatta mijozga yetkazing -- "
+                    f"parol qayta ko'rsatilmaydi!",
+                    "success",
+                )
         all_companies = session.query(Company).order_by(Company.created_at).all()
         now = dt.datetime.utcnow()
         rows = [{
@@ -2288,7 +2392,7 @@ def companies():
         } for c in all_companies]
     finally:
         session.close()
-    return render_template("companies.html", companies=rows)
+    return render_template("companies.html", companies=rows, show_new_company_modal=show_new_company_modal)
 
 
 @app.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])
@@ -2653,6 +2757,7 @@ def individual_check_upload_audio():
             started_at=dt.datetime.utcnow(),
             uploaded_audio_data=data,
             uploaded_audio_format=audio_format,
+            company_id=current_user.company_id,
         )
         session.add(call)
         session.commit()
@@ -3033,6 +3138,11 @@ def smm_report():
         "smm.html",
         configured=smm_sync.is_configured(),
         sync_status=smm_sync.get_last_status(),
+        # 2026-08, foydalanuvchi so'rovi: "SMM hisobotida kun bo'yicha
+        # qarash ... 7-15-30-60-90 kunlar bo'lsin" -- standart sana-filtri
+        # (_date_picker.html) faqat 1/7/30/90 taklif qilardi, 15/60 yo'q
+        # edi. Endi shu sahifaga xos aniq 5 ta variant beriladi.
+        date_picker_presets=[(7, "7 kun"), (15, "15 kun"), (30, "30 kun"), (60, "60 kun"), (90, "90 kun")],
         **report,
     )
 
@@ -3082,7 +3192,7 @@ def custom_fields_settings():
                     if session.query(CustomField).filter_by(key=key).first():
                         key = f"{key}_{int(dt.datetime.utcnow().timestamp())}"
                     max_order = session.query(CustomField).count()
-                    session.add(CustomField(key=key, label=label, field_type=field_type, options=options or None, sort_order=max_order))
+                    session.add(CustomField(key=key, label=label, field_type=field_type, options=options or None, sort_order=max_order, company_id=current_user.company_id))
                     session.commit()
                     flash("Savol qo'shildi.", "success")
             elif action == "toggle":
@@ -3126,7 +3236,7 @@ def competitors_settings():
                 domain = request.form.get("domain", "").strip() or None
                 search_term = request.form.get("search_term", "").strip() or None
                 if name:
-                    session.add(Competitor(name=name, domain=domain, search_term=search_term))
+                    session.add(Competitor(name=name, domain=domain, search_term=search_term, company_id=current_user.company_id))
                     session.commit()
                     flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
                 else:
@@ -3186,7 +3296,7 @@ def funnel_settings():
                     if session.query(FunnelStage).filter_by(key=key).first():
                         key = f"{key}_{int(dt.datetime.utcnow().timestamp())}"
                     max_order = session.query(FunnelStage).count()
-                    session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=max_order))
+                    session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=max_order, company_id=current_user.company_id))
                     session.commit()
                     flash("Bosqich qo'shildi.", "success")
             elif action == "toggle":

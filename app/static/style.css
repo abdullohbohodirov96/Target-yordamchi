@@ -629,6 +629,46 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .tier-table td.check-yes { color: var(--good); font-weight: 700; }
 .tier-table td.check-no { color: var(--text-faint); }
 
+/* ---------- Modal dialog (2026-09, foydalanuvchi so'rovi: "kompaniya
+   yaratish oynasini chiroyliro qil unaqa turmasin, tugmani bossa oyna
+   ochilsin to'liq ekranga") -- "Yangi qo'shish" formalari endi sahifada
+   doim ko'rinib turgan karta emas, balki tugma bosilganda ochiladigan
+   dialog oyna. Kichik ekranda (telefon) haqiqatan TO'LIQ EKRANNI egallaydi
+   (chekka-chekkaga), katta ekranda esa markazda katta, diqqatga sazovor
+   karta sifatida ochiladi. `companies.html`/`managers.html` ikkalasi ham
+   shu umumiy klasslardan foydalanadi. */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(15, 23, 42, 0.5); align-items: center; justify-content: center; padding: 24px;
+}
+.modal-overlay.open { display: flex; animation: fadeInUp 0.15s ease-out; }
+.modal-dialog {
+  background: var(--card); border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(15,23,42,0.3);
+  width: 100%; max-width: 600px; max-height: calc(100vh - 48px); overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 18px 22px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; position: sticky; top: 0;
+  background: var(--card); z-index: 1;
+}
+.modal-header h2 { margin: 0; }
+.modal-close {
+  background: none; border: none; box-shadow: none; padding: 6px; margin: -6px; border-radius: 6px;
+  color: var(--text-faint); flex-shrink: 0; display: flex;
+}
+.modal-close:hover { background: var(--border-light); color: var(--ink); box-shadow: none; transform: none; }
+.modal-close svg { width: 18px; height: 18px; }
+.modal-body { padding: 22px; }
+@media (max-width: 640px) {
+  .modal-overlay { padding: 0; }
+  .modal-dialog { max-width: 100%; max-height: 100vh; height: 100%; border-radius: 0; }
+}
+
+/* Sahifa boshidagi "+ Yangi qo'shish" tugmasi (modalni ochadi) --
+   `.page-head` ichida sarlavha bilan yonma-yon joylashadi. */
+.page-head-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
 /* ---------- Umumiy mobil moslashuv (telefon ekranlari) ---------- */
 @media (max-width: 640px) {
   .container { padding: 16px 12px 48px; }

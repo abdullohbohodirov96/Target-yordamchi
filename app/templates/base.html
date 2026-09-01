@@ -97,7 +97,16 @@
       {% endif %}
 
       {% if has_module(current_user, 'settings') or current_user.role == 'admin' %}
-      <div class="nav-group-label">Nastroyka</div>
+      <!-- 2026-08, foydalanuvchi so'rovi: "bolimlar ismini tog'rialsh kerak
+           juda xunu bop qogan" -- guruh nomi ilgari ruscha "Nastroyka" edi,
+           holbuki ichidagi bandning o'zi "Sozlamalar" (o'zbekcha) deb
+           nomlangan -- ikkalasi bir xil narsani ikki tilda nomlab, chalkash
+           va nomuvofiq ko'rinardi. Guruh ostida Sozlamalar/Menejerlar/
+           Kompaniyalar (uchtasi ham "boshqaruv" tushunchasiga kiradi)
+           bo'lgani uchun "Sozlamalar" bilan takrorlanib qolmasin deb kengroq
+           "Boshqaruv" nomi tanlandi -- boshqa guruh nomlari (CRM/Analitika/
+           Target) bilan bir xil uslubda, toza o'zbekcha. -->
+      <div class="nav-group-label">Boshqaruv</div>
       {% if has_module(current_user, 'settings') %}
       <a href="{{ url_for('settings_hub') }}" class="nav-item {{ 'active' if request.endpoint=='settings_hub' }}" title="Sozlamalar">
         <span class="nav-icon">{{ navicon('settings') }}</span><span class="nav-text">Sozlamalar</span>

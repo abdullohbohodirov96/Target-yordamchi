@@ -89,6 +89,7 @@ import datetime as dt
 
 import requests
 
+import db
 from db import get_session, CallRecord, Manager, Lead
 from phone_utils import normalize_phone, phone_key9
 
@@ -377,6 +378,9 @@ def sync_once(since: dt.datetime | None = None) -> dict:
                 started_at=mapped["started_at"],
                 recording_url=mapped["recording_url"],
                 raw_data=json.dumps(raw, ensure_ascii=False)[:8000],
+                # Moi Zvonki ulanishi hozircha GLOBAL (2026-09 multi-tenant
+                # 2-bosqich, izohga lead_sync.py'dagi bilan bir xil).
+                company_id=db.get_default_company_id(),
             )
             session.add(record)
             result["new_calls"] += 1

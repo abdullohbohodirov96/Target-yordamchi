@@ -1,26 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Kompaniyalar — Replix{% endblock %}
 {% block content %}
-<h1>Kompaniyalar</h1>
-<p class="page-subtitle">Multi-tenant asosi -- har bir mijoz-kompaniyaning tarif/to'lov holati. Faqat platforma egasi ko'radi.</p>
+<div class="page-head">
+  <div>
+    <h1>Kompaniyalar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Multi-tenant asosi -- har bir mijoz-kompaniyaning tarif/to'lov holati. Faqat platforma egasi ko'radi.</p>
+  </div>
+  <div class="page-head-actions">
+    <button type="button" class="btn" id="newCompanyBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      Yangi kompaniya
+    </button>
+  </div>
+</div>
 
-<div class="card" style="max-width:420px; margin-bottom:24px">
-  <h2>Yangi kompaniya qo'shish</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Hozircha kompaniyalar qo'lda qo'shiladi (o'zi ro'yxatdan o'tish sahifasi keyingi bosqichda). Yangi kompaniya 14 kunlik sinov muddati bilan boshlanadi.</p>
-  <form method="post">
-    <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" required></div>
-    <div class="field"><label>Email (ixtiyoriy)</label><input type="email" name="email" placeholder="mijoz@misol.uz"></div>
-    <div class="field">
-      <label>Tarif</label>
-      <select name="plan">
-        <option value="trial">Sinov (trial)</option>
-        <option value="start">Boshlang'ich</option>
-        <option value="business">Biznes</option>
-        <option value="unlimited">Cheklovsiz</option>
-      </select>
+<div class="modal-overlay{{ ' open' if show_new_company_modal }}" id="newCompanyModal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2>Yangi kompaniya qo'shish</h2>
+      <button type="button" class="modal-close" id="newCompanyClose" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
-    <button type="submit" class="block">Qo'shish</button>
-  </form>
+    <div class="modal-body">
+      <p class="page-subtitle" style="margin-top:-6px">Hozircha kompaniyalar qo'lda qo'shiladi (o'zi ro'yxatdan o'tish sahifasi keyingi bosqichda). Yangi kompaniya 14 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi -- kompaniya o'zi kirib, o'z menejerlarini qo'sha oladi.</p>
+      <form method="post">
+        <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" required autofocus></div>
+        <div class="field"><label>Email (ixtiyoriy)</label><input type="email" name="email" placeholder="mijoz@misol.uz"></div>
+        <div class="field">
+          <label>Tarif</label>
+          <select name="plan">
+            <option value="trial">Sinov (trial)</option>
+            <option value="start">Boshlang'ich</option>
+            <option value="business">Biznes</option>
+            <option value="unlimited">Cheklovsiz</option>
+          </select>
+        </div>
+        <button type="submit" class="block">Qo'shish</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <div class="panel">
@@ -49,4 +68,18 @@
   </table>
   </div>
 </div>
+
+<script>
+(function () {
+  var overlay = document.getElementById('newCompanyModal');
+  var openBtn = document.getElementById('newCompanyBtn');
+  var closeBtn = document.getElementById('newCompanyClose');
+  function open() { overlay.classList.add('open'); }
+  function close() { overlay.classList.remove('open'); }
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();
+</script>
 {% endblock %}

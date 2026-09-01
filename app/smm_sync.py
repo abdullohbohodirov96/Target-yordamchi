@@ -33,6 +33,7 @@ import datetime as dt
 
 import meta_api
 import kv_store
+import db
 from db import get_session, SmmSnapshot, SmmPost
 
 logger = logging.getLogger("smm_sync")
@@ -62,7 +63,8 @@ def _upsert_snapshot(session, platform: str, followers_count, media_count) -> No
     today = _today_tashkent()
     row = session.query(SmmSnapshot).filter_by(platform=platform, date=today).first()
     if row is None:
-        row = SmmSnapshot(platform=platform, date=today)
+        # Meta ulanishi hozircha GLOBAL (2026-09 multi-tenant 2-bosqich).
+        row = SmmSnapshot(platform=platform, date=today, company_id=db.get_default_company_id())
         session.add(row)
     if followers_count is not None:
         row.followers_count = followers_count
@@ -75,7 +77,7 @@ def _upsert_post(session, **fields) -> None:
     external_id = fields["external_id"]
     row = session.query(SmmPost).filter_by(external_id=external_id).first()
     if row is None:
-        row = SmmPost(**fields)
+        row = SmmPost(company_id=db.get_default_company_id(), **fields)
         session.add(row)
     else:
         for k, v in fields.items():

@@ -628,6 +628,24 @@ def _parse_hhmm(value, field_name: str) -> str:
     return v
 
 
+def _company_id_for_chat(chat_id: "int | None") -> "int | None":
+    """Telegram chat/guruh ID'si orqali unga tegishli kompaniyani topadi
+    (`Company.telegram_group_id`) -- 2026-09 multi-tenant 2-bosqich:
+    StandingTask/StandingReport shu kompaniyaga bog'lanishi kerak, aks holda
+    hamma kompaniyaning doimiy vazifalari bitta "standart" kompaniyaga
+    yozilib qolardi. Mos kompaniya topilmasa (hali hech kim o'z guruhini
+    sozlamagan) standart kompaniyaga tushadi."""
+    if chat_id is None:
+        return db.get_default_company_id()
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            company = session.query(db.Company).filter_by(telegram_group_id=str(chat_id)).first()
+        return company.id if company else db.get_default_company_id()
+    finally:
+        session.close()
+
+
 def _execute_schedule_on_off(action: dict, chat_id: int | None) -> dict:
     """`schedule_on_off`: Meta'da HECH NARSA DARHOL o'zgarmaydi -- faqat
     `db.StandingTask` yozuvini yaratadi/yangilaydi. Haqiqiy yoqish/o'chirish
@@ -661,6 +679,7 @@ def _execute_schedule_on_off(action: dict, chat_id: int | None) -> dict:
                 object_name=action.get("object_name"),
                 on_time=on_time, off_time=off_time,
                 created_by_text=action.get("reason", ""),
+                company_id=_company_id_for_chat(chat_id),
             )
             session.add(task)
             session.flush()
@@ -690,7 +709,10 @@ def _execute_schedule_report(action: dict, chat_id: int | None) -> dict:
         if existing:
             report_id = existing.id
         else:
-            report = db.StandingReport(chat_id=str(chat_id), time_hhmm=time_hhmm, label=params.get("label"))
+            report = db.StandingReport(
+                chat_id=str(chat_id), time_hhmm=time_hhmm, label=params.get("label"),
+                company_id=_company_id_for_chat(chat_id),
+            )
             session.add(report)
             session.flush()
             report_id = report.id

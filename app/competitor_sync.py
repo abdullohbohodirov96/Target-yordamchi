@@ -67,7 +67,10 @@ def sync_once() -> dict:
                 existing = session.query(CompetitorAd).filter_by(external_id=external_id).first()
                 bodies = ad.get("ad_creative_bodies") or []
                 if existing is None:
-                    existing = CompetitorAd(competitor_id=comp.id, external_id=external_id)
+                    # E'lon o'ziga tegishli raqobatchi (`comp`)ning
+                    # kompaniyasiga bog'lanadi -- har kompaniya o'z
+                    # raqobatchilarini alohida qo'shadi.
+                    existing = CompetitorAd(competitor_id=comp.id, external_id=external_id, company_id=comp.company_id)
                     session.add(existing)
                     stats["ads_new"] += 1
                 existing.page_name = ad.get("page_name")
