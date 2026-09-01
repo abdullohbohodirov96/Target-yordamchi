@@ -13,6 +13,15 @@ O'Z akkauntingiz uchun odatda Meta App Dashboard -> App Roles ->
 (to'liq ommaviy App Review SHART EMAS) -- batafsil `meta_api.py`dagi
 `get_instagram_conversations()` izohiga qarang.
 
+2026-09, multi-tenant (`smm_sync.py` bilan bir xil naqsh): `sync_once()`
+endi ixtiyoriy `company` qabul qiladi, `sync_all_companies()` esa
+`meta_page_id`+`meta_access_token` ulagan HAR BIR kompaniya bo'yicha
+aylanadi. Javobsiz-suhbat Telegram ogohlantirishi (`scheduler.py`)
+kompaniyaning O'Z `telegram_group_id`siga yuboriladi (sozlanmagan bo'lsa --
+platforma egasining umumiy guruhiga EMAS, shunchaki yuborilmaydi, chunki
+boshqa kompaniyaning mijozi bilan yozishmasi begona Telegram guruhiga
+"sizib chiqishi" mumkin emas).
+
 XARAJATNI NAZORAT QILISH -- BU MODUL ATAYLAB AI ISHLATMAYDI. Faqat:
   1. Meta'dan yangi suhbat/xabarlarni tortib bazaga yozadi (upsert).
   2. "Menejer javob berdimi yo'qmi" holatini ODDIY vaqt/tomon
@@ -42,7 +51,11 @@ _business_rules = json.loads((BASE_DIR / "business_rules.json").read_text(encodi
 UNANSWERED_ALERT_MINUTES = _business_rules.get("ig_dm_unanswered_alert_minutes", 30)
 
 
-def is_configured() -> bool:
+def is_configured(company=None) -> bool:
+    """`company` berilsa -- O'SHA kompaniyaning O'Z ulanishini tekshiradi
+    (2026-09, multi-tenant). Berilmasa -- eski global (ENV) tekshiruv."""
+    if company is not None:
+        return bool(getattr(company, "meta_access_token", None) and getattr(company, "meta_page_id", None))
     return bool(meta_api.ACCESS_TOKEN and meta_api.PAGE_ID)
 
 
@@ -56,19 +69,22 @@ def _parse_dt(value: "str | None") -> "dt.datetime | None":
         return None
 
 
-_ig_business_id_cache: dict = {"id": None, "checked": False}
+# 2026-09, multi-tenant: HAR BIR kompaniyaning O'Z Page'i uchun alohida IG
+# Business ID kerak -- keshni `page_id` bo'yicha saqlaymiz (avval "bitta
+# global" deb faraz qilingan yagona kalit emas).
+_ig_business_id_cache: dict = {}
 
 
-def _get_ig_business_id() -> "str | None":
+def _get_ig_business_id(*, page_id: str | None = None, access_token: str | None = None) -> "str | None":
     """Bir marta olib keshlaydi -- har sinxronizatsiyada qayta so'ramaslik
     uchun (jarayon qayta ishga tushirilganda tabiiy ravishda yangilanadi)."""
-    if not _ig_business_id_cache["checked"]:
+    cache_key = page_id or "__default__"
+    if cache_key not in _ig_business_id_cache:
         try:
-            _ig_business_id_cache["id"] = meta_api.get_instagram_business_account_id()
+            _ig_business_id_cache[cache_key] = meta_api.get_instagram_business_account_id(page_id=page_id, access_token=access_token)
         except meta_api.MetaAPIError:
-            _ig_business_id_cache["id"] = None
-        _ig_business_id_cache["checked"] = True
-    return _ig_business_id_cache["id"]
+            _ig_business_id_cache[cache_key] = None
+    return _ig_business_id_cache[cache_key]
 
 
 def _message_sender(raw_msg: dict, ig_business_id: "str | None") -> str:
@@ -92,19 +108,27 @@ def _friendly_meta_error(e: meta_api.MetaAPIError) -> str:
     return message
 
 
-def _upsert_conversation_and_messages(session, conv: dict, ig_business_id: "str | None") -> dict:
+def _upsert_conversation_and_messages(
+    session, conv: dict, ig_business_id: "str | None", *,
+    company_id: int, page_id: "str | None" = None, access_token: "str | None" = None,
+) -> dict:
     """Bitta suhbatni sinxronlaydi. Qaytaradi:
     {"new_messages": N, "became_overdue": bool, "row": IgDmConversation|None}."""
     external_id = conv.get("id")
     if not external_id:
         return {"new_messages": 0, "became_overdue": False, "row": None}
 
+    # MUHIM (2026-09, multi-tenant): `company_id` bo'yicha HAM qidiramiz --
+    # aks holda boshqa kompaniyaning (bir xil external_id bilan -- amalda
+    # bo'lmaydi, lekin himoya sifatida) yozuvi noto'g'ri yangilanib qolishi
+    # mumkin edi.
     row = session.query(IgDmConversation).filter_by(external_id=external_id).first()
     if row is None:
-        # Meta ulanishi hozircha GLOBAL (2026-09 multi-tenant 2-bosqich).
-        row = IgDmConversation(external_id=external_id, company_id=db.get_default_company_id())
+        row = IgDmConversation(external_id=external_id, company_id=company_id)
         session.add(row)
         session.flush()  # id kerak (IgDmMessage.conversation_id uchun)
+    else:
+        row.company_id = company_id
 
     participants = ((conv.get("participants") or {}).get("data")) or []
     customer_participant = next(
@@ -115,7 +139,7 @@ def _upsert_conversation_and_messages(session, conv: dict, ig_business_id: "str 
         row.customer_username = customer_participant.get("username") or row.customer_username
 
     try:
-        raw_messages = meta_api.get_instagram_conversation_messages(external_id, limit=40)
+        raw_messages = meta_api.get_instagram_conversation_messages(external_id, limit=40, page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
 
@@ -181,8 +205,15 @@ def _upsert_conversation_and_messages(session, conv: dict, ig_business_id: "str 
     return {"new_messages": new_messages, "became_overdue": became_overdue, "row": row}
 
 
-def sync_once() -> dict:
-    """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
+def sync_once(company=None) -> dict:
+    """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa
+    (`db.Company` qatori) -- O'SHA kompaniyaning O'Z `meta_page_id`/
+    `meta_access_token`i bilan, natija shu kompaniyaning `company_id`si
+    bilan saqlanadi (2026-09, multi-tenant, `smm_sync.py` bilan bir xil
+    naqsh). Berilmasa -- eski global (ENV) xatti-harakat (default
+    kompaniyaga yoziladi, CLI/skript uchun orqaga moslik).
+
+    Qaytaradi:
     {"configured": bool, "conversations_checked": N, "new_messages": N,
     "overdue": [{"conversation_id", "customer", "preview", "since_minutes"}],
     "errors": [...]}.
@@ -192,33 +223,43 @@ def sync_once() -> dict:
     `scheduler.job_ig_dm_sync` yuboradi va shu suhbatning
     `unanswered_alert_sent_at`ini belgilaydi)."""
     result = {"configured": True, "conversations_checked": 0, "new_messages": 0, "overdue": [], "errors": []}
-    if not is_configured():
+    company_id = company.id if company else db.get_default_company_id()
+    if not is_configured(company):
         result["configured"] = False
         result["errors"].append("META_ACCESS_TOKEN yoki META_PAGE_ID sozlanmagan -- Instagram DM sinxronizatsiya o'tkazib yuborildi.")
+        _save_status(result, company_id=company.id if company else None)
         return result
 
-    ig_business_id = _get_ig_business_id()
+    page_id = company.meta_page_id if company else None
+    access_token = company.meta_access_token if company else None
+
+    ig_business_id = _get_ig_business_id(page_id=page_id, access_token=access_token)
     if not ig_business_id:
         result["configured"] = False
         result["errors"].append(
             "Instagram Business akkaunt Facebook Page'ga ulanmagan (yoki topilmadi) -- "
             "Instagram DM sinxronizatsiya o'tkazib yuborildi."
         )
+        _save_status(result, company_id=company.id if company else None)
         return result
 
     session = get_session()
     try:
         try:
-            conversations = meta_api.get_instagram_conversations(limit=50)
+            conversations = meta_api.get_instagram_conversations(limit=50, page_id=page_id, access_token=access_token)
         except meta_api.MetaAPIError as e:
             result["errors"].append(_friendly_meta_error(e))
+            _save_status(result, company_id=company.id if company else None)
             return result
 
         now = dt.datetime.utcnow()
         for conv in conversations:
             result["conversations_checked"] += 1
             try:
-                outcome = _upsert_conversation_and_messages(session, conv, ig_business_id)
+                outcome = _upsert_conversation_and_messages(
+                    session, conv, ig_business_id,
+                    company_id=company_id, page_id=page_id, access_token=access_token,
+                )
             except meta_api.MetaAPIError as e:
                 result["errors"].append(_friendly_meta_error(e))
                 continue
@@ -236,8 +277,53 @@ def sync_once() -> dict:
     finally:
         session.close()
 
-    _save_status(result)
+    _save_status(result, company_id=company.id if company else None)
     return result
+
+
+def sync_all_companies() -> dict:
+    """2026-09, multi-tenant: `meta_page_id`+`meta_access_token` ulagan HAR
+    BIR kompaniya bo'yicha aylanib, har birining Instagram DM'larini
+    ALOHIDA (o'z hisobi bilan) sinxronlaydi (`smm_sync.sync_all_companies()`
+    bilan bir xil naqsh). `scheduler.py`ning davriy IG DM job'i endi shuni
+    chaqiradi -- eski yagona-akkaunt `sync_once()` o'rniga. Bitta
+    kompaniyaning sinxronizatsiyasi muvaffaqiyatsiz bo'lishi qolganlarini
+    to'xtatmaydi. Har bir kompaniyaning `overdue` ro'yxati o'zi bilan
+    birga qaytadi -- `scheduler.job_ig_dm_sync` shu kompaniyaning O'Z
+    Telegram guruhiga yuborish uchun `company_id`ni bilishi kerak."""
+    from db import Company
+
+    session = get_session()
+    try:
+        rows = (
+            session.query(Company)
+            .filter(Company.meta_page_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
+            .all()
+        )
+        companies = [{"id": c.id, "name": c.name, "meta_page_id": c.meta_page_id, "meta_access_token": c.meta_access_token} for c in rows]
+    finally:
+        session.close()
+
+    per_company = {}
+    for c in companies:
+        fake_company = _CompanyCreds(id=c["id"], meta_page_id=c["meta_page_id"], meta_access_token=c["meta_access_token"])
+        try:
+            per_company[c["id"]] = sync_once(company=fake_company)
+        except Exception as e:
+            logger.exception("IG DM sync: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
+            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {e}"]}
+    return {"companies_synced": len(companies), "per_company": per_company}
+
+
+class _CompanyCreds:
+    """`sync_once(company=...)`ga uzatish uchun yengil obyekt (`smm_sync.py`
+    bilan bir xil) -- to'liq `db.Company` ORM qatori shart emas, faqat shu
+    uchta maydon kerak (session yopilgandan keyin ham ishlatish uchun
+    detach qilingan)."""
+    def __init__(self, id, meta_page_id, meta_access_token):
+        self.id = id
+        self.meta_page_id = meta_page_id
+        self.meta_access_token = meta_access_token
 
 
 def mark_alert_sent(conversation_id: int) -> None:
@@ -255,12 +341,21 @@ def mark_alert_sent(conversation_id: int) -> None:
         session.close()
 
 
-def _save_status(result: dict) -> None:
+def _status_key(company_id: "int | None") -> str:
+    return "ig_dm_sync_status" if company_id is None else f"ig_dm_sync_status:{company_id}"
+
+
+def _save_status(result: dict, *, company_id: "int | None" = None) -> None:
     try:
-        kv_store.set_json("ig_dm_sync_status", {**result, "last_run_at": dt.datetime.utcnow().isoformat()})
+        kv_store.set_json(_status_key(company_id), {**result, "last_run_at": dt.datetime.utcnow().isoformat()})
     except Exception:
         logger.exception("ig_dm_sync_status'ni kv_store'ga yozishda xato (o'zi kritik emas)")
 
 
-def get_last_status() -> "dict | None":
-    return kv_store.get_json("ig_dm_sync_status", default=None)
+def get_last_status(company_id: "int | None" = None) -> "dict | None":
+    return kv_store.get_json(_status_key(company_id), default=None)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    print(json.dumps(sync_all_companies(), ensure_ascii=False, indent=2))

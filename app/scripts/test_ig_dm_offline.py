@@ -172,7 +172,7 @@ def test_sync_handles_meta_error_per_conversation():
         conv_ok = _conv("conv_ok", "CUST_OK")
         conv_bad = _conv("conv_bad", "CUST_BAD")
 
-        def _messages_side_effect(conversation_id, limit=40):
+        def _messages_side_effect(conversation_id, limit=40, page_id=None, access_token=None):
             if conversation_id == "conv_bad":
                 raise ig_dm_sync.meta_api.MetaAPIError({"message": "permission denied", "code": 10})
             return [_msg("mok", "CUST_OK", "Salom", dt.datetime.utcnow())]

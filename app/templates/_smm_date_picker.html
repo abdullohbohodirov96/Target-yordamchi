@@ -1,0 +1,40 @@
+{# SMM hisobot uchun taqvim-davri filtri (2026-09, foydalanuvchi so'rovi:
+   "bugun/shu hafta/o'tgan hafta/shu oy/o'tgan oy/shu yil bo'yicha ko'rish
+   kerak" -- eski "so'nggi N kun" aylanma oynasi o'rniga ANIQ taqvim
+   davrlari). Ishlatilishi: {% include "_smm_date_picker.html" %} -- ota
+   shablonda `preset` (joriy tanlangan preset kaliti yoki None) va
+   `period_label` (ko'rsatiladigan nom) mavjud bo'lishi kerak. #}
+<div class="date-picker" id="smmDatePicker">
+  <button type="button" class="date-picker-trigger" id="smmDatePickerTrigger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+    <span>{{ period_label }}</span>
+  </button>
+  <div class="date-picker-menu" id="smmDatePickerMenu">
+    {% for p, label in smm_period_presets %}
+    <a href="?preset={{ p }}" class="{{ 'active' if preset==p }}">{{ label }}</a>
+    {% endfor %}
+    <div class="date-picker-divider"></div>
+    <form method="get" class="date-picker-custom">
+      <label>Boshqa (so'nggi N kun)</label>
+      <div style="display:flex; gap:6px">
+        <input type="number" min="1" max="365" name="days" value="{{ days }}" style="width:80px">
+        <button type="submit" class="btn" style="padding:6px 10px; font-size:12px">OK</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var wrap = document.getElementById('smmDatePicker');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  var trigger = document.getElementById('smmDatePickerTrigger');
+  trigger.addEventListener('click', function (e) {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+})();
+</script>

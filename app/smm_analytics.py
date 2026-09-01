@@ -3,11 +3,69 @@ smm_analytics.py — `db.SmmSnapshot` / `db.SmmPost` yozuvlaridan "SMM
 hisobot" sahifasi (`/smm`) uchun to'liq tahlilni yig'adi: obunachilar
 o'sish grafigi, davr bo'yicha umumiy qamrov/like/comment, engagement rate
 va eng yaxshi (top) postlar -- Instagram va Facebook uchun alohida.
-"""
+
+2026-09, foydalanuvchi shikoyati: "SMM'da faqat 7/15/30/60/90 kunlik
+'aylanma oyna' bor edi, lekin BUGUN/SHU HAFTA/O'TGAN HAFTA/SHU OY/O'TGAN
+OY/SHU YIL kabi ANIQ TAQVIM davrlarini ko'rish kerak" -- endi
+`PERIOD_PRESETS` orqali shu 6 ta taqvim-davri qo'llab-quvvatlanadi
+(`resolve_period()`), eski `days=` parametri ORQAGA MOSLIK uchun saqlanadi
+(hech qanday `preset` berilmasa, eski "so'nggi N kun" xatti-harakati)."""
 
 import datetime as dt
 
 _TASHKENT_OFFSET = dt.timedelta(hours=5)
+
+# Taqvim-preset -> ko'rsatiladigan nom. Tartib shu yerdagi kabi UI'da ham
+# ko'rinadi (`app.py`dagi `/smm` route shu ro'yxatni to'g'ridan-to'g'ri
+# shablonga uzatadi).
+PERIOD_PRESETS = [
+    ("today", "Bugun"),
+    ("this_week", "Shu hafta"),
+    ("last_week", "O'tgan hafta"),
+    ("this_month", "Shu oy"),
+    ("last_month", "O'tgan oy"),
+    ("this_year", "Shu yil"),
+]
+PERIOD_PRESET_KEYS = {k for k, _ in PERIOD_PRESETS}
+DEFAULT_PRESET = "this_month"
+
+
+def resolve_period(preset: str | None, days: int | None = None) -> tuple[str, str, str]:
+    """`preset` (yoki eski `days`) uchun Toshkent taqvim sanalarida
+    (`YYYY-MM-DD`, IKKALASI HAM qamrab olinadi -- inclusive) [start, end]
+    oralig'ini va ko'rsatish uchun nomni qaytaradi.
+
+    `preset` noma'lum/berilmagan bo'lsa, eski "so'nggi N kun" (aylanma oyna,
+    bugungi kunni ham o'z ichiga oladi) xatti-harakatiga qaytadi -- eski
+    testlar/route'lar buzilmasligi uchun."""
+    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    today = now_tashkent.date()
+
+    if preset == "today":
+        return today.isoformat(), today.isoformat(), "Bugun"
+    if preset == "this_week":
+        start = today - dt.timedelta(days=today.weekday())
+        return start.isoformat(), today.isoformat(), "Shu hafta"
+    if preset == "last_week":
+        this_monday = today - dt.timedelta(days=today.weekday())
+        start = this_monday - dt.timedelta(days=7)
+        end = this_monday - dt.timedelta(days=1)
+        return start.isoformat(), end.isoformat(), "O'tgan hafta"
+    if preset == "this_month":
+        start = today.replace(day=1)
+        return start.isoformat(), today.isoformat(), "Shu oy"
+    if preset == "last_month":
+        this_month_start = today.replace(day=1)
+        end = this_month_start - dt.timedelta(days=1)
+        start = end.replace(day=1)
+        return start.isoformat(), end.isoformat(), "O'tgan oy"
+    if preset == "this_year":
+        start = today.replace(month=1, day=1)
+        return start.isoformat(), today.isoformat(), "Shu yil"
+
+    d = days if days else 30
+    start = today - dt.timedelta(days=d)
+    return start.isoformat(), today.isoformat(), f"So'nggi {d} kun"
 
 
 def _engagement(p) -> int:
@@ -37,14 +95,14 @@ def _post_to_dict(p) -> dict:
     }
 
 
-def _build_platform_report(session, platform: str, days: int) -> dict:
+def _build_platform_report(session, platform: str, start_date: str, end_date: str) -> dict:
+    """`start_date`/`end_date` -- Toshkent taqvim sanalari (`YYYY-MM-DD`),
+    IKKALASI HAM qamrab olinadi (inclusive) -- `resolve_period()`dan keladi."""
     from db import SmmSnapshot, SmmPost
 
-    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
-    since_date = (now_tashkent - dt.timedelta(days=days)).strftime("%Y-%m-%d")
     snapshots = (
         session.query(SmmSnapshot)
-        .filter(SmmSnapshot.platform == platform, SmmSnapshot.date >= since_date)
+        .filter(SmmSnapshot.platform == platform, SmmSnapshot.date >= start_date, SmmSnapshot.date <= end_date)
         .order_by(SmmSnapshot.date.asc())
         .all()
     )
@@ -62,9 +120,10 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     )
 
     # "Bu oy qancha obunachi keldi" -- foydalanuvchi aniq shuni so'radi.
-    # Tepadagi `days` (7/30/90 kunlik) tanlovdan MUSTAQIL, doim JORIY
-    # TAQVIM OYI bo'yicha hisoblanadi -- foydalanuvchi 7 kunlik ko'rinishni
-    # tanlagan bo'lsa ham, "bu oy" ko'rsatkichi to'g'ri chiqishi kerak.
+    # Tepadagi tanlangan davrdan (bugun/hafta/oy/yil) MUSTAQIL, doim JORIY
+    # TAQVIM OYI bo'yicha hisoblanadi -- foydalanuvchi boshqa davrni tanlagan
+    # bo'lsa ham, "bu oy" ko'rsatkichi to'g'ri chiqishi kerak.
+    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
     month_start_date = now_tashkent.strftime("%Y-%m-01")
     all_snapshots = (
         session.query(SmmSnapshot)
@@ -96,8 +155,12 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
         .limit(50)
         .all()
     )
-    cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
-    period_posts = [p for p in all_posts if p.posted_at and p.posted_at >= cutoff]
+    # Tanlangan taqvim oralig'ini (Toshkent kunlari) UTC'ga o'tkazamiz --
+    # `SmmPost.posted_at` UTC (naive) sifatida saqlanadi. `end_date`ning
+    # O'ZI HAM to'liq hisobga olinishi kerak (o'sha kunning oxirigacha).
+    start_utc = dt.datetime.strptime(start_date, "%Y-%m-%d") - _TASHKENT_OFFSET
+    end_utc = dt.datetime.strptime(end_date, "%Y-%m-%d") + dt.timedelta(days=1) - _TASHKENT_OFFSET
+    period_posts = [p for p in all_posts if p.posted_at and start_utc <= p.posted_at < end_utc]
 
     # MUHIM (2026-08, foydalanuvchi so'rovi: "nimadir noto'g'ri bo'lsa nima
     # uchunligini tushuntiring" -- "Umumiy qamrov"/"Umumiy ko'rishlar" har
@@ -186,14 +249,28 @@ def _build_platform_report(session, platform: str, days: int) -> dict:
     }
 
 
-def build_smm_report(session, days: int = 30) -> dict:
-    """To'liq SMM hisobotini qaytaradi: {"days": N, "platforms":
-    {"instagram": {...}, "facebook": {...}}} -- har bir platforma bo'yicha
-    yuqoridagi `_build_platform_report()` natijasi."""
+def build_smm_report(session, days: int | None = None, preset: str | None = None) -> dict:
+    """To'liq SMM hisobotini qaytaradi: {"days": N (orqaga moslik uchun,
+    faqat preset yo'q holatda ma'noli), "preset": ..., "period_label": ...,
+    "start_date": ..., "end_date": ..., "platforms": {"instagram": {...},
+    "facebook": {...}}} -- har bir platforma bo'yicha yuqoridagi
+    `_build_platform_report()` natijasi, `resolve_period()` bilan aniqlangan
+    BIR XIL [start_date, end_date] oralig'i uchun.
+
+    `preset` -- `PERIOD_PRESETS`dagi 6 taqvim-davridan biri (bugun/shu
+    hafta/o'tgan hafta/shu oy/o'tgan oy/shu yil). Berilmasa (yoki noma'lum
+    bo'lsa), eski `days=N` ("so'nggi N kun") xatti-harakatiga qaytadi --
+    mavjud testlar/chaqiruvlar buzilmasligi uchun."""
+    start_date, end_date, period_label = resolve_period(preset, days)
+    effective_preset = preset if preset in PERIOD_PRESET_KEYS else None
     return {
-        "days": days,
+        "days": days or 30,
+        "preset": effective_preset,
+        "period_label": period_label,
+        "start_date": start_date,
+        "end_date": end_date,
         "platforms": {
-            "instagram": _build_platform_report(session, "instagram", days),
-            "facebook": _build_platform_report(session, "facebook", days),
+            "instagram": _build_platform_report(session, "instagram", start_date, end_date),
+            "facebook": _build_platform_report(session, "facebook", start_date, end_date),
         },
     }

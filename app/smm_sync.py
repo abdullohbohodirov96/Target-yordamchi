@@ -12,6 +12,19 @@ Page'ga ulangan bo'lishi kerak (Meta Business Suite -> Sozlamalar ->
 Bog'langan hisoblar) -- ulanmagan bo'lsa, Facebook qismi baribir ishlayveradi,
 Instagram qismi "notices"da aniq ko'rsatiladi.
 
+2026-09, multi-tenant (foydalanuvchi so'rovi: "boshqa kompaniyalar bitta
+tugma bilan Facebook/Instagram'ga ulansin, keyin ularniki HAM ishlasin"):
+`sync_once(company=None)` endi ixtiyoriy `company` (`db.Company` qatori)
+qabul qiladi -- berilsa, O'SHA kompaniyaning O'Z `meta_page_id`/
+`meta_access_token`'i bilan sinxronlanadi va yozuvlar shu `company_id` bilan
+saqlanadi. `sync_all_companies()` -- `meta_page_id`+`meta_access_token`
+ulagan HAR BIR kompaniya bo'yicha aylanib, har birini ALOHIDA sinxronlaydi
+(`scheduler.py` endi shuni chaqiradi, eski global-yagona `sync_once()`
+o'rniga). Company #1 (platforma egasi) ham shu ro'yxatga ODDIY tarzda
+kiradi -- chunki uning ham `meta_page_id`/`meta_access_token`si
+`db.ensure_default_company()` orqali bootstrap vaqtida ENV'dan o'z
+ustuniga nusxalangan (alohida holat sifatida ishlanmaydi).
+
 SAQLASH MANTIG'I:
   - `SmmSnapshot` -- HAR KUNI (Toshkent kuni bo'yicha) bitta qator: shu
     kundagi JORIY obunachilar sonini "suratga oladi". Meta o'zi tarixiy
@@ -41,7 +54,12 @@ logger = logging.getLogger("smm_sync")
 _TASHKENT_OFFSET = dt.timedelta(hours=5)
 
 
-def is_configured() -> bool:
+def is_configured(company=None) -> bool:
+    """`company` berilsa -- O'SHA kompaniyaning O'Z ulanishini tekshiradi
+    (2026-09, multi-tenant). Berilmasa -- eski global (ENV) tekshiruv
+    (CLI/skript uchun orqaga moslik)."""
+    if company is not None:
+        return bool(getattr(company, "meta_access_token", None) and getattr(company, "meta_page_id", None))
     return bool(meta_api.ACCESS_TOKEN and meta_api.PAGE_ID)
 
 
@@ -59,12 +77,15 @@ def _parse_dt(value: str | None) -> dt.datetime | None:
         return None
 
 
-def _upsert_snapshot(session, platform: str, followers_count, media_count) -> None:
+def _upsert_snapshot(session, platform: str, followers_count, media_count, *, company_id: int) -> None:
     today = _today_tashkent()
-    row = session.query(SmmSnapshot).filter_by(platform=platform, date=today).first()
+    # MUHIM (2026-09, multi-tenant): shu KOMPANIYAGA tegishli qatorni
+    # qidiramiz -- `company_id` filtrisiz bir xil `(platform, date)`
+    # kombinatsiyasi boshqa kompaniyaning qatorini "topib", uning
+    # ma'lumotini bosib yozib yuborishi mumkin edi.
+    row = session.query(SmmSnapshot).filter_by(platform=platform, date=today, company_id=company_id).first()
     if row is None:
-        # Meta ulanishi hozircha GLOBAL (2026-09 multi-tenant 2-bosqich).
-        row = SmmSnapshot(platform=platform, date=today, company_id=db.get_default_company_id())
+        row = SmmSnapshot(platform=platform, date=today, company_id=company_id)
         session.add(row)
     if followers_count is not None:
         row.followers_count = followers_count
@@ -73,13 +94,21 @@ def _upsert_snapshot(session, platform: str, followers_count, media_count) -> No
     session.commit()
 
 
-def _upsert_post(session, **fields) -> None:
+def _upsert_post(session, *, company_id: int, **fields) -> None:
     external_id = fields["external_id"]
+    # MUHIM (2026-09, multi-tenant): `external_id` Meta tomonidan GLOBAL
+    # noyob (bitta media/post ID ikki xil kompaniyaga tegishli bo'la
+    # olmaydi), shuning uchun bu yerda qo'shimcha `company_id` filtri SHART
+    # EMAS -- lekin YANGI qator yaratilganda albatta TO'G'RI `company_id`
+    # bilan yoziladi (aks holda hammasi `get_default_company_id()`ga
+    # tushib, boshqa kompaniyalarning postlari platforma egasiga "sizib"
+    # ko'rinardi).
     row = session.query(SmmPost).filter_by(external_id=external_id).first()
     if row is None:
-        row = SmmPost(company_id=db.get_default_company_id(), **fields)
+        row = SmmPost(company_id=company_id, **fields)
         session.add(row)
     else:
+        row.company_id = company_id
         for k, v in fields.items():
             if k == "external_id":
                 continue
@@ -132,19 +161,19 @@ def _facebook_media_type(post: dict) -> str:
     }.get(raw, "STATUS")
 
 
-def _sync_facebook(session, result: dict) -> None:
+def _sync_facebook(session, result: dict, *, page_id: str | None, access_token: str | None, company_id: int) -> None:
     try:
-        profile = meta_api.get_facebook_page_profile()
+        profile = meta_api.get_facebook_page_profile(page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Facebook Page profilini olishda xatolik: {_friendly_meta_error(e)}")
         return
 
     followers = profile.get("fan_count")
-    _upsert_snapshot(session, "facebook", followers_count=followers, media_count=None)
+    _upsert_snapshot(session, "facebook", followers_count=followers, media_count=None, company_id=company_id)
     result["facebook"]["followers_count"] = followers
 
     try:
-        posts = meta_api.get_facebook_page_posts(limit=25)
+        posts = meta_api.get_facebook_page_posts(limit=25, page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Facebook postlarini olishda xatolik: {_friendly_meta_error(e)}")
         return
@@ -156,11 +185,12 @@ def _sync_facebook(session, result: dict) -> None:
             continue
         insights = {}
         try:
-            insights = meta_api.get_facebook_post_insights(post_id)
+            insights = meta_api.get_facebook_post_insights(post_id, page_id=page_id, access_token=access_token)
         except meta_api.MetaAPIError:
             pass  # ba'zi postlarda insights ruxsati bo'lmasligi mumkin -- shu bittasi bo'sh qoladi
         _upsert_post(
             session,
+            company_id=company_id,
             platform="facebook",
             external_id=post_id,
             caption=p.get("message"),
@@ -188,22 +218,22 @@ def _sync_facebook(session, result: dict) -> None:
     result["facebook"]["posts_synced"] = synced
 
 
-def _sync_instagram(session, result: dict) -> None:
+def _sync_instagram(session, result: dict, *, page_id: str | None, access_token: str | None, company_id: int) -> None:
     try:
-        ig_id = meta_api.get_instagram_business_account_id()
+        ig_id = meta_api.get_instagram_business_account_id(page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Instagram akkauntni aniqlashda xatolik: {_friendly_meta_error(e)}")
         return
     if not ig_id:
         result["notices"].append(
-            "META_PAGE_ID'ga ulangan Instagram Business akkaunt topilmadi -- "
+            "Sahifangizga ulangan Instagram Business akkaunt topilmadi -- "
             "Instagram statistikasi o'tkazib yuborildi (Facebook statistikasi "
             "baribir yig'ilmoqda)."
         )
         return
 
     try:
-        profile = meta_api.get_instagram_profile(ig_id)
+        profile = meta_api.get_instagram_profile(ig_id, page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Instagram profilini olishda xatolik: {_friendly_meta_error(e)}")
         return
@@ -212,11 +242,12 @@ def _sync_instagram(session, result: dict) -> None:
         session, "instagram",
         followers_count=profile.get("followers_count"),
         media_count=profile.get("media_count"),
+        company_id=company_id,
     )
     result["instagram"]["followers_count"] = profile.get("followers_count")
 
     try:
-        media_list = meta_api.get_instagram_media(ig_id, limit=25)
+        media_list = meta_api.get_instagram_media(ig_id, limit=25, page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Instagram postlarini olishda xatolik: {_friendly_meta_error(e)}")
         return
@@ -234,6 +265,7 @@ def _sync_instagram(session, result: dict) -> None:
                 media_id,
                 media_type=m.get("media_type", "IMAGE"),
                 media_product_type=m.get("media_product_type"),
+                page_id=page_id, access_token=access_token,
             )
         except meta_api.MetaAPIError as e:
             # MUHIM (2026-08, foydalanuvchi shikoyati: "smm haliyam notori
@@ -253,6 +285,7 @@ def _sync_instagram(session, result: dict) -> None:
                 insights_error_sample = _friendly_meta_error(e)
         _upsert_post(
             session,
+            company_id=company_id,
             platform="instagram",
             external_id=media_id,
             caption=m.get("caption"),
@@ -292,8 +325,13 @@ def _sync_instagram(session, result: dict) -> None:
         )
 
 
-def sync_once() -> dict:
+def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi (Facebook + Instagram).
+    `company` berilsa (`db.Company` qatori) -- O'SHA kompaniyaning O'Z
+    `meta_page_id`/`meta_access_token`i bilan, natija shu kompaniyaning
+    `company_id`si bilan saqlanadi. Berilmasa -- eski global (ENV) xatti-
+    harakat (default kompaniyaga yoziladi).
+
     Qaytaradi: {"errors": [...], "notices": [...],
     "facebook": {"followers_count", "posts_synced"},
     "instagram": {"followers_count", "posts_synced"}}."""
@@ -302,35 +340,86 @@ def sync_once() -> dict:
         "facebook": {"followers_count": None, "posts_synced": 0},
         "instagram": {"followers_count": None, "posts_synced": 0},
     }
-    if not is_configured():
+    if not is_configured(company):
         result["errors"].append(
-            "META_ACCESS_TOKEN yoki META_PAGE_ID sozlanmagan -- SMM sinxronizatsiya o'tkazib yuborildi."
+            "Meta hisobi sozlanmagan (Page/token yo'q) -- SMM sinxronizatsiya o'tkazib yuborildi."
         )
-        _save_status(result)
+        _save_status(result, company_id=company.id if company else None)
         return result
+
+    page_id = company.meta_page_id if company else None
+    access_token = company.meta_access_token if company else None
+    company_id = company.id if company else db.get_default_company_id()
 
     session = get_session()
     try:
-        _sync_facebook(session, result)
-        _sync_instagram(session, result)
+        _sync_facebook(session, result, page_id=page_id, access_token=access_token, company_id=company_id)
+        _sync_instagram(session, result, page_id=page_id, access_token=access_token, company_id=company_id)
     finally:
         session.close()
 
-    _save_status(result)
+    _save_status(result, company_id=company_id)
     return result
 
 
-def _save_status(result: dict) -> None:
+def sync_all_companies() -> dict:
+    """2026-09, multi-tenant: `meta_page_id`+`meta_access_token` ulagan
+    HAR BIR kompaniya bo'yicha aylanib, har birini ALOHIDA (o'z hisobi
+    bilan) sinxronlaydi. `scheduler.py`ning davriy SMM job'i endi shuni
+    chaqiradi -- eski yagona-akkaunt `sync_once()` o'rniga. Bitta
+    kompaniyaning sinxronizatsiyasi muvaffaqiyatsiz bo'lishi qolganlarini
+    to'xtatmaydi."""
+    from db import Company
+
+    session = get_session()
     try:
-        kv_store.set_json("smm_sync_status", {**result, "last_run_at": dt.datetime.utcnow().isoformat()})
+        rows = (
+            session.query(Company)
+            .filter(Company.meta_page_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
+            .all()
+        )
+        # Session yopilgach ham ishlatish uchun -- ORM obyektlarini emas,
+        # oddiy qiymatlarni chiqarib olamiz.
+        companies = [{"id": c.id, "name": c.name, "meta_page_id": c.meta_page_id, "meta_access_token": c.meta_access_token} for c in rows]
+    finally:
+        session.close()
+
+    per_company = {}
+    for c in companies:
+        fake_company = _CompanyCreds(id=c["id"], meta_page_id=c["meta_page_id"], meta_access_token=c["meta_access_token"])
+        try:
+            per_company[c["id"]] = sync_once(company=fake_company)
+        except Exception as e:
+            logger.exception("SMM sync: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
+            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {e}"]}
+    return {"companies_synced": len(companies), "per_company": per_company}
+
+
+class _CompanyCreds:
+    """`sync_once(company=...)`ga uzatish uchun yengil obyekt -- to'liq
+    `db.Company` ORM qatori shart emas, faqat shu uchta maydon kerak
+    (session yopilgandan keyin ham ishlatish uchun detach qilingan)."""
+    def __init__(self, id, meta_page_id, meta_access_token):
+        self.id = id
+        self.meta_page_id = meta_page_id
+        self.meta_access_token = meta_access_token
+
+
+def _status_key(company_id: int | None) -> str:
+    return "smm_sync_status" if company_id is None else f"smm_sync_status:{company_id}"
+
+
+def _save_status(result: dict, *, company_id: int | None = None) -> None:
+    try:
+        kv_store.set_json(_status_key(company_id), {**result, "last_run_at": dt.datetime.utcnow().isoformat()})
     except Exception:
         logger.exception("smm_sync_status'ni kv_store'ga yozishda xato (o'zi kritik emas)")
 
 
-def get_last_status() -> dict | None:
-    return kv_store.get_json("smm_sync_status", default=None)
+def get_last_status(company_id: int | None = None) -> dict | None:
+    return kv_store.get_json(_status_key(company_id), default=None)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    print(json.dumps(sync_once(), ensure_ascii=False, indent=2))
+    print(json.dumps(sync_all_companies(), ensure_ascii=False, indent=2))

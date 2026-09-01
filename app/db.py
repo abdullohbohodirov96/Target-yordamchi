@@ -401,7 +401,15 @@ class SmmSnapshot(Base):
     media_count = Column(Integer, nullable=True)  # Instagram uchun -- jami post soni
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
-    __table_args__ = (UniqueConstraint("platform", "date", name="uq_smm_snapshot_platform_date"),)
+    # MUHIM BUG FIX (2026-09, multi-tenant): ILGARI bu faqat ("platform", "date")
+    # bo'yicha GLOBAL unique edi -- ikkinchi kompaniya "bitta tugma bilan
+    # ulash" orqali qo'shilib, BIR XIL kunda BIR XIL platformani (masalan
+    # "facebook") sinxronlasa, ikkinchisining yozuvi birinchisiga
+    # (`company_id`dan qat'iy nazar) IntegrityError bilan TO'QNASHARDI --
+    # butun sinxronizatsiya o'sha kompaniya uchun yiqilib qolardi. Endi
+    # (company_id, platform, date) unique -- eski deploy'lar uchun
+    # `_migrate_uniqueness_constraints_to_per_company()`ga qarang.
+    __table_args__ = (UniqueConstraint("company_id", "platform", "date", name="uq_smm_snapshot_company_platform_date"),)
 
 
 class SmmPost(Base):
@@ -969,31 +977,40 @@ def _apply_tenant_scope(execute_state) -> None:
         )
 
 
-# 2026-09 multi-tenant 2-bosqich: `custom_fields.key`/`funnel_stages.key`
-# ILGARI butun tizim bo'yicha GLOBAL unique edi -- endi (company_id, key)
-# juftligi unique bo'lishi kerak (modeldagi `__table_args__`ga qarang), aks
-# holda ikkinchi kompaniya standart "new"/"contacted"/... bosqichlarini
-# urug'lantira olmas edi. Postgres'da eski cheklov nomi turlicha bo'lishi
-# mumkin -- aniq nom bilan emas, "aynan shu BITTA ustunga tegishli unique
+# 2026-09 multi-tenant 2-bosqich: bir nechta jadvalda unique cheklov ILGARI
+# `company_id`siz, butun tizim bo'yicha GLOBAL edi -- ikkinchi kompaniya
+# qo'shilganda bir xil qiymat (masalan `custom_fields.key="manzil"`, yoki
+# `smm_snapshots`da bir xil kunda bir xil platforma) IKKINCHI kompaniyada
+# ham paydo bo'lsa, IntegrityError bilan yozuv yiqilib qolardi (2026-09,
+# foydalanuvchi so'rovi: "boshqa kompaniyalar ham SMM/Instagram'ga ulansin,
+# ularniki HAM ishlasin" -- sinov paytida `smm_snapshots` uchun aynan shu
+# xato TOPILDI). Postgres'da eski cheklov nomi turlicha bo'lishi mumkin --
+# aniq nom bilan emas, "aynan shu ESKI ustunlar to'plamiga tegishli unique
 # cheklov"ni TOPIB o'chiramiz, so'ng yangisini QO'SHISHGA harakat qilamiz
 # (SQLite -- lokal testlarda -- bu ALTER'larni qo'llab-quvvatlamaydi, xato
-# jim log qilinadi, xavfsiz -- xuddi `_migrate_widen_columns()` kabi).
-_KEY_UNIQUENESS_MIGRATIONS = {
-    "custom_fields": "uq_custom_fields_company_key",
-    "funnel_stages": "uq_funnel_stages_company_key",
+# jim log qilinadi, xavfsiz -- xuddi `_migrate_widen_columns()` kabi; YANGI
+# o'rnatishlarda muammo yo'q -- `create_all()` jadvalni to'g'ridan-to'g'ri
+# YANGI (company_id qo'shilgan) cheklov bilan yaratadi).
+_UNIQUENESS_MIGRATIONS = {
+    "custom_fields": {"old_columns": ["key"], "new_columns": ["company_id", "key"], "new_name": "uq_custom_fields_company_key"},
+    "funnel_stages": {"old_columns": ["key"], "new_columns": ["company_id", "key"], "new_name": "uq_funnel_stages_company_key"},
+    "smm_snapshots": {"old_columns": ["platform", "date"], "new_columns": ["company_id", "platform", "date"], "new_name": "uq_smm_snapshot_company_platform_date"},
 }
 
 
 def _migrate_key_uniqueness_to_per_company() -> None:
     inspector = sa_inspect(engine)
     existing_tables = set(inspector.get_table_names())
-    for table, new_name in _KEY_UNIQUENESS_MIGRATIONS.items():
+    for table, cfg in _UNIQUENESS_MIGRATIONS.items():
         if table not in existing_tables:
             continue
+        old_columns = cfg["old_columns"]
+        new_columns = cfg["new_columns"]
+        new_name = cfg["new_name"]
         try:
             old_names = [
                 uc["name"] for uc in inspector.get_unique_constraints(table)
-                if uc["column_names"] == ["key"] and uc["name"]
+                if uc["column_names"] == old_columns and uc["name"]
             ]
         except Exception as e:
             logger.error("Migratsiya XATOSI (%s eski unique cheklovni topishda): %s", table, e)
@@ -1002,13 +1019,14 @@ def _migrate_key_uniqueness_to_per_company() -> None:
             try:
                 with engine.begin() as conn:
                     conn.execute(sa_text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{old_name}"'))
-                logger.warning("Migratsiya: %s.%s (yagona-ustunli unique) olib tashlandi", table, old_name)
+                logger.warning("Migratsiya: %s.%s (%s bo'yicha unique) olib tashlandi", table, old_name, "+".join(old_columns))
             except Exception as e:
                 logger.error("Migratsiya XATOSI (%s.%s ni o'chirishda): %s", table, old_name, e)
         try:
             with engine.begin() as conn:
-                conn.execute(sa_text(f'ALTER TABLE "{table}" ADD CONSTRAINT "{new_name}" UNIQUE (company_id, key)'))
-            logger.warning("Migratsiya: %s ga (company_id, key) composite unique constraint qo'shildi", table)
+                columns_sql = ", ".join(new_columns)
+                conn.execute(sa_text(f'ALTER TABLE "{table}" ADD CONSTRAINT "{new_name}" UNIQUE ({columns_sql})'))
+            logger.warning("Migratsiya: %s ga (%s) composite unique constraint qo'shildi", table, ", ".join(new_columns))
         except Exception as e:
             # Qayta ishga tushirilganda constraint ALLAQACHON mavjud bo'lishi
             # KUTILGAN holat -- xato emas, shuning uchun faqat info darajasida.

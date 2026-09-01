@@ -102,10 +102,41 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
         # "ertaga boshlanishi"gacha.
         start_tashkent = today_start_tashkent - dt.timedelta(days=days)
         end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    # 2026-09, foydalanuvchi so'rovi: "bugun/shu hafta/o'tgan hafta/shu oy/
+    # o'tgan oy/shu yil" bo'yicha ko'rish -- Meta'ning o'zi ishlatadigan
+    # taqvim-preset nomlari (`target.html`dagi davr tugmalari shu nomlarni
+    # to'g'ridan-to'g'ri `date_preset` sifatida Meta'ga ham yuboradi).
+    elif date_preset == "this_week_mon_today":
+        start_tashkent = today_start_tashkent - dt.timedelta(days=today_start_tashkent.weekday())
+        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    elif date_preset == "last_week_mon_sun":
+        this_monday = today_start_tashkent - dt.timedelta(days=today_start_tashkent.weekday())
+        start_tashkent = this_monday - dt.timedelta(days=7)
+        end_tashkent = this_monday
+    elif date_preset == "this_month":
+        start_tashkent = today_start_tashkent.replace(day=1)
+        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    elif date_preset == "last_month":
+        this_month_start = today_start_tashkent.replace(day=1)
+        start_tashkent = _shift_months(this_month_start, -1)
+        end_tashkent = this_month_start
+    elif date_preset == "this_year":
+        start_tashkent = today_start_tashkent.replace(month=1, day=1)
+        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
     else:
         return None
 
     return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
+
+
+def _shift_months(d: dt.datetime, delta_months: int) -> dt.datetime:
+    """`d`ning 1-kuni, soat 00:00'idan `delta_months` (manfiy ham bo'lishi
+    mumkin) oy siljitilgan sanani qaytaradi -- "o'tgan oy" kabi hisoblar
+    uchun (masalan yanvar uchun -1 -> o'tgan yil dekabri)."""
+    month_index = d.month - 1 + delta_months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    return d.replace(year=year, month=month, day=1)
 
 
 def custom_range_bounds_utc(date_from: str, date_to: str) -> tuple[dt.datetime, dt.datetime] | None:
@@ -317,7 +348,14 @@ def _get_kpis_uncached(
     try:
         structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
         key = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}[level]
-        status_by_id = {o["id"]: o.get("status", "") for o in structure.get(key, [])}
+        # MUHIM (2026-09, foydalanuvchi shikoyati: "o'chirilgan targetlar
+        # yoqilgandek ko'rsatilyapti, pul sarfi noto'g'ri"): `status` obyektning
+        # FAQAT o'zining holatini bildiradi -- ustidagi adset/kampaniya PAUSED
+        # bo'lsa ham, ad o'zi "ACTIVE" deb qaytishi mumkin, garchi AMALDA hech
+        # narsa ko'rsatilmayotgan bo'lsa ham. `effective_status` esa butun
+        # ierarxiyani hisobga oladi -- shu YER "faqat yoqilgan" filtri va
+        # status-nuqta (green dot) uchun HAQIQIY manba bo'lishi kerak.
+        status_by_id = {o["id"]: (o.get("effective_status") or o.get("status") or "") for o in structure.get(key, [])}
 
         if level == "campaign":
             for c in structure.get("campaigns", []):

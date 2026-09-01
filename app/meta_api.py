@@ -36,6 +36,16 @@ AD_ACCOUNT_ID = os.environ.get("META_AD_ACCOUNT_ID", "")  # format: act_12345678
 PAGE_ID = os.environ.get("META_PAGE_ID", "")  # Facebook Page ID (ad creative uchun)
 PIXEL_ID = os.environ.get("META_PIXEL_ID", "")  # Conversions API (CAPI) uchun -- ixtiyoriy
 
+# 2026-09, foydalanuvchi so'rovi: "boshqa kompaniyalar bitta tugma bilan
+# o'z Facebook/Instagram hisobini ulasin" -- "Facebook Login for Business"
+# OAuth ilovasi uchun (developers.facebook.com'da yaratiladi). Bular BUTUN
+# tizim uchun BITTA ilova (App ID/Secret) -- har bir KOMPANIYA esa OAuth
+# orqali O'Z token/sahifa/reklama hisobini oladi (pastga, "OAuth" bo'limiga
+# qarang). Sozlanmagan bo'lsa (bo'sh), "Connect with Facebook" tugmasi
+# `app.py`da ko'rsatilmaydi -- qo'lda token kiritish (eski usul) ishlayveradi.
+META_APP_ID = os.environ.get("META_APP_ID", "")
+META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+
 
 class MetaAPIError(Exception):
     pass
@@ -169,17 +179,26 @@ def send_conversion_event(
 # chaqiruvlarda ishlatadi (`GET /{page-id}?fields=access_token`).
 # ---------------------------------------------------------------------------
 
-_page_token_cache: dict[str, str | None] = {"token": None}
+# 2026-09, multi-tenant: HAR BIR kompaniyaning O'Z Page'i uchun alohida
+# Page Access Token kerak -- keshni endi `page_id` bo'yicha (avval "har
+# doim bitta" deb faraz qilingan yagona "token" kaliti emas) saqlaymiz.
+_page_token_cache: dict[str, str] = {}
 
 
-def _get_page_access_token() -> str:
-    if _page_token_cache["token"]:
-        return _page_token_cache["token"]
-    if not PAGE_ID:
-        raise MetaAPIError({"message": "META_PAGE_ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
+def _get_page_access_token(page_id: str | None = None, user_access_token: str | None = None) -> str:
+    """`page_id`/`user_access_token` berilsa -- O'SHA (kompaniyaning o'zi
+    ulagan) Page/token uchun Page Access Token oladi. Ikkalasi ham
+    berilmasa -- eski global (ENV) `PAGE_ID`/`ACCESS_TOKEN` ishlatiladi
+    (orqaga moslik: CLI skript yoki hali company-parametrsiz chaqiruvlar)."""
+    resolved_page_id = page_id or PAGE_ID
+    resolved_user_token = user_access_token or ACCESS_TOKEN
+    if resolved_page_id in _page_token_cache:
+        return _page_token_cache[resolved_page_id]
+    if not resolved_page_id:
+        raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     r = requests.get(
-        f"{GRAPH_URL}/{PAGE_ID}",
-        params={"fields": "access_token", "access_token": ACCESS_TOKEN},
+        f"{GRAPH_URL}/{resolved_page_id}",
+        params={"fields": "access_token", "access_token": resolved_user_token},
         timeout=30,
     )
     data = r.json()
@@ -189,12 +208,12 @@ def _get_page_access_token() -> str:
     if not token:
         raise MetaAPIError({
             "message": (
-                "Page Access Token olinmadi -- META_ACCESS_TOKEN shu Page'ga "
+                "Page Access Token olinmadi -- ulangan token shu Page'ga "
                 "(Business Manager -> Sahifalar) administrator/muharrir sifatida "
                 "ulanganini tekshiring."
             )
         })
-    _page_token_cache["token"] = token
+    _page_token_cache[resolved_page_id] = token
     return token
 
 
@@ -345,9 +364,17 @@ def get_account_structure(active_only: bool = True, *, access_token: str | None 
     obyektlar chiqarib tashlanadi — bu ham hajmni sezilarli kamaytiradi."""
     status_filter = {"effective_status": ["ACTIVE", "PAUSED"]} if active_only else None
 
-    campaign_params = {"fields": "id,name,status,objective", "limit": 100}
-    adset_params = {"fields": "id,name,status,campaign_id,optimization_goal", "limit": 200}
-    ad_params = {"fields": "id,name,status,adset_id,campaign_id", "limit": 200}
+    # MUHIM (2026-09, foydalanuvchi shikoyati: "targeting'da o'chirilgan
+    # targetlar ko'rsatilyapti, pul sarfi noto'g'ri"): oldin faqat `status`
+    # (obyektning O'ZINING yoqilgan/o'chirilganligi) so'ralardi. Lekin Meta'da
+    # bitta ad o'zi "ACTIVE" bo'lsa ham, uning ustidagi adset yoki kampaniya
+    # PAUSED bo'lsa, u AMALDA reklama ko'rsatmaydi -- shuni bilish uchun
+    # `effective_status` kerak (butun ierarxiyani hisobga oladi: ACTIVE,
+    # PAUSED, CAMPAIGN_PAUSED, ADSET_PAUSED, ARCHIVED va h.k.). Endi ikkalasi
+    # ham so'raladi, `dashboard_data.py` effective_status'ni ustun qo'yadi.
+    campaign_params = {"fields": "id,name,status,effective_status,objective", "limit": 100}
+    adset_params = {"fields": "id,name,status,effective_status,campaign_id,optimization_goal", "limit": 200}
+    ad_params = {"fields": "id,name,status,effective_status,adset_id,campaign_id", "limit": 200}
     if status_filter:
         campaign_params["filtering"] = [{"field": "effective_status", "operator": "IN", "value": status_filter["effective_status"]}]
         adset_params["filtering"] = campaign_params["filtering"]
@@ -367,6 +394,101 @@ def get_account_structure(active_only: bool = True, *, access_token: str | None 
         adsets = adsets_future.result().get("data", [])
         ads = ads_future.result().get("data", [])
     return {"campaigns": campaigns, "adsets": adsets, "ads": ads}
+
+
+# ---------------------------------------------------------------------------
+# OAuth ("Facebook Login for Business") -- 2026-09, foydalanuvchi so'rovi:
+# "boshqa kompaniyalar BITTA TUGMA bilan o'z Facebook'iga kirib, reklama
+# hisobini ulasin" (avval FAQAT qo'lda token/ID kiritish bor edi).
+#
+# MUHIM CHEKLOV (foydalanuvchiga aniq aytilishi kerak): bu ILOVA darajasida
+# ishlaydi -- `META_APP_ID`/`META_APP_SECRET` Meta uchun Developers
+# (developers.facebook.com) saytida ro'yxatdan o'tkazilgan "Facebook Login
+# for Business" mahsulotli ilova bo'lishi kerak, OAuth Redirect URI'si
+# ushbu saytning `/connect-accounts/facebook/callback` manziliga
+# sozlangan bo'lishi kerak. Ilova "Development Mode"da bo'lsa, faqat O'SHA
+# ilovaga administrator/tester sifatida qo'shilgan Facebook hisoblar orqali
+# ulanish ishlaydi -- BOSHQA (haqiqiy, uchinchi tomon) kompaniyalar uchun
+# `ads_management`/`ads_read` kabi cheklangan ruxsatlar Meta App Review'dan
+# o'tishi shart (odatda bir necha kun-hafta). App Review'gacha bo'lgan
+# davrda tugma baribir ishlaydi -- lekin faqat Page/Instagram ulash uchun
+# (agar shu ruxsatlar review talab qilmasa) yoki ilovaga qo'shilgan test
+# foydalanuvchilar uchun reklama hisobi bilan ham.
+# ---------------------------------------------------------------------------
+
+def oauth_configured() -> bool:
+    return bool(META_APP_ID and META_APP_SECRET)
+
+
+def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> str:
+    """Foydalanuvchini Facebook'ning o'zining "ruxsat berish" oynasiga
+    yo'naltirish uchun URL. `include_ads_scope=True` bo'lsa (kompaniya
+    tarifi reklama hisobini ulashga ruxsat bersa), `ads_management`/
+    `ads_read` ham so'raladi -- bular Meta tomonidan cheklangan (App Review
+    talab qiladigan) ruxsatlar."""
+    from urllib.parse import urlencode
+
+    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "read_insights"]
+    if include_ads_scope:
+        scopes += ["ads_management", "ads_read", "business_management"]
+    params = {
+        "client_id": META_APP_ID,
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "scope": ",".join(scopes),
+        "response_type": "code",
+    }
+    return f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?{urlencode(params)}"
+
+
+def oauth_exchange_code(code: str, redirect_uri: str) -> str:
+    """OAuth `code`ni QISQA muddatli foydalanuvchi access token'iga
+    almashtiradi. `_get()` yordamchisi ATAYLAB ishlatilmaydi -- u har doim
+    `access_token` parametrini (global `ACCESS_TOKEN`) qo'shib yuboradi,
+    bu yerda esa client_id/client_secret autentifikatsiya qiladi."""
+    r = requests.get(f"{GRAPH_URL}/oauth/access_token", params={
+        "client_id": META_APP_ID, "client_secret": META_APP_SECRET,
+        "redirect_uri": redirect_uri, "code": code,
+    }, timeout=30)
+    data = r.json()
+    if "error" in data:
+        raise MetaAPIError(data["error"])
+    return data["access_token"]
+
+
+def oauth_exchange_long_lived(short_token: str) -> str:
+    """QISQA muddatli (~1-2 soatlik) tokenni ~60 kunlik UZOQ muddatli
+    tokenga almashtiradi -- shu token Company.meta_access_token'da
+    saqlanadi (xuddi qo'lda kiritilgan token kabi)."""
+    r = requests.get(f"{GRAPH_URL}/oauth/access_token", params={
+        "grant_type": "fb_exchange_token", "client_id": META_APP_ID,
+        "client_secret": META_APP_SECRET, "fb_exchange_token": short_token,
+    }, timeout=30)
+    data = r.json()
+    if "error" in data:
+        raise MetaAPIError(data["error"])
+    return data["access_token"]
+
+
+def oauth_list_pages(user_token: str) -> list[dict]:
+    """Foydalanuvchi administratori bo'lgan barcha Facebook Page'lar
+    ro'yxatini (va ularga ulangan Instagram Business akkauntni, bo'lsa)
+    qaytaradi."""
+    data = _get("me/accounts", {
+        "fields": "id,name,instagram_business_account{id,username}",
+        "limit": 200,
+    }, token=user_token)
+    return data.get("data", [])
+
+
+def oauth_list_ad_accounts(user_token: str) -> list[dict]:
+    """Foydalanuvchi kirishi bor barcha reklama hisoblari ro'yxatini
+    qaytaradi (`id` allaqachon "act_..." formatida keladi)."""
+    data = _get("me/adaccounts", {
+        "fields": "id,name,account_status,currency",
+        "limit": 200,
+    }, token=user_token)
+    return data.get("data", [])
 
 
 def get_object_status(object_id: str) -> dict:
@@ -739,23 +861,27 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
     return data.get("data", [])
 
 
-def get_instagram_business_account_id() -> str | None:
-    """META_PAGE_ID'ga ulangan Instagram Business akkaunt ID'sini qaytaradi
-    (agar ulanmagan bo'lsa -- None, bu holda smm_sync Instagram qismini
-    o'tkazib yuboradi, lekin Facebook qismi baribir ishlayveradi)."""
-    if not PAGE_ID:
+def get_instagram_business_account_id(*, page_id: str | None = None, access_token: str | None = None) -> str | None:
+    """`page_id`ga ulangan Instagram Business akkaunt ID'sini qaytaradi
+    (agar ulanmagan bo'lsa -- None). `page_id`/`access_token` berilmasa --
+    eski global (ENV) `PAGE_ID`/`ACCESS_TOKEN` (orqaga moslik). 2026-09,
+    multi-tenant: `smm_sync.py`/`ig_dm_sync.py` endi HAR BIR kompaniyaning
+    O'Z page_id/token'ini shu yerga uzatadi."""
+    resolved_page_id = page_id or PAGE_ID
+    if not resolved_page_id:
         return None
-    data = _get(PAGE_ID, {"fields": "instagram_business_account"}, token=_get_page_access_token())
+    data = _get(resolved_page_id, {"fields": "instagram_business_account"}, token=_get_page_access_token(page_id, access_token))
     ig = data.get("instagram_business_account")
     return ig.get("id") if ig else None
 
 
-def get_facebook_page_profile() -> dict:
+def get_facebook_page_profile(*, page_id: str | None = None, access_token: str | None = None) -> dict:
     """Sahifaning joriy obunachilar (fan_count) sonini qaytaradi."""
-    return _get(PAGE_ID, {"fields": "fan_count,name"}, token=_get_page_access_token())
+    resolved_page_id = page_id or PAGE_ID
+    return _get(resolved_page_id, {"fields": "fan_count,name"}, token=_get_page_access_token(page_id, access_token))
 
 
-def get_facebook_page_posts(limit: int = 25) -> list[dict]:
+def get_facebook_page_posts(limit: int = 25, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Sahifadagi so'nggi postlarni like/comment/share soni bilan birga
     qaytaradi. Qamrov/ko'rishlar (impressions) alohida `get_facebook_post_insights()`
     orqali so'raladi -- bitta so'rovga qo'shib yuborilsa, insights ruxsati
@@ -772,15 +898,16 @@ def get_facebook_page_posts(limit: int = 25) -> list[dict]:
         "likes.summary(true).limit(0),comments.summary(true).limit(0),shares,"
         "attachments{media_type,type}"
     )
-    data = _get(f"{PAGE_ID}/posts", {"fields": fields, "limit": limit}, token=_get_page_access_token())
+    resolved_page_id = page_id or PAGE_ID
+    data = _get(f"{resolved_page_id}/posts", {"fields": fields, "limit": limit}, token=_get_page_access_token(page_id, access_token))
     return data.get("data", [])
 
 
-def get_facebook_post_insights(post_id: str) -> dict:
+def get_facebook_post_insights(post_id: str, *, page_id: str | None = None, access_token: str | None = None) -> dict:
     """Bitta Facebook post uchun qamrov (impressions) va faollashgan
     foydalanuvchilar sonini qaytaradi -- {"post_impressions": N,
     "post_engaged_users": N} ko'rinishida (mavjud bo'lmasa qiymat None)."""
-    data = _get(f"{post_id}/insights", {"metric": "post_impressions,post_engaged_users"}, token=_get_page_access_token())
+    data = _get(f"{post_id}/insights", {"metric": "post_impressions,post_engaged_users"}, token=_get_page_access_token(page_id, access_token))
     out = {}
     for item in data.get("data", []):
         values = item.get("values") or []
@@ -788,12 +915,12 @@ def get_facebook_post_insights(post_id: str) -> dict:
     return out
 
 
-def get_instagram_profile(ig_user_id: str) -> dict:
+def get_instagram_profile(ig_user_id: str, *, page_id: str | None = None, access_token: str | None = None) -> dict:
     """Instagram Business akkauntining joriy obunachilar/post sonini qaytaradi."""
-    return _get(ig_user_id, {"fields": "followers_count,media_count,username"}, token=_get_page_access_token())
+    return _get(ig_user_id, {"fields": "followers_count,media_count,username"}, token=_get_page_access_token(page_id, access_token))
 
 
-def get_instagram_media(ig_user_id: str, limit: int = 25) -> list[dict]:
+def get_instagram_media(ig_user_id: str, limit: int = 25, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """So'nggi Instagram postlarini (like/comment soni bilan) qaytaradi.
     Har bir media'ning qamrovi (reach) alohida `get_instagram_media_insights()`
     orqali so'raladi (Meta buni asosiy `/media` so'rovida bermaydi)."""
@@ -812,11 +939,14 @@ def get_instagram_media(ig_user_id: str, limit: int = 25) -> list[dict]:
     # qo'llab-quvvatlaydi). Pastdagi `get_instagram_media_insights()` endi
     # to'g'ri `media_product_type`ga qarab ishlaydi.
     fields = "id,caption,timestamp,permalink,media_type,media_product_type,media_url,thumbnail_url,like_count,comments_count"
-    data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token())
+    data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token(page_id, access_token))
     return data.get("data", [])
 
 
-def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE", media_product_type: str | None = None) -> dict:
+def get_instagram_media_insights(
+    media_id: str, media_type: str = "IMAGE", media_product_type: str | None = None,
+    *, page_id: str | None = None, access_token: str | None = None,
+) -> dict:
     """Bitta Instagram post/media uchun qamrov (reach), ko'rishlar (views),
     saqlanganlar (saved), repost (shares) va postdan qo'shilgan yangi
     obunachilar (follows) sonini qaytaradi.
@@ -859,7 +989,7 @@ def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE", media
         metrics = "reach,shares,follows,total_interactions,views"
     else:  # FEED, "AD", yoki noma'lum/berilmagan -- eng keng tarqalgan holat
         metrics = "reach,saved,shares,follows,total_interactions,views"
-    data = _get(f"{media_id}/insights", {"metric": metrics}, token=_get_page_access_token())
+    data = _get(f"{media_id}/insights", {"metric": metrics}, token=_get_page_access_token(page_id, access_token))
     out = {}
     for item in data.get("data", []):
         values = item.get("values") or []
@@ -892,25 +1022,26 @@ def get_instagram_media_insights(media_id: str, media_type: str = "IMAGE", media
 # to'xtatmaydi).
 # ---------------------------------------------------------------------------
 
-def get_instagram_conversations(limit: int = 50) -> list[dict]:
+def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
     ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
     Ishtirokchilarning IGSID/username'i shu yerda keladi, lekin xabarlar
     matni EMAS -- ular alohida `get_instagram_conversation_messages()`
     orqali so'raladi (Meta shunday ikki bosqichli ishlaydi)."""
-    data = _get(f"{PAGE_ID}/conversations", {
+    resolved_page_id = page_id or PAGE_ID
+    data = _get(f"{resolved_page_id}/conversations", {
         "platform": "instagram",
         "fields": "id,updated_time,participants",
         "limit": limit,
-    }, token=_get_page_access_token())
+    }, token=_get_page_access_token(page_id, access_token))
     return data.get("data", [])
 
 
-def get_instagram_conversation_messages(conversation_id: str, limit: int = 40) -> list[dict]:
+def get_instagram_conversation_messages(conversation_id: str, limit: int = 40, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Bitta suhbatning so'nggi xabarlarini (eng yangisi birinchi) qaytaradi:
     har birida `id`, `message` (matn), `created_time`, `from` (yuboruvchi
     IGSID/ism) bor."""
     data = _get(conversation_id, {
         "fields": f"messages.limit({limit}){{id,message,created_time,from,to}}",
-    }, token=_get_page_access_token())
+    }, token=_get_page_access_token(page_id, access_token))
     return ((data.get("messages") or {}).get("data")) or []

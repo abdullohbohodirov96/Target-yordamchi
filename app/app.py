@@ -944,7 +944,144 @@ def connect_accounts():
             session.close()
         return redirect(url_for("connect_accounts"))
 
-    return render_template("connect_accounts.html", company=company, plan=plan_def)
+    return render_template("connect_accounts.html", company=company, plan=plan_def, fb_oauth_configured=meta_api.oauth_configured())
+
+
+def _normalize_oauth_page(p: dict) -> dict:
+    ig = (p.get("instagram_business_account") or {}) if isinstance(p.get("instagram_business_account"), dict) else {}
+    return {"id": p["id"], "name": p.get("name") or p["id"], "ig": ig.get("id")}
+
+
+def _normalize_oauth_account(a: dict) -> dict:
+    return {"id": a["id"], "name": a.get("name") or a["id"]}
+
+
+def _save_facebook_connection(token: str, page: dict, account: dict | None) -> None:
+    """`page`/`account` -- `_normalize_oauth_page()`/`_normalize_oauth_account()`
+    formatidagi dict. Xuddi qo'lda-token formasi yozadigan MAYDONLARNI
+    yozadi -- shu tufayli Target/SMM/Instagram DM sahifalari OAuth orqali
+    ulangan kompaniya uchun ham darhol ishlay boshlaydi."""
+    company = _current_company()
+    if company is None:
+        return
+    db_session = get_session()
+    try:
+        c = db_session.get(Company, company.id)
+        c.meta_access_token = token
+        c.meta_page_id = page["id"]
+        c.ig_business_id = page.get("ig")
+        if account:
+            c.meta_ad_account_id = account["id"]
+        db_session.commit()
+    finally:
+        db_session.close()
+
+
+# ---------------------------------------------------------------------------
+# Facebook OAuth ("bitta tugma bilan ulash") -- 2026-09, foydalanuvchi
+# so'rovi: "boshqa kompaniyalar bitta tugma bilan o'z Facebook'iga kirib,
+# reklama hisoblarini ulasin". `meta_api.py`dagi OAuth bo'limining katta
+# izohiga qarang -- bu FAQAT `META_APP_ID`/`META_APP_SECRET` Render'da
+# sozlangan bo'lsa ko'rinadi (`connect_accounts.html`da shart bilan
+# ko'rsatiladi); sozlanmagan bo'lsa eski qo'lda-token forma yagona yo'l
+# bo'lib qolaveradi -- hozirgi ishlayotgan integratsiya xavf ostida qolmaydi.
+# ---------------------------------------------------------------------------
+
+@app.route("/connect-accounts/facebook/start")
+@login_required
+@admin_required
+def connect_facebook_start():
+    if not meta_api.oauth_configured():
+        flash("Facebook orqali ulash hali sozlanmagan (server tomonida META_APP_ID/META_APP_SECRET yo'q).", "error")
+        return redirect(url_for("connect_accounts"))
+    company = _current_company()
+    plan_def = plans.get_plan(company.plan) if company else None
+    include_ads = bool(plan_def and plan_def.can_connect_meta_ads)
+
+    state = secrets.token_urlsafe(24)
+    flask_session["fb_oauth_state"] = state
+    flask_session["fb_oauth_include_ads"] = include_ads
+    redirect_uri = url_for("connect_facebook_callback", _external=True)
+    return redirect(meta_api.oauth_dialog_url(redirect_uri, state, include_ads_scope=include_ads))
+
+
+@app.route("/connect-accounts/facebook/callback")
+@login_required
+@admin_required
+def connect_facebook_callback():
+    error = request.args.get("error_description") or request.args.get("error")
+    if error:
+        flash(f"Facebook ulanishi bekor qilindi: {error}", "error")
+        return redirect(url_for("connect_accounts"))
+
+    expected_state = flask_session.pop("fb_oauth_state", None)
+    state = request.args.get("state")
+    if not state or not expected_state or state != expected_state:
+        flash("Xavfsizlik tekshiruvi mos kelmadi -- qaytadan urinib ko'ring.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    code = request.args.get("code")
+    if not code:
+        flash("Facebook kod qaytarmadi -- qaytadan urinib ko'ring.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    include_ads = flask_session.pop("fb_oauth_include_ads", False)
+    redirect_uri = url_for("connect_facebook_callback", _external=True)
+    try:
+        short_token = meta_api.oauth_exchange_code(code, redirect_uri)
+        long_token = meta_api.oauth_exchange_long_lived(short_token)
+        pages = [_normalize_oauth_page(p) for p in meta_api.oauth_list_pages(long_token)]
+        accounts = [_normalize_oauth_account(a) for a in meta_api.oauth_list_ad_accounts(long_token)] if include_ads else []
+    except meta_api.MetaAPIError as e:
+        logger.exception("Facebook OAuth: token/ro'yxat olishda xato")
+        flash(f"Facebook'dan ma'lumot olishda xatolik: {e}", "error")
+        return redirect(url_for("connect_accounts"))
+
+    if not pages:
+        flash("Facebook hisobingizda siz administrator bo'lgan sahifa topilmadi -- avval Facebook Page yarating (yoki unga administrator bo'ling).", "error")
+        return redirect(url_for("connect_accounts"))
+
+    if len(pages) == 1 and len(accounts) <= 1:
+        _save_facebook_connection(long_token, pages[0], accounts[0] if accounts else None)
+        flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
+        return redirect(url_for("connect_accounts"))
+
+    # Bir nechta sahifa/reklama hisobi topilsa -- qaysi birini ulashni
+    # so'raymiz. Token vaqtinchalik (tanlov yakunlanguncha) cookie-sessiyada
+    # saqlanadi -- admin darhol tanlab yakunlaydi, uzoq turmaydi.
+    flask_session["fb_oauth_token"] = long_token
+    flask_session["fb_oauth_pages"] = pages
+    flask_session["fb_oauth_accounts"] = accounts
+    return redirect(url_for("connect_facebook_choose"))
+
+
+@app.route("/connect-accounts/facebook/choose", methods=["GET", "POST"])
+@login_required
+@admin_required
+def connect_facebook_choose():
+    pages = flask_session.get("fb_oauth_pages")
+    accounts = flask_session.get("fb_oauth_accounts") or []
+    token = flask_session.get("fb_oauth_token")
+    if not pages or not token:
+        flash("Facebook ulanish jarayoni tugagan -- qaytadan boshlang.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    if request.method == "POST":
+        page_id = request.form.get("page_id")
+        account_id = request.form.get("ad_account_id") or None
+        chosen_page = next((p for p in pages if p["id"] == page_id), None)
+        if not chosen_page:
+            flash("Sahifa tanlanmadi.", "error")
+            return redirect(url_for("connect_facebook_choose"))
+        chosen_account = next((a for a in accounts if a["id"] == account_id), None) if account_id else None
+        _save_facebook_connection(token, chosen_page, chosen_account)
+        flask_session.pop("fb_oauth_token", None)
+        flask_session.pop("fb_oauth_pages", None)
+        flask_session.pop("fb_oauth_accounts", None)
+        flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
+        return redirect(url_for("connect_accounts"))
+
+    return render_template("connect_facebook_choose.html", pages=pages, accounts=accounts)
 
 
 # ---------------------------------------------------------------------------
@@ -1460,11 +1597,22 @@ def target_page():
 @module_required("analytics")
 def analytics_page():
     period = request.args.get("period", "last_30d")
-    try:
-        target_data = get_kpis(level="campaign", date_preset=period, active_only=True)
-    except Exception as e:
-        logger.exception("Analitika: target ma'lumotlarini olishda xato")
-        target_data = None
+    # MUHIM (2026-09, foydalanuvchi shikoyati bilan bir turdagi xato --
+    # "targeting ma'lumotlari boshqa loyihadan chiqib qolyapti"): bu yer
+    # HALI ham global/env Meta hisobidan foydalanardi, garchi target_page()
+    # va dashboard allaqachon o'z-kompaniya hisobiga o'tkazilgan bo'lsa ham.
+    # Endi shu yerda ham AYNAN o'sha qoidaga amal qilinadi -- kompaniyaning
+    # O'Z Meta hisobi ulanmagan bo'lsa, boshqa hisobning ma'lumoti EMAS,
+    # aniq "ulanmagan" holati ko'rsatiladi.
+    meta_token, meta_account = _company_meta_creds(_current_company())
+    if not (meta_token and meta_account):
+        target_data = {"not_connected": True, "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": "campaign"}
+    else:
+        try:
+            target_data = get_kpis(level="campaign", date_preset=period, active_only=True, access_token=meta_token, ad_account_id=meta_account)
+        except Exception as e:
+            logger.exception("Analitika: target ma'lumotlarini olishda xato")
+            target_data = None
 
     session = get_session()
     try:
@@ -3732,33 +3880,46 @@ def settings_hub():
 @login_required
 @module_required("target")
 def smm_report():
-    days = request.args.get("days", "30")
-    try:
-        days = max(1, min(90, int(days)))
-    except (TypeError, ValueError):
-        days = 30
+    # 2026-09, foydalanuvchi so'rovi: "bugun/shu hafta/o'tgan hafta/shu oy/
+    # o'tgan oy/shu yil bo'yicha ko'rish kerak" -- eski "so'nggi N kun"
+    # aylanma oyna o'rniga ANIQ taqvim davri (`?preset=`). `?days=N` hali
+    # ham qo'llab-quvvatlanadi ("Boshqa (so'nggi N kun)" maydoni orqali) --
+    # `preset` berilgan bo'lsa u USTUN turadi.
+    preset = request.args.get("preset")
+    if preset not in smm_analytics.PERIOD_PRESET_KEYS:
+        preset = None
+    days = None
+    if not preset:
+        days_raw = request.args.get("days")
+        if days_raw:
+            try:
+                days = max(1, min(365, int(days_raw)))
+            except (TypeError, ValueError):
+                days = None
+        if days is None:
+            preset = smm_analytics.DEFAULT_PRESET
 
     session = get_session()
     try:
-        report = smm_analytics.build_smm_report(session, days=days)
+        report = smm_analytics.build_smm_report(session, days=days, preset=preset)
     finally:
         session.close()
 
-    # MUHIM: `report` ichida ALLAQACHON "days" kaliti bor (`build_smm_report`
-    # o'zi qaytaradi) -- bu yerda YANA `days=days` deb alohida berish
-    # "got multiple values for keyword argument 'days'" TypeError'iga olib
-    # kelardi va sahifa HAR DOIM "Internal Server Error" bilan ochilmasdi
-    # (2026-08, foydalanuvchi topgan xato). Endi faqat `report`dagi bitta
-    # "days" ishlatiladi.
+    # MUHIM: `report` ichida ALLAQACHON "days"/"preset"/"period_label" kaliti
+    # bor (`build_smm_report` o'zi qaytaradi) -- bu yerda ularni YANA alohida
+    # berish "got multiple values for keyword argument" TypeError'iga olib
+    # kelardi (2026-08, foydalanuvchi topgan xato). Faqat `report`dagi
+    # qiymatlar ishlatiladi.
+    # 2026-09, multi-tenant: "ulangan/ulanmagan" va "sinxronizatsiya holati"
+    # endi JORIY kompaniyaning O'Z ulanishiga qaraydi -- avval bu yerda
+    # HAMISHA global (ENV) holat ko'rsatilardi, garchi ko'rib turgan
+    # kompaniya boshqa hisob ulagan (yoki umuman ulamagan) bo'lsa ham.
+    company = _current_company()
     return render_template(
         "smm.html",
-        configured=smm_sync.is_configured(),
-        sync_status=smm_sync.get_last_status(),
-        # 2026-08, foydalanuvchi so'rovi: "SMM hisobotida kun bo'yicha
-        # qarash ... 7-15-30-60-90 kunlar bo'lsin" -- standart sana-filtri
-        # (_date_picker.html) faqat 1/7/30/90 taklif qilardi, 15/60 yo'q
-        # edi. Endi shu sahifaga xos aniq 5 ta variant beriladi.
-        date_picker_presets=[(7, "7 kun"), (15, "15 kun"), (30, "30 kun"), (60, "60 kun"), (90, "90 kun")],
+        configured=smm_sync.is_configured(company),
+        sync_status=smm_sync.get_last_status(company.id if company else None),
+        smm_period_presets=smm_analytics.PERIOD_PRESETS,
         **report,
     )
 

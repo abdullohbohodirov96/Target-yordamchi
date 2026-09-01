@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Facebook hisobini tanlash — Replix{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Qaysi hisobni ulaymiz?</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi — shu kompaniya uchun qaysi birini ishlatishni tanlang.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width:560px">
+  <form method="post">
+    <div class="field">
+      <label>Facebook sahifa (Page)</label>
+      <select name="page_id" required>
+        {% for p in pages %}
+        <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} (Instagram ulangan){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% if accounts %}
+    <div class="field">
+      <label>Meta reklama hisobi (ixtiyoriy)</label>
+      <select name="ad_account_id">
+        <option value="">— tanlanmasin —</option>
+        {% for a in accounts %}
+        <option value="{{ a.id }}">{{ a.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="block">Ulash</button>
+  </form>
+</div>
+
+<p class="page-subtitle">
+  <a href="{{ url_for('connect_accounts') }}" class="text-blue">&larr; Bekor qilish</a>
+</p>
+{% endblock %}

@@ -7,18 +7,17 @@
     <h1>SMM hisobot</h1>
     <p class="page-subtitle" style="margin-bottom:0">Instagram va Facebook sahifasi bo'yicha obunachilar o'sishi, postlar statistikasi va umumiy faollik. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
-  {% include "_date_picker.html" %}
+  {% include "_smm_date_picker.html" %}
 </div>
 
 {% if not configured %}
 <div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
   <h2 class="text-bad">Meta ulanmagan</h2>
-  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu bo'lim ishlashi uchun Render'dagi environment variable'larga <code>META_ACCESS_TOKEN</code> va
-    <code>META_PAGE_ID</code> qo'shilishi kerak (Meta Ads uchun ishlatilayotgan bilan bir xil -- qo'shimcha
-    token shart emas). Instagram statistikasi uchun qo'shimcha ravishda Instagram Business akkaunt shu
-    Facebook sahifaga ulangan bo'lishi kerak (Meta Business Suite → Sozlamalar → Bog'langan hisoblar).
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:8px">
+    SMM statistikasi ko'rinishi uchun avval Facebook sahifangiz (va unga ulangan Instagram Business
+    akkauntingiz) ulanishi kerak.
   </p>
+  <a href="{{ url_for('connect_accounts') }}" class="btn">Akkauntni ulash</a>
 </div>
 {% endif %}
 
@@ -74,7 +73,7 @@
   <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:16px">
     <div class="kpi-card"><div class="kpi-label">Obunachilar</div><div class="kpi-value">{{ p.followers_count if p.followers_count is not none else '—' }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">O'sish ({{ days }} kun)</div>
+      <div class="kpi-label">O'sish ({{ period_label }})</div>
       <div class="kpi-value {{ 'good' if p.growth and p.growth > 0 else ('bad' if p.growth and p.growth < 0) }}">{{ '{:+d}'.format(p.growth) if p.growth is not none else '—' }}</div>
       {% if p.growth is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
     </div>
@@ -83,7 +82,7 @@
       <div class="kpi-value {{ 'good' if p.growth_month and p.growth_month > 0 else ('bad' if p.growth_month and p.growth_month < 0) }}">{{ '{:+d}'.format(p.growth_month) if p.growth_month is not none else '—' }}</div>
       {% if p.growth_month is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
     </div>
-    <div class="kpi-card"><div class="kpi-label">Postlar ({{ days }} kun)</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Postlar ({{ period_label }})</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
     <div class="kpi-card">
       <div class="kpi-label">Umumiy qamrov</div>
       <div class="kpi-value">{{ p.total_reach if p.total_reach is not none else '—' }}</div>

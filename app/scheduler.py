@@ -372,10 +372,14 @@ def job_call_cleanup() -> dict:
 def job_smm_sync() -> dict:
     """Instagram Business + Facebook Page uchun organik SMM statistikasini
     (obunachilar, postlar, qamrov) tortib oladi -- "SMM hisobot" sahifasi
-    (`/smm`) shu ma'lumotdan foydalanadi. META_ACCESS_TOKEN/META_PAGE_ID
-    sozlanmagan bo'lsa jim qaytadi (xato emas, ixtiyoriy integratsiya)."""
+    (`/smm`) shu ma'lumotdan foydalanadi. 2026-09, multi-tenant: endi
+    `meta_page_id`/`meta_access_token` ulagan HAR BIR kompaniya bo'yicha
+    aylanadi (`sync_all_companies()`) -- eski yagona-akkaunt `sync_once()`
+    o'rniga, shunda "bitta tugma bilan ulash" orqali qo'shilgan boshqa
+    kompaniyalarning ham /smm sahifasi haqiqiy ma'lumot bilan to'ladi.
+    Hech kim ulamagan bo'lsa jim qaytadi (xato emas, ixtiyoriy integratsiya)."""
     try:
-        return smm_sync.sync_once()
+        return smm_sync.sync_all_companies()
     except Exception as e:
         logger.exception("SMM sync xatosi")
         return {"error": str(e)}
@@ -389,29 +393,62 @@ def job_ig_dm_sync() -> dict:
     aniqlaydi (`orchestrator.enforce_cpl_hard_kill`/`job_cpl_hard_kill`
     bilan bir xil naqsh: biznes-mantiq `ig_dm_sync.py`da, Telegram
     yuborish shu yerda).
+
+    2026-09, multi-tenant (foydalanuvchi so'rovi: "boshqa kompaniyalar
+    ham Instagram ulasin, ularniki HAM ishlasin"): endi
+    `meta_page_id`/`meta_access_token` ulagan HAR BIR kompaniya bo'yicha
+    aylanadi (`sync_all_companies()`). MUHIM: har bir kompaniyaning
+    javobsiz-suhbat ogohlantirishi FAQAT o'sha kompaniyaning O'Z
+    `Company.telegram_group_id`siga yuboriladi -- platforma egasining
+    umumiy `_full_activity_targets()` guruhiga EMAS, chunki boshqa
+    kompaniyaning mijozi bilan yozishmasi (ism, xabar matni) begona
+    Telegram guruhiga chiqib ketishi mumkin emas. Kompaniya o'z guruhini
+    hali sozlamagan bo'lsa ogohlantirish shunchaki YUBORILMAYDI (boshqa
+    hech kimning guruhiga ham tushmaydi) -- bu ataylab shunday, boshqa
+    kompaniyaning ma'lumoti sizib chiqishidan ko'ra "ogohlantirish
+    yo'qolib qolishi" xavfsizroq.
     META_ACCESS_TOKEN/META_PAGE_ID sozlanmagan yoki Instagram Business
-    akkaunt ulanmagan bo'lsa jim qaytadi (xato emas, ixtiyoriy)."""
+    akkaunt ulanmagan kompaniyalar uchun jim o'tkazib yuboriladi (xato
+    emas, ixtiyoriy integratsiya)."""
     try:
-        result = ig_dm_sync.sync_once()
+        overall = ig_dm_sync.sync_all_companies()
     except Exception as e:
         logger.exception("Instagram DM sync xatosi")
         return {"error": str(e)}
 
-    overdue = result.get("overdue") or []
-    if overdue:
-        targets = _full_activity_targets()
+    for company_id, result in (overall.get("per_company") or {}).items():
+        overdue = result.get("overdue") or []
+        if not overdue:
+            continue
+
+        chat_id = None
+        session = db.get_session()
+        try:
+            with db.unscoped():
+                company = session.query(db.Company).get(company_id)
+            raw_group_id = getattr(company, "telegram_group_id", None) if company else None
+        finally:
+            session.close()
+        if raw_group_id:
+            try:
+                chat_id = int(raw_group_id)
+            except (TypeError, ValueError):
+                logger.warning("Company id=%s telegram_group_id noto'g'ri formatda: %r", company_id, raw_group_id)
+        if chat_id is None:
+            # Kompaniya o'z Telegram guruhini hali sozlamagan -- boshqa
+            # kompaniyaning guruhiga "sizib chiqmasligi" uchun bu yerda
+            # HECH QAYERGA yuborilmaydi (yuqoridagi izohga qarang).
+            continue
+
         lines = [f"\U0001F4E9 {len(overdue)} ta Instagram DM {ig_dm_sync.UNANSWERED_ALERT_MINUTES}+ daqiqadan beri javobsiz:\n"]
         for o in overdue:
             lines.append(f"- {o['customer']}: \"{o['preview']}\" ({o['since_minutes']} daqiqadan beri)")
         message = "\n".join(lines)
-        sent_ok = False
-        for cid in targets:
-            tg_result = _tg_send(cid, message)
-            sent_ok = sent_ok or tg_result.get("ok")
-        if sent_ok:
+        tg_result = _tg_send(chat_id, message)
+        if tg_result.get("ok"):
             for o in overdue:
                 ig_dm_sync.mark_alert_sent(o["conversation_id"])
-    return result
+    return overall
 
 
 def job_ig_dm_analysis() -> dict:

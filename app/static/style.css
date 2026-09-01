@@ -414,7 +414,16 @@ button, .btn {
 }
 button:hover, .btn:hover { background: #1E56C4; box-shadow: var(--shadow-md); transform: translateY(-1px); }
 button:active, .btn:active { transform: translateY(0); }
-button.block { width: 100%; }
+/* BUG FIX (2026-09, dizayn/CSS tekshiruvi): avval FAQAT `button.block` edi
+   -- ko'plab formalardagi <button class="block"> (masalan "Saqlash"/
+   "Qo'shish" tugmalari) uchun bu to'g'ri ishlagan, LEKIN "block" klassi
+   ba'zi joylarda <a class="btn block">/<span class="btn block">
+   ko'rinishida ham ishlatiladi (connect_accounts.html'dagi "Facebook orqali
+   ulash" tugmasi, target.html/analytics.html'dagi "Akkauntni ulash",
+   pricing.html) -- ular <button> EMAS, shuning uchun `width:100%` ULARGA
+   HECH QACHON qo'llanmagan edi. Endi ikkalasi ham qamrab olinadi (eski
+   <button class="block"> xatti-harakati o'zgarmaydi). */
+button.block, .btn.block { width: 100%; text-align: center; }
 button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none; box-shadow: var(--shadow-sm); }
 .btn-spinner {
   display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px;
