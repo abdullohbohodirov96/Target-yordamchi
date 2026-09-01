@@ -425,10 +425,21 @@ def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> 
     yo'naltirish uchun URL. `include_ads_scope=True` bo'lsa (kompaniya
     tarifi reklama hisobini ulashga ruxsat bersa), `ads_management`/
     `ads_read` ham so'raladi -- bular Meta tomonidan cheklangan (App Review
-    talab qiladigan) ruxsatlar."""
+    talab qiladigan) ruxsatlar.
+
+    BUG FIX (2026-09, foydalanuvchi sinovda "Invalid Scopes: read_insights"
+    xatosini oldi): `read_insights` -- Meta'ning ESKI, allaqachon Login
+    dialogidan OLIB TASHLANGAN ruxsati (yillar oldin `manage_pages`/
+    `publish_actions` bilan bir qatorda bekor qilingan, ba'zi eski
+    qo'llanmalarda hali ham noto'g'ri tilga olinadi) -- so'ralsa, Facebook
+    OAuth so'rovining O'ZINI butunlay rad etadi. Facebook sahifa statistikasi
+    uchun `pages_read_engagement` (allaqachon bor) yetarli; Instagram
+    statistikasi (`get_instagram_media_insights`) uchun esa haqiqatda
+    kerak bo'lgan `instagram_manage_insights` o'rniga xato ravishda
+    UMUMAN so'ralmagan edi -- endi shu to'g'irlandi."""
     from urllib.parse import urlencode
 
-    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "read_insights"]
+    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_manage_insights"]
     if include_ads_scope:
         scopes += ["ads_management", "ads_read", "business_management"]
     params = {
