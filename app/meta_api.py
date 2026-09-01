@@ -427,19 +427,34 @@ def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> 
     `ads_read` ham so'raladi -- bular Meta tomonidan cheklangan (App Review
     talab qiladigan) ruxsatlar.
 
-    BUG FIX (2026-09, foydalanuvchi sinovda "Invalid Scopes: read_insights"
-    xatosini oldi): `read_insights` -- Meta'ning ESKI, allaqachon Login
-    dialogidan OLIB TASHLANGAN ruxsati (yillar oldin `manage_pages`/
-    `publish_actions` bilan bir qatorda bekor qilingan, ba'zi eski
-    qo'llanmalarda hali ham noto'g'ri tilga olinadi) -- so'ralsa, Facebook
-    OAuth so'rovining O'ZINI butunlay rad etadi. Facebook sahifa statistikasi
-    uchun `pages_read_engagement` (allaqachon bor) yetarli; Instagram
-    statistikasi (`get_instagram_media_insights`) uchun esa haqiqatda
-    kerak bo'lgan `instagram_manage_insights` o'rniga xato ravishda
-    UMUMAN so'ralmagan edi -- endi shu to'g'irlandi."""
+    BUG FIX (2026-09, foydalanuvchi sinovda ketma-ket ikkita "Invalid
+    Scopes" xatosini oldi):
+      1. `read_insights` -- Meta'ning ESKI, allaqachon Login dialogidan
+         OLIB TASHLANGAN ruxsati (yillar oldin `manage_pages`/
+         `publish_actions` bilan bir qatorda bekor qilingan) -- so'ralsa,
+         Facebook OAuth so'rovining O'ZINI butunlay rad etadi. Olib
+         tashlandi.
+      2. O'rniga qo'shilgan `instagram_manage_insights` HAM jonli sinovda
+         "Invalid Scopes" bilan rad etildi -- sabab: bu ruxsat App
+         Dashboard'da "App Review -> Permissions and Features" bo'limida
+         ALOHIDA so'ralmaguncha (hatto faqat testerlar uchun ham),
+         Login dialogiga umuman qo'shib bo'lmaydi (`pages_show_list`/
+         `pages_read_engagement`/`instagram_basic`dan farqli -- ular
+         standart, avtomatik ruxsat etilgan). Shuning uchun HOZIRCHA
+         scope ro'yxatidan OLIB TASHLANDI -- asosiy "ulash" oqimi
+         (sahifa/Instagram/reklama hisobini bog'lash) bunga muhtoj emas.
+         Instagram statistikasi (`get_instagram_media_insights`) shu
+         ruxsatsiz ishlamaydi, lekin bu XATO EMAS -- `smm_sync.py`
+         allaqachon bunday holatni yumshoq tutadi (aniq xabar bilan
+         "olinmadi" deb ko'rsatadi, sinxronizatsiyani yiqitmaydi).
+         `instagram_manage_insights` kerak bo'lsa, foydalanuvchi App
+         Dashboard -> App Review -> Permissions and Features'da shu
+         ruxsatni so'rab (testerlar uchun review shart emas, faqat
+         "Request" bosish kifoya bo'lishi kerak), keyin bu ro'yxatga
+         qaytarib qo'shishi mumkin."""
     from urllib.parse import urlencode
 
-    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_manage_insights"]
+    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic"]
     if include_ads_scope:
         scopes += ["ads_management", "ads_read", "business_management"]
     params = {
