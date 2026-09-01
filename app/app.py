@@ -19,7 +19,7 @@ import threading
 import datetime as dt
 from collections import defaultdict
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort, g
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
@@ -32,6 +32,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import permissions
+import plans
 import db
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
@@ -65,6 +66,30 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
+
+# 2026-09, foydalanuvchi so'rovi ("Админу должно видеться всё, какие
+# компании создаются... если он нажал заплатить... сразу же активируя"):
+# platforma egasi (SIZ)ning shaxsiy Telegram chat ID'ingiz (yoki alohida
+# xabar kanali) -- shu yerga yangi ro'yxatdan o'tishlar VA "to'lov qildim"
+# bosilganda xabar boradi. BO'SH bo'lsa -- shunchaki jim o'tkazib
+# yuboriladi (xato bermaydi), chunki bu ixtiyoriy qulaylik, asosiy oqim
+# emas. Qiymatni Render muhit o'zgaruvchisida (`PLATFORM_ALERTS_CHAT_ID`)
+# o'rnating -- o'z Telegram ID'ingizni bilish uchun @userinfobot'ga
+# yozing. TO'LIQ AVTOMATIK FAOLLASHTIRISH (PayMe kartasiga tushgan pulni
+# Telegram kanalidan o'qib solishtirish) HALI YO'Q -- bu ALOHIDA, aniq
+# texnik ma'lumot (bot tokeni + kanal ID + PayMe xabar shabloni) kerak
+# bo'ladigan keyingi bosqich; hozircha bu xabar faqat SIZGA bildirishnoma
+# beradi, faollashtirishni hamon SIZ `/companies` orqali qo'lda qilasiz.
+PLATFORM_ALERTS_CHAT_ID = os.environ.get("PLATFORM_ALERTS_CHAT_ID", "").strip()
+
+
+def _notify_platform_owner(text: str) -> None:
+    if not PLATFORM_ALERTS_CHAT_ID or not TELEGRAM_TOKEN:
+        return
+    try:
+        tg_send(int(PLATFORM_ALERTS_CHAT_ID), text)
+    except Exception:
+        logger.exception("Platforma egasiga bildirishnoma yuborib bo'lmadi")
 
 # ---------------------------------------------------------------------------
 # Web AI-yordamchisi uchun qo'shimcha "ohang" ko'rsatmasi (2026-08, NotebookLM
@@ -204,10 +229,47 @@ def admin_required(fn):
     return wrapper
 
 
+def _current_company():
+    """Joriy so'rov davomida `current_user`ning kompaniyasini BIR MARTA
+    yuklaydi (natija `flask.g`da keshlanadi) -- `module_required`,
+    tarif-banner context processor va `/api/assistant` AI-gating'i bir xil
+    so'rov ichida takroriy DB so'rovi yubormasligi uchun.
+
+    2026-09, tariflar tizimi qo'shilganda kiritildi: har module_required
+    chaqiruvi endi kompaniyaning `plan`ini ham bilishi kerak (masalan
+    "sinov" tarifida "individual_check" yopiq), buni har safar alohida
+    session ochib so'ramaslik uchun shu keshlash kerak bo'ldi."""
+    if not current_user.is_authenticated:
+        return None
+    if not hasattr(g, "_company_cache"):
+        company_id = getattr(current_user, "company_id", None)
+        if company_id is None:
+            g._company_cache = None
+        else:
+            session = get_session()
+            try:
+                with db.unscoped():
+                    company = session.get(Company, company_id)
+                if company is not None:
+                    session.expunge(company)
+                g._company_cache = company
+            finally:
+                session.close()
+    return g._company_cache
+
+
 def module_required(key: str):
     """Berilgan bo'lim (masalan "dashboard", "analytics") uchun kirish
     huquqini tekshiradi -- ADMIN uchun har doim ochiq, MENEJER uchun faqat
-    admin `manager_edit` sahifasida shu bo'limni yoqib qo'ygan bo'lsa."""
+    admin `manager_edit` sahifasida shu bo'limni yoqib qo'ygan bo'lsa.
+
+    2026-09 (tariflar tizimi, foydalanuvchi so'rovi -- "чтобы по компаниям
+    тоже было заметно, в чём разница"): huquq ikki bosqichda tekshiriladi --
+    avval menejerning O'ZIGA (yuqoridagidek), keyin ENDI kompaniyaning
+    TARIFIGA ham (`plans.modules_for_plan`) -- masalan "sinov" tarifidagi
+    kompaniyada admin ham "Individual tekshirish"ni OCHOLMAYDI, chunki bu
+    bo'lim shu tarifda umuman yo'q (tarif farqi shunchaki ko'rinish emas,
+    HAQIQIY cheklov)."""
     from functools import wraps
 
     def decorator(fn):
@@ -216,6 +278,13 @@ def module_required(key: str):
             if not permissions.has_module(current_user, key):
                 flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
                 return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
+            company = _current_company()
+            if company is not None and key not in plans.modules_for_plan(company.plan):
+                flash(
+                    f"Bu bo'lim \"{plans.get_plan(company.plan).name}\" tarifingizda mavjud emas. "
+                    f"Ko'proq imkoniyat uchun tarifni yangilang.", "error",
+                )
+                return redirect(url_for("pricing"))
             return fn(*args, **kwargs)
 
         return wrapper
@@ -224,6 +293,8 @@ def module_required(key: str):
 
 
 app.jinja_env.globals["has_module"] = permissions.has_module
+app.jinja_env.globals["get_plan"] = plans.get_plan
+app.jinja_env.globals["current_year"] = lambda: dt.datetime.utcnow().year
 
 
 def _format_som(value) -> str:
@@ -526,6 +597,19 @@ def _web_chat_history_key() -> str:
 @app.route("/api/assistant", methods=["POST"])
 @login_required
 def api_assistant():
+    # 2026-09, tariflar tizimi ("без искусственного интеллекта и без
+    # каких-то трат" -- foydalanuvchining aniq so'rovi): bu vidjet HAR BIR
+    # so'rovda OpenAI xarajatini keltirib chiqaradi -- shuning uchun
+    # "sinov"/"boshlang'ich" tarifidagi kompaniyalar uchun server tomonda
+    # ham yopiladi (vidjetning o'zi ham shu tarifdagilarga `base.html`da
+    # ko'rsatilmaydi, lekin to'g'ridan-to'g'ri API chaqirilishining oldini
+    # olish uchun bu tekshiruv MUHIM).
+    company = _current_company()
+    if company is not None and not plans.ai_enabled_for_plan(company.plan):
+        return jsonify({
+            "reply": "AI-yordamchi sizning tarifingizda mavjud emas. "
+                     "\"Biznes\" yoki \"Ekspert\" tarifiga o'ting -- tafsilotlar /tariflar sahifasida.",
+        }), 403
     data = request.get_json(silent=True) or {}
     user_text = (data.get("message") or "").strip()
     if not user_text:
@@ -644,6 +728,247 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
+# Ochiq (o'z-o'zidan) ro'yxatdan o'tish -- 2026-09, foydalanuvchi so'rovi:
+# "чтобы люди смогли регистрироваться там... чтобы создавали компанию".
+# Ilgari kompaniya FAQAT platforma egasi tomonidan `/companies` orqali
+# (qo'lda) yaratilardi -- endi istalgan mehmon shu sahifadan o'zi yangi
+# kompaniya va o'ziga admin hisob ochishi mumkin.
+#
+# Tanlangan tarifga qarab (`plans.py`):
+#   - "sinov" -- darhol 14 kunlik BEPUL sinov bilan faollashadi.
+#   - pullik tarif (start/business/unlimited) -- darhol faollashadi, LEKIN
+#     to'lov hali kelmagani uchun atigi 3 kunlik "muhlat" (grace) beriladi
+#     -- shu muddat ichida admin `/tolov` sahifasidan to'lovni amalga
+#     oshirib, platforma egasi tasdiqlagach muddat uzayadi. (Foydalanuvchi
+#     bilan kelishilgan qaror: to'liq avtomatik to'lov integratsiyasi hali
+#     yo'q, PayMe/Click hozircha QO'LDA tekshiriladi -- xuddi `/companies`
+#     orqali qo'lda yaratilgan kompaniyalar kabi.)
+# ---------------------------------------------------------------------------
+_SIGNUP_GRACE_DAYS = 3
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    requested_plan = (request.args.get("plan") or request.form.get("plan") or "trial").strip()
+    if requested_plan not in plans.PLAN_ORDER:
+        requested_plan = "trial"
+
+    form_values = {
+        "company_name": "", "admin_username": "", "admin_full_name": "",
+        "email": "", "plan": requested_plan,
+    }
+
+    if request.method == "POST":
+        company_name = request.form.get("company_name", "").strip()
+        admin_username = request.form.get("admin_username", "").strip().lower()
+        admin_full_name = request.form.get("admin_full_name", "").strip()
+        email = request.form.get("email", "").strip().lower() or None
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        form_values.update({
+            "company_name": company_name, "admin_username": admin_username,
+            "admin_full_name": admin_full_name, "email": email or "", "plan": requested_plan,
+        })
+
+        session = get_session()
+        try:
+            error = None
+            if not company_name:
+                error = "Kompaniya nomini kiriting."
+            elif not admin_username or len(admin_username) < 3:
+                error = "Login kamida 3 belgidan iborat bo'lishi kerak."
+            elif not re.fullmatch(r"[a-z0-9_.]+", admin_username):
+                error = "Login faqat lotin harflari, raqam, \".\" va \"_\" belgilaridan iborat bo'lishi mumkin."
+            elif not password or len(password) < 6:
+                error = "Parol kamida 6 belgidan iborat bo'lishi kerak."
+            elif password != password2:
+                error = "Parollar mos kelmadi."
+            else:
+                # `Manager.username` ATAYLAB GLOBAL unique -- login formasi
+                # kompaniya tanlashni talab qilmasligi uchun (`_managers_view`
+                # bilan bir xil sabab).
+                with db.unscoped():
+                    username_taken = session.query(Manager).filter_by(username=admin_username).first() is not None
+                if username_taken:
+                    error = "Bu login allaqachon band. Boshqa login tanlang."
+                elif email and session.query(Company).filter_by(email=email).first():
+                    error = "Bu email allaqachon boshqa kompaniyada ro'yxatdan o'tgan."
+
+            if error:
+                flash(error, "error")
+            else:
+                plan_def = plans.get_plan(requested_plan)
+                now = dt.datetime.utcnow()
+                c = Company(
+                    name=company_name, email=email, plan=requested_plan,
+                    is_active=True, source="self_signup",
+                    paid_until=now + dt.timedelta(days=plan_def.period_days) if plan_def.period_days else now + dt.timedelta(days=_SIGNUP_GRACE_DAYS),
+                )
+                session.add(c)
+                session.commit()
+
+                admin = Manager(
+                    username=admin_username, role="admin", company_id=c.id,
+                    full_name=admin_full_name or company_name,
+                )
+                admin.set_password(password)
+                session.add(admin)
+                session.commit()
+                db.seed_default_funnel_stages_for_company(c.id)
+
+                _notify_platform_owner(
+                    f"🆕 Yangi kompaniya ro'yxatdan o'tdi: \"{company_name}\" "
+                    f"(tarif: {plan_def.name}, admin login: {admin_username})."
+                )
+                login_user(ManagerUser(admin))
+                if requested_plan == "trial":
+                    flash(f"Xush kelibsiz, {company_name}! 14 kunlik bepul sinov muddatingiz boshlandi.", "success")
+                else:
+                    flash(
+                        f"Xush kelibsiz, {company_name}! \"{plan_def.name}\" tarifi tanlandi -- "
+                        f"{_SIGNUP_GRACE_DAYS} kun ichida to'lovni yakunlang (\"To'lov\" sahifasida).",
+                        "success",
+                    )
+                return redirect(url_for("connect_accounts"))
+        finally:
+            session.close()
+
+    return render_template("signup.html", plans=plans.PLAN_LIST, form=form_values)
+
+
+# ---------------------------------------------------------------------------
+# Akkaunt ulash (onboarding) -- 2026-09, foydalanuvchi so'rovi: "он сам
+# должен подключить свои Instagram и Facebook". `Company.meta_access_token`/
+# `meta_ad_account_id`/`meta_page_id`/`ig_business_id` ustunlari ALLAQACHON
+# mavjud edi (2026-08 multi-tenant 1-bosqichda tayyorlab qo'yilgan), lekin
+# hech qanday sahifa ulardan foydalanmagan edi -- shu sahifa ularni birinchi
+# marta to'ldiradi.
+#
+# MUHIM/CHEKLOV (buni foydalanuvchiga aniq aytish kerak): bu FAQAT
+# ma'lumotlarni SAQLAYDI. `meta_api.py`/`orchestrator.py`/`dashboard_data.py`
+# hozircha BITTA GLOBAL Meta akkaunt (ENV o'zgaruvchilar) bilan ishlaydi --
+# ularni HAR SO'ROV/fon vazifada shu yerda saqlangan TO'G'RI kompaniyaning
+# tokenidan foydalanadigan qilib qayta ishlash (Stage 2'ning "eng katta va
+# eng xavfli qismi", `db.py`dagi `Company` docstring'iga qarang) ALOHIDA,
+# keyingi bosqichda qilinadi -- bu yerda ATAYLAB qo'lda token kiritish
+# (haqiqiy "Login with Facebook" OAuth emas) ishlatiladi, chunki OAuth uchun
+# Meta App Review kerak (haftalar davom etishi mumkin) va bu hozirgi
+# ishlayotgan yagona-akkaunt integratsiyasini xavf ostiga qo'ymasligi kerak.
+# ---------------------------------------------------------------------------
+@app.route("/connect-accounts", methods=["GET", "POST"])
+@login_required
+@admin_required
+def connect_accounts():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    plan_def = plans.get_plan(company.plan)
+
+    if request.method == "POST":
+        session = get_session()
+        try:
+            c = session.get(Company, company.id)
+            c.ig_business_id = request.form.get("ig_business_id", "").strip() or None
+            if plan_def.can_connect_meta_ads:
+                c.meta_page_id = request.form.get("meta_page_id", "").strip() or None
+                c.meta_ad_account_id = request.form.get("meta_ad_account_id", "").strip() or None
+                token = request.form.get("meta_access_token", "").strip()
+                if token:
+                    c.meta_access_token = token
+            session.commit()
+            flash("Akkaunt ma'lumotlari saqlandi.", "success")
+        finally:
+            session.close()
+        return redirect(url_for("connect_accounts"))
+
+    return render_template("connect_accounts.html", company=company, plan=plan_def)
+
+
+# ---------------------------------------------------------------------------
+# Tariflar (narxlar) -- ochiq (mehmon ham ko'ra oladi) taqqoslash sahifasi.
+# ---------------------------------------------------------------------------
+@app.route("/tariflar")
+def pricing():
+    current_plan_key = None
+    if current_user.is_authenticated:
+        company = _current_company()
+        current_plan_key = company.plan if company else None
+    return render_template("pricing.html", plans=plans.PLAN_LIST, current_plan_key=current_plan_key)
+
+
+# ---------------------------------------------------------------------------
+# To'lov -- 2026-09, foydalanuvchi so'rovi: PayMe orqali qo'lda tekshiriladi
+# (hozircha). Admin shu sahifada o'z YAGONA identifikatsiya kodini (to'lov
+# izohiga yozib yuborishi kerak bo'lgan) ko'radi -- platforma egasi PayMe
+# kartasiga tushgan pulni shu kod bilan solishtirib, `/companies/<id>/edit`
+# sahifasida "+30 kunga uzaytirish" tugmasini bosadi (bugungi kabi, faqat
+# endi mijozning O'ZI qaysi tarifni xohlashini shu sahifadan bildiradi).
+#
+# KEYINGI BOSQICH (foydalanuvchi so'radi, lekin HALI amalga oshirilmadi --
+# aniq texnik ma'lumot kerak): PayMe kartasiga kelgan to'lov bildirishnomasi
+# Telegram kanaliga forward qilinsa, bot shu kanalni o'qib, summani va
+# pastdagi kodni solishtirib, kompaniyani AVTOMATIK faollashtirishi mumkin.
+# Buning uchun kerak: (1) Telegram bot tokeni, (2) shu kanalning chat ID'si,
+# (3) PayMe bildirishnoma xabarining ANIQ matn shabloni (summani/kartani
+# undan ajratib olish uchun). Bular berilgach, alohida `payme_watcher.py`
+# fon vazifasi sifatida qo'shiladi.
+# ---------------------------------------------------------------------------
+@app.route("/tolov", methods=["GET", "POST"])
+@login_required
+@admin_required
+def payment_page():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        action = request.form.get("action", "choose_plan")
+        if action == "mark_paid":
+            # 2026-09, foydalanuvchi so'rovi ("если он нажал заплатить...
+            # активируя этот аккаунт"): TO'LIQ avtomatik faollashtirish
+            # hali yo'q (yuqoridagi izohga qarang) -- lekin bu tugma
+            # kamida platforma egasiga DARHOL Telegram orqali xabar
+            # beradi, shunda qo'lda tasdiqlash tezroq bo'ladi.
+            _notify_platform_owner(
+                f"💳 To'lov xabari: \"{company.name}\" (RPX-{company.id:04d}) "
+                f"\"{plans.get_plan(company.plan).name}\" tarifi uchun to'ladim dedi. "
+                f"Tekshirib, /companies orqali faollashtiring."
+            )
+            flash("Rahmat! Platforma egasiga xabar yuborildi -- to'lov tasdiqlangach, hisobingiz uzaytiriladi.", "success")
+            return redirect(url_for("payment_page"))
+
+        selected = request.form.get("plan", "").strip()
+        if selected in plans.PLAN_ORDER and selected != "trial":
+            session = get_session()
+            try:
+                c = session.get(Company, company.id)
+                c.plan = selected
+                session.commit()
+                flash(
+                    f"\"{plans.get_plan(selected).name}\" tarifi tanlandi. "
+                    f"Pastdagi ma'lumotlar bo'yicha to'lovni amalga oshiring -- "
+                    f"to'lov tushgach, hisobingiz tasdiqlanadi.", "success",
+                )
+            finally:
+                session.close()
+        return redirect(url_for("payment_page"))
+
+    payme_card = os.environ.get("PAYME_CARD_NUMBER", "").strip()
+    payme_card_holder = os.environ.get("PAYME_CARD_HOLDER", "").strip()
+    payment_ref = f"RPX-{company.id:04d}"
+    return render_template(
+        "payment.html", company=company, plan=plans.get_plan(company.plan),
+        plans=plans.PAID_PLAN_LIST, payme_card=payme_card,
+        payme_card_holder=payme_card_holder, payment_ref=payment_ref,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Obuna/to'lov tekshiruvi -- 2026-08, foydalanuvchi so'rovi: "hammasini
 # akkauntlani tarif asosida ishlidigan qilib ber tolovsiz ishlamasin".
 #
@@ -658,6 +983,11 @@ def logout():
 # ---------------------------------------------------------------------------
 _SUBSCRIPTION_EXEMPT_ENDPOINTS = {
     "login", "logout", "subscription_expired", "static",
+    # 2026-09, tariflar/signup tizimi: bular muddati tugagan (yoki hali
+    # to'lanmagan) kompaniya admin'i uchun ham OCHIQ turishi kerak --
+    # aks holda "sinov tugadi" holatiga tushgan mijoz hatto TO'LASH
+    # sahifasiga ham kira olmay qolardi.
+    "signup", "pricing", "payment_page", "connect_accounts",
     # Telegram server-server webhook -- login_required'siz, o'z ichki
     # tekshiruvi (CRON_SECRET yo'q, lekin Telegram tomonidan kelgan update)
     # bilan ishlaydi -- bu web-sessiya orqali kirilmaydigan endpoint.
@@ -714,9 +1044,27 @@ def subscription_expired():
 # ---------------------------------------------------------------------------
 
 @app.route("/")
-@login_required
-@module_required("dashboard")
 def dashboard():
+    # 2026-09, foydalanuvchi so'rovi ("надо сделать page для входа...
+    # деталь всё объяснение, продажной"): ilgari `/` ATAYLAB `login_required`
+    # bo'lgani uchun kirmagan mehmon darhol `/login`ga uloqtirilar edi --
+    # mahsulot haqida hech narsa bilmagan odam login formasidan boshqa
+    # hech narsa ko'rmasdi. Endi shu manzilning o'zi -- mehmon uchun ochiq
+    # marketing/landing sahifa, login qilgan foydalanuvchi uchun esa hamon
+    # xuddi avvalgidek dashboard. `login_required`/`module_required`
+    # dekoratorlari OLIB TASHLANDI (ular funksiya TANASI ishga tushishidan
+    # OLDIN qaytarib yuborar edi) -- ularning mantiqi pastda QO'LDA
+    # takrorlangan, faqat "aks holda" shoxobchasida landing ko'rsatiladi.
+    if not current_user.is_authenticated:
+        return render_template("landing.html", plans=plans.PLAN_LIST)
+    if not permissions.has_module(current_user, "dashboard"):
+        flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
+        return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
+    company = _current_company()
+    if company is not None and "dashboard" not in plans.modules_for_plan(company.plan):
+        flash(f"Bu bo'lim \"{plans.get_plan(company.plan).name}\" tarifingizda mavjud emas.", "error")
+        return redirect(url_for("pricing"))
+
     period = request.args.get("period", "this_month")
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
@@ -2090,6 +2438,37 @@ def _inject_followups_badge():
         session.close()
 
 
+@app.context_processor
+def _inject_plan_upsell():
+    """`base.html`ga joriy kompaniyaning tarif ma'lumotini beradi:
+      - `sidebar_plan`/`sidebar_plan_days_left`/`sidebar_plan_next` --
+        sidebar pastidagi "tarifni oshirish" taklifi uchun (2026-09,
+        foydalanuvchi so'rovi -- "Agent sam recommended tariff upgrade").
+        Bularni FAQAT admin ko'radi -- menejer tarifni o'zgartira olmaydi.
+      - `company_ai_enabled` -- ichki AI-yordamchi vidjetini ko'rsatish/
+        yashirish uchun, HAR BIR (admin VA menejer) autentifikatsiyalangan
+        foydalanuvchi uchun hisoblanadi, chunki AI-xarajat cheklovi
+        (foydalanuvchi so'rovi: "без искусственного интеллекта и без
+        каких-то трат") menejerlarga ham tegishli, faqat admin uchun emas."""
+    if not current_user.is_authenticated:
+        return {}
+    company = _current_company()
+    if company is None:
+        return {"company_ai_enabled": True}
+    plan_def = plans.get_plan(company.plan)
+    result = {"company_ai_enabled": plan_def.ai_enabled}
+    if current_user.role == "admin":
+        days_left = None
+        if company.paid_until:
+            days_left = max(0, (company.paid_until - dt.datetime.utcnow()).days)
+        result.update({
+            "sidebar_plan": plan_def,
+            "sidebar_plan_days_left": days_left,
+            "sidebar_plan_next": plans.next_plan_up(company.plan),
+        })
+    return result
+
+
 @app.route("/qayta-aloqa")
 @login_required
 @module_required("leads")
@@ -2176,8 +2555,23 @@ def _managers_view(target_company_id, *, back_url=None, page_title=None):
                     # (IntegrityError) chiqarardi.
                     with db.unscoped():
                         username_taken = session.query(Manager).filter_by(username=username).first() is not None
+                        target_company_row = session.get(Company, target_company_id)
+                    manager_limit = plans.manager_limit_for_plan(target_company_row.plan if target_company_row else None)
+                    current_manager_count = session.query(Manager).count()  # `scoped_as` blokida -- shu kompaniyaga filtrlangan
                     if username_taken:
                         flash("Bu username allaqachon mavjud.", "error")
+                    elif manager_limit is not None and current_manager_count >= manager_limit:
+                        # 2026-09, tariflar tizimi ("чтобы по компаниям тоже было
+                        # заметно, в чём разница" -- foydalanuvchi so'rovi): har
+                        # tarifda menejer/admin hisoblar soni CHEKLANGAN
+                        # (`plans.py`) -- bu HAQIQIY (marketing sahifasidagina
+                        # emas) farq. Limitga yetgan kompaniya yangi hisob
+                        # qo'shishdan oldin tarifni oshirishi kerak.
+                        plan_name = plans.get_plan(target_company_row.plan if target_company_row else None).name
+                        flash(
+                            f"\"{plan_name}\" tarifida {manager_limit} tagacha hisob ruxsat etilgan -- "
+                            f"limitga yetdingiz. Ko'proq hisob uchun tarifni yangilang.", "error",
+                        )
                     else:
                         m = Manager(username=username, full_name=full_name, role=role, company_id=target_company_id)
                         m.set_password(password)
@@ -2434,13 +2828,34 @@ def companies():
                     f"parol qayta ko'rsatilmaydi!",
                     "success",
                 )
-        all_companies = session.query(Company).order_by(Company.created_at).all()
+        all_companies = session.query(Company).order_by(Company.created_at.desc()).all()
         now = dt.datetime.utcnow()
-        rows = [{
-            "id": c.id, "name": c.name, "email": c.email, "plan": c.plan,
-            "is_active": c.is_active, "paid_until": c.paid_until,
-            "is_paid_up": c.is_paid_up(now), "created_at": c.created_at,
-        } for c in all_companies]
+        rows = []
+        for c in all_companies:
+            with db.scoped_as(c.id):
+                manager_count = session.query(Manager).count()
+                first_admin = (
+                    session.query(Manager)
+                    .filter_by(role="admin")
+                    .order_by(Manager.created_at.asc())
+                    .first()
+                )
+            rows.append({
+                "id": c.id, "name": c.name, "email": c.email, "plan": c.plan,
+                "plan_name": plans.get_plan(c.plan).name,
+                "is_active": c.is_active, "paid_until": c.paid_until,
+                "is_paid_up": c.is_paid_up(now), "created_at": c.created_at,
+                # 2026-09, foydalanuvchi so'rovi ("Админу должно видеться всё,
+                # какие компании создаются, кто зарегистрировался"): mijoz
+                # o'zi ochiq `/signup` orqali ro'yxatdan o'tganmi, yoki
+                # platforma egasi qo'lda yaratganmi -- va shu kompaniyaning
+                # BIRINCHI admin login'i (kim ro'yxatdan o'tgani darhol
+                # ko'rinishi uchun).
+                "source": c.source or "admin",
+                "manager_count": manager_count,
+                "first_admin_username": first_admin.username if first_admin else None,
+                "is_new": (now - c.created_at).total_seconds() < 86400 if c.created_at else False,
+            })
     finally:
         session.close()
     return render_template("companies.html", companies=rows, show_new_company_modal=show_new_company_modal)

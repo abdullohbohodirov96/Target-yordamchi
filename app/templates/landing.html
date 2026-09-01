@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Replix — Meta Ads + CRM bitta tizimda{% endblock %}
+{% block flash %}{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">{% endblock %}
+{% block content %}
+
+<nav class="lp-nav">
+  <div class="lp-nav-brand">
+    <img src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix">
+  </div>
+  <div class="lp-nav-links">
+    <a href="#imkoniyatlar">Imkoniyatlar</a>
+    <a href="#qanday-ishlaydi">Qanday ishlaydi</a>
+    <a href="{{ url_for('pricing') }}">Tariflar</a>
+  </div>
+  <div class="lp-nav-cta">
+    <a href="{{ url_for('login') }}" class="btn btn-ghost">Kirish</a>
+    <a href="{{ url_for('signup') }}" class="btn">Bepul boshlash</a>
+  </div>
+</nav>
+
+<header class="lp-hero">
+  <div>
+    <div class="lp-eyebrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
+      O'zbekiston bizneslari uchun CRM
+    </div>
+    <h1>Reklamadan kelgan lidni <span>sotuvgacha</span> bitta tizimda kuzating</h1>
+    <p class="lp-hero-sub">Replix — Instagram va Facebook reklamalaringizni, sotuv jamoangizni va mijozlar bazangizni bitta joyda birlashtiradi. Har bir so'm qayerga ketayotgani, har bir menejer qancha sotuv qilayotgani va har bir qo'ng'iroq qanchalik sifatli o'tgani — barchasi bir ekranda.</p>
+    <div class="lp-hero-actions">
+      <a href="{{ url_for('signup', plan='trial') }}" class="btn">14 kun bepul sinash</a>
+      <a href="{{ url_for('pricing') }}" class="btn btn-ghost">Tariflarni ko'rish</a>
+    </div>
+    <div class="lp-hero-note">
+      <span>✓ Karta shart emas</span>
+      <span>✓ 5 daqiqada ishga tushiriladi</span>
+      <span>✓ O'zbek tilida to'liq qo'llab-quvvatlash</span>
+    </div>
+  </div>
+
+  <div class="lp-mock" aria-hidden="true">
+    <div class="lp-mock-bar"><span></span><span></span><span></span></div>
+    <div class="lp-mock-kpis">
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">Yangi lidlar</div><div class="lp-mock-kpi-value">128</div></div>
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">CPL</div><div class="lp-mock-kpi-value">11 200 so'm</div></div>
+      <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">Sotuv</div><div class="lp-mock-kpi-value good">34</div></div>
+    </div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--good)"></span>Kamola A.</span><span class="lp-mock-tag" style="background:var(--good-bg);color:var(--good)">sotildi</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--blue)"></span>Diyorbek T.</span><span class="lp-mock-tag" style="background:var(--blue-bg);color:var(--blue)">malakali</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--warn)"></span>Sardor Q.</span><span class="lp-mock-tag" style="background:var(--warn-bg);color:var(--warn)">aloqa qilindi</span></div>
+    <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--text-faint)"></span>Nilufar S.</span><span class="lp-mock-tag" style="background:var(--border-light);color:var(--text-dim)">yangi</span></div>
+  </div>
+</header>
+
+<section class="lp-section lp-section-alt" id="imkoniyatlar">
+  <div class="lp-section-head">
+    <h2>Bitta tizim — butun sotuv jarayoni</h2>
+    <p>Alohida-alohida jadval va Excel fayllar o'rniga, reklamadan sotuvgacha bo'lgan yo'lning har bosqichi shu yerda.</p>
+  </div>
+  <div class="lp-features">
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path stroke-linecap="round" d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><path stroke-linecap="round" d="M16 4.3c1.5.5 2.5 1.9 2.5 3.5S17.5 10.8 16 11.3"/></svg></div>
+      <h3>Lidlar va CRM voronkasi</h3>
+      <p>Meta Lead Ads'dan avtomatik kelgan va qo'lda kiritilgan lidlarni bitta voronkada boshqaring: yangi → aloqa qilindi → malakali → sotildi.</p>
+    </div>
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg></div>
+      <h3>Target monitoring</h3>
+      <p>Xarajat, lead soni, CPL va konversiya — kampaniya kesimida, real vaqtda. Byudjet oshib ketishidan oldin ogohlantirish oladi.</p>
+    </div>
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5.5h16A1.5 1.5 0 0121.5 7v9a1.5 1.5 0 01-1.5 1.5H8l-4 3.5V7A1.5 1.5 0 015.99 5.5z"/></svg></div>
+      <h3>SMM hisobot va Instagram xabarlar</h3>
+      <p>Obunachilar dinamikasi, kontent samaradorligi va Instagram Direct xabarlar bitta joyda — javobsiz qolgan mijoz yo'qolmaydi.</p>
+    </div>
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2.5" y="14" width="4" height="6" rx="1.5"/><rect x="17.5" y="14" width="4" height="6" rx="1.5"/></svg></div>
+      <h3>AI qo'ng'iroq tahlili</h3>
+      <p>Har bir sotuv qo'ng'irog'i avtomatik tinglanadi va tahlil qilinadi — sifat balli, kamchiliklar va tavsiyalar bilan (Biznes va Ekspert tarifida).</p>
+    </div>
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" d="M4 20V10M11 20V4M18 20v-7"/></svg></div>
+      <h3>Menejerlar KPI va bonus</h3>
+      <p>Har oy avtomatik hisoblanadigan reja-bajarilish jadvali — kim qancha sotdi, bonus qancha bo'lishi bir qarashda ko'rinadi.</p>
+    </div>
+    <div class="lp-feature">
+      <div class="lp-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
+      <h3>Telegram bot orqali hisobot</h3>
+      <p>Kuniga bir marta, jamoangiz Telegram guruhiga avtomatik yuboriladigan holat hisoboti — hech kim CRM'ni ochmasa ham xabardor bo'ladi.</p>
+    </div>
+  </div>
+</section>
+
+<section class="lp-section" id="qanday-ishlaydi">
+  <div class="lp-section-head">
+    <h2>4 qadamda ishga tushiring</h2>
+    <p>Alohida sozlash mutaxassisi kerak emas — ro'yxatdan o'tgach, o'zingiz 5-10 daqiqada tayyorlaysiz.</p>
+  </div>
+  <div class="lp-steps">
+    <div class="lp-step"><h4>Ro'yxatdan o'ting</h4><p>Kompaniya nomi, login va parol — shu qadar, karta kerak emas.</p></div>
+    <div class="lp-step"><h4>Akkauntingizni ulang</h4><p>Instagram (va tarifga qarab Facebook reklama hisobingizni) ulang.</p></div>
+    <div class="lp-step"><h4>Jamoangizni qo'shing</h4><p>Menejerlaringizga login yarating, kimga qaysi bo'lim ochiq ekanini belgilang.</p></div>
+    <div class="lp-step"><h4>Natijalarni kuzating</h4><p>Lidlar, xarajat va sotuvlar real vaqtda bir ekranda to'planadi.</p></div>
+  </div>
+</section>
+
+<section class="lp-section lp-section-alt" id="tariflar">
+  <div class="lp-section-head">
+    <h2>Har bosqich uchun aniq tarif</h2>
+    <p>Sinovdan boshlang, jamoangiz o'sgani sayin tarifni oshiring — yashirin to'lov yo'q.</p>
+  </div>
+  <div class="lp-pricing">
+    {% for plan in plans %}
+    <div class="lp-plan{{ ' highlight' if plan.highlight }}">
+      {% if plan.highlight %}<div class="lp-plan-badge">Eng ommabop</div>{% endif %}
+      <div class="lp-plan-name">{{ plan.name }}</div>
+      <p class="lp-plan-tagline">{{ plan.tagline }}</p>
+      <div class="lp-plan-price">
+        {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>/oy</span>
+        {% else %}<b>Bepul</b>{% endif %}
+      </div>
+      <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} kun{% else %}har oy yangilanadi{% endif %}</div>
+      <div class="lp-plan-cta">
+        <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ 'Bepul boshlash' if plan.key == 'trial' else "Ro'yxatdan o'tish" }}</a>
+      </div>
+      <ul>
+        {% for f in plan.features %}
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ f }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="lp-cta-band">
+  <div class="lp-cta-card">
+    <h2>Reklama byudjetingiz oqilona ishlayaptimi?</h2>
+    <p>Bugun ro'yxatdan o'ting, Instagram akkauntingizni ulang va birinchi natijalarni bugunoq ko'ring.</p>
+    <a href="{{ url_for('signup', plan='trial') }}" class="btn" style="padding:13px 26px">14 kun bepul boshlash</a>
+  </div>
+</div>
+
+<footer class="lp-footer">
+  © {{ current_year() }} Replix. Barcha huquqlar himoyalangan. &middot; <a href="{{ url_for('login') }}" class="text-blue">Kirish</a>
+</footer>
+
+{% endblock %}

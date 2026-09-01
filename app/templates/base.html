@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
   {% macro navicon(name) %}{% if name == 'dashboard' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
@@ -130,6 +131,9 @@
       <a href="{{ url_for('managers') }}" class="nav-item {{ 'active' if request.endpoint in ('managers','manager_edit') }}" title="Menejerlar">
         <span class="nav-icon">{{ navicon('managers') }}</span><span class="nav-text">Menejerlar</span>
       </a>
+      <a href="{{ url_for('payment_page') }}" class="nav-item {{ 'active' if request.endpoint=='payment_page' }}" title="Tarif va to'lov">
+        <span class="nav-icon">{{ navicon('cart') }}</span><span class="nav-text">Tarif va to'lov</span>
+      </a>
       {% endif %}
       {% if current_user.role == 'admin' and current_user.company_id == 1 %}
       <a href="{{ url_for('companies') }}" class="nav-item {{ 'active' if request.endpoint in ('companies','company_edit') }}" title="Kompaniyalar">
@@ -140,6 +144,19 @@
     </nav>
 
     <div class="sidebar-bottom">
+      {% if sidebar_plan is defined and sidebar_plan_next %}
+      {# 2026-09, foydalanuvchi so'rovi ("Agent sam recommended tariff
+         upgrade" -- tizim doimiy, lekin bezovta qilmaydigan darajada
+         yuqoriroq tarifni tavsiya qilsin): faqat admin ko'radi, sidebar
+         "yig'ilgan" holatda ham matn CSS orqali yashiriladi (nav-text
+         klassi bilan bir xil qoidaga bo'ysunadi). #}
+      <a href="{{ url_for('pricing') }}" class="nav-item sidebar-upsell" title="Tarifni oshirish">
+        <span class="nav-text" style="display:block; width:100%">
+          <span style="display:block; font-weight:600; font-size:12.5px">{{ sidebar_plan.name }} tarif{% if sidebar_plan_days_left is not none %} · {{ sidebar_plan_days_left }} kun qoldi{% endif %}</span>
+          <span style="display:block; font-size:11.5px; opacity:0.85; margin-top:2px">{{ sidebar_plan_next.name }}ga o'ting &rarr;</span>
+        </span>
+      </a>
+      {% endif %}
       <div class="nav-item nav-user-info" title="{{ current_user.full_name or current_user.username }}">
         <span class="nav-icon nav-avatar">{{ (current_user.full_name or current_user.username or '?')[0]|upper }}</span><span class="nav-text">{{ current_user.full_name or current_user.username }}</span>
       </div>
@@ -254,7 +271,7 @@
   </script>
   {% endif %}
 
-  {% if current_user.is_authenticated %}
+  {% if current_user.is_authenticated and company_ai_enabled %}
   <div id="ai-assistant-root">
     <button id="ai-assistant-toggle" type="button" aria-label="AI yordamchi">
       <img src="{{ url_for('static', filename='brand/logo-icon-white.png') }}" alt="" width="30" height="30">

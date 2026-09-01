@@ -23,7 +23,7 @@
       </button>
     </div>
     <div class="modal-body">
-      <p class="page-subtitle" style="margin-top:-6px">Hozircha kompaniyalar qo'lda qo'shiladi (o'zi ro'yxatdan o'tish sahifasi keyingi bosqichda). Yangi kompaniya 14 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi -- kompaniya o'zi kirib, o'z menejerlarini qo'sha oladi.</p>
+      <p class="page-subtitle" style="margin-top:-6px">Mijozlar endi <a href="{{ url_for('signup') }}" class="text-blue" target="_blank">/signup</a> orqali o'zlari ham ro'yxatdan o'ta oladi -- bu forma faqat SIZ qo'lda (masalan telefon/uchrashuvda kelishilgan mijoz uchun) kompaniya ochib berish uchun. Yangi kompaniya 14 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi.</p>
       <form method="post">
         <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" required autofocus></div>
         <div class="field"><label>Email (ixtiyoriy)</label><input type="email" name="email" placeholder="mijoz@misol.uz"></div>
@@ -45,13 +45,18 @@
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Nomi</th><th>Email</th><th>Tarif</th><th>To'lov muddati</th><th>Holat</th><th>Qo'shilgan</th><th></th></tr></thead>
+    <thead><tr><th>Nomi</th><th>Manba</th><th>Admin login</th><th>Tarif</th><th>Menejerlar</th><th>To'lov muddati</th><th>Holat</th><th>Qo'shilgan</th><th></th></tr></thead>
     <tbody>
       {% for c in companies %}
       <tr class="rowlink" onclick="window.location='{{ url_for('company_edit', company_id=c.id) }}'">
-        <td>{{ c.name }}{% if c.id == 1 %} <span class="badge badge-color-blue">siz</span>{% endif %}</td>
-        <td class="text-dim">{{ c.email or '—' }}</td>
-        <td class="text-dim">{{ c.plan }}</td>
+        <td>{{ c.name }}{% if c.id == 1 %} <span class="badge badge-color-blue">siz</span>{% endif %}{% if c.is_new %} <span class="badge badge-color-good">yangi</span>{% endif %}</td>
+        <td class="text-dim">
+          {% if c.source == 'self_signup' %}<span class="badge badge-color-blue">o'zi ro'yxatdan o'tgan</span>
+          {% else %}<span class="badge badge-color-dim">admin qo'shgan</span>{% endif %}
+        </td>
+        <td class="text-dim">{{ c.first_admin_username or '—' }}</td>
+        <td class="text-dim">{{ c.plan_name }}</td>
+        <td class="text-dim">{{ c.manager_count }}</td>
         <td class="text-dim">{{ c.paid_until.strftime('%Y-%m-%d') if c.paid_until else 'cheklovsiz' }}</td>
         <td>
           {% if not c.is_active %}<span class="badge badge-color-dim">to'xtatilgan</span>
@@ -62,7 +67,7 @@
         <td class="num"><a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="7">Hali kompaniya yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="9">Hali kompaniya yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>

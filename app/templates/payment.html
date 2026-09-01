@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}To'lov — Replix{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>To'lov</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Joriy tarifingiz: <b>{{ plan.name }}</b>{% if company.paid_until %} — muddati: {{ company.paid_until.strftime('%Y-%m-%d') }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="card" style="max-width:480px; margin-bottom:20px">
+  <h2>1. Tarifni tanlang</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="choose_plan">
+    <div class="field">
+      <select name="plan">
+        {% for p in plans %}
+        <option value="{{ p.key }}" {{ 'selected' if plan.key == p.key }}>{{ p.name }} — ${{ p.price_usd }}/oy</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="block">Shu tarifni tanlash</button>
+  </form>
+</div>
+
+<div class="card" style="max-width:480px; margin-bottom:20px">
+  <h2>2. To'lovni amalga oshiring</h2>
+  {% if payme_card %}
+  <p class="page-subtitle" style="margin-top:-6px">PayMe orqali quyidagi kartaga <b>${{ plan.price_usd }}</b> (yoki so'mdagi ekvivalentini) o'tkazing:</p>
+  <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
+    <div><b>Karta:</b> {{ payme_card }}</div>
+    {% if payme_card_holder %}<div><b>Egasi:</b> {{ payme_card_holder }}</div>{% endif %}
+    <div><b>Izohga yozing:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
+  </div>
+  <p class="page-subtitle" style="margin-top:-6px">Izoh maydoniga aynan <span style="font-family:monospace">{{ payment_ref }}</span> kodini yozishni unutmang — shu kod orqali to'lovingiz tezroq aniqlanadi.</p>
+  {% else %}
+  <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="max-width:480px">
+  <h2>3. Tasdiqlash</h2>
+  <p class="page-subtitle" style="margin-top:-6px">To'lovni amalga oshirgach, quyidagi tugmani bosing — biz darhol xabardor bo'lamiz va tekshirib, hisobingizni uzaytiramiz (odatda bir necha soat ichida).</p>
+  <form method="post">
+    <input type="hidden" name="action" value="mark_paid">
+    <button type="submit" class="block">To'lov qildim</button>
+  </form>
+</div>
+{% endblock %}

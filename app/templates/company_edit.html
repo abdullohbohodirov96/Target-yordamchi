@@ -43,10 +43,10 @@
     <div class="field">
       <label>Tarif</label>
       <select name="plan">
-        <option value="trial" {{ 'selected' if c.plan == 'trial' }}>Sinov (trial)</option>
-        <option value="start" {{ 'selected' if c.plan == 'start' }}>Boshlang'ich</option>
-        <option value="business" {{ 'selected' if c.plan == 'business' }}>Biznes</option>
-        <option value="unlimited" {{ 'selected' if c.plan == 'unlimited' }}>Cheklovsiz</option>
+        <option value="trial" {{ 'selected' if c.plan == 'trial' }}>Sinov -- bepul</option>
+        <option value="start" {{ 'selected' if c.plan == 'start' }}>Boshlang'ich -- $50/oy</option>
+        <option value="business" {{ 'selected' if c.plan == 'business' }}>Biznes -- $120/oy</option>
+        <option value="unlimited" {{ 'selected' if c.plan == 'unlimited' }}>Ekspert -- $250/oy (cheklovsiz)</option>
       </select>
     </div>
     <div class="field">

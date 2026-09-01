@@ -54,7 +54,15 @@ def _login(client, username="owner_x", password="parol123"):
 
 
 def _create_company(client, name):
-    r = client.post("/companies", data={"name": name, "email": "", "plan": "trial"}, follow_redirects=True)
+    # 2026-09, tariflar tizimi qo'shilgandan keyin: "trial" tarifida
+    # menejer limiti 1 ta (`plans.py`) -- kompaniya avtomatik admin bilan
+    # boshlanganidan keyin bu limitga DARHOL yetadi. Shu testlar ikkinchi
+    # (qo'shimcha) menejer qo'shishni tekshirgani uchun, bu yerda limiti
+    # kengroq ("business") tarif ishlatiladi -- aks holda manager_limit
+    # tekshiruvi (to'g'ri ishlayotgan yangi xususiyat) bilan "chiqib-
+    # kirmasdan boshqa kompaniyaga menejer qo'shish" (bu faylning haqiqiy
+    # maqsadi) bir-biriga aralashib ketadi.
+    r = client.post("/companies", data={"name": name, "email": "", "plan": "business"}, follow_redirects=True)
     html = r.get_data(as_text=True)
     m = re.search(r'login: &#34;([^&"]+)&#34;, parol: &#34;([^&"]+)&#34;', html)
     return m.group(1), m.group(2)

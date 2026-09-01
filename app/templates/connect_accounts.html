@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Akkauntlarni ulash — Replix{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Akkauntlarni ulash</h1>
+    <p class="page-subtitle" style="margin-bottom:0">
+      "{{ plan.name }}" tarifingiz bo'yicha
+      {% if plan.can_connect_meta_ads %}Instagram va Facebook (Meta Ads) hisoblaringizni ulashingiz mumkin.
+      {% else %}faqat Instagram akkauntingizni ulashingiz mumkin — to'liq Meta Ads ulanishi yuqoriroq tariflarda ochiladi.{% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width:560px; margin-bottom:20px">
+  <h2>Nega bu kerak?</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Akkauntlaringiz ulangach, Target sahifasida reklama xarajati/lead natijalari, Instagram xabarlar va SMM hisobot avtomatik ko'rina boshlaydi. Hoziroq ulamasangiz ham bo'ladi — keyinroq shu sahifaga qaytib ulashingiz mumkin.</p>
+
+  <form method="post">
+    <div class="field">
+      <label>Instagram Business ID</label>
+      <input type="text" name="ig_business_id" value="{{ company.ig_business_id or '' }}" placeholder="masalan: 17841400000000000">
+    </div>
+
+    {% if plan.can_connect_meta_ads %}
+    <div class="field">
+      <label>Facebook sahifa (Page) ID</label>
+      <input type="text" name="meta_page_id" value="{{ company.meta_page_id or '' }}" placeholder="masalan: 100000000000000">
+    </div>
+    <div class="field">
+      <label>Meta reklama hisobi (Ad Account) ID</label>
+      <input type="text" name="meta_ad_account_id" value="{{ company.meta_ad_account_id or '' }}" placeholder="masalan: act_1234567890">
+    </div>
+    <div class="field">
+      <label>Meta Access Token</label>
+      <input type="password" name="meta_access_token" placeholder="{{ 'Saqlangan (o‘zgartirish uchun yangisini kiriting)' if company.meta_access_token else 'Business Suite -> System Users orqali olinadi' }}">
+    </div>
+    {% else %}
+    <div class="flash flash-error" style="margin-bottom:16px">
+      To'liq Meta Ads (Facebook reklama hisobi) ulash "Boshlang'ich" va undan yuqori tariflarda ochiladi.
+      <a href="{{ url_for('pricing') }}" class="text-blue">Tariflarni ko'rish</a>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="block">Saqlash</button>
+  </form>
+</div>
+
+<p class="page-subtitle">
+  <a href="{{ url_for('dashboard') }}" class="text-blue">Keyinroq ulayman, hoziroq boshqaruv paneliga o'tish &rarr;</a>
+</p>
+{% endblock %}

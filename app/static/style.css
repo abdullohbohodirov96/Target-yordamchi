@@ -704,3 +704,13 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   .tier-grid { grid-template-columns: repeat(2, 1fr); }
   .stat-box-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* 2026-09, tariflar tizimi -- sidebar pastidagi "tarifni oshirish" taklifi
+   (`base.html`, `_inject_plan_upsell`). Boshqa `.nav-item`lardan farqli
+   o'laroq ATAYLAB ko'zga tashlanadigan (ko'k fon) qilib ajratilgan --
+   bu oddiy navigatsiya havolasi emas, balki tavsiya/reklama bandi. */
+.sidebar-upsell {
+  background: var(--blue-bg); color: var(--blue); border-radius: 8px; margin: 4px 6px 8px;
+  padding: 9px 10px !important; height: auto !important;
+}
+.sidebar-upsell:hover { background: var(--blue); color: #fff; }

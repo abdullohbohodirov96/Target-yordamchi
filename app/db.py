@@ -75,8 +75,15 @@ class Company(Base):
     email = Column(String(255), unique=True, nullable=True)  # kompaniya egasining login email'i (ro'yxatdan o'tish -- keyingi bosqich)
     password_hash = Column(String(255), nullable=True)
     phone = Column(String(32), nullable=True)
-    plan = Column(String(32), nullable=False, default="trial")  # trial | start | business | unlimited -- aniq tariflar hali loyihalashtirilmagan (9-band)
+    plan = Column(String(32), nullable=False, default="trial")  # trial | start | business | unlimited -- aniq narx/huquqlar `plans.py`da (2026-09)
     is_active = Column(Boolean, nullable=False, default=True)
+    # 2026-09, foydalanuvchi so'rovi ("Админу должно видеться... кто
+    # зарегистрировался"): bu kompaniya QANDAY yaratilgani -- "admin"
+    # (platforma egasi `/companies` orqali qo'lda) yoki "self_signup"
+    # (mijozning o'zi ochiq `/signup` sahifasi orqali). Eski qatorlarda
+    # (migratsiyadan keyin) NULL qoladi -- kod buni "admin" deb o'qiydi,
+    # chunki `/signup` shu o'zgarishdan OLDIN mavjud bo'lmagan.
+    source = Column(String(16), nullable=True, default="admin")
 
     # Har bir kompaniyaning O'Z Meta (Facebook/Instagram) reklama hisobi --
     # keyingi bosqichda meta_api.py shu maydonlardan (hozirgi global ENV

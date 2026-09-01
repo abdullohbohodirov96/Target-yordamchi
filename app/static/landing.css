@@ -1,0 +1,179 @@
+/* landing.css — ochiq (mehmon) sahifalar: bosh sahifa, tariflar, ro'yxatdan
+   o'tish, to'lov, akkaunt ulash. `style.css`dagi rang/shrift o'zgaruvchilari
+   (--ink, --blue, --border va h.k.) shu yerda ham ishlatiladi -- ikkala
+   fayl bir xil sahifada birga yuklanadi. Bu fayl FAQAT shu sahifalarga
+   xos qo'shimcha klasslarni qo'shadi, `style.css`dagi hech narsani
+   qayta yozmaydi. */
+
+.lp-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 1180px; margin: 0 auto; padding: 20px 24px;
+}
+.lp-nav-brand { display: flex; align-items: center; gap: 10px; }
+.lp-nav-brand img { height: 30px; width: auto; display: block; }
+.lp-nav-links { display: flex; align-items: center; gap: 28px; }
+.lp-nav-links a { color: var(--text-dim); font-weight: 500; font-size: 14.5px; }
+.lp-nav-links a:hover { color: var(--ink); }
+.lp-nav-cta { display: flex; align-items: center; gap: 10px; }
+.lp-nav-cta .btn-ghost {
+  background: transparent; color: var(--ink); border: 1px solid var(--border);
+  box-shadow: none; padding: 9px 16px;
+}
+.lp-nav-cta .btn-ghost:hover { background: var(--border-light); box-shadow: none; transform: none; }
+
+.lp-hero {
+  max-width: 1180px; margin: 0 auto; padding: 56px 24px 40px;
+  display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center;
+}
+.lp-eyebrow {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+  color: var(--blue); background: var(--blue-bg); border-radius: 999px; padding: 6px 13px 6px 11px;
+  margin-bottom: 18px; letter-spacing: 0.01em;
+}
+.lp-eyebrow svg { width: 13px; height: 13px; }
+.lp-hero h1 {
+  font-size: 42px; line-height: 1.14; letter-spacing: -0.02em; font-weight: 700;
+  color: var(--ink); margin: 0 0 18px;
+}
+.lp-hero h1 span { color: var(--blue); }
+.lp-hero-sub { font-size: 16.5px; line-height: 1.6; color: var(--text-dim); margin: 0 0 28px; max-width: 480px; }
+.lp-hero-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+.lp-hero-actions .btn { padding: 13px 24px; font-size: 15px; }
+.lp-hero-note { font-size: 13px; color: var(--text-faint); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lp-hero-note b { color: var(--text); font-weight: 600; }
+.lp-hero-trust { display: flex; gap: 22px; margin-top: 26px; flex-wrap: wrap; }
+.lp-hero-trust div { font-size: 13px; color: var(--text-dim); }
+.lp-hero-trust b { display: block; font-size: 21px; color: var(--ink); font-weight: 700; letter-spacing: -0.01em; }
+
+/* "Mahsulot mokapi" -- haqiqiy skrinshot o'rniga kod bilan chizilgan,
+   dashboard'ning o'zidan olingan aniq elementlar (KPI kartalar, jadval
+   qatorlari) -- umumiy shablon emas, mahsulotning O'ZIGA xos ko'rinishi. */
+.lp-mock {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-md); padding: 18px; position: relative;
+}
+.lp-mock-bar { display: flex; gap: 6px; margin-bottom: 14px; }
+.lp-mock-bar span { width: 9px; height: 9px; border-radius: 50%; background: var(--border); }
+.lp-mock-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.lp-mock-kpi { background: var(--bg); border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 12px; }
+.lp-mock-kpi-label { font-size: 10.5px; color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.lp-mock-kpi-value { font-size: 18px; font-weight: 700; color: var(--ink); margin-top: 4px; letter-spacing: -0.01em; }
+.lp-mock-kpi-value.good { color: var(--good); }
+.lp-mock-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 10px; border-radius: 7px; font-size: 12.5px; color: var(--text);
+}
+.lp-mock-row:nth-child(odd) { background: var(--bg); }
+.lp-mock-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.lp-mock-name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.lp-mock-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+
+.lp-section { max-width: 1180px; margin: 0 auto; padding: 64px 24px; }
+.lp-section-alt { background: var(--card); border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); }
+.lp-section-head { max-width: 620px; margin: 0 auto 44px; text-align: center; }
+.lp-section-head h2 { font-size: 29px; letter-spacing: -0.015em; margin: 0 0 12px; color: var(--ink); }
+.lp-section-head p { font-size: 15.5px; color: var(--text-dim); margin: 0; line-height: 1.55; }
+
+.lp-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.lp-feature {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 24px; box-shadow: var(--shadow-sm);
+}
+.lp-feature-icon {
+  width: 38px; height: 38px; border-radius: 9px; background: var(--blue-bg); color: var(--blue);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+}
+.lp-feature-icon svg { width: 19px; height: 19px; }
+.lp-feature h3 { font-size: 15.5px; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+.lp-feature p { font-size: 13.8px; color: var(--text-dim); line-height: 1.55; margin: 0; }
+
+.lp-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; counter-reset: lp-step; }
+.lp-step { position: relative; padding-top: 6px; }
+.lp-step::before {
+  counter-increment: lp-step; content: counter(lp-step);
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff;
+  font-weight: 700; font-size: 13.5px; margin-bottom: 14px;
+}
+.lp-step h4 { font-size: 14.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
+.lp-step p { font-size: 13.3px; color: var(--text-dim); margin: 0; line-height: 1.5; }
+
+.lp-pricing { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
+.lp-plan {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 24px 20px; display: flex; flex-direction: column; box-shadow: var(--shadow-sm); position: relative;
+}
+.lp-plan.highlight { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--shadow-md); }
+.lp-plan-badge {
+  position: absolute; top: -11px; left: 20px; background: var(--blue); color: #fff;
+  font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 999px; letter-spacing: 0.01em;
+}
+.lp-plan-name { font-size: 15px; font-weight: 600; color: var(--ink); margin: 4px 0 4px; }
+.lp-plan-tagline { font-size: 12.5px; color: var(--text-dim); margin: 0 0 16px; min-height: 32px; line-height: 1.45; }
+.lp-plan-price { display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px; }
+.lp-plan-price b { font-size: 30px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
+.lp-plan-price span { font-size: 13px; color: var(--text-faint); }
+.lp-plan-period { font-size: 12px; color: var(--text-faint); margin-bottom: 18px; }
+.lp-plan-cta { margin-bottom: 18px; }
+.lp-plan ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; }
+.lp-plan li { font-size: 12.8px; color: var(--text); display: flex; gap: 8px; line-height: 1.4; }
+.lp-plan li svg { width: 15px; height: 15px; color: var(--good); flex-shrink: 0; margin-top: 1px; }
+
+.lp-cta-band {
+  max-width: 1180px; margin: 0 auto; padding: 0 24px 72px;
+}
+.lp-cta-card {
+  background: var(--ink); border-radius: 18px; padding: 48px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+.lp-cta-card h2 { color: #fff; font-size: 26px; margin: 0; letter-spacing: -0.015em; }
+.lp-cta-card p { color: #94A3B8; font-size: 14.5px; margin: 0; max-width: 460px; }
+
+.lp-footer {
+  border-top: 1px solid var(--border-light); padding: 28px 24px; text-align: center;
+  font-size: 12.5px; color: var(--text-faint);
+}
+
+@media (max-width: 900px) {
+  .lp-hero { grid-template-columns: 1fr; padding-top: 32px; }
+  .lp-features { grid-template-columns: 1fr; }
+  .lp-steps { grid-template-columns: 1fr 1fr; }
+  .lp-pricing { grid-template-columns: 1fr 1fr; }
+  .lp-hero h1 { font-size: 32px; }
+  .lp-nav-links { display: none; }
+}
+/* Ro'yxatdan o'tish / to'lov sahifalari uchun kengroq "kirish"-uslubidagi
+   karta (login.html'dagi `.login-card`ga o'xshash, lekin tarif tanlash
+   panjarasi sig'ishi uchun kengroq). */
+.auth-shell { display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px 60px; }
+.auth-card {
+  width: 100%; max-width: 620px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow-md); padding: 34px 36px;
+}
+.auth-brand { display: flex; align-items: center; margin-bottom: 4px; }
+.auth-brand img { height: 34px; }
+.auth-title { font-size: 21px; font-weight: 700; color: var(--ink); margin: 14px 0 4px; letter-spacing: -0.01em; }
+.auth-subtitle { color: var(--text-faint); font-size: 13.5px; margin: 0 0 22px; }
+.plan-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 22px; }
+.plan-pick { position: relative; }
+.plan-pick input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.plan-pick label {
+  display: block; border: 1.5px solid var(--border); border-radius: 9px; padding: 10px 8px;
+  text-align: center; cursor: pointer; transition: border-color .12s, background .12s;
+}
+.plan-pick input:checked + label { border-color: var(--blue); background: var(--blue-bg); }
+.plan-pick-name { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.plan-pick-price { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+.auth-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.auth-form-grid .field.full { grid-column: 1 / -1; }
+.auth-foot-link { text-align: center; font-size: 13px; color: var(--text-dim); margin-top: 16px; }
+
+@media (max-width: 560px) {
+  .lp-steps { grid-template-columns: 1fr; }
+  .lp-pricing { grid-template-columns: 1fr; }
+  .lp-mock-kpis { grid-template-columns: 1fr; }
+  .lp-cta-card { padding: 32px 22px; }
+  .plan-picker { grid-template-columns: 1fr 1fr; }
+  .auth-form-grid { grid-template-columns: 1fr; }
+  .auth-card { padding: 26px 20px; }
+}
