@@ -98,6 +98,11 @@
 .lp-step h4 { font-size: 14.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
 .lp-step p { font-size: 13.3px; color: var(--text-dim); margin: 0; line-height: 1.5; }
 
+/* 2026-09, SEO/AEO "Replix nima?" FAQ bloki uchun (izoh: templates/landing.html) */
+.lp-faq { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.lp-faq-item dt { font-size: 15.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
+.lp-faq-item dd { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin: 0; }
+
 .lp-pricing { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
 .lp-plan {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);

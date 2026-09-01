@@ -125,6 +125,27 @@ TRANSLATIONS = {
         "signup.submit": "Ro'yxatdan o'tish",
         "signup.have_account": "Allaqachon hisobingiz bormi?",
         "signup.login_link": "Kirish",
+
+        # 2026-09, SEO/AEO tuzatish: foydalanuvchi so'rovi ("ai qidirganda
+        # ideal chiqishi uchun kriteriyalar bo'yicha yoz"). Google AI
+        # Overview replix.uz so'rovida bog'liq bo'lmagan "Replix.ai" (AI matn
+        # yozish xizmati) va "Ecom Learn by Replix" (kurs platformasi) kabi
+        # BOSHQA "Replix" nomli mahsulotlarni aralashtirib yuborgani
+        # aniqlandi -- chunki "Replix" nomi internetda bir nechta turli
+        # kompaniyaga tegishli. Bu FAQ blok ANIQ, deklarativ javoblar bilan
+        # o'zini his qilib, o'sha boshqa mahsulotlardan farqlaydi (bu --
+        # "disambiguation" -- qidiruv/AI tizimlariga to'g'ri obyektni
+        # ko'rsatishning tan olingan usuli).
+        "faq.q1": "Replix nima?",
+        "faq.a1": "Replix — O'zbekiston bizneslari uchun CRM, Meta (Instagram/Facebook) reklama monitoring, SMM hisobot va AI qo'ng'iroq tahlili xizmatlarini BITTA platformada birlashtiruvchi tizim. U reklama byudjeti, lidlar va sotuv jamoasini reklamadan sotuvgacha bitta ekranda kuzatib borishga yordam beradi.",
+        "faq.q2": "Replix kimlar uchun mo'ljallangan?",
+        "faq.a2": "Instagram va Facebook orqali reklama beradigan O'zbekiston kichik va o'rta bizneslari uchun — sotuv jamoasi, reklama xarajati va mijozlar bazasini bitta joyda ko'rishni istaydiganlar uchun.",
+        "faq.q3": "Replix qancha turadi?",
+        "faq.a3": "Narxlar oyiga $50 dan boshlanadi. 14 kunlik bepul sinov mavjud, karta ma'lumoti talab qilinmaydi.",
+        "faq.q4": "Replix.uz \"Replix.ai\" yoki boshqa \"Replix\" nomli xizmatlar bilan bog'liqmi?",
+        "faq.a4": "Yo'q. Replix (replix.uz) — O'zbekistonda ishlab chiqilgan, CRM va Meta reklama monitoringga ixtisoslashgan alohida platforma. U matn/kontent yozuvchi AI-yordamchilar yoki boshqa davlatlardagi kurs platformalari bilan hech qanday aloqasi yo'q — bu butunlay boshqa kompaniya va mahsulot.",
+        "faq.q5": "Instagram yoki Facebook akkauntimni qanday ulayman?",
+        "faq.a5": "Ro'yxatdan o'tgach, \"Akkauntlarni ulash\" sahifasida bitta tugma orqali Facebook hisobingizga kirasiz — sahifa ID yoki token qo'lda kiritish shart emas.",
     },
     "ru": {
         "nav.features": "Возможности",
@@ -228,6 +249,17 @@ TRANSLATIONS = {
         "signup.submit": "Зарегистрироваться",
         "signup.have_account": "Уже есть аккаунт?",
         "signup.login_link": "Войти",
+
+        "faq.q1": "Что такое Replix?",
+        "faq.a1": "Replix — это система для бизнеса в Узбекистане, объединяющая CRM, мониторинг рекламы Meta (Instagram/Facebook), SMM-отчёты и AI-анализ звонков в ОДНОЙ платформе. Она помогает отслеживать рекламный бюджет, лиды и отдел продаж на одном экране — от рекламы до продажи.",
+        "faq.q2": "Для кого предназначен Replix?",
+        "faq.a2": "Для малого и среднего бизнеса в Узбекистане, который даёт рекламу в Instagram и Facebook — для тех, кто хочет видеть отдел продаж, расходы на рекламу и базу клиентов в одном месте.",
+        "faq.q3": "Сколько стоит Replix?",
+        "faq.a3": "Тарифы начинаются от $50 в месяц. Доступен 14-дневный бесплатный пробный период, банковская карта не требуется.",
+        "faq.q4": "Связан ли Replix.uz с «Replix.ai» или другими сервисами с названием «Replix»?",
+        "faq.a4": "Нет. Replix (replix.uz) — отдельная платформа, разработанная в Узбекистане и специализирующаяся на CRM и мониторинге рекламы Meta. Она никак не связана с AI-помощниками для написания текстов или курс-платформами с похожим названием в других странах — это совершенно другая компания и продукт.",
+        "faq.q5": "Как подключить аккаунт Instagram или Facebook?",
+        "faq.a5": "После регистрации на странице «Подключение аккаунтов» вы входите в свой аккаунт Facebook одной кнопкой — вводить ID страницы или токен вручную не нужно.",
     },
 }
 

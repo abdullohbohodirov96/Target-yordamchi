@@ -1,14 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Replix — Meta Ads + CRM bitta tizimda{% endblock %}
 {% block flash %}{% endblock %}
+{% set faq_pairs = [
+  ('faq.q1', 'faq.a1'), ('faq.q2', 'faq.a2'), ('faq.q3', 'faq.a3'),
+  ('faq.q4', 'faq.a4'), ('faq.q5', 'faq.a5')
+] %}
 {% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+{#
+  2026-09, SEO/AEO tuzatish (foydalanuvchi so'rovi: "ai qidirganda ideal
+  chiqishi uchun kriteriyalar bo'yicha yoz"). WebSearch orqali aniqlandi:
+  Google'ning "replix.uz" uchun AI Overview'i bog'liq bo'lmagan boshqa
+  "Replix" nomli mahsulotlarni (Replix.ai -- AI matn yozish xizmati;
+  "Ecom Learn by Replix" -- kurs platformasi) aralashtirib yuborgan, chunki
+  "Replix" nomi internetda bir nechta turli kompaniyaga tegishli. Bunga
+  qarshi eng samarali JSON-LD chorasi -- Organization/SoftwareApplication
+  sxemalarida ANIQ "description"/"disambiguatingDescription" maydonlarini
+  berish va pastdagi ko'rinadigan "Replix nima?" FAQ blokida ochiq-oydin
+  "biz BU emasmiz" deb yozish (qidiruv/AI tizimlariga obyektni to'g'ri
+  ajratib berishning standart usuli).
+#}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "Organization",
   "name": "Replix",
   "url": "{{ request.url_root }}",
-  "logo": "{{ url_for('static', filename='brand/logo-full.png', _external=True) }}"
+  "logo": "{{ url_for('static', filename='brand/logo-full.png', _external=True) }}",
+  "description": "Replix — O'zbekiston bizneslari uchun CRM, Meta (Instagram/Facebook) reklama monitoring, SMM hisobot va AI qo'ng'iroq tahlili xizmatlarini bitta platformada birlashtiruvchi SaaS tizim.",
+  "disambiguatingDescription": "Replix (replix.uz) O'zbekistonda ishlab chiqilgan CRM va reklama monitoring platformasi bo'lib, boshqa davlatlardagi \"Replix\" nomli AI matn yozish xizmatlari yoki kurs platformalari bilan hech qanday aloqasi yo'q.",
+  "areaServed": "UZ",
+  "knowsLanguage": ["uz", "ru"]
 }
 </script>
 <script type="application/ld+json">
@@ -16,8 +37,32 @@
   "@context": "https://schema.org",
   "@type": "WebSite",
   "name": "Replix",
-  "url": "{{ request.url_root }}"
+  "url": "{{ request.url_root }}",
+  "inLanguage": ["uz", "ru"]
 }
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Replix",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "url": "{{ request.url_root }}",
+  "description": "CRM, Meta (Instagram/Facebook) reklama monitoring, SMM hisobot va AI qo'ng'iroq tahlilini bitta obunada birlashtiruvchi O'zbekiston biznes tizimi.",
+  "offers": {
+    "@type": "Offer",
+    "price": "50",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+{% set faq_entities = [] %}
+{% for qk, ak in faq_pairs %}
+  {% set _ = faq_entities.append({"@type": "Question", "name": t(qk), "acceptedAnswer": {"@type": "Answer", "text": t(ak)}}) %}
+{% endfor %}
+<script type="application/ld+json">
+{{ {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": faq_entities} | tojson }}
 </script>
 {% endblock %}
 {% block content %}
@@ -141,6 +186,21 @@
       <div class="lp-compare-total win">{{ t('compare.total_replix') }}</div>
     </div>
   </div>
+</section>
+
+<section class="lp-section lp-section-alt" id="faq">
+  <div class="lp-section-head">
+    <h2>{{ t('faq.q1') }}</h2>
+    <p>{{ t('faq.a1') }}</p>
+  </div>
+  <dl class="lp-faq">
+    {% for qk, ak in faq_pairs %}
+    <div class="lp-faq-item">
+      <dt>{{ t(qk) }}</dt>
+      <dd>{{ t(ak) }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
 </section>
 
 <section class="lp-section" id="qanday-ishlaydi">

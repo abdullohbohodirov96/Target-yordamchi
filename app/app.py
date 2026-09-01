@@ -1117,7 +1117,18 @@ def robots_txt():
 @app.route("/sitemap.xml")
 def sitemap_xml():
     base = request.url_root.rstrip('/')
-    public_paths = ["/", "/tariflar", "/login", "/signup"]
+    # 2026-09, SEO/AEO tuzatish: foydalanuvchi so'rovi ("ai qidirganda ideal
+    # chiqishi uchun"). Ilgari /login va /signup shu yerda '/' bilan barobar
+    # "public" sahifa sifatida ko'rsatilardi -- bu ikkalasi mahsulot haqida
+    # HECH QANDAY tavsif bermaydi (faqat forma), lekin sitemap'da bosh sahifa
+    # bilan bir xil "og'irlikda" turgani va navigatsiyada har doim ko'rinib
+    # turishi Google'ga ularni ba'zan bosh sahifadan ko'ra "muhimroq" deb
+    # tanlashga turtki bergan bo'lishi mumkin edi (natijada qidiruvda "Kirish
+    # — Replix" sarlavhasi chiqqan, mahsulot tavsifisiz). Endi sitemap'da
+    # FAQAT haqiqiy tavsif beruvchi sahifalar qoladi; /login va /signup esa
+    # o'zlarida <meta name="robots" content="noindex"> orqali alohida
+    # chiqarib tashlanadi (pastga qarang: login.html/signup.html).
+    public_paths = ["/", "/tariflar"]
     entries = "\n".join(
         f"  <url><loc>{base}{p}</loc></url>" for p in public_paths
     )
