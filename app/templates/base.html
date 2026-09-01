@@ -70,7 +70,16 @@
       {% endif %}
 
       {% if has_module(current_user, 'analytics') or has_module(current_user, 'individual_check') %}
-      <div class="nav-group-label">Analitika</div>
+      {# 2026-09, foydalanuvchi so'rovi ("sidebardagi bo'limlar ismini
+         to'g'irlab chiq, xunu bo'p qolgan, aniq bo'lsin"): guruh nomi
+         ilgari xuddi shu guruh ichidagi "Analitika" havolasi bilan
+         AYNAN bir xil edi -- ikkalasi ham "Analitika" bo'lib, ustma-ust
+         ko'rinib chalkashtirib turardi ("Boshqaruv"/"Sozlamalar"dagi
+         xuddi shu muammo bilan bir xil). Bu guruh umumiy hisobot
+         (Analitika) VA qo'ng'iroq sifatini nazorat qilishni (Individual
+         tekshirish) birlashtiradi -- shu ma'noni aniq beruvchi
+         "Monitoring" nomi tanlandi. #}
+      <div class="nav-group-label">Monitoring</div>
       {% if has_module(current_user, 'analytics') %}
       <a href="{{ url_for('analytics_page') }}" class="nav-item {{ 'active' if request.endpoint=='analytics_page' }}" title="Analitika">
         <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">Analitika</span>
@@ -84,7 +93,12 @@
       {% endif %}
 
       {% if has_module(current_user, 'target') %}
-      <div class="nav-group-label">Target</div>
+      {# Xuddi shu sabab bilan ("Analitika" guruhidagi izohga qarang):
+         guruh nomi ilgari ichidagi "Target" havolasi bilan bir xil edi.
+         Bu guruh Meta Ads (Target) + SMM hisobot + Instagram xabarlarni
+         birlashtiradi -- "Marketing" umumiy va aniq nom sifatida
+         tanlandi. #}
+      <div class="nav-group-label">Marketing</div>
       <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint=='target_page' }}" title="Target">
         <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Target</span>
       </a>

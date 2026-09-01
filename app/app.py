@@ -2141,60 +2141,82 @@ def followups_list():
 # Admin: menejerlar
 # ---------------------------------------------------------------------------
 
-@app.route("/managers", methods=["GET", "POST"])
-@login_required
-@admin_required
-def managers():
+def _managers_view(target_company_id, *, back_url=None, page_title=None):
+    """`/managers` (o'z kompaniyasi) VA `/companies/<id>/managers` (platforma
+    egasi -- BOSHQA kompaniya) ikkalasi ham shu funksiyadan foydalanadi.
+    `db.scoped_as(target_company_id)` -- shu blok davomida tenant-filtrni
+    ANIQ shu kompaniyaga o'rnatadi, `current_user`ning o'z company_id'sidan
+    mustaqil (2026-09, foydalanuvchi so'rovi: "kompaniyaga kirganda manager
+    qo'shib bo'lmayapti" -- Manager tenant-filtrga tushgandan keyin,
+    platforma egasi `/managers`da ENDI faqat o'z kompaniyasini ko'rar edi,
+    boshqa (masalan yangi yaratilgan) kompaniyaga esa hech qanday yo'l
+    bilan menejer qo'sha olmas edi)."""
     session = get_session()
     show_new_manager_modal = False
     try:
-        if request.method == "POST":
-            show_new_manager_modal = True  # xato bo'lsa modal ochiq qoladi (pastda muvaffaqiyatda False bo'ladi)
-            username = request.form.get("username", "").strip()
-            password = request.form.get("password", "")
-            full_name = request.form.get("full_name", "").strip()
-            role = request.form.get("role", "manager")
-            phone_number = request.form.get("phone_number", "").strip()
-            moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
-            telegram_user_id = request.form.get("telegram_user_id", "").strip()
-            hire_date_str = request.form.get("hire_date", "").strip()
-            modules = request.form.getlist("allowed_modules")
-            if username and password:
-                # `username` HALI ATAYLAB GLOBAL unique (kompaniyalar
-                # oralig'ida ham) -- login formasi kompaniya tanlashni talab
-                # qilmasligi uchun. Shuning uchun "band" tekshiruvi ham
-                # GLOBAL bo'lishi kerak (`db.unscoped()`), aks holda boshqa
-                # kompaniyada band bo'lgan username bu yerda "bo'sh" ko'rinib,
-                # keyin DB darajasidagi unique cheklovga urilib xom xato
-                # (IntegrityError) chiqarardi.
-                with db.unscoped():
-                    username_taken = session.query(Manager).filter_by(username=username).first() is not None
-                if username_taken:
-                    flash("Bu username allaqachon mavjud.", "error")
-                else:
-                    m = Manager(username=username, full_name=full_name, role=role, company_id=current_user.company_id)
-                    m.set_password(password)
-                    m.phone_number = phone_number or None
-                    m.moizvonki_login = moizvonki_login or None
-                    m.telegram_user_id = telegram_user_id or None
-                    if hire_date_str:
-                        try:
-                            m.hire_date = dt.datetime.strptime(hire_date_str, "%Y-%m-%d")
-                        except ValueError:
-                            pass
-                    m.allowed_modules = permissions.serialize_allowed_modules(modules)
-                    session.add(m)
-                    session.commit()
-                    flash(f"{username} qo'shildi.", "success")
-                    show_new_manager_modal = False
-        all_managers = session.query(Manager).order_by(Manager.created_at).all()
-        rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date} for m in all_managers]
+        with db.scoped_as(target_company_id):
+            if request.method == "POST":
+                show_new_manager_modal = True  # xato bo'lsa modal ochiq qoladi (pastda muvaffaqiyatda False bo'ladi)
+                username = request.form.get("username", "").strip()
+                password = request.form.get("password", "")
+                full_name = request.form.get("full_name", "").strip()
+                role = request.form.get("role", "manager")
+                phone_number = request.form.get("phone_number", "").strip()
+                moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
+                telegram_user_id = request.form.get("telegram_user_id", "").strip()
+                hire_date_str = request.form.get("hire_date", "").strip()
+                modules = request.form.getlist("allowed_modules")
+                if username and password:
+                    # `username` HALI ATAYLAB GLOBAL unique (kompaniyalar
+                    # oralig'ida ham) -- login formasi kompaniya tanlashni talab
+                    # qilmasligi uchun. Shuning uchun "band" tekshiruvi ham
+                    # GLOBAL bo'lishi kerak (`db.unscoped()`), aks holda boshqa
+                    # kompaniyada band bo'lgan username bu yerda "bo'sh" ko'rinib,
+                    # keyin DB darajasidagi unique cheklovga urilib xom xato
+                    # (IntegrityError) chiqarardi.
+                    with db.unscoped():
+                        username_taken = session.query(Manager).filter_by(username=username).first() is not None
+                    if username_taken:
+                        flash("Bu username allaqachon mavjud.", "error")
+                    else:
+                        m = Manager(username=username, full_name=full_name, role=role, company_id=target_company_id)
+                        m.set_password(password)
+                        m.phone_number = phone_number or None
+                        m.moizvonki_login = moizvonki_login or None
+                        m.telegram_user_id = telegram_user_id or None
+                        if hire_date_str:
+                            try:
+                                m.hire_date = dt.datetime.strptime(hire_date_str, "%Y-%m-%d")
+                            except ValueError:
+                                pass
+                        m.allowed_modules = permissions.serialize_allowed_modules(modules)
+                        session.add(m)
+                        session.commit()
+                        flash(f"{username} qo'shildi.", "success")
+                        show_new_manager_modal = False
+            all_managers = session.query(Manager).order_by(Manager.created_at).all()
+            rows = [{"id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date} for m in all_managers]
     finally:
         session.close()
     return render_template(
         "managers.html", managers=rows, modules=permissions.MODULES,
         default_modules=permissions.DEFAULT_MANAGER_MODULES, show_new_manager_modal=show_new_manager_modal,
+        back_url=back_url, page_title=page_title,
     )
+
+
+@app.route("/managers", methods=["GET", "POST"])
+@login_required
+@admin_required
+def managers():
+    return _managers_view(current_user.company_id)
+
+
+# MUHIM: `company_managers()`ning tanasi shu yerda EMAS -- u
+# `platform_owner_required` ta'riflangandan KEYIN, pastda ("Kompaniyalar"
+# bo'limi yonida) joylashtirilgan, chunki dekoratorlar MODUL YUKLANGANDA
+# (import vaqtida) chaqiriladi, `platform_owner_required` esa hali shu
+# nuqtada ta'riflanmagan bo'lardi (NameError).
 
 
 @app.route("/managers/<int:manager_id>/edit", methods=["GET", "POST"])
@@ -2203,80 +2225,109 @@ def managers():
 def manager_edit(manager_id):
     session = get_session()
     try:
-        m = session.get(Manager, manager_id)
+        # 2026-09, foydalanuvchi so'rovi ("kompaniyaga kirganda manager
+        # qo'shib bo'lmayapti"): platforma egasi endi `/companies/<id>/managers`
+        # orqali BOSHQA kompaniyaning menejerini ham qo'sha oladi -- shuning
+        # uchun bu yerda ham uni TAHRIRLASH imkoni bo'lishi kerak, garchi u
+        # egasining O'Z kompaniyasida bo'lmasa ham. Avval GLOBAL (unscoped)
+        # qidiramiz -- topilsa, QOLGAN butun view o'sha menejerning O'Z
+        # kompaniyasi konteksti bilan ishlaydi (db.scoped_as).
+        with db.unscoped():
+            m = session.get(Manager, manager_id)
         if not m:
             flash("Menejer topilmadi.", "error")
             return redirect(url_for("managers"))
 
-        if request.method == "POST":
-            new_username = request.form.get("username", "").strip()
-            new_full_name = request.form.get("full_name", "").strip()
-            new_role = request.form.get("role", "manager")
-            new_password = request.form.get("password", "")
-            new_phone = request.form.get("phone_number", "").strip()
-            new_moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
-            new_telegram_user_id = request.form.get("telegram_user_id", "").strip()
-            new_hire_date_str = request.form.get("hire_date", "").strip()
-            new_modules = request.form.getlist("allowed_modules")
-            is_active = request.form.get("is_active") == "on"
+        same_company = m.company_id == getattr(current_user, "company_id", None)
+        if not same_company and not _is_platform_owner():
+            # Oddiy (platforma egasi bo'lmagan) admin boshqa kompaniyaning
+            # menejerini tahrirlay olmasligi kerak.
+            flash("Menejer topilmadi.", "error")
+            return redirect(url_for("managers"))
+        redirect_target = (
+            url_for("managers") if same_company else url_for("company_managers", company_id=m.company_id)
+        )
 
-            # `username` global unique -- shuning uchun "band" tekshiruvi ham
-            # `db.unscoped()` bilan GLOBAL bo'lishi kerak (managers() dagi
-            # izohga qarang).
-            with db.unscoped():
-                username_conflict = session.query(Manager).filter(
-                    Manager.username == new_username, Manager.id != m.id
-                ).first() is not None
-
-            if not new_username:
-                flash("Username bo'sh bo'lishi mumkin emas.", "error")
-            elif username_conflict:
-                flash("Bu username boshqa hisobda band.", "error")
-            else:
-                # O'zining yagona admin hisobini nofaol qilib qo'yishning oldini
-                # olamiz -- aks holda hech kim tizimga kira olmay qoladigan
-                # holatga tushib qolishi mumkin.
-                if not is_active and m.role == "admin":
-                    other_active_admins = session.query(Manager).filter(
-                        Manager.role == "admin", Manager.is_active == True, Manager.id != m.id  # noqa: E712
-                    ).count()
-                    if other_active_admins == 0:
-                        flash("Bu yagona faol admin -- uni nofaol qilib bo'lmaydi.", "error")
-                        return render_template("manager_edit.html", m={
-                            "id": m.id, "username": m.username, "full_name": m.full_name,
-                            "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
-                            "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
-                            "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
-                        }, modules=permissions.MODULES)
-
-                m.username = new_username
-                m.full_name = new_full_name or None
-                m.role = new_role
-                m.is_active = is_active
-                m.phone_number = new_phone or None
-                m.moizvonki_login = new_moizvonki_login or None
-                m.telegram_user_id = new_telegram_user_id or None
-                if new_hire_date_str:
-                    try:
-                        m.hire_date = dt.datetime.strptime(new_hire_date_str, "%Y-%m-%d")
-                    except ValueError:
-                        pass
-                else:
-                    m.hire_date = None
-                m.allowed_modules = permissions.serialize_allowed_modules(new_modules)
-                if new_password:
-                    m.set_password(new_password)
-                session.commit()
-                flash(f"{new_username} yangilandi.", "success")
-                return redirect(url_for("managers"))
-
-        m_view = {
-            "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
-            "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
-            "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
-        }
+        # `db.scoped_as(m.company_id)` -- oddiy holatda bu allaqachon joriy
+        # foydalanuvchining o'z kompaniyasi bilan bir xil (zararsiz), lekin
+        # platforma egasi BOSHQA kompaniyaning menejerini tahrirlayotganda
+        # aynan shu menejerning O'Z kompaniyasi konteksti bilan ishlash
+        # kerak (masalan "yagona faol admin" tekshiruvi shu kompaniya
+        # doirasida bo'lishi kerak, egasining o'zi doirasida emas).
+        with db.scoped_as(m.company_id):
+            return _manager_edit_body(session, m, redirect_target)
     finally:
         session.close()
+
+
+def _manager_edit_body(session, m, redirect_target):
+    if request.method == "POST":
+        new_username = request.form.get("username", "").strip()
+        new_full_name = request.form.get("full_name", "").strip()
+        new_role = request.form.get("role", "manager")
+        new_password = request.form.get("password", "")
+        new_phone = request.form.get("phone_number", "").strip()
+        new_moizvonki_login = request.form.get("moizvonki_login", "").strip().lower()
+        new_telegram_user_id = request.form.get("telegram_user_id", "").strip()
+        new_hire_date_str = request.form.get("hire_date", "").strip()
+        new_modules = request.form.getlist("allowed_modules")
+        is_active = request.form.get("is_active") == "on"
+
+        # `username` global unique -- shuning uchun "band" tekshiruvi ham
+        # `db.unscoped()` bilan GLOBAL bo'lishi kerak (managers() dagi
+        # izohga qarang).
+        with db.unscoped():
+            username_conflict = session.query(Manager).filter(
+                Manager.username == new_username, Manager.id != m.id
+            ).first() is not None
+
+        if not new_username:
+            flash("Username bo'sh bo'lishi mumkin emas.", "error")
+        elif username_conflict:
+            flash("Bu username boshqa hisobda band.", "error")
+        else:
+            # O'zining yagona admin hisobini nofaol qilib qo'yishning oldini
+            # olamiz -- aks holda hech kim tizimga kira olmay qoladigan
+            # holatga tushib qolishi mumkin.
+            if not is_active and m.role == "admin":
+                other_active_admins = session.query(Manager).filter(
+                    Manager.role == "admin", Manager.is_active == True, Manager.id != m.id  # noqa: E712
+                ).count()
+                if other_active_admins == 0:
+                    flash("Bu yagona faol admin -- uni nofaol qilib bo'lmaydi.", "error")
+                    return render_template("manager_edit.html", m={
+                        "id": m.id, "username": m.username, "full_name": m.full_name,
+                        "role": m.role, "is_active": m.is_active, "phone_number": m.phone_number,
+                        "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
+                        "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
+                    }, modules=permissions.MODULES)
+
+            m.username = new_username
+            m.full_name = new_full_name or None
+            m.role = new_role
+            m.is_active = is_active
+            m.phone_number = new_phone or None
+            m.moizvonki_login = new_moizvonki_login or None
+            m.telegram_user_id = new_telegram_user_id or None
+            if new_hire_date_str:
+                try:
+                    m.hire_date = dt.datetime.strptime(new_hire_date_str, "%Y-%m-%d")
+                except ValueError:
+                    pass
+            else:
+                m.hire_date = None
+            m.allowed_modules = permissions.serialize_allowed_modules(new_modules)
+            if new_password:
+                m.set_password(new_password)
+            session.commit()
+            flash(f"{new_username} yangilandi.", "success")
+            return redirect(redirect_target)
+
+    m_view = {
+        "id": m.id, "username": m.username, "full_name": m.full_name, "role": m.role, "is_active": m.is_active,
+        "phone_number": m.phone_number, "moizvonki_login": m.moizvonki_login, "telegram_user_id": m.telegram_user_id, "hire_date": m.hire_date,
+        "allowed_modules": permissions.parse_allowed_modules(m.allowed_modules),
+    }
     return render_template("manager_edit.html", m=m_view, modules=permissions.MODULES)
 
 
@@ -2455,6 +2506,32 @@ def company_edit(company_id):
     finally:
         session.close()
     return render_template("company_edit.html", c=c_view)
+
+
+@app.route("/companies/<int:company_id>/managers", methods=["GET", "POST"])
+@login_required
+@platform_owner_required
+def company_managers(company_id):
+    # 2026-09, foydalanuvchi so'rovi ("kompaniyaga kirganda manager qo'shib
+    # bo'lmayapti"): platforma egasi endi bu sahifa orqali TO'G'RIDAN-TO'G'RI
+    # (chiqib-kirmasdan) istalgan kompaniyaning menejerlarini
+    # ko'rishi/qo'shishi mumkin -- ilgari buning YAGONA yo'li o'sha
+    # kompaniyaning avtomatik yaratilgan admin hisobi bilan alohida kirish
+    # edi (Manager tenant-filtrga tushgandan keyin, `/managers` egasining
+    # FAQAT o'z kompaniyasini ko'rsatib qoldi).
+    session = get_session()
+    try:
+        c = session.get(Company, company_id)
+    finally:
+        session.close()
+    if not c:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("companies"))
+    return _managers_view(
+        company_id,
+        back_url=url_for("company_edit", company_id=company_id),
+        page_title=f"{c.name} — Menejerlar",
+    )
 
 
 # ---------------------------------------------------------------------------

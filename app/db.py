@@ -926,6 +926,26 @@ def unscoped():
         _current_company_id.reset(token)
 
 
+@contextlib.contextmanager
+def scoped_as(company_id):
+    """Vaqtincha (shu `with` bloki davomida) tenant-filtrni ANIQ berilgan
+    `company_id`ga o'rnatadi -- `current_user`ning O'Z company_id'sidan
+    MUSTAQIL. 2026-09, foydalanuvchi so'rovi ("kompaniyaga kirganda
+    manager qo'shib bo'lmayapti"): Manager tenant-filtrga tushgandan
+    keyin, platforma egasi `/managers` sahifasida ENDI faqat O'ZINING
+    kompaniyasi (Company #1) menejerlarini ko'radi/qo'sha oladi --
+    boshqa (masalan yangi yaratilgan) kompaniyaga menejer qo'shish uchun
+    avval o'sha kompaniyaning avtomatik yaratilgan admin hisobi bilan
+    chiqib-kirish kerak bo'lib qolgan edi. Bu funksiya platforma egasiga
+    `/companies/<id>/managers` orqali, chiqib-kirmasdan, TO'G'RIDAN-TO'G'RI
+    o'sha kompaniyaning menejerlarini boshqarish imkonini beradi."""
+    token = _current_company_id.set(company_id)
+    try:
+        yield
+    finally:
+        _current_company_id.reset(token)
+
+
 _TENANT_FILTERED_MODELS = tuple(_COMPANY_SCOPED_MODELS)
 
 

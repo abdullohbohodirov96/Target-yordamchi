@@ -9,6 +9,13 @@
   {% else %}<span class="badge badge-color-bad">to'lov tugagan</span>{% endif %}
 </p>
 
+<p class="page-subtitle" style="margin-top:-10px; margin-bottom:20px">
+  <a href="{{ url_for('company_managers', company_id=c.id) }}" class="btn" style="display:inline-flex; align-items:center; gap:7px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Bu kompaniyaning menejerlarini boshqarish
+  </a>
+</p>
+
 <div class="card" style="max-width:420px; margin-bottom:20px">
   <h2>Tezkor amallar</h2>
   <p class="page-subtitle" style="margin-top:-6px">To'lov Payme/Click orqali qo'lda tekshirilib, shu yerda belgilanadi (avtomatik integratsiya hali yo'q).</p>
