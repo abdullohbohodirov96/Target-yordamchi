@@ -145,6 +145,26 @@ def test_multiple_pages_require_explicit_choice_and_state_mismatch_is_rejected()
     print("OK: bir nechta sahifa/hisob bo'lganda admin aniq tanlaydi (va noto'g'ri OAuth state avtomatik rad etiladi)")
 
 
+def test_oauth_dialog_url_forces_rerequest_for_new_permissions():
+    """BUG FIX (2026-09, jonli sinovda topilgan): foydalanuvchi Facebook
+    orqali muvaffaqiyatli ulangandan keyin ham SMM hisobotda "(#10) This
+    endpoint requires the 'pages_read_engagement' permission" xatosi
+    davom etardi -- sababi, foydalanuvchi bu ilovaga ILGARI (scope
+    ro'yxati kengaytirilishidan OLDIN) bir marta ruxsat bergan edi, va
+    Facebook standart holatda ilgari ruxsat berilgan foydalanuvchidan
+    YANGI qo'shilgan scope'lar uchun QAYTA so'ramaydi. `auth_type=rerequest`
+    shuni majburlaydi."""
+    real_app_id = meta_api.META_APP_ID
+    meta_api.META_APP_ID = "test_app_id"
+    try:
+        url = meta_api.oauth_dialog_url("https://example.com/callback", "somestate", False)
+        assert "auth_type=rerequest" in url, f"OAuth URL'da auth_type=rerequest yo'q: {url}"
+        assert "pages_read_engagement" in url
+    finally:
+        meta_api.META_APP_ID = real_app_id
+    print("OK: OAuth dialog URL har doim auth_type=rerequest bilan -- ilgari ulangan foydalanuvchidan ham yangi ruxsatlar qayta so'raladi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

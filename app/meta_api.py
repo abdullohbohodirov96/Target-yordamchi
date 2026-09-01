@@ -463,6 +463,21 @@ def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> 
         "state": state,
         "scope": ",".join(scopes),
         "response_type": "code",
+        # BUG FIX (2026-09, jonli sinovda topilgan): foydalanuvchi OAuth
+        # oynasidan MUVAFFAQIYATLI o'tgandan keyin ham SMM hisobotda
+        # "(#10) This endpoint requires the 'pages_read_engagement'
+        # permission" xatosi chiqishda davom etdi. Sabab -- Facebook shu
+        # ilova (App) uchun foydalanuvchidan OLDINROQ (bu segmentdagi ikkita
+        # "Invalid Scopes" xatosi paytida) bir marta ruxsat so'ragan edi;
+        # keyinchalik scope ro'yxati kengaytirilganda (masalan,
+        # `pages_read_engagement` qo'shilganda), Facebook ODATDA foydalanuvchi
+        # ILGARI bir marta ilovaga ruxsat bergan bo'lsa, YANGI qo'shilgan
+        # ruxsat(lar) uchun QAYTA so'ramaydi -- shunchaki eski (torroq)
+        # ruxsat to'plami bilan davom etadi, hatto foydalanuvchi "qayta
+        # ulasa" ham. Rasmiy yechim -- `auth_type=rerequest`: bu Facebook'ga
+        # foydalanuvchidan SO'RALGAN barcha ruxsatlarni (eski+yangi)
+        # albatta QAYTADAN ko'rsatib so'rashni majburlaydi.
+        "auth_type": "rerequest",
     }
     return f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?{urlencode(params)}"
 
