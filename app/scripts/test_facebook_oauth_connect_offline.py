@@ -72,6 +72,7 @@ def test_single_page_and_account_auto_selected_and_saved():
     meta_api.oauth_list_ad_accounts = lambda token: [
         {"id": "act_111", "name": "Asosiy hisob"},
     ]
+    meta_api.get_ad_account_pixels = lambda ad_account_id, access_token: []
     try:
         with app_module.app.test_client() as client:
             _signup(client, company_name="Bitta Variant MChJ", admin_username="bitta_variant_admin", plan="business")
@@ -98,6 +99,45 @@ def test_single_page_and_account_auto_selected_and_saved():
     print("OK: bitta sahifa/hisob topilsa, avtomatik tanlanadi va Company'ning meta_access_token/meta_page_id/ig_business_id/meta_ad_account_id maydonlariga to'g'ri saqlanadi")
 
 
+def test_ad_account_pixel_auto_detected_and_saved_for_capi():
+    """2026-09, foydalanuvchi so'rovi ("capi ni ... hammasini avtomatik
+    qil"): reklama hisobi ulanganda, unga biriktirilgan Meta Pixel
+    Company.meta_pixel_id'ga AVTOMATIK saqlanishi kerak -- foydalanuvchi
+    Render'ga qo'lda META_PIXEL_ID qo'shishi shart bo'lmasin."""
+    meta_api.META_APP_ID, meta_api.META_APP_SECRET = "test_app_id", "test_app_secret"
+    meta_api.oauth_exchange_code = lambda code, redirect_uri: "short_lived_token"
+    meta_api.oauth_exchange_long_lived = lambda short_token: "long_lived_token_pixel"
+    meta_api.oauth_list_pages = lambda token: [
+        {"id": "page_pixel", "name": "Pixel Sahifasi"},
+    ]
+    meta_api.oauth_list_ad_accounts = lambda token: [
+        {"id": "act_pixel_test", "name": "Pixel Hisobi"},
+    ]
+    meta_api.get_ad_account_pixels = lambda ad_account_id, access_token: (
+        [{"id": "pixel_999", "name": "Asosiy Pixel"}] if ad_account_id == "act_pixel_test" else []
+    )
+    try:
+        with app_module.app.test_client() as client:
+            _signup(client, company_name="Pixel MChJ", admin_username="pixel_admin", plan="business")
+            start_resp = client.get("/connect-accounts/facebook/start")
+            state = _extract_state(start_resp.headers["Location"])
+            client.get(f"/connect-accounts/facebook/callback?code=fake_code&state={state}", follow_redirects=True)
+
+            company = app_module._current_company()
+            session = db_module.get_session()
+            try:
+                c = session.get(db_module.Company, company.id)
+                assert c.meta_pixel_id == "pixel_999", f"Pixel avtomatik saqlanmadi: {c.meta_pixel_id!r}"
+            finally:
+                session.close()
+
+            settings_html = client.get("/sozlamalar").get_data(as_text=True)
+            assert 'badge-color-good">ulangan' in settings_html, "Sozlamalar sahifasida CAPI 'ulangan' deb ko'rsatilishi kerak"
+    finally:
+        meta_api.META_APP_ID, meta_api.META_APP_SECRET = "", ""
+    print("OK: reklama hisobi ulanganda unga biriktirilgan Meta Pixel avtomatik topilib Company.meta_pixel_id'ga saqlanadi, va Sozlamalar sahifasi buni 'ulangan' deb ko'rsatadi")
+
+
 def test_multiple_pages_require_explicit_choice_and_state_mismatch_is_rejected():
     meta_api.META_APP_ID, meta_api.META_APP_SECRET = "test_app_id", "test_app_secret"
     meta_api.oauth_exchange_code = lambda code, redirect_uri: "short_lived_token"
@@ -110,6 +150,7 @@ def test_multiple_pages_require_explicit_choice_and_state_mismatch_is_rejected()
         {"id": "act_a", "name": "Hisob A"},
         {"id": "act_b", "name": "Hisob B"},
     ]
+    meta_api.get_ad_account_pixels = lambda ad_account_id, access_token: []
     try:
         with app_module.app.test_client() as client:
             _signup(client, company_name="Ko'p Variant MChJ", admin_username="kop_variant_admin", plan="business")

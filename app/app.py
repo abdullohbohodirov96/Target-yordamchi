@@ -143,8 +143,18 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
 # HECH QACHON to'xtatmasligi kerak.
 # ---------------------------------------------------------------------------
 
-def _send_capi_lead_signal(lead, event_name: str, *, value: float | None = None, event_id_suffix: str = "") -> None:
-    if not meta_api.is_capi_configured():
+def _send_capi_lead_signal(session, lead, event_name: str, *, value: float | None = None, event_id_suffix: str = "") -> None:
+    """`session` -- 2026-09 multi-tenant: shu `lead.company_id`ning O'Z
+    Pixel/token'ini (`Company.meta_pixel_id`/`meta_access_token`) olish
+    uchun kerak. Kompaniyada Pixel hali topilmagan/ulanmagan bo'lsa --
+    `meta_api`ning o'zi eski global ENV'ga qaytadi (orqaga moslik)."""
+    pixel_id = access_token = None
+    if lead.company_id:
+        company = session.get(Company, lead.company_id)
+        if company:
+            pixel_id = company.meta_pixel_id
+            access_token = company.meta_access_token
+    if not meta_api.is_capi_configured(pixel_id=pixel_id, access_token=access_token):
         return
     try:
         meta_api.send_conversion_event(
@@ -154,6 +164,8 @@ def _send_capi_lead_signal(lead, event_name: str, *, value: float | None = None,
             lead_id=lead.meta_lead_id,
             event_id=f"lead-{lead.id}-{event_name.lower()}{event_id_suffix}",
             value=value,
+            pixel_id=pixel_id,
+            access_token=access_token,
         )
     except Exception:
         logger.exception("CAPI signalini yuborishda xatolik (lead_id=%s, event=%s)", lead.id, event_name)
@@ -960,10 +972,29 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None) -> N
     """`page`/`account` -- `_normalize_oauth_page()`/`_normalize_oauth_account()`
     formatidagi dict. Xuddi qo'lda-token formasi yozadigan MAYDONLARNI
     yozadi -- shu tufayli Target/SMM/Instagram DM sahifalari OAuth orqali
-    ulangan kompaniya uchun ham darhol ishlay boshlaydi."""
+    ulangan kompaniya uchun ham darhol ishlay boshlaydi.
+
+    2026-09, foydalanuvchi so'rovi ("capi nima bo'lsa hammasini avtomatik
+    tugma orqali qiladigan qil"): reklama hisobi (`account`) ulanganda,
+    shu hisobga biriktirilgan Meta Pixel ham AVTOMATIK qidirib topiladi va
+    saqlanadi -- endi Conversions API (CAPI)ni ishga tushirish uchun
+    foydalanuvchi Render'ga qo'lda `META_PIXEL_ID` qo'shishi SHART emas.
+    Bir nechta Pixel topilsa -- birinchisi olinadi (MVP soddalashtirish;
+    aksariyat reklama hisobida bitta asosiy Pixel bo'ladi). Hech qanday
+    Pixel topilmasa (hisobda hali yaratilmagan) -- jim o'tkazib yuboriladi,
+    xato tashlanmaydi -- CAPI IXTIYORIY, asosiy ulanishni to'xtatmasligi
+    kerak."""
     company = _current_company()
     if company is None:
         return
+    pixel_id = None
+    if account:
+        try:
+            pixels = meta_api.get_ad_account_pixels(account["id"], token)
+            if pixels:
+                pixel_id = pixels[0]["id"]
+        except Exception:
+            logger.exception("Reklama hisobi uchun Pixel qidirishda xatolik (account=%s)", account.get("id"))
     db_session = get_session()
     try:
         c = db_session.get(Company, company.id)
@@ -972,6 +1003,8 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None) -> N
         c.ig_business_id = page.get("ig")
         if account:
             c.meta_ad_account_id = account["id"]
+        if pixel_id:
+            c.meta_pixel_id = pixel_id
         db_session.commit()
     finally:
         db_session.close()
@@ -2493,7 +2526,7 @@ def lead_detail(lead_id):
                     session.flush()
                     _recompute_lead_sale_total(session, lead)
                     session.commit()
-                    _send_capi_lead_signal(lead, "Purchase", value=amount, event_id_suffix=f"-{existing_count + 1}")
+                    _send_capi_lead_signal(session, lead, "Purchase", value=amount, event_id_suffix=f"-{existing_count + 1}")
                     flash(f"{existing_count + 1}-sotuv qo'shildi.", "success")
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
 
@@ -2606,9 +2639,9 @@ def lead_detail(lead_id):
             new_category = stage_by_key[new_status].category if new_status in stage_by_key else old_category
             if new_status in stage_by_key and new_category != old_category:
                 if new_category == "qualified":
-                    _send_capi_lead_signal(lead, "QualifiedLead")
+                    _send_capi_lead_signal(session, lead, "QualifiedLead")
                 elif new_category == "sold":
-                    _send_capi_lead_signal(lead, "Purchase", value=lead.sale_amount)
+                    _send_capi_lead_signal(session, lead, "Purchase", value=lead.sale_amount)
 
             flash("Saqlandi.", "success")
             return redirect(url_for("leads_list"))
@@ -3869,6 +3902,16 @@ def settings_hub():
     finally:
         session.close()
 
+    # 2026-09, foydalanuvchi so'rovi ("capi ni ... hammasini avtomatik qil"):
+    # CAPI holati endi HAR BIR kompaniya uchun O'ZINING reklama hisobi
+    # ulanganda avtomatik topilgan `meta_pixel_id`ga qarab hisoblanadi (eski
+    # global ENV'ga emas) -- pastga, `_current_company()` orqali.
+    company = _current_company()
+    capi_configured = bool(company and meta_api.is_capi_configured(
+        pixel_id=company.meta_pixel_id, access_token=company.meta_access_token,
+    ))
+    capi_has_ad_account = bool(company and company.meta_ad_account_id)
+
     return render_template(
         "settings_hub.html",
         min_sale_amount=kpi_bonus.get_min_sale_amount(),
@@ -3876,7 +3919,8 @@ def settings_hub():
         usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(),
         managers=manager_rows,
         unanswered=unanswered,
-        capi_configured=meta_api.is_capi_configured(),
+        capi_configured=capi_configured,
+        capi_has_ad_account=capi_has_ad_account,
     )
 
 

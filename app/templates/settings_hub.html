@@ -82,7 +82,11 @@
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
     Lead "Sifatli" yoki "Sotildi" bosqichiga o'tganda, CRM bu haqidagi signalni avtomatik ravishda Meta'ga qaytarib yuboradi -- algoritm shunga o'xshagan odamlarni auksionda qidirishni o'rganadi (kampaniya maqsadi "Maximize number of qualified leads" bilan birga ishlaydi).
     {% if not capi_configured %}
-    Ishga tushirish uchun Render'dagi environment variable'larga <code>META_PIXEL_ID</code> qo'shing (Meta Events Manager → Data Sources → Pixel). Qo'shimcha token shart emas -- mavjud <code>META_ACCESS_TOKEN</code> yetarli.
+      {% if capi_has_ad_account %}
+      Reklama hisobingiz ulangan, lekin unga biriktirilgan Meta Pixel topilmadi -- avval Meta Events Manager'da (Data Sources → Pixel) shu reklama hisobi uchun Pixel yarating, so'ng <a href="{{ url_for('connect_accounts') }}" class="text-blue">Akkauntlarni ulash</a> sahifasida "Boshqa sahifa/hisobga almashtirish" orqali qayta ulang -- Pixel avtomatik topib olinadi.
+      {% else %}
+      Qo'lda hech narsa sozlash shart emas -- <a href="{{ url_for('connect_accounts') }}" class="text-blue">Akkauntlarni ulash</a> sahifasida Facebook orqali reklama hisobingizni ulang, Pixel avtomatik topilib saqlanadi.
+      {% endif %}
     {% endif %}
   </p>
 </div>

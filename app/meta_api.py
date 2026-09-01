@@ -98,8 +98,12 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
 # taqdirda ham hech qachon buzilmasligi kerak.
 # ---------------------------------------------------------------------------
 
-def is_capi_configured() -> bool:
-    return bool(ACCESS_TOKEN and PIXEL_ID)
+def is_capi_configured(*, pixel_id: str | None = None, access_token: str | None = None) -> bool:
+    """2026-09, multi-tenant: `pixel_id`/`access_token` berilsa -- O'SHA
+    kompaniyaning o'z Pixel'i/tokeni tekshiriladi. Ikkalasi ham berilmasa --
+    eski global ENV (`PIXEL_ID`/`ACCESS_TOKEN`) tekshiriladi (orqaga
+    moslik -- CLI yoki hali company-parametrsiz chaqiruvlar uchun)."""
+    return bool((access_token or ACCESS_TOKEN) and (pixel_id or PIXEL_ID))
 
 
 def _hash_sha256(value: str) -> str:
@@ -115,9 +119,15 @@ def send_conversion_event(
     event_id: str | None = None,
     value: float | None = None,
     currency: str = "UZS",
+    pixel_id: str | None = None,
+    access_token: str | None = None,
 ) -> dict | None:
     """Bitta hodisani (masalan "QualifiedLead" yoki "Purchase") Meta
     Conversions API'ga yuboradi.
+
+    `pixel_id`/`access_token` -- 2026-09 multi-tenant: berilsa, O'SHA
+    kompaniyaning o'z Pixel'i/tokeni ishlatiladi. Ikkalasi ham berilmasa --
+    eski global ENV (`PIXEL_ID`/`ACCESS_TOKEN`) ishlatiladi.
 
     - `phone`/`email` -- mijozning CRM'dagi kontakti (SHA-256 bilan xeshlanadi,
       xom holda hech qachon Meta'ga yuborilmaydi -- bu Meta'ning o'zi talab
@@ -134,7 +144,9 @@ def send_conversion_event(
     META_PIXEL_ID sozlanmagan yoki moslashtiradigan hech qanday kontakt
     berilmagan bo'lsa -- `None` qaytaradi, xato tashlamaydi.
     """
-    if not is_capi_configured():
+    resolved_pixel_id = pixel_id or PIXEL_ID
+    resolved_token = access_token or ACCESS_TOKEN
+    if not is_capi_configured(pixel_id=resolved_pixel_id, access_token=resolved_token):
         return None
 
     user_data: dict = {}
@@ -161,7 +173,7 @@ def send_conversion_event(
     if value is not None:
         event["custom_data"] = {"value": round(float(value), 2), "currency": currency}
 
-    return _post(f"{PIXEL_ID}/events", {"data": [event]}, token=ACCESS_TOKEN)
+    return _post(f"{resolved_pixel_id}/events", {"data": [event]}, token=resolved_token)
 
 
 # ---------------------------------------------------------------------------
@@ -530,6 +542,24 @@ def oauth_list_ad_accounts(user_token: str) -> list[dict]:
         "limit": 200,
     }, token=user_token)
     return data.get("data", [])
+
+
+def get_ad_account_pixels(ad_account_id: str, access_token: str) -> list[dict]:
+    """2026-09, foydalanuvchi so'rovi ("capi nima bo'lsa hammasini avtomatik
+    tugma orqali qiladigan qil"): reklama hisobiga BIRIKTIRILGAN Meta
+    Pixel(lar) ro'yxatini qaytaradi (`GET /act_.../adspixels`). Bu orqali
+    Conversions API (CAPI) sozlashda foydalanuvchidan Pixel ID'ni Meta
+    Events Manager'dan qidirib, qo'lda topib kiritishi SHART emas -- reklama
+    hisobi OAuth orqali ulangan payt avtomatik topiladi (qarang: app.py
+    `_save_facebook_connection`). Xato yoki ruxsat yetishmasa (masalan
+    hisobda hali Pixel yaratilmagan bo'lsa) -- bo'sh ro'yxat qaytaradi,
+    xato tashlamaydi, chunki bu CAPI -- IXTIYORIY, asosiy ulanish oqimini
+    hech qachon to'xtatmasligi kerak."""
+    try:
+        data = _get(f"{ad_account_id}/adspixels", {"fields": "id,name"}, token=access_token)
+        return data.get("data", [])
+    except MetaAPIError:
+        return []
 
 
 def get_object_status(object_id: str) -> dict:

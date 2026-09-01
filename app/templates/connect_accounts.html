@@ -18,8 +18,13 @@
   <div class="card" style="max-width:560px; margin-bottom:20px; border-left:4px solid var(--good, #16A34A)">
     <h2>&#10003; Facebook orqali ulangan</h2>
     <p class="page-subtitle" style="margin-top:-6px">
-      Sahifa ID: {{ company.meta_page_id }}{% if company.ig_business_id %} &middot; Instagram ulangan{% endif %}{% if company.meta_ad_account_id %} &middot; Reklama hisobi ulangan{% endif %}
+      Sahifa ID: {{ company.meta_page_id }}{% if company.ig_business_id %} &middot; Instagram ulangan{% endif %}{% if company.meta_ad_account_id %} &middot; Reklama hisobi ulangan{% endif %}{% if company.meta_pixel_id %} &middot; Conversions API (CAPI) avtomatik ulangan{% endif %}
     </p>
+    {% if company.meta_ad_account_id and not company.meta_pixel_id %}
+    <p class="text-faint" style="font-size:12.5px; margin:0 0 10px">
+      Reklama hisobingizga biriktirilgan Meta Pixel topilmadi -- avval Meta Events Manager'da (Data Sources → Pixel) shu hisob uchun Pixel yarating, so'ng pastdagi tugma bilan qayta ulang, Pixel avtomatik topib olinadi (Conversions API uchun kerak).
+    </p>
+    {% endif %}
     <a href="{{ url_for('connect_facebook_start') }}" class="text-blue" style="font-size:13px">Boshqa sahifa/hisobga almashtirish &rarr;</a>
   </div>
   {% else %}

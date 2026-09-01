@@ -92,6 +92,15 @@ class Company(Base):
     meta_ad_account_id = Column(String(32), nullable=True)
     meta_page_id = Column(String(32), nullable=True)
     ig_business_id = Column(String(32), nullable=True)
+    # 2026-09, foydalanuvchi so'rovi ("capi nima bo'lsa hammasini avtomatik
+    # tugma orqali qiladigan qil"): Meta Conversions API (CAPI) uchun Pixel
+    # ID. Ilgari bu FAQAT global ENV o'zgaruvchisi (META_PIXEL_ID) orqali,
+    # Render dashboard'ida qo'lda sozlanardi -- endi har bir kompaniya
+    # reklama hisobini ulaganda (`meta_ad_account_id`), shu hisobga
+    # tegishli Pixel avtomatik topilib shu yerga saqlanadi (qarang:
+    # app.py `_save_facebook_connection`, meta_api.get_ad_account_pixels).
+    # NULL bo'lsa -- eski global META_PIXEL_ID'ga qaytiladi (orqaga moslik).
+    meta_pixel_id = Column(String(32), nullable=True)
     telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
 
     trial_ends_at = Column(DateTime, nullable=True)
