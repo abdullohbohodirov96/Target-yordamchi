@@ -70,7 +70,10 @@
       </a>
       {% endif %}
       {% if has_module(current_user, 'leads') %}
-      <div class="nav-group-label">CRM</div>
+      <button type="button" class="nav-group-label" data-nav-group="crm">
+        <span class="nav-group-label-text">CRM</span><span class="nav-group-chevron">{{ navicon('chevron') }}</span>
+      </button>
+      <div class="nav-group-items" data-nav-group-items="crm">
       <a href="{{ url_for('leads_list') }}" class="nav-item {{ 'active' if request.endpoint in ('leads_list','lead_detail') }}" title="Lidlar">
         <span class="nav-icon">{{ navicon('leads') }}</span><span class="nav-text">Lidlar</span>
       </a>
@@ -80,6 +83,7 @@
       <a href="{{ url_for('followups_list') }}" class="nav-item {{ 'active' if request.endpoint=='followups_list' }}" title="Qayta aloqa">
         <span class="nav-icon">{{ navicon('followup') }}</span><span class="nav-text">Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span>
       </a>
+      </div>
       {% endif %}
 
       {% if has_module(current_user, 'analytics') or has_module(current_user, 'individual_check') %}
@@ -92,7 +96,10 @@
          (Analitika) VA qo'ng'iroq sifatini nazorat qilishni (Individual
          tekshirish) birlashtiradi -- shu ma'noni aniq beruvchi
          "Monitoring" nomi tanlandi. #}
-      <div class="nav-group-label">Monitoring</div>
+      <button type="button" class="nav-group-label" data-nav-group="monitoring">
+        <span class="nav-group-label-text">Monitoring</span><span class="nav-group-chevron">{{ navicon('chevron') }}</span>
+      </button>
+      <div class="nav-group-items" data-nav-group-items="monitoring">
       {% if has_module(current_user, 'analytics') %}
       <a href="{{ url_for('analytics_page') }}" class="nav-item {{ 'active' if request.endpoint=='analytics_page' }}" title="Analitika">
         <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">Analitika</span>
@@ -103,6 +110,7 @@
         <span class="nav-icon">{{ navicon('headphones') }}</span><span class="nav-text">Individual tekshirish</span>
       </a>
       {% endif %}
+      </div>
       {% endif %}
 
       {% if has_module(current_user, 'target') %}
@@ -111,7 +119,10 @@
          Bu guruh Meta Ads (Target) + SMM hisobot + Instagram xabarlarni
          birlashtiradi -- "Marketing" umumiy va aniq nom sifatida
          tanlandi. #}
-      <div class="nav-group-label">Marketing</div>
+      <button type="button" class="nav-group-label" data-nav-group="marketing">
+        <span class="nav-group-label-text">Marketing</span><span class="nav-group-chevron">{{ navicon('chevron') }}</span>
+      </button>
+      <div class="nav-group-items" data-nav-group-items="marketing">
       <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint=='target_page' }}" title="Target">
         <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Target</span>
       </a>
@@ -121,6 +132,7 @@
       <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint=='instagram_dm' }}" title="Instagram xabarlar">
         <span class="nav-icon">{{ navicon('message') }}</span><span class="nav-text">Instagram xabarlar</span>
       </a>
+      </div>
       {% endif %}
 
       {% if has_module(current_user, 'settings') or current_user.role == 'admin' %}
@@ -133,7 +145,10 @@
            bo'lgani uchun "Sozlamalar" bilan takrorlanib qolmasin deb kengroq
            "Boshqaruv" nomi tanlandi -- boshqa guruh nomlari (CRM/Analitika/
            Target) bilan bir xil uslubda, toza o'zbekcha. -->
-      <div class="nav-group-label">Boshqaruv</div>
+      <button type="button" class="nav-group-label" data-nav-group="boshqaruv">
+        <span class="nav-group-label-text">Boshqaruv</span><span class="nav-group-chevron">{{ navicon('chevron') }}</span>
+      </button>
+      <div class="nav-group-items" data-nav-group-items="boshqaruv">
       {% if has_module(current_user, 'settings') %}
       <a href="{{ url_for('settings_hub') }}" class="nav-item {{ 'active' if request.endpoint=='settings_hub' }}" title="Sozlamalar">
         <span class="nav-icon">{{ navicon('settings') }}</span><span class="nav-text">Sozlamalar</span>
@@ -152,6 +167,7 @@
         <span class="nav-icon">{{ navicon('companies') }}</span><span class="nav-text">Kompaniyalar</span>
       </a>
       {% endif %}
+      </div>
       {% endif %}
     </nav>
 
@@ -279,6 +295,37 @@
         link.addEventListener('click', function () { setOpen(false); });
       });
     }
+
+    // 2026-09, foydalanuvchi so'rovi ("bo'limlarni bir-birini ichiga
+    // kirgizib, toza va aniq qil -- bo'limlar ko'payib ketgan"): har bir
+    // guruh (CRM/Monitoring/Marketing/Boshqaruv) endi yig'ish/ochish
+    // mumkin -- standart holatda FAQAT joriy sahifa turgan guruh ochiq,
+    // qolganlari yig'ilgan (shu orqali sidebar kamroq joy egallaydi, ko'p
+    // bo'limli akkauntlarda ham toza ko'rinadi). Foydalanuvchi guruhni
+    // qo'lda ochsa/yig'sa -- shu tanlovi localStorage'da eslab qolinadi,
+    // keyingi tashrifda ham saqlanadi.
+    var GROUP_KEY_PREFIX = 'target_crm_navgroup_collapsed:';
+    sidebar.querySelectorAll('.nav-group-label[data-nav-group]').forEach(function (label) {
+      var name = label.getAttribute('data-nav-group');
+      var items = sidebar.querySelector('.nav-group-items[data-nav-group-items="' + name + '"]');
+      if (!items) return;
+      var hasActive = !!items.querySelector('.nav-item.active');
+      var stored = null;
+      try { stored = localStorage.getItem(GROUP_KEY_PREFIX + name); } catch (e) {}
+      var collapsed = stored !== null ? stored === '1' : !hasActive;
+
+      function apply() {
+        label.classList.toggle('collapsed', collapsed);
+        items.classList.toggle('collapsed', collapsed);
+      }
+      apply();
+
+      label.addEventListener('click', function () {
+        collapsed = !collapsed;
+        try { localStorage.setItem(GROUP_KEY_PREFIX + name, collapsed ? '1' : '0'); } catch (e) {}
+        apply();
+      });
+    });
   })();
   </script>
   {% endif %}

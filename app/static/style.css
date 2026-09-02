@@ -94,16 +94,31 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-group-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-faint); padding: 16px 10px 6px; white-space: nowrap; overflow: hidden;
-  opacity: 0; line-height: 14px; height: 36px; transition: opacity 0.1s;
+  color: var(--text-faint); padding: 12px 10px 4px; white-space: nowrap; overflow: hidden;
+  opacity: 0; line-height: 14px; height: 30px; transition: opacity 0.1s;
+  /* 2026-09, foydalanuvchi so'rovi ("sidebarni kichkinalashtirish kerak"):
+     balandlik 36px->30px, padding kamaytirildi -- accordion (yig'ish/ochish)
+     bilan birga sidebar umumiy balandligi sezilarli qisqardi. */
   /* 2026-08 tuzatildi: avval `height: 14px` padding'dan (14px+6px=20px) kichik
      edi, shuning uchun matnning yuqori qismi "kesilib" ko'rinar edi (foydalanuvchi
      screenshot bilan ko'rsatdi). Endi balandlik padding+line-height'ga mos. */
+  /* 2026-09, foydalanuvchi so'rovi ("bo'limlarni bir-birini ichiga kirgizib,
+     toza va aniq qil -- bo'limlar ko'payib ketgan"): guruh nomi endi
+     <button> -- bosilganda ichidagi bandlarni yig'ib/ochib beradi (pastga,
+     `.nav-group-items`ga qarang), shu orqali faqat kerakli bo'lim ochiq
+     turadi, qolganlari yig'ilgan holda kamroq joy egallaydi. */
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: none; cursor: pointer; font-family: inherit;
 }
 .sidebar.open .nav-group-label { opacity: 1; }
+.nav-group-chevron { flex-shrink: 0; width: 14px; height: 14px; display: inline-flex; }
+.nav-group-chevron svg { width: 14px; height: 14px; transition: transform 0.15s; }
+.nav-group-label:not(.collapsed) .nav-group-chevron svg { transform: rotate(-90deg); }
+.nav-group-label.collapsed .nav-group-chevron svg { transform: rotate(180deg); }
+.nav-group-items.collapsed { display: none; }
 .nav-item {
-  display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius);
-  color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius);
+  color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 1px;
   transition: background 0.12s, color 0.12s; cursor: pointer; border: none; background: none;
   width: 100%; text-align: left; font-family: inherit; position: relative;
 }
@@ -382,6 +397,7 @@ form label { display: block; font-size: 12px; font-weight: 500; color: var(--tex
 form .field { margin-bottom: 16px; }
 form input[type="text"], form input[type="password"], form input[type="number"],
 form input[type="date"], form input[type="datetime-local"],
+form input[type="tel"], form input[type="email"],
 form select, form textarea {
   width: 100%; padding: 9px 12px; font-size: 13.5px; font-family: inherit;
   border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);

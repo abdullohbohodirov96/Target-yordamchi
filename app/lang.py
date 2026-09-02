@@ -146,6 +146,16 @@ TRANSLATIONS = {
         "faq.a4": "Yo'q. Replix (replix.uz) — O'zbekistonda ishlab chiqilgan, CRM va Meta reklama monitoringga ixtisoslashgan alohida platforma. U matn/kontent yozuvchi AI-yordamchilar yoki boshqa davlatlardagi kurs platformalari bilan hech qanday aloqasi yo'q — bu butunlay boshqa kompaniya va mahsulot.",
         "faq.q5": "Instagram yoki Facebook akkauntimni qanday ulayman?",
         "faq.a5": "Ro'yxatdan o'tgach, \"Akkauntlarni ulash\" sahifasida bitta tugma orqali Facebook hisobingizga kirasiz — sahifa ID yoki token qo'lda kiritish shart emas.",
+
+        # 2026-09, foydalanuvchi so'rovi ("web ozida ushatta pasida forma
+        # qilib qoy ... aloqa uchun nomerlar ham qoshib qoy"): bosh sahifa
+        # pastidagi "Biz bilan bog'laning" bo'limi uchun.
+        "contact.h2": "Biz bilan bog'laning",
+        "contact.sub": "Savolingiz bormi? Telefon yoki Telegram orqali yozing, yoki quyidagi formani to'ldiring — tez orada javob beramiz.",
+        "contact.name": "Ismingiz",
+        "contact.phone": "Telefon raqamingiz",
+        "contact.message": "Xabar (ixtiyoriy)",
+        "contact.submit": "Yuborish",
     },
     "ru": {
         "nav.features": "Возможности",
@@ -260,6 +270,13 @@ TRANSLATIONS = {
         "faq.a4": "Нет. Replix (replix.uz) — отдельная платформа, разработанная в Узбекистане и специализирующаяся на CRM и мониторинге рекламы Meta. Она никак не связана с AI-помощниками для написания текстов или курс-платформами с похожим названием в других странах — это совершенно другая компания и продукт.",
         "faq.q5": "Как подключить аккаунт Instagram или Facebook?",
         "faq.a5": "После регистрации на странице «Подключение аккаунтов» вы входите в свой аккаунт Facebook одной кнопкой — вводить ID страницы или токен вручную не нужно.",
+
+        "contact.h2": "Свяжитесь с нами",
+        "contact.sub": "Есть вопрос? Напишите по телефону или в Telegram, либо заполните форму ниже — ответим в ближайшее время.",
+        "contact.name": "Ваше имя",
+        "contact.phone": "Номер телефона",
+        "contact.message": "Сообщение (необязательно)",
+        "contact.submit": "Отправить",
     },
 }
 

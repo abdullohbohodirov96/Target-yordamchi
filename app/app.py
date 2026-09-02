@@ -19,7 +19,7 @@ import threading
 import datetime as dt
 from collections import defaultdict
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort, g
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort, g, send_from_directory
 from flask import session as flask_session  # noqa: F401 -- ATAYLAB alias: `session` nomi butun faylda SQLAlchemy DB sessiyasi (`session = get_session()`) uchun ishlatiladi, Flask'ning o'z (cookie) sessiyasi bilan chalkashmasin
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
@@ -1127,6 +1127,19 @@ def connect_facebook_choose():
 # SEO bilan emas, faqat uzoq muddatli kontent/reklama bilan erishiladi --
 # buni halol aytish kerak.
 # ---------------------------------------------------------------------------
+
+# 2026-09, foydalanuvchi so'rovi ("rasimdi joyg haliyam logo chiqmapti"):
+# Google SERP'dagi kichik icon (va ba'zi eski crawler/vositalar) ko'pincha
+# domenning ILDIZIDAGI an'anaviy `/favicon.ico` manzilini TEKSHIRADI --
+# `<link rel="icon">` teglariga qaramay. Bu fayl ALLAQACHON `static/`
+# papkasida mavjud va valid (tekshirildi -- 3-icon ICO, 16x16+32x32 PNG
+# ichida), lekin unga FAQAT `/static/favicon.ico` orqali kirish mumkin edi,
+# `/favicon.ico`ning o'zi 404 qaytarardi. Endi ikkalasi ham ishlaydi.
+@app.route("/favicon.ico")
+def favicon_ico():
+    return send_from_directory(app.static_folder, "favicon.ico", mimetype="image/vnd.microsoft.icon")
+
+
 @app.route("/robots.txt")
 def robots_txt():
     lines = [
@@ -1360,6 +1373,66 @@ def dashboard():
     finally:
         session.close()
     return render_template("dashboard.html", o=overview)
+
+
+# ---------------------------------------------------------------------------
+# Bosh sahifa (landing) "Biz bilan bog'laning" formasi -- 2026-09, foydalanuvchi
+# so'rovi ("web ozida ushatta pasida forma qilib qoy malumotlarini qabul
+# qilish uchun ... formani tgda manga habar kesin"): potentsial mijoz
+# ro'yxatdan o'tishdan oldin savol/murojaat qoldirishi mumkin bo'lgan oddiy
+# forma. `Lead` modeli (CRM'dagi mijoz-lidlari) BILAN ALOQASI YO'Q -- bu
+# butunlay boshqa narsa: Replix'ning O'ZINI sotib olish/bilish istagan
+# odamning murojaati.
+#
+# Yetkazish ikki bosqichli, hech qachon yo'qolmasin uchun:
+#   1. HAR DOIM `kv_store`ga (Postgres) yoziladi -- Telegram vaqtincha
+#      ishlamay qolsa ham murojaat butunlay yo'qolmaydi.
+#   2. Sozlangan bo'lsa (`LANDING_CONTACT_TELEGRAM_CHAT_ID` ENV) -- darhol
+#      Telegram orqali ham yuboriladi. Sozlanmagan/xato bo'lsa -- jim
+#      o'tkaziladi (forma foydalanuvchiga HAR DOIM "qabul qilindi" deydi,
+#      chunki 1-qadam allaqachon bajarilgan).
+# ---------------------------------------------------------------------------
+LANDING_CONTACT_TELEGRAM_CHAT_ID = os.environ.get("LANDING_CONTACT_TELEGRAM_CHAT_ID", "")
+
+
+@app.route("/aloqa", methods=["POST"])
+def landing_contact_submit():
+    name = request.form.get("name", "").strip()
+    phone = request.form.get("phone", "").strip()
+    message = request.form.get("message", "").strip()
+
+    if not name or not phone:
+        flash("Ism va telefon raqamingizni kiriting.", "error")
+        return redirect(url_for("dashboard") + "#aloqa")
+
+    entry = {
+        "name": name[:200], "phone": phone[:64], "message": message[:2000],
+        "created_at": dt.datetime.utcnow().isoformat(),
+        "lang": getattr(g, "lang", lang_module.DEFAULT_LANG),
+    }
+    try:
+        submissions = kv_store.get_json("landing_contact_submissions", default=[])
+        if not isinstance(submissions, list):
+            submissions = []
+        submissions.append(entry)
+        kv_store.set_json("landing_contact_submissions", submissions[-200:])
+    except Exception:
+        logger.exception("Landing 'Biz bilan bog'laning' murojaatini kv_store'ga yozishda xatolik")
+
+    if LANDING_CONTACT_TELEGRAM_CHAT_ID:
+        try:
+            from scheduler import _tg_send
+            text = (
+                "\U0001F4E9 Yangi murojaat (replix.uz)\n"
+                f"Ism: {name}\nTelefon: {phone}\n"
+                + (f"Xabar: {message}\n" if message else "")
+            )
+            _tg_send(int(LANDING_CONTACT_TELEGRAM_CHAT_ID), text)
+        except Exception:
+            logger.exception("Landing murojaatini Telegram'ga yuborishda xatolik")
+
+    flash("Rahmat! Murojaatingiz qabul qilindi -- tez orada bog'lanamiz.", "success")
+    return redirect(url_for("dashboard") + "#aloqa")
 
 
 _DASHBOARD_PERIOD_LABELS = {

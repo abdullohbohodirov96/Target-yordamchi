@@ -103,6 +103,18 @@
 .lp-faq-item dt { font-size: 15.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
 .lp-faq-item dd { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin: 0; }
 
+/* 2026-09, "Biz bilan bog'laning" bo'limi uchun (izoh: templates/landing.html) */
+.lp-contact { max-width: 420px; margin: 0 auto; }
+.lp-contact-direct { display: flex; justify-content: center; gap: 22px; flex-wrap: wrap; margin-bottom: 26px; }
+.lp-contact-link {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
+  color: var(--ink); padding: 9px 14px; border: 1px solid var(--border-light); border-radius: 999px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.lp-contact-link:hover { background: var(--card); border-color: var(--border); }
+.lp-contact-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+.lp-contact-form { text-align: left; }
+
 .lp-pricing { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
 .lp-plan {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
