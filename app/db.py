@@ -24,6 +24,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, deferred, with_loader_criteria, Session as _SASession
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import crypto_util
+
 logger = logging.getLogger("db")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -103,6 +105,43 @@ class Company(Base):
     meta_pixel_id = Column(String(32), nullable=True)
     telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
 
+    # ---------------------------------------------------------------------
+    # 2026-09, foydalanuvchi so'rovi ("production-ready Meta Ads + CAPI
+    # integration... Business Portfolio / Ad Account / Dataset tanlash,
+    # token muddati, holat, oxirgi hodisa"): OAuth ulash oqimi endi FAQAT
+    # Page+Ad Account emas, Business Portfolio va Pixel/Dataset'ni ham
+    # ANIQ tanlatadi (avval Pixel avtomatik -- birinchisi -- olinardi).
+    #
+    # MUHIM: `meta_access_token` ustunining O'ZI o'zgarmadi (orqaga moslik --
+    # eski qatorlar/migratsiya buzilmasin), lekin ENDI qiymati SHIFRLANGAN
+    # holda saqlanadi (`crypto_util.encrypt_token`). Xom qiymatni HECH QACHON
+    # to'g'ridan-to'g'ri o'qimang/yozmang -- pastdagi
+    # `get_meta_access_token()`/`set_meta_access_token()` orqali murojaat
+    # qiling (xuddi shunday `get_meta_capi_token()`/`set_meta_capi_token()`).
+    # ---------------------------------------------------------------------
+    meta_business_id = Column(String(32), nullable=True)
+    meta_business_name = Column(String(255), nullable=True)
+    meta_ad_account_name = Column(String(255), nullable=True)
+    meta_dataset_name = Column(String(255), nullable=True)  # meta_pixel_id'ning o'qiladigan nomi
+    # Uzoq muddatli foydalanuvchi tokeni ~60 kunda tugaydi (Meta rasmiy
+    # hujjati: "do not depend on these lifetimes remaining the same").
+    # NULL = muddatsiz (masalan qo'lda kiritilgan doimiy System User token).
+    meta_token_expires_at = Column(DateTime, nullable=True)
+    # "disconnected" | "connected" | "reauth_required"
+    meta_integration_status = Column(String(20), nullable=False, default="disconnected")
+    meta_last_verified_at = Column(DateTime, nullable=True)  # oxirgi marta muvaffaqiyatli tekshirilgan/ulangan vaqt
+    meta_last_event_at = Column(DateTime, nullable=True)  # oxirgi muvaffaqiyatli CAPI hodisasi yuborilgan vaqt
+
+    # "Advanced / Manual setup" -- foydalanuvchi o'zining Business
+    # Manager'ida QO'LDA yaratgan System User uchun DOIMIY (muddatsiz)
+    # token bilan Dataset ID'ni to'g'ridan-to'g'ri kiritadi (Meta App
+    # Review'ga bog'liq bo'lmagan, rasmiy qo'llab-quvvatlanadigan yo'l --
+    # docs/META_INTEGRATION_SETUP.md'ga qarang). Berilgan bo'lsa, CAPI
+    # yuborishda bu OAuth orqali olingan token/pixel'dan USTUN turadi
+    # (`meta_events.py: _resolve_capi_credentials`).
+    meta_capi_dataset_id = Column(String(32), nullable=True)
+    meta_capi_access_token = Column(Text, nullable=True)  # SHIFRLANGAN -- get_meta_capi_token()/set_meta_capi_token()
+
     # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish mumkin
     # bolsin misol audio tahlilini ochirib turish mumkin bolsin"): admin
     # o'z kompaniyasi uchun tarifga kirgan bo'limlarni ham qo'lda o'chirib
@@ -141,6 +180,41 @@ class Company(Base):
 
     def set_password(self, raw: str) -> None:
         self.password_hash = generate_password_hash(raw)
+
+    # -----------------------------------------------------------------
+    # 2026-09, Meta CAPI integratsiyasi -- tokenlarni HECH QACHON ochiq
+    # matn holida o'qish/yozish shart emas, shu ikki juft usul orqali.
+    # -----------------------------------------------------------------
+    def get_meta_access_token(self) -> "str | None":
+        return crypto_util.decrypt_token(self.meta_access_token)
+
+    def set_meta_access_token(self, raw: "str | None") -> None:
+        self.meta_access_token = crypto_util.encrypt_token(raw)
+
+    def get_meta_capi_token(self) -> "str | None":
+        return crypto_util.decrypt_token(self.meta_capi_access_token)
+
+    def set_meta_capi_token(self, raw: "str | None") -> None:
+        self.meta_capi_access_token = crypto_util.encrypt_token(raw)
+
+    def disconnect_meta(self) -> None:
+        """`/connect-accounts/meta/disconnect` uchun -- BARCHA Meta bilan
+        bog'liq maydonlarni tozalaydi (token, Business/Ad Account/Dataset,
+        holat). Qo'lda kiritilgan CAPI token/dataset ham shu bilan
+        o'chadi -- "to'liq uzish" foydalanuvchi buni kutadi."""
+        self.meta_access_token = None
+        self.meta_ad_account_id = None
+        self.meta_ad_account_name = None
+        self.meta_page_id = None
+        self.ig_business_id = None
+        self.meta_pixel_id = None
+        self.meta_dataset_name = None
+        self.meta_business_id = None
+        self.meta_business_name = None
+        self.meta_token_expires_at = None
+        self.meta_integration_status = "disconnected"
+        self.meta_capi_dataset_id = None
+        self.meta_capi_access_token = None
 
     def is_paid_up(self, now: "dt.datetime | None" = None) -> bool:
         """True -- bu kompaniya HOZIR saytdan foydalanishi mumkin.
@@ -208,6 +282,21 @@ class Lead(Base):
     email = Column(String(255), nullable=True)
     raw_field_data = Column(Text, nullable=True)  # Meta'dan kelgan to'liq forma javoblari (JSON matn)
     extra_data = Column(Text, nullable=True)  # admin belgilagan qo'shimcha anketa savollariga javoblar (JSON: {field_key: value})
+
+    # 2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
+    # Pixel (brauzer) + Conversions API (server) EMQ (Event Match Quality)
+    # yaxshi bo'lishi uchun -- lead O'Z SAYTIDAGI formadan kelsa, shu
+    # brauzer identifikatorlari/UTM'lar tutib qolinadi. HOZIRCHA aksariyat
+    # lead Meta Lead Ads orqali keladi (`meta_lead_id` allaqachon ENG aniq
+    # moslashtirish kaliti) -- bu ustunlar KELAJAKDA veb-forma orqali
+    # kelgan lead'lar uchun, hozircha deyarli hammasida NULL qoladi va
+    # HECH NARSAGA ta'sir qilmaydi (butunlay ixtiyoriy/additiv).
+    fbp = Column(String(128), nullable=True)
+    fbc = Column(String(128), nullable=True)
+    landing_url = Column(Text, nullable=True)
+    utm_source = Column(String(128), nullable=True)
+    utm_medium = Column(String(128), nullable=True)
+    utm_campaign = Column(String(128), nullable=True)
 
     status = Column(String(16), nullable=False, default="new")  # new/contacted/qualified/unqualified/sold
     quality_note = Column(Text, nullable=True)
@@ -546,6 +635,31 @@ class AssistantUnanswered(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
 
+class MetaEventLog(Base):
+    """2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
+    har bir Meta Conversions API'ga yuborilgan (yoki yuborishga urinilgan)
+    hodisaning tarixi -- "Test connection" natijasi, dedup uchun
+    `event_id`, va nosozlikni tekshirish uchun (haqiqiy TOKEN HECH QACHON
+    bu yerga yozilmaydi -- faqat `safe_error_message` orqali xavfsiz
+    matn, xuddi `meta_api.safe_error_message()` bilan bir xil falsafa)."""
+    __tablename__ = "meta_event_logs"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    event_name = Column(String(64), nullable=False)  # "Lead" | "QualifiedLead" | "Purchase" | "Test"
+    event_id = Column(String(128), nullable=True, index=True)  # dedup kaliti (Pixel+CAPI)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True, index=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    status = Column(String(16), nullable=False, default="pending")  # pending | sent | failed
+    http_status = Column(Integer, nullable=True)
+    meta_response_id = Column(String(64), nullable=True)  # Meta qaytargan events_received/fbtrace_id kabi ma'lumot
+    error_code = Column(Integer, nullable=True)  # Meta xato kodi (masalan 190 -- token muddati o'tgan)
+    safe_error_message = Column(Text, nullable=True)  # HECH QACHON xom exception/token matni emas
+    attempt_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+    sent_at = Column(DateTime, nullable=True)
+
+
 class IgDmConversation(Base):
     """Instagram Direct (DM) suhbatlarining ENG OXIRGI holati -- 2026-08,
     foydalanuvchi so'rovi ("ig chatlarni tahlilini ham qoshish kerak, lekin
@@ -820,7 +934,7 @@ def _migrate_widen_columns() -> None:
 _COMPANY_SCOPED_MODELS = [
     Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost, Competitor,
     CompetitorAd, AssistantUnanswered, CustomField, FunnelStage, StandingTask,
-    StandingReport, IgDmConversation, IgDmMessage,
+    StandingReport, IgDmConversation, IgDmMessage, MetaEventLog,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"
@@ -862,7 +976,7 @@ def ensure_default_company() -> int:
                 name=os.environ.get("DEFAULT_COMPANY_NAME") or DEFAULT_COMPANY_NAME,
                 plan="unlimited",
                 is_active=True,
-                meta_access_token=os.environ.get("META_ACCESS_TOKEN") or None,
+                meta_access_token=crypto_util.encrypt_token(os.environ.get("META_ACCESS_TOKEN") or None),
                 meta_ad_account_id=os.environ.get("META_AD_ACCOUNT_ID") or None,
                 telegram_group_id=os.environ.get("TELEGRAM_AGENTS_GROUP_ID") or None,
             )

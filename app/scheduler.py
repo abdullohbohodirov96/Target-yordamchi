@@ -234,17 +234,50 @@ def job_cpl_hard_kill() -> dict:
     xavfsizlik qatlami (2026-08, foydalanuvchi shikoyati: "cpl kottalashib
     ketvoti targetni ochirmayapti hech narsa qimayapti kech qivoti" --
     LLM soatlik tsiklda `last_7d` o'rtachasiga qarab xulosa chiqargani
-    uchun bitta kunlik keskin sakrash "yuvilib" ketishi mumkin edi)."""
+    uchun bitta kunlik keskin sakrash "yuvilib" ketishi mumkin edi).
+
+    2026-09, multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya o'z
+    reklama hisobi bo'yicha nazorat qilinsin, o'z guruhiga xabar borsin"):
+    endi `meta_ad_account_id`/`meta_access_token` ulagan HAR BIR kompaniya
+    bo'yicha aylanadi (`orchestrator.enforce_cpl_hard_kill_all_companies()`)
+    -- eski yagona (global) akkaunt tekshiruvi o'rniga. Har bir
+    kompaniyaning pauza/xato xabari FAQAT o'sha kompaniyaning O'Z
+    `Company.telegram_group_id`siga yuboriladi -- platforma egasining
+    umumiy `_full_activity_targets()` guruhiga EMAS (`job_ig_dm_sync` bilan
+    bir xil xavfsizlik naqshi: boshqa kompaniyaning xarajat/reklama
+    ma'lumoti begona Telegram guruhiga chiqib ketmasligi kerak). Kompaniya
+    o'z guruhini hali sozlamagan bo'lsa xabar shunchaki YUBORILMAYDI."""
     try:
-        result = orchestrator.enforce_cpl_hard_kill()
+        overall = orchestrator.enforce_cpl_hard_kill_all_companies()
     except Exception as e:
         logger.exception("CPL hard-kill tekshiruvida kutilmagan xatolik")
         return {"error": str(e)}
 
-    paused = result.get("paused") or []
-    errors = result.get("errors") or []
-    if paused or errors:
-        targets = _full_activity_targets()
+    for company_id, result in (overall.get("per_company") or {}).items():
+        paused = result.get("paused") or []
+        errors = result.get("errors") or []
+        if not paused and not errors:
+            continue
+
+        chat_id = None
+        session = db.get_session()
+        try:
+            with db.unscoped():
+                company = session.query(db.Company).get(company_id)
+            raw_group_id = getattr(company, "telegram_group_id", None) if company else None
+        finally:
+            session.close()
+        if raw_group_id:
+            try:
+                chat_id = int(raw_group_id)
+            except (TypeError, ValueError):
+                logger.warning("Company id=%s telegram_group_id noto'g'ri formatda: %r", company_id, raw_group_id)
+        if chat_id is None:
+            # Kompaniya o'z Telegram guruhini hali sozlamagan -- boshqa
+            # kompaniyaning guruhiga "sizib chiqmasligi" uchun bu yerda
+            # HECH QAYERGA yuborilmaydi (yuqoridagi izohga qarang).
+            continue
+
         lines = []
         if paused:
             lines.append(f"\U0001F6D1 CPL chegarasi oshgani uchun {len(paused)} ta reklama AVTOMATIK pauza qilindi (LLM'siz, darhol):\n")
@@ -255,14 +288,22 @@ def job_cpl_hard_kill() -> dict:
             for e in errors:
                 lines.append(f"- {e}")
         message = "\n".join(lines)
-        for cid in targets:
-            _tg_send(cid, message)
-    return result
+        _tg_send(chat_id, message)
+    return overall
 
 
 def job_lead_sync() -> dict:
+    """Har 15 daqiqada. 2026-09, multi-tenant (foydalanuvchi so'rovi: "yangi
+    kompaniya ochilganda o'z reklama hisobidan lidlari o'z CRM'iga tushishi
+    kerak"): endi `meta_page_id`/`meta_access_token` ulagan HAR BIR kompaniya
+    bo'yicha aylanadi (`lead_sync.sync_all_companies()`) -- eski yagona
+    (global) akkaunt `sync_once()` o'rniga. Har bir kompaniyaning yangi
+    lidlari to'g'ridan-to'g'ri O'SHA kompaniyaning `company_id`si bilan
+    yoziladi, shuning uchun bu yerda alohida Telegram fan-out shart emas
+    (`job_ig_dm_sync`dan farqli o'laroq -- lead sync o'zi xabar yubormaydi,
+    faqat bazaga yozadi)."""
     try:
-        return lead_sync.sync_once()
+        return lead_sync.sync_all_companies()
     except Exception as e:
         logger.exception("Lead sync xatosi")
         return {"error": str(e)}

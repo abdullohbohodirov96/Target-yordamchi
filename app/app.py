@@ -28,6 +28,7 @@ from flask_login import (
 from sqlalchemy import or_
 
 import meta_api
+import meta_events
 import orchestrator
 import budget_tracker
 import kv_store
@@ -143,32 +144,10 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
 # HECH QACHON to'xtatmasligi kerak.
 # ---------------------------------------------------------------------------
 
-def _send_capi_lead_signal(session, lead, event_name: str, *, value: float | None = None, event_id_suffix: str = "") -> None:
-    """`session` -- 2026-09 multi-tenant: shu `lead.company_id`ning O'Z
-    Pixel/token'ini (`Company.meta_pixel_id`/`meta_access_token`) olish
-    uchun kerak. Kompaniyada Pixel hali topilmagan/ulanmagan bo'lsa --
-    `meta_api`ning o'zi eski global ENV'ga qaytadi (orqaga moslik)."""
-    pixel_id = access_token = None
-    if lead.company_id:
-        company = session.get(Company, lead.company_id)
-        if company:
-            pixel_id = company.meta_pixel_id
-            access_token = company.meta_access_token
-    if not meta_api.is_capi_configured(pixel_id=pixel_id, access_token=access_token):
-        return
-    try:
-        meta_api.send_conversion_event(
-            event_name,
-            phone=lead.phone,
-            email=lead.email,
-            lead_id=lead.meta_lead_id,
-            event_id=f"lead-{lead.id}-{event_name.lower()}{event_id_suffix}",
-            value=value,
-            pixel_id=pixel_id,
-            access_token=access_token,
-        )
-    except Exception:
-        logger.exception("CAPI signalini yuborishda xatolik (lead_id=%s, event=%s)", lead.id, event_name)
+# 2026-09: CAPI hodisa yuborish mantig'i endi `meta_events.py`da (event
+# jurnali + qo'lda/Manual CAPI ma'lumotlarini ustuvor qilish + token
+# muddati tugashini aniqlash bilan) -- pastdagi chaqiruvlar
+# `meta_events.dispatch_*` funksiyalariga ishora qiladi.
 
 
 # ---------------------------------------------------------------------------
@@ -316,8 +295,9 @@ def _company_meta_creds(company) -> tuple[str | None, str | None]:
     orqali ENV'dan ALLAQACHON DB'ga nusxalab qo'yilgan.)"""
     if company is None:
         return None, None
-    if company.meta_access_token and company.meta_ad_account_id:
-        return company.meta_access_token, company.meta_ad_account_id
+    token = company.get_meta_access_token()
+    if token and company.meta_ad_account_id:
+        return token, company.meta_ad_account_id
     return None, None
 
 
@@ -410,6 +390,27 @@ def tg_send_document(chat_id: int, filename: str, file_bytes: bytes, caption: st
     except Exception:
         logger.exception("Hujjat yuborishda xatolik")
         return False
+
+
+def tg_send_checked(chat_id: int, text: str) -> dict:
+    """`tg_send()`dan farqli o'laroq -- natijani (Telegram'ning o'zi qaytargan
+    `ok` maydoni bilan) chaqiruvchiga qaytaradi, xatoni yutib yubormaydi.
+    2026-09, "Telegram guruhni tekshirish" (Test) tugmasi uchun -- guruh ID
+    noto'g'ri yoki bot guruhga qo'shilmagan bo'lsa, foydalanuvchi buni ANIQ
+    ko'rishi kerak, `tg_send()`ning "jim yutib yuborish" xatti-harakati bu
+    yerga to'g'ri kelmaydi."""
+    import requests
+    if not TELEGRAM_TOKEN:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN server tomonida sozlanmagan."}
+    try:
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": text}, timeout=20)
+        body = r.json()
+        if body.get("ok"):
+            return {"ok": True, "error": None}
+        return {"ok": False, "error": body.get("description", str(body))}
+    except Exception as e:
+        logger.exception("Telegram guruhini tekshirishda xatolik")
+        return {"ok": False, "error": str(e)}
 
 
 def _conv_key(chat_id: int) -> str:
@@ -585,7 +586,23 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
             "har kuni shaxsan shu yerga yuboriladi.",
         )
         return
-    tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish).")
+    if cmd == "/groupid":
+        # 2026-09 multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya o'z
+        # guruhiga targeting/lead ma'lumotini olsin"): `/id`ning guruh
+        # versiyasi -- shu GURUHNING o'z (manfiy) chat_id'sini qaytaradi,
+        # kompaniya admin buni "Akkauntlarni ulash" sahifasidagi "Telegram
+        # guruh ID" maydoniga joylashtiradi. `webhook()` chat turidan qat'iy
+        # nazar `chat_id`ni bir xil aniqlaydi, shuning uchun bu yerda
+        # qo'shimcha guruh/shaxsiy chat farqlash shart emas.
+        tg_send(
+            chat_id,
+            f"Ushbu guruhning Telegram ID'si: {chat_id}\n\n"
+            "Buni CRM'dagi \"Akkauntlarni ulash\" sahifasidagi \"Telegram guruh "
+            "ID\" maydoniga kiritib saqlang -- shundan keyin targeting/xarajat "
+            "va CPL avtomatik pauza ogohlantirishlari shu guruhga yuboriladi.",
+        )
+        return
+    tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish), /groupid (shu guruhning ID'sini ko'rsatish).")
 
 
 def _format_standing_tasks_text() -> str:
@@ -944,19 +961,28 @@ def connect_accounts():
         try:
             c = session.get(Company, company.id)
             c.ig_business_id = request.form.get("ig_business_id", "").strip() or None
+            # 2026-09 multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya
+            # o'z guruhiga targeting/lead ma'lumotini olsin"): Telegram guruh
+            # ID -- barcha tariflarda mavjud, Meta Ads ulanishidan mustaqil.
+            c.telegram_group_id = request.form.get("telegram_group_id", "").strip() or None
             if plan_def.can_connect_meta_ads:
                 c.meta_page_id = request.form.get("meta_page_id", "").strip() or None
                 c.meta_ad_account_id = request.form.get("meta_ad_account_id", "").strip() or None
                 token = request.form.get("meta_access_token", "").strip()
                 if token:
-                    c.meta_access_token = token
+                    c.set_meta_access_token(token)
             session.commit()
             flash("Akkaunt ma'lumotlari saqlandi.", "success")
         finally:
             session.close()
         return redirect(url_for("connect_accounts"))
 
-    return render_template("connect_accounts.html", company=company, plan=plan_def, fb_oauth_configured=meta_api.oauth_configured())
+    return render_template(
+        "connect_accounts.html", company=company, plan=plan_def,
+        fb_oauth_configured=meta_api.oauth_configured(),
+        capi_configured=meta_events.capi_credentials_configured(company),
+        manual_capi_configured=bool(company.meta_capi_dataset_id and company.get_meta_capi_token()),
+    )
 
 
 def _normalize_oauth_page(p: dict) -> dict:
@@ -968,7 +994,9 @@ def _normalize_oauth_account(a: dict) -> dict:
     return {"id": a["id"], "name": a.get("name") or a["id"]}
 
 
-def _save_facebook_connection(token: str, page: dict, account: dict | None) -> None:
+def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
+                               business: dict | None = None, dataset: dict | None = None,
+                               expires_in: int | None = None) -> None:
     """`page`/`account` -- `_normalize_oauth_page()`/`_normalize_oauth_account()`
     formatidagi dict. Xuddi qo'lda-token formasi yozadigan MAYDONLARNI
     yozadi -- shu tufayli Target/SMM/Instagram DM sahifalari OAuth orqali
@@ -987,24 +1015,36 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None) -> N
     company = _current_company()
     if company is None:
         return
-    pixel_id = None
-    if account:
+    pixel_id = dataset["id"] if dataset else None
+    pixel_name = dataset.get("name") if dataset else None
+    if not dataset and account:
         try:
             pixels = meta_api.get_ad_account_pixels(account["id"], token)
             if pixels:
                 pixel_id = pixels[0]["id"]
+                pixel_name = pixels[0].get("name")
         except Exception:
             logger.exception("Reklama hisobi uchun Pixel qidirishda xatolik (account=%s)", account.get("id"))
     db_session = get_session()
     try:
         c = db_session.get(Company, company.id)
-        c.meta_access_token = token
+        c.set_meta_access_token(token)
         c.meta_page_id = page["id"]
         c.ig_business_id = page.get("ig")
         if account:
             c.meta_ad_account_id = account["id"]
+            c.meta_ad_account_name = account.get("name")
         if pixel_id:
             c.meta_pixel_id = pixel_id
+            c.meta_dataset_name = pixel_name
+        if business:
+            c.meta_business_id = business.get("id")
+            c.meta_business_name = business.get("name")
+        c.meta_token_expires_at = (
+            dt.datetime.utcnow() + dt.timedelta(seconds=expires_in) if expires_in else None
+        )
+        c.meta_integration_status = "connected"
+        c.meta_last_verified_at = dt.datetime.utcnow()
         db_session.commit()
     finally:
         db_session.close()
@@ -1062,29 +1102,62 @@ def connect_facebook_callback():
     redirect_uri = url_for("connect_facebook_callback", _external=True)
     try:
         short_token = meta_api.oauth_exchange_code(code, redirect_uri)
-        long_token = meta_api.oauth_exchange_long_lived(short_token)
+        long_token, expires_in = meta_api.oauth_exchange_long_lived(short_token)
         pages = [_normalize_oauth_page(p) for p in meta_api.oauth_list_pages(long_token)]
-        accounts = [_normalize_oauth_account(a) for a in meta_api.oauth_list_ad_accounts(long_token)] if include_ads else []
+        businesses: list[dict] = []
+        fallback_accounts: list[dict] = []
+        business_assets: dict = {}
+        if include_ads:
+            businesses = [{"id": b["id"], "name": b.get("name") or b["id"]} for b in meta_api.oauth_list_businesses(long_token)]
+            fallback_accounts = [_normalize_oauth_account(a) for a in meta_api.oauth_list_ad_accounts(long_token)]
+            # Har bir Business Portfolio uchun UNGA tegishli reklama hisobi/
+            # Dataset ro'yxatini OLDINDAN olib qo'yamiz (kichik hajm --
+            # odatda 1-3 ta Business, har birida bir nechta hisob) -- shu
+            # tufayli tanlov ekranida Business tanlanganda YANGI server
+            # so'rovi kerak bo'lmaydi (oddiy JS bilan mos ro'yxat ko'rsatiladi).
+            for b in businesses:
+                try:
+                    accts = [_normalize_oauth_account(a) for a in meta_api.oauth_list_ad_accounts_for_business(b["id"], long_token)]
+                except Exception:
+                    accts = []
+                try:
+                    pixels = [{"id": p["id"], "name": p.get("name") or p["id"]} for p in meta_api.get_business_pixels(b["id"], long_token)]
+                except Exception:
+                    pixels = []
+                business_assets[b["id"]] = {"accounts": accts, "pixels": pixels}
     except meta_api.MetaAPIError as e:
         logger.exception("Facebook OAuth: token/ro'yxat olishda xato")
-        flash(f"Facebook'dan ma'lumot olishda xatolik: {e}", "error")
+        flash(f"Facebook'dan ma'lumot olishda xatolik: {meta_api.safe_error_message(e)}", "error")
+        return redirect(url_for("connect_accounts"))
+    except Exception:
+        logger.exception("Facebook OAuth: kutilmagan xatolik")
+        flash("Facebook bilan bog'lanishda kutilmagan xatolik yuz berdi -- qaytadan urinib ko'ring.", "error")
         return redirect(url_for("connect_accounts"))
 
     if not pages:
         flash("Facebook hisobingizda siz administrator bo'lgan sahifa topilmadi -- avval Facebook Page yarating (yoki unga administrator bo'ling).", "error")
         return redirect(url_for("connect_accounts"))
 
-    if len(pages) == 1 and len(accounts) <= 1:
-        _save_facebook_connection(long_token, pages[0], accounts[0] if accounts else None)
+    # 2026-09, "production-ready Meta Ads" so'rovi: reklama scope
+    # so'ralganda (Business/Ad Account/Dataset tanlovi mumkin bo'lsa) --
+    # ENDI HAR DOIM aniq tanlov ekraniga o'tkaziladi (jimgina "birinchisini"
+    # avtomatik saqlab, foydalanuvchiga hech narsa ko'rsatmasdan qo'ymaydi).
+    # Avtomatik-yagona-tanlov FAQAT reklama scope so'ralmagan (faqat
+    # Page/Instagram ulash) holatda qoladi -- u yerda haqiqatan tanlaydigan
+    # narsa yo'q.
+    if not include_ads and len(pages) == 1:
+        _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
         flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
         return redirect(url_for("connect_accounts"))
 
-    # Bir nechta sahifa/reklama hisobi topilsa -- qaysi birini ulashni
-    # so'raymiz. Token vaqtinchalik (tanlov yakunlanguncha) cookie-sessiyada
+    # Token/ro'yxatlar vaqtinchalik (tanlov yakunlanguncha) cookie-sessiyada
     # saqlanadi -- admin darhol tanlab yakunlaydi, uzoq turmaydi.
     flask_session["fb_oauth_token"] = long_token
+    flask_session["fb_oauth_expires_in"] = expires_in
     flask_session["fb_oauth_pages"] = pages
-    flask_session["fb_oauth_accounts"] = accounts
+    flask_session["fb_oauth_businesses"] = businesses
+    flask_session["fb_oauth_business_assets"] = business_assets
+    flask_session["fb_oauth_accounts"] = fallback_accounts
     return redirect(url_for("connect_facebook_choose"))
 
 
@@ -1093,28 +1166,214 @@ def connect_facebook_callback():
 @admin_required
 def connect_facebook_choose():
     pages = flask_session.get("fb_oauth_pages")
-    accounts = flask_session.get("fb_oauth_accounts") or []
+    fallback_accounts = flask_session.get("fb_oauth_accounts") or []
+    businesses = flask_session.get("fb_oauth_businesses") or []
+    business_assets = flask_session.get("fb_oauth_business_assets") or {}
     token = flask_session.get("fb_oauth_token")
+    expires_in = flask_session.get("fb_oauth_expires_in")
     if not pages or not token:
         flash("Facebook ulanish jarayoni tugagan -- qaytadan boshlang.", "error")
         return redirect(url_for("connect_accounts"))
 
     if request.method == "POST":
         page_id = request.form.get("page_id")
+        business_id = request.form.get("business_id") or None
         account_id = request.form.get("ad_account_id") or None
+        dataset_id = request.form.get("dataset_id") or None
+
         chosen_page = next((p for p in pages if p["id"] == page_id), None)
         if not chosen_page:
             flash("Sahifa tanlanmadi.", "error")
             return redirect(url_for("connect_facebook_choose"))
-        chosen_account = next((a for a in accounts if a["id"] == account_id), None) if account_id else None
-        _save_facebook_connection(token, chosen_page, chosen_account)
-        flask_session.pop("fb_oauth_token", None)
-        flask_session.pop("fb_oauth_pages", None)
-        flask_session.pop("fb_oauth_accounts", None)
+
+        chosen_business = next((b for b in businesses if b["id"] == business_id), None) if business_id else None
+        assets = business_assets.get(business_id, {}) if business_id else {}
+        available_accounts = assets.get("accounts") or (fallback_accounts if not business_id else [])
+        available_pixels = assets.get("pixels") or []
+        chosen_account = next((a for a in available_accounts if a["id"] == account_id), None) if account_id else None
+        chosen_dataset = next((p for p in available_pixels if p["id"] == dataset_id), None) if dataset_id else None
+
+        _save_facebook_connection(
+            token, chosen_page, chosen_account,
+            business=chosen_business, dataset=chosen_dataset, expires_in=expires_in,
+        )
+        for key in ("fb_oauth_token", "fb_oauth_expires_in", "fb_oauth_pages", "fb_oauth_accounts", "fb_oauth_businesses", "fb_oauth_business_assets"):
+            flask_session.pop(key, None)
         flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
         return redirect(url_for("connect_accounts"))
 
-    return render_template("connect_facebook_choose.html", pages=pages, accounts=accounts)
+    return render_template(
+        "connect_facebook_choose.html",
+        pages=pages, businesses=businesses, business_assets=business_assets, fallback_accounts=fallback_accounts,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Meta ulanishini boshqarish -- Test/Disconnect/Advanced(Manual) -- 2026-09,
+# "production-ready Meta Ads + CAPI integration" so'rovi. Uchalasi ham
+# admin-only, hech qachon HAQIQIY tokenni HTML/logga chiqarmaydi (faqat
+# `meta_api.safe_error_message()` orqali tozalangan xabar).
+# ---------------------------------------------------------------------------
+
+@app.route("/connect-accounts/meta/test", methods=["POST"])
+@login_required
+@admin_required
+def connect_meta_test():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    token, dataset_id = meta_events._resolve_capi_credentials(company)
+    if not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
+        flash("Meta hali ulanmagan -- avval Facebook orqali ulang yoki Advanced sozlamalardan Dataset ID/CAPI token kiriting.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    test_event_code = request.form.get("test_event_code", "").strip() or None
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        try:
+            result = meta_api.send_conversion_event(
+                "Lead",
+                external_id=f"test-{company.id}",
+                event_id=f"test-{company.id}-{int(time.time())}",
+                pixel_id=dataset_id,
+                access_token=token,
+                test_event_code=test_event_code,
+            )
+            if result is None:
+                flash("Test hodisasi yuborilmadi -- moslashtiradigan (test) ma'lumot yetarli emas.", "error")
+            else:
+                c.meta_last_verified_at = dt.datetime.utcnow()
+                if c.meta_integration_status == "reauth_required":
+                    c.meta_integration_status = "connected"
+                session.commit()
+                flash("Test hodisasi Meta'ga muvaffaqiyatli yuborildi -- Events Manager -> Test events bo'limida tekshiring.", "success")
+        except meta_api.MetaAPIError as e:
+            if meta_api.is_token_expired_error(e):
+                c.meta_integration_status = "reauth_required"
+                session.commit()
+            logger.exception("Meta test hodisasini yuborishda xatolik (company_id=%s)", company.id)
+            flash(f"Test hodisasini yuborishda xatolik: {meta_api.safe_error_message(e)}", "error")
+        except Exception:
+            logger.exception("Meta test hodisasini yuborishda kutilmagan xatolik (company_id=%s)", company.id)
+            flash("Meta bilan bog'lanishda kutilmagan xatolik yuz berdi.", "error")
+    finally:
+        session.close()
+    return redirect(url_for("connect_accounts"))
+
+
+@app.route("/connect-accounts/meta/disconnect", methods=["POST"])
+@login_required
+@admin_required
+def connect_meta_disconnect():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        token = c.get_meta_access_token()
+        if token:
+            try:
+                meta_api.oauth_revoke(token)
+            except Exception:
+                logger.exception("Meta ruxsatlarini bekor qilishda xatolik (best-effort, company_id=%s)", company.id)
+        c.disconnect_meta()
+        session.commit()
+        flash("Meta ulanishi uzildi -- endi hech qanday ma'lumot Meta'ga yuborilmaydi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("connect_accounts"))
+
+
+@app.route("/connect-accounts/meta/manual", methods=["POST"])
+@login_required
+@admin_required
+def connect_meta_manual():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    dataset_id = request.form.get("dataset_id", "").strip()
+    capi_token = request.form.get("capi_access_token", "").strip()
+    if not dataset_id or not capi_token:
+        flash("Dataset ID va CAPI Access Token ikkalasi ham majburiy.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    # XAVFSIZLIK (foydalanuvchi talabi -- "Validates before saving"):
+    # saqlashdan OLDIN Meta'ning O'ZIGA haqiqiy so'rov yuborib, dataset
+    # ID/token to'g'riligini tekshiramiz -- noto'g'ri qiymat HECH QACHON
+    # bazaga yozilmaydi.
+    try:
+        meta_api.verify_dataset_credentials(dataset_id, capi_token)
+    except meta_api.MetaAPIError as e:
+        flash(f"Dataset ID/CAPI token tekshiruvdan o'tmadi: {meta_api.safe_error_message(e)}", "error")
+        return redirect(url_for("connect_accounts"))
+    except Exception:
+        logger.exception("Manual CAPI tekshiruvida kutilmagan xatolik (company_id=%s)", company.id)
+        flash("Meta bilan bog'lanishda kutilmagan xatolik yuz berdi -- birozdan keyin qaytadan urinib ko'ring.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        c.meta_capi_dataset_id = dataset_id
+        c.set_meta_capi_token(capi_token)
+        if c.meta_integration_status in (None, "disconnected", "reauth_required"):
+            c.meta_integration_status = "connected"
+        c.meta_last_verified_at = dt.datetime.utcnow()
+        session.commit()
+        flash("Advanced (qo'lda) CAPI ulanishi saqlandi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("connect_accounts"))
+
+
+@app.route("/connect-accounts/telegram/test", methods=["POST"])
+@login_required
+@admin_required
+def connect_telegram_test():
+    """2026-09 multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya o'z
+    guruhiga targeting/lead ma'lumotini olsin"): kompaniya admin saqlagan
+    `telegram_group_id`ga HAQIQIY test xabari yuborib, guruh ID to'g'ri
+    kiritilganini (bot o'sha guruhga qo'shilganini) tasdiqlaydi -- `tg_send()`
+    xatoni jim yutib yuboradi, shuning uchun bu yerda `tg_send_checked()`
+    ishlatiladi, Telegram'ning o'zi qaytargan `ok`/`description`ga qarab."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    raw_group_id = (company.telegram_group_id or "").strip()
+    if not raw_group_id:
+        flash("Avval Telegram guruh ID kiritib saqlang.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    try:
+        chat_id = int(raw_group_id)
+    except (TypeError, ValueError):
+        flash("Telegram guruh ID noto'g'ri formatda -- faqat raqam (odatda manfiy) bo'lishi kerak.", "error")
+        return redirect(url_for("connect_accounts"))
+
+    result = tg_send_checked(
+        chat_id,
+        f"✅ Test xabari -- \"{company.name}\" kompaniyasi shu guruhga ulandi. "
+        "Targeting/xarajat va CPL avtomatik pauza ogohlantirishlari endi shu yerga yuboriladi.",
+    )
+    if result["ok"]:
+        flash("Test xabari muvaffaqiyatli yuborildi -- guruh to'g'ri sozlangan.", "success")
+    else:
+        flash(
+            f"Test xabari yuborilmadi: {result['error']}. Botni shu guruhga qo'shganingizni "
+            "va guruh ID to'g'ri (/groupid buyrug'i bilan olingan) ekanini tekshiring.",
+            "error",
+        )
+    return redirect(url_for("connect_accounts"))
 
 
 # ---------------------------------------------------------------------------
@@ -1817,7 +2076,11 @@ def analytics_page():
                 target_managers = [m for m in sales_managers if str(m.id) == kpi_selected_manager]
             kpi_reports = [_build_manager_kpi_report(session, m, kpi_year, kpi_month_num) for m in target_managers]
 
-            lead_sync_status = lead_sync.get_last_status()
+            # 2026-09 multi-tenant: har bir kompaniyaning O'Z lead-sync
+            # holati -- boshqa (masalan standart/global) kompaniyaning
+            # holati bu yerda ko'rsatilmasligi kerak.
+            _analytics_company = _current_company()
+            lead_sync_status = lead_sync.get_last_status(_analytics_company.id if _analytics_company else None)
     finally:
         session.close()
 
@@ -2608,7 +2871,7 @@ def lead_detail(lead_id):
                     session.flush()
                     _recompute_lead_sale_total(session, lead)
                     session.commit()
-                    _send_capi_lead_signal(session, lead, "Purchase", value=amount, event_id_suffix=f"-{existing_count + 1}")
+                    meta_events.dispatch_purchase_event(session, lead, value=amount, event_id_suffix=f"-{existing_count + 1}")
                     flash(f"{existing_count + 1}-sotuv qo'shildi.", "success")
                 return redirect(url_for("lead_detail", lead_id=lead.id) + "#sales")
 
@@ -2721,9 +2984,9 @@ def lead_detail(lead_id):
             new_category = stage_by_key[new_status].category if new_status in stage_by_key else old_category
             if new_status in stage_by_key and new_category != old_category:
                 if new_category == "qualified":
-                    _send_capi_lead_signal(session, lead, "QualifiedLead")
+                    meta_events.dispatch_qualified_lead_event(session, lead)
                 elif new_category == "sold":
-                    _send_capi_lead_signal(session, lead, "Purchase", value=lead.sale_amount)
+                    meta_events.dispatch_purchase_event(session, lead, value=lead.sale_amount)
 
             flash("Saqlandi.", "success")
             return redirect(url_for("leads_list"))
@@ -4044,9 +4307,7 @@ def settings_hub():
     # ulanganda avtomatik topilgan `meta_pixel_id`ga qarab hisoblanadi (eski
     # global ENV'ga emas) -- pastga, `_current_company()` orqali.
     company = _current_company()
-    capi_configured = bool(company and meta_api.is_capi_configured(
-        pixel_id=company.meta_pixel_id, access_token=company.meta_access_token,
-    ))
+    capi_configured = bool(company and meta_events.capi_credentials_configured(company))
     capi_has_ad_account = bool(company and company.meta_ad_account_id)
 
     # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish mumkin

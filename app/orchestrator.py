@@ -266,15 +266,20 @@ ACTION_EXECUTORS = {
 }
 
 
-def _execute_and_verify_status(object_id: str, expected_status: str) -> dict:
+def _execute_and_verify_status(object_id: str, expected_status: str, *, access_token: str | None = None) -> dict:
     """pause_ad/resume_ad uchun: Meta'ga status o'zgartirish so'rovini yuboradi,
     KEYIN qayta o'qib haqiqatan o'zgarganini tekshiradi. Meta ba'zan
     {"success": true} qaytaradi-yu, holat aslida o'zgarmagan bo'lishi mumkin
     (masalan yuqori darajadagi adset/kampaniya o'chiq bo'lsa) — bu holda
-    "bajarildi" deb yolg'on hisobot berilmasligi uchun xato ko'taramiz."""
-    meta_api.set_status(object_id, expected_status)
+    "bajarildi" deb yolg'on hisobot berilmasligi uchun xato ko'taramiz.
 
-    info = meta_api.get_object_status(object_id)
+    2026-09 multi-tenant: `access_token` berilsa, O'SHA (kompaniyaning o'zi
+    ulagan) token bilan bajariladi va tasdiqlanadi -- berilmasa eski global
+    ACCESS_TOKEN (`meta_api.set_status`/`get_object_status`ning o'zidagi
+    fallback orqali)."""
+    meta_api.set_status(object_id, expected_status, access_token=access_token)
+
+    info = meta_api.get_object_status(object_id, access_token=access_token)
     actual_status = info.get("status")
     if actual_status != expected_status:
         raise meta_api.MetaAPIError({
@@ -1150,10 +1155,18 @@ def _crm_leads_count_today() -> int:
 # audit tsiklidan (`job_watch_cycle`) MUSTAQIL.
 # ---------------------------------------------------------------------------
 
-def enforce_cpl_hard_kill() -> dict:
+def enforce_cpl_hard_kill(company=None) -> dict:
     """Bugungi (server vaqti bo'yicha "today") faol reklamalarni CPL
     hard-kill chegarasi bo'yicha tekshiradi va chegaradan oshganlarini
     DARHOL pauza qiladi -- Targetolog/Marketolog LLM tsiklidan mustaqil.
+
+    `company` berilsa (yengil creds obyekti yoki `db.Company` qatori) --
+    O'SHA kompaniyaning O'Z reklama hisobi/tokeni bilan tekshiriladi va
+    pauza qilinadi (2026-09, multi-tenant, `lead_sync.sync_once`/
+    `ig_dm_sync.sync_once` bilan bir xil naqsh). Berilmasa -- eski global
+    (ENV) xatti-harakat. `BUSINESS_RULES` (chegaralar) barcha kompaniyalar
+    uchun HOZIRCHA umumiy/global -- kompaniya-bo'yicha moslashtirish shu
+    bosqichda qilinmadi.
 
     Qaytaradi: {"checked": N, "paused": [...], "errors": [...]}.
     Har bir "paused" elementi: {"ad_id", "name", "reason", "cpl", "spend"}.
@@ -1161,6 +1174,9 @@ def enforce_cpl_hard_kill() -> dict:
     cpl_hard_kill = float(BUSINESS_RULES.get("cpl_hard_kill_usd") or 0)
     if cpl_hard_kill <= 0:
         return {"checked": 0, "paused": [], "errors": [], "note": "cpl_hard_kill_usd sozlanmagan -- tekshiruv o'tkazib yuborildi"}
+
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
 
     # Juda kichik hajmdagi "shovqin"dan (masalan bitta erta/tasodifiy qimmat
     # lead) asossiz pauza qilib yubormaslik uchun minimal xarajat bo'sag'asi
@@ -1172,7 +1188,7 @@ def enforce_cpl_hard_kill() -> dict:
     zero_lead_multiplier = float(BUSINESS_RULES.get("cpl_hard_kill_zero_lead_multiplier", 3.0))
     protected_campaign_ids = set(BUSINESS_RULES.get("protected_campaign_ids") or [])
 
-    result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True)
+    result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True, access_token=access_token, ad_account_id=ad_account_id)
     if result.get("error"):
         logger.error("CPL hard-kill: bugungi ad ma'lumotini olishda xato: %s", result["error"])
         return {"checked": 0, "paused": [], "errors": [result["error"]]}
@@ -1180,7 +1196,7 @@ def enforce_cpl_hard_kill() -> dict:
     campaign_by_ad = {}
     if protected_campaign_ids:
         try:
-            structure = meta_api.get_account_structure(active_only=True)
+            structure = meta_api.get_account_structure(active_only=True, access_token=access_token, ad_account_id=ad_account_id)
             campaign_by_ad = {a["id"]: a.get("campaign_id") for a in structure.get("ads", [])}
         except meta_api.MetaAPIError as e:
             logger.warning(
@@ -1224,7 +1240,7 @@ def enforce_cpl_hard_kill() -> dict:
             continue
 
         try:
-            _execute_and_verify_status(ad_id, "PAUSED")
+            _execute_and_verify_status(ad_id, "PAUSED", access_token=access_token)
             paused.append({
                 "ad_id": ad_id, "name": row.get("name", ad_id),
                 "reason": reason, "cpl": cpl, "spend": spend,
@@ -1235,6 +1251,60 @@ def enforce_cpl_hard_kill() -> dict:
             logger.error("CPL hard-kill: pauza qilishda xato -- %s: %s", ad_id, e)
 
     return {"checked": checked, "paused": paused, "errors": errors}
+
+
+class _CplCompanyCreds:
+    """`enforce_cpl_hard_kill(company=...)`ga uzatish uchun yengil obyekt
+    (`lead_sync._CompanyCreds`/`ig_dm_sync._CompanyCreds` bilan bir xil
+    naqsh) -- to'liq `db.Company` ORM qatori shart emas."""
+    def __init__(self, id, name, meta_access_token, meta_ad_account_id):
+        self.id = id
+        self.name = name
+        self._meta_access_token_plain = meta_access_token
+        self.meta_ad_account_id = meta_ad_account_id
+
+    def get_meta_access_token(self) -> "str | None":
+        return self._meta_access_token_plain
+
+
+def enforce_cpl_hard_kill_all_companies() -> dict:
+    """2026-09, multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya o'z
+    reklama hisobi bo'yicha nazorat qilinsin"): `meta_ad_account_id`+
+    `meta_access_token` ulagan HAR BIR kompaniya bo'yicha aylanib,
+    `enforce_cpl_hard_kill()`ni ALOHIDA (o'z hisobi bilan) ishga tushiradi.
+    `scheduler.job_cpl_hard_kill` endi shuni chaqiradi -- eski yagona
+    (global) akkaunt tekshiruvi o'rniga. Bitta kompaniyaning tekshiruvi
+    muvaffaqiyatsiz bo'lishi qolganlarini to'xtatmaydi.
+
+    Qaytaradi: {"companies_checked": N, "per_company": {company_id: result}}."""
+    from db import Company, get_session
+
+    session = get_session()
+    try:
+        rows = (
+            session.query(Company)
+            .filter(Company.meta_ad_account_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
+            .all()
+        )
+        companies = [
+            {"id": c.id, "name": c.name, "meta_access_token": c.get_meta_access_token(), "meta_ad_account_id": c.meta_ad_account_id}
+            for c in rows
+        ]
+    finally:
+        session.close()
+
+    per_company = {}
+    for c in companies:
+        fake_company = _CplCompanyCreds(
+            id=c["id"], name=c["name"],
+            meta_access_token=c["meta_access_token"], meta_ad_account_id=c["meta_ad_account_id"],
+        )
+        try:
+            per_company[c["id"]] = enforce_cpl_hard_kill(company=fake_company)
+        except Exception as e:
+            logger.exception("CPL hard-kill: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
+            per_company[c["id"]] = {"checked": 0, "paused": [], "errors": [f"Kutilmagan xato: {e}"]}
+    return {"companies_checked": len(companies), "per_company": per_company}
 
 
 def gather_data() -> dict:

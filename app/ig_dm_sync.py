@@ -300,7 +300,7 @@ def sync_all_companies() -> dict:
             .filter(Company.meta_page_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
             .all()
         )
-        companies = [{"id": c.id, "name": c.name, "meta_page_id": c.meta_page_id, "meta_access_token": c.meta_access_token} for c in rows]
+        companies = [{"id": c.id, "name": c.name, "meta_page_id": c.meta_page_id, "meta_access_token": c.get_meta_access_token()} for c in rows]
     finally:
         session.close()
 

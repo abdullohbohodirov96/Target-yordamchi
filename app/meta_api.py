@@ -153,6 +153,14 @@ def send_conversion_event(
     currency: str = "UZS",
     pixel_id: str | None = None,
     access_token: str | None = None,
+    test_event_code: str | None = None,
+    action_source: str = "system_generated",
+    fbp: str | None = None,
+    fbc: str | None = None,
+    client_ip_address: str | None = None,
+    client_user_agent: str | None = None,
+    external_id: str | None = None,
+    event_source_url: str | None = None,
 ) -> dict | None:
     """Bitta hodisani (masalan "QualifiedLead" yoki "Purchase") Meta
     Conversions API'ga yuboradi.
@@ -160,6 +168,14 @@ def send_conversion_event(
     `pixel_id`/`access_token` -- 2026-09 multi-tenant: berilsa, O'SHA
     kompaniyaning o'z Pixel'i/tokeni ishlatiladi. Ikkalasi ham berilmasa --
     eski global ENV (`PIXEL_ID`/`ACCESS_TOKEN`) ishlatiladi.
+
+    `test_event_code` -- Meta Events Manager -> "Test events" bo'limida
+    ko'rsatiladigan vaqtinchalik kod. Berilsa, hodisa Meta'ning HAQIQIY
+    statistikasiga (real reklama optimizatsiyasiga) ta'sir qilmaydi, lekin
+    Events Manager'da darhol "Server" manbai bilan ko'rinadi -- aynan
+    "Test connection" tugmasi shuni ishlatadi (Meta CAPI'ning rasmiy test
+    mexanizmi -- `data` bilan bir qatorda POST tanasiga qo'shiladigan
+    alohida maydon, docs/META_INTEGRATION_SETUP.md'da havola berilgan).
 
     - `phone`/`email` -- mijozning CRM'dagi kontakti (SHA-256 bilan xeshlanadi,
       xom holda hech qachon Meta'ga yuborilmaydi -- bu Meta'ning o'zi talab
@@ -172,6 +188,22 @@ def send_conversion_event(
       ham Meta ikkalanini bittaga hisoblaydi.
     - `value`/`currency` -- pul summasi bilan bog'liq hodisalar uchun
       (masalan sotuv summasi).
+    - `action_source` -- Meta'ning rasmiy hujjatidagi qiymatlardan biri
+      ("website", "email", "phone_call", "system_generated" va h.k.).
+      CRM-ichida (qo'ng'iroq/status o'zgarishi) yaratilgan hodisalar uchun
+      standart qiymat "system_generated" -- Meta'ning o'z hujjatida server
+      tomonidan, brauzer/qo'ng'iroqsiz yuborilgan hodisalar uchun aynan shu
+      qiymat tavsiya etiladi. Sayt formasidan kelgan lead uchun chaqiruvchi
+      "website" uzatishi mumkin (pastga qarang -- `fbp`/`fbc` bilan birga).
+    - `fbp`/`fbc` -- brauzer Pixel cookie'lari (`_fbp`/`_fbc`), sayt orqali
+      kelgan lead'larda Pixel+CAPI DEDUPLIKATSIYA uchun (xeshlanmaydi --
+      Meta hujjatiga ko'ra bular ochiq holda yuboriladi).
+    - `client_ip_address`/`client_user_agent` -- moslashtirish sifatini
+      oshiradi (xeshlanmaydi).
+    - `external_id` -- CRM'dagi ichki lead ID (xeshlanadi -- Meta'ning
+      moslashtirish kaliti sifatida hujjatlashtirilgan).
+    - `event_source_url` -- sayt orqali kelgan lead uchun landing sahifa
+      manzili (`Lead.landing_url`).
 
     META_PIXEL_ID sozlanmagan yoki moslashtiradigan hech qanday kontakt
     berilmagan bo'lsa -- `None` qaytaradi, xato tashlamaydi.
@@ -190,6 +222,16 @@ def send_conversion_event(
         user_data["em"] = [_hash_sha256(email)]
     if lead_id:
         user_data["lead_id"] = str(lead_id)
+    if external_id:
+        user_data["external_id"] = [_hash_sha256(str(external_id))]
+    if fbp:
+        user_data["fbp"] = fbp
+    if fbc:
+        user_data["fbc"] = fbc
+    if client_ip_address:
+        user_data["client_ip_address"] = client_ip_address
+    if client_user_agent:
+        user_data["client_user_agent"] = client_user_agent
 
     if not user_data:
         return None  # moslashtiradigan hech narsa yo'q -- yuborishning ma'nosi yo'q
@@ -197,15 +239,21 @@ def send_conversion_event(
     event = {
         "event_name": event_name,
         "event_time": int(time.time()),
-        "action_source": "system_generated",
+        "action_source": action_source,
         "user_data": user_data,
     }
+    if event_source_url:
+        event["event_source_url"] = event_source_url
     if event_id:
         event["event_id"] = event_id
     if value is not None:
         event["custom_data"] = {"value": round(float(value), 2), "currency": currency}
 
-    return _post(f"{resolved_pixel_id}/events", {"data": [event]}, token=resolved_token)
+    payload: dict = {"data": [event]}
+    if test_event_code:
+        payload["test_event_code"] = test_event_code
+
+    return _post(f"{resolved_pixel_id}/events", payload, token=resolved_token)
 
 
 # ---------------------------------------------------------------------------
@@ -541,10 +589,20 @@ def oauth_exchange_code(code: str, redirect_uri: str) -> str:
     return data["access_token"]
 
 
-def oauth_exchange_long_lived(short_token: str) -> str:
+def oauth_exchange_long_lived(short_token: str) -> tuple[str, "int | None"]:
     """QISQA muddatli (~1-2 soatlik) tokenni ~60 kunlik UZOQ muddatli
     tokenga almashtiradi -- shu token Company.meta_access_token'da
-    saqlanadi (xuddi qo'lda kiritilgan token kabi)."""
+    saqlanadi (xuddi qo'lda kiritilgan token kabi).
+
+    2026-09 TUZATISH ("production-ready ... token muddati" so'rovi):
+    ILGARI Meta qaytargan `expires_in` (soniyada, odatda ~5184000 = 60
+    kun) BUTUNLAY TASHLAB YUBORILARDI -- token qachon tugashi HECH QAYERDA
+    saqlanmagan, shuning uchun u jimgina ishlamay qolganda foydalanuvchiga
+    HECH QANDAY signal ko'rsatib bo'lmasdi. Endi `(token, expires_in)`
+    juftligi qaytariladi -- chaqiruvchi (`app.py`) buni
+    `Company.meta_token_expires_at`ga yozadi. Meta ba'zan `expires_in`ni
+    umuman qaytarmasligi mumkin (masalan muddatsiz token uchun) -- bunday
+    holda `None` qaytariladi."""
     r = requests.get(f"{GRAPH_URL}/oauth/access_token", params={
         "grant_type": "fb_exchange_token", "client_id": META_APP_ID,
         "client_secret": META_APP_SECRET, "fb_exchange_token": short_token,
@@ -552,7 +610,12 @@ def oauth_exchange_long_lived(short_token: str) -> str:
     data = r.json()
     if "error" in data:
         raise MetaAPIError(data["error"])
-    return data["access_token"]
+    expires_in = data.get("expires_in")
+    try:
+        expires_in = int(expires_in) if expires_in is not None else None
+    except (TypeError, ValueError):
+        expires_in = None
+    return data["access_token"], expires_in
 
 
 def oauth_list_pages(user_token: str) -> list[dict]:
@@ -594,12 +657,104 @@ def get_ad_account_pixels(ad_account_id: str, access_token: str) -> list[dict]:
         return []
 
 
-def get_object_status(object_id: str) -> dict:
+def verify_dataset_credentials(dataset_id: str, access_token: str) -> dict:
+    """Advanced/Manual sozlash formasi ("Dataset ID + CAPI Access Token")
+    SAQLASHDAN OLDIN chaqiradi -- Meta'ning o'ziga haqiqiy so'rov yuborib,
+    berilgan Dataset ID shu token bilan HAQIQATAN ko'rinishini tekshiradi.
+    Muvaffaqiyatsiz bo'lsa `MetaAPIError` ko'taradi (chaqiruvchi
+    `safe_error_message()` bilan foydalanuvchiga xavfsiz xabar ko'rsatadi).
+    """
+    return _get(dataset_id, {"fields": "id,name"}, token=access_token)
+
+
+# ---------------------------------------------------------------------------
+# Business Portfolio / Dataset tanlash -- 2026-09, "production-ready Meta Ads
+# + CAPI integration" so'rovi: ilgari ulanish oqimi FAQAT Page + Ad Account
+# so'rardi, Pixel esa AVTOMATIK (birinchisi) olinardi -- foydalanuvchiga hech
+# qanday tanlov ko'rsatilmasdi. Endi aniq uch bosqichli tanlov: Business
+# Portfolio -> Ad Account -> Dataset/Pixel (rasmiy Graph API obyekt modeliga
+# mos: /me/businesses, /{business}/owned_ad_accounts+client_ad_accounts,
+# /{business}/owned_pixels+client_pixels).
+# ---------------------------------------------------------------------------
+
+def oauth_list_businesses(user_token: str) -> list[dict]:
+    """Foydalanuvchi a'zo bo'lgan Business Portfolio (Business Manager)
+    ro'yxatini qaytaradi. Ko'p kichik reklamachida Business Manager umuman
+    bo'lmasligi mumkin -- bo'sh ro'yxat ODATIY holat, xato emas."""
+    try:
+        data = _get("me/businesses", {"fields": "id,name", "limit": 200}, token=user_token)
+        return data.get("data", [])
+    except MetaAPIError:
+        return []
+
+
+def oauth_list_ad_accounts_for_business(business_id: str, user_token: str) -> list[dict]:
+    """Berilgan Business Portfolio'ga tegishli reklama hisoblari --
+    o'zining (`owned_ad_accounts`) va unga ulashilgan (`client_ad_accounts`,
+    agentlik holati) ikkalasini ham birlashtirib qaytaradi. Xato bo'lsa
+    (masalan ruxsat yetishmasa) bo'sh ro'yxat -- `oauth_list_ad_accounts()`
+    (`/me/adaccounts`) ga qaytish chaqiruvchi tomonda amalga oshiriladi."""
+    accounts: dict[str, dict] = {}
+    for edge in ("owned_ad_accounts", "client_ad_accounts"):
+        try:
+            data = _get(f"{business_id}/{edge}", {"fields": "id,name,account_status,currency", "limit": 200}, token=user_token)
+            for a in data.get("data", []):
+                accounts[a["id"]] = a
+        except MetaAPIError:
+            continue
+    return list(accounts.values())
+
+
+def get_business_pixels(business_id: str, user_token: str) -> list[dict]:
+    """Berilgan Business Portfolio'ning o'z (`owned_pixels`) va unga
+    ulashilgan (`client_pixels`) Pixel/Dataset'lari ro'yxati."""
+    pixels: dict[str, dict] = {}
+    for edge in ("owned_pixels", "client_pixels"):
+        try:
+            data = _get(f"{business_id}/{edge}", {"fields": "id,name", "limit": 200}, token=user_token)
+            for p in data.get("data", []):
+                pixels[p["id"]] = p
+        except MetaAPIError:
+            continue
+    return list(pixels.values())
+
+
+def oauth_revoke(user_token: str) -> bool:
+    """Disconnect paytida -- Meta'ning o'z "barcha ruxsatlarni bekor
+    qilish" endpoint'i (`DELETE /me/permissions`). Best-effort: token
+    allaqachon eskirgan/bekor qilingan bo'lsa ham xato tashlamaydi (chunki
+    disconnect BARIBIR mahalliy bazadan tozalanishi kerak) -- shunchaki
+    True/False qaytaradi, chaqiruvchi buni faqat log/UX uchun ishlatadi."""
+    try:
+        r = requests.delete(f"{GRAPH_URL}/me/permissions", params={"access_token": user_token}, timeout=15)
+        data = r.json()
+        return bool(data.get("success"))
+    except Exception:
+        return False
+
+
+def is_token_expired_error(e: Exception) -> bool:
+    """`MetaAPIError`ning Meta error kodi 190 (OAuthException -- token
+    muddati o'tgan/bekor qilingan/parol o'zgargan) ekanini tekshiradi.
+    Rasmiy Meta hujjatida shu kod aynan "token endi yaroqsiz, foydalanuvchi
+    qayta login qilishi kerak" degani -- boshqa har qanday xato (tarmoq,
+    rate limit, noto'g'ri parametr) bilan aralashtirmaslik uchun aniq
+    kod bo'yicha tekshiriladi, taxmin qilinmaydi."""
+    if not isinstance(e, MetaAPIError) or not e.args or not isinstance(e.args[0], dict):
+        return False
+    return e.args[0].get("code") == 190
+
+
+def get_object_status(object_id: str, *, access_token: str | None = None) -> dict:
     """Ad/AdSet/Campaign'ning joriy holatini (status) qaytaradi. pause_object()/
     activate_object() dan keyin haqiqatan o'zgarganini TASDIQLASH uchun ishlatiladi
     — Meta ba'zan {"success": true} qaytarsa ham, holat kutilganidek o'zgarmagan
-    bo'lishi mumkin (masalan yuqori darajadagi kampaniya/adset o'chiq bo'lsa)."""
-    return _get(object_id, {"fields": "id,name,status,effective_status"})
+    bo'lishi mumkin (masalan yuqori darajadagi kampaniya/adset o'chiq bo'lsa).
+
+    2026-09 multi-tenant: `access_token` berilsa, O'SHA (kompaniyaning o'zi
+    ulagan) token bilan so'raladi -- berilmasa eski global ACCESS_TOKEN
+    ishlatiladi (`_get`ning o'zidagi fallback orqali)."""
+    return _get(object_id, {"fields": "id,name,status,effective_status"}, access_token)
 
 
 def get_adset_details(adset_id: str) -> dict:
@@ -614,28 +769,32 @@ def get_adset_details(adset_id: str) -> dict:
 # ON/OFF VA BYUDJET BOSHQARUVI
 # ---------------------------------------------------------------------------
 
-def set_status(object_id: str, status: str) -> dict:
+def set_status(object_id: str, status: str, *, access_token: str | None = None) -> dict:
     """Ad/AdSet/Campaign holatini o'rnatadi (ACTIVE / PAUSED / ARCHIVED).
-    pause_object/activate_object shu funksiyaning qulay wrapperlari."""
-    return _post(object_id, {"status": status})
+    pause_object/activate_object shu funksiyaning qulay wrapperlari.
+
+    2026-09 multi-tenant: `access_token` berilsa, O'SHA (kompaniyaning o'zi
+    ulagan) token bilan yuboriladi -- berilmasa eski global ACCESS_TOKEN
+    (`_post`ning o'zidagi fallback orqali)."""
+    return _post(object_id, {"status": status}, access_token)
 
 
-def pause_object(object_id: str) -> dict:
+def pause_object(object_id: str, *, access_token: str | None = None) -> dict:
     """Ad, AdSet yoki Campaign'ni pauza qiladi."""
-    return set_status(object_id, "PAUSED")
+    return set_status(object_id, "PAUSED", access_token=access_token)
 
 
-def activate_object(object_id: str) -> dict:
+def activate_object(object_id: str, *, access_token: str | None = None) -> dict:
     """Ad, AdSet yoki Campaign'ni qayta ishga tushiradi."""
-    return set_status(object_id, "ACTIVE")
+    return set_status(object_id, "ACTIVE", access_token=access_token)
 
 
-def archive_object(object_id: str) -> dict:
+def archive_object(object_id: str, *, access_token: str | None = None) -> dict:
     """Kerak bo'lmay qolgan (uzoq vaqt pauzada, kelajakda ishlatilmaydigan)
     kampaniya/adset'ni arxivlaydi — o'chirib tashlash (DELETED) emas, shuning
     uchun kerak bo'lsa Ads Manager'da qaytarib bo'ladi, lekin ro'yxatlarni
     "toza" qiladi."""
-    return set_status(object_id, "ARCHIVED")
+    return set_status(object_id, "ARCHIVED", access_token=access_token)
 
 
 def update_daily_budget(adset_id: str, new_daily_budget_cents: int) -> dict:
@@ -894,7 +1053,7 @@ def create_lead_form(page_id: str, form_config: dict) -> dict:
     return _post(f"{page_id}/leadgen_forms", form_config, token=_get_page_access_token())
 
 
-def get_leads(form_id: str, since: str | None = None) -> list[dict]:
+def get_leads(form_id: str, since: str | None = None, *, access_token: str | None = None, page_id: str | None = None) -> list[dict]:
     """Formadan tushgan lidlarni qaytaradi (leads_retrieval permission talab
     qilinadi). CRM lead-sync job'i (`lead_sync.py`) shu funksiyani har bir
     forma uchun muntazam chaqirib, yangi lidlarni bazaga yozadi -- shuning
@@ -903,14 +1062,21 @@ def get_leads(form_id: str, since: str | None = None) -> list[dict]:
     kelgani"ni ko'rsatish uchun.
 
     `since` berilsa (ISO sana yoki unix timestamp), faqat shu sanadan keyingi
-    lidlar so'raladi -- har safar BARCHA tarixni qayta o'qimaslik uchun."""
+    lidlar so'raladi -- har safar BARCHA tarixni qayta o'qimaslik uchun.
+
+    2026-09 BUG FIX (multi-tenant): avval bu funksiya `_get_page_access_token()`ni
+    HECH QANDAY argumentsiz chaqirar edi -- ya'ni qaysi kompaniya uchun
+    ishlatilayotganidan qat'iy nazar, token doim GLOBAL (ENV) Page/tokendan
+    olinardi. Endi `access_token`/`page_id` berilsa, O'SHA kompaniyaning O'Z
+    Page Access Token'i olinadi (`_get_page_access_token(page_id=..., user_access_token=...)`)."""
     params = {
         "fields": "id,created_time,ad_id,adset_id,campaign_id,form_id,field_data",
         "limit": 100,
     }
     if since:
         params["filtering"] = [{"field": "time_created", "operator": "GREATER_THAN", "value": since}]
-    data = _get(f"{form_id}/leads", params, token=_get_page_access_token())
+    page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token)
+    data = _get(f"{form_id}/leads", params, token=page_token)
     leads = list(data.get("data", []))
     # Sahifalash (pagination) -- forma bo'yicha 100 dan ko'p yangi lead
     # bo'lishi kamdan-kam, lekin xavfsizlik uchun keyingi sahifalarni ham olamiz.
@@ -924,12 +1090,20 @@ def get_leads(form_id: str, since: str | None = None) -> list[dict]:
     return leads
 
 
-def get_lead_forms(page_id: str) -> list[dict]:
+def get_lead_forms(page_id: str, *, access_token: str | None = None) -> list[dict]:
     """Sahifaga (Page) tegishli BARCHA Instant Form (Lead Ads) formalarini
     qaytaradi -- CRM lead-sync job'i har bir forma bo'yicha `get_leads()`ni
     alohida chaqiradi (Meta API'da "hisobdagi barcha lidlar" degan yagona
-    endpoint yo'q, forma orqali so'raladi)."""
-    data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=_get_page_access_token())
+    endpoint yo'q, forma orqali so'raladi).
+
+    2026-09 BUG FIX (multi-tenant): avval `page_id` faqat URL yo'lida
+    ishlatilib, token esa HAR DOIM global `_get_page_access_token()`dan
+    (argumentsiz) olinardi -- ya'ni boshqa kompaniyaning Page ID'si bilan
+    chaqirilsa ham, token global kompaniyanikidan olinardi. Endi `access_token`
+    berilsa, aynan shu `page_id` + `access_token` juftligi uchun Page Access
+    Token olinadi."""
+    page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token)
+    data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=page_token)
     return data.get("data", [])
 
 

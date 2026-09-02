@@ -62,14 +62,30 @@ logger = logging.getLogger("lead_sync")
 # tekshiruvi bor, shuning uchun overlap xavfsiz -- eng ko'pi bilan bir xil
 # lead ikki marta tekshiriladi, lekin ikki marta YOZILMAYDI).
 _SYNC_OVERLAP_SECONDS = 600
-_SINCE_CURSOR_KEY = "lead_sync_since_unix"
-# Cursor birinchi marta o'rnatilgan ANIQ vaqt -- keyinchalik `_SINCE_CURSOR_KEY`
-# har sync'da OLDINGA suriladi, lekin bu qiymat O'ZGARMAS qoladi (faqat bir
-# marta yoziladi). `cleanup_backlog_leads()` shu chegaradan FOYDALANIB, faqat
-# tuzatishdan OLDIN (ya'ni buzilgan birinchi sync paytida) yozilgan eski
-# lidlarnigina o'chiradi -- tuzatishdan KEYIN kelgan haqiqiy yangi lidlarga
-# HECH QACHON tegmaydi, cleanup qachon bosilishidan qat'iy nazar.
-_BACKLOG_CUTOFF_KEY = "lead_sync_backlog_cutoff_unix"
+
+
+# 2026-09 multi-tenant: har bir kompaniyaning O'Z cursor/holat kaliti bo'lishi
+# kerak -- aks holda kompaniya A'ning "oxirgi tekshirilgan vaqti" kompaniya
+# B'ning sinxronizatsiyasiga ta'sir qilib qo'yadi (yoki aksincha). Standart
+# (asosiy) kompaniya uchun ESKI, prefikssiz kalit saqlab qolinadi -- shu orqali
+# allaqachon ishlab turgan deploy'larning cursor holati YO'QOLMAYDI
+# (`ig_dm_sync._status_key()` bilan bir xil naqsh).
+def _since_key(company_id: "int | None") -> str:
+    return "lead_sync_since_unix" if company_id is None else f"lead_sync_since_unix:{company_id}"
+
+
+def _backlog_key(company_id: "int | None") -> str:
+    # Cursor birinchi marta o'rnatilgan ANIQ vaqt -- keyinchalik `_since_key()`
+    # har sync'da OLDINGA suriladi, lekin bu qiymat O'ZGARMAS qoladi (faqat bir
+    # marta yoziladi). `cleanup_backlog_leads()` shu chegaradan FOYDALANIB, faqat
+    # tuzatishdan OLDIN (ya'ni buzilgan birinchi sync paytida) yozilgan eski
+    # lidlarnigina o'chiradi -- tuzatishdan KEYIN kelgan haqiqiy yangi lidlarga
+    # HECH QACHON tegmaydi, cleanup qachon bosilishidan qat'iy nazar.
+    return "lead_sync_backlog_cutoff_unix" if company_id is None else f"lead_sync_backlog_cutoff_unix:{company_id}"
+
+
+def _status_key(company_id: "int | None") -> str:
+    return "lead_sync_status" if company_id is None else f"lead_sync_status:{company_id}"
 
 # Meta forma savollari ko'pincha standart ingliz kalitlari bilan keladi
 # (full_name, phone_number, email), lekin ADMIN o'zi qo'shgan maxsus savol
@@ -173,32 +189,46 @@ def _extract_name_phone_email(fd: dict) -> tuple[str | None, str | None, str | N
     return name, phone, email
 
 
-def sync_once() -> dict:
-    """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
+def sync_once(company=None) -> dict:
+    """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa (yengil
+    `_CompanyCreds` yoki `db.Company` qatori) -- O'SHA kompaniyaning O'Z
+    `meta_page_id`/`meta_access_token`/`meta_ad_account_id`i bilan, natija
+    shu kompaniyaning `company_id`si bilan saqlanadi va yaratilgan lead'lar
+    ham O'SHA kompaniyaga yoziladi (2026-09, multi-tenant, `ig_dm_sync.py`
+    bilan bir xil naqsh). Berilmasa -- eski global (ENV) xatti-harakat
+    (standart kompaniyaga yoziladi, CLI/skript uchun orqaga moslik).
+
+    Qaytaradi:
     {"new_leads": N, "forms_checked": N, "errors": [...], "notices": [...], "form_diagnostics": [...]}
     ("errors" -- muammo, qizil ko'rsatiladi; "notices" -- oddiy ma'lumot, masalan
     cursor birinchi marta o'rnatilgani, sariq/neytral ko'rsatiladi.)
-    Natija HAR DOIM `kv_store`ga ("lead_sync_status") yoziladi -- muvaffaqiyatli
-    yoki xatolik bilan tugaganidan qat'iy nazar."""
-    page_id = meta_api.PAGE_ID
+    Natija HAR DOIM `kv_store`ga (kompaniyaga tegishli "lead_sync_status" kaliti)
+    yoziladi -- muvaffaqiyatli yoki xatolik bilan tugaganidan qat'iy nazar."""
+    company_id = company.id if company else db.get_default_company_id()
+    page_id = company.meta_page_id if company else meta_api.PAGE_ID
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
+    since_key = _since_key(company_id)
+    backlog_key = _backlog_key(company_id)
+
     result = {"new_leads": 0, "forms_checked": 0, "errors": [], "notices": [], "form_diagnostics": []}
     sync_started_at = dt.datetime.utcnow()
 
-    # MUHIM (2026-08 tuzatish): `_BACKLOG_CUTOFF_KEY` avvalroq FAQAT pastdagi
+    # MUHIM (2026-08 tuzatish): `backlog_key` avvalroq FAQAT pastdagi
     # "since_unix hali yo'q" shoxobchasi ICHIDA o'rnatilar edi -- lekin agar
-    # `_SINCE_CURSOR_KEY` ALLAQACHON boshqa (oldingi) deploy'da o'rnatilgan
-    # bo'lsa, o'sha shoxobcha UMUMAN ishga tushmaydi va cutoff HECH QACHON
-    # yozilmay qoladi (`cleanup_backlog_leads()` doim "cursor o'rnatilmagan"
-    # deb xato qaytaveradi). Shuning uchun endi cutoff'ni since_unix holatidan
+    # `since_key` ALLAQACHON boshqa (oldingi) deploy'da o'rnatilgan bo'lsa,
+    # o'sha shoxobcha UMUMAN ishga tushmaydi va cutoff HECH QACHON yozilmay
+    # qoladi (`cleanup_backlog_leads()` doim "cursor o'rnatilmagan" deb xato
+    # qaytaveradi). Shuning uchun endi cutoff'ni since_unix holatidan
     # MUSTAQIL, HAR safar tekshirib, agar hali yo'q bo'lsa -- "hozir"ga
     # o'rnatamiz. Bu xavfsiz: chunki cutoff yo'q ekan, demak since-cursor
     # filtri bilan ishlagan hech bir sync haqiqiy yangi lead topmagan
     # bo'lishi kerak (aks holda backlog muammosi allaqachon ko'rinardi) --
     # ya'ni "hozirgacha" bazadagi barcha meta-lead'lar hali ham eski backlog.
-    if kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None) is None:
-        kv_store.set_json(_BACKLOG_CUTOFF_KEY, int(sync_started_at.timestamp()))
+    if kv_store.get_json(backlog_key, default=None) is None:
+        kv_store.set_json(backlog_key, int(sync_started_at.timestamp()))
 
-    since_unix = kv_store.get_json(_SINCE_CURSOR_KEY, default=None)
+    since_unix = kv_store.get_json(since_key, default=None)
     if since_unix is None:
         # Cursor hali o'rnatilmagan (birinchi marta ishga tushish yoki qo'lda
         # tozalangan holat) -- ESKI TARIXIY lidlarni ommaviy tortib olishning
@@ -207,26 +237,26 @@ def sync_once() -> dict:
         # qo'yamiz. Keyingi tekshiruvdan boshlab ENDI yaratiladigan lidlar
         # normal tortiladi.
         cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
-        kv_store.set_json(_SINCE_CURSOR_KEY, cursor)
+        kv_store.set_json(since_key, cursor)
         result["notices"].append(
             "Lead-sync uchun boshlang'ich chegara o'rnatildi -- eski tarixiy "
             "lidlarni tortib olishning oldini olish uchun bu safar hech qanday "
             "lead so'ralmadi. Keyingi tekshiruvdan (odatda 15 daqiqadan keyin) "
             "boshlab FAQAT shu vaqtdan keyin yaratiladigan yangi lidlar tortiladi."
         )
-        _save_status(result)
+        _save_status(result, company_id=company_id)
         return result
 
     if not page_id:
         result["errors"].append("META_PAGE_ID sozlanmagan -- lead sync o'tkazib yuborildi.")
-        _save_status(result)
+        _save_status(result, company_id=company_id)
         return result
 
     try:
-        forms = meta_api.get_lead_forms(page_id)
+        forms = meta_api.get_lead_forms(page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         result["errors"].append(f"Formalarni olishda xatolik: {e}")
-        _save_status(result)
+        _save_status(result, company_id=company_id)
         return result
 
     if not forms:
@@ -239,25 +269,32 @@ def sync_once() -> dict:
             "Agar target ishlayotgan bo'lsa-yu lead kelmasa, ehtimol META_PAGE_ID "
             "noto'g'ri sahifaga ko'rsatib turibdi yoki forma boshqa Page'da."
         )
-        _save_status(result)
+        _save_status(result, company_id=company_id)
         return result
 
     # Kampaniya/adset/ad ID -> NOM xaritalari (dashboard/CRM'da "qaysi target,
     # qaysi video/reklamadan kelgan" to'liq ko'rinishi uchun -- ad_name ko'pincha
     # ishlatilgan video/kreativ nomiga mos qilib qo'yiladi).
+    # 2026-09 multi-tenant: agar `company` berilgan bo'lsa-yu, u hali O'Z
+    # reklama hisobini ulamagan bo'lsa (`meta_ad_account_id` yo'q), bu boyitish
+    # ATAYLAB o'tkazib yuboriladi -- aks holda global (boshqa kompaniyaning)
+    # hisob strukturasi noto'g'ri ishlatilib, nomlar aralashib ketishi mumkin
+    # edi. Lead'ning o'zi baribir ID'lar bilan to'liq saqlanadi, faqat NOM
+    # ustunlari bo'sh qoladi.
     campaign_name_by_id: dict[str, str] = {}
     adset_name_by_id: dict[str, str] = {}
     ad_name_by_id: dict[str, str] = {}
-    try:
-        structure = meta_api.get_account_structure(active_only=False)
-        for c in structure.get("campaigns", []):
-            campaign_name_by_id[c["id"]] = c.get("name", "")
-        for a in structure.get("adsets", []):
-            adset_name_by_id[a["id"]] = a.get("name", "")
-        for a in structure.get("ads", []):
-            ad_name_by_id[a["id"]] = a.get("name", "")
-    except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {e}")
+    if company is None or ad_account_id:
+        try:
+            structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
+            for c in structure.get("campaigns", []):
+                campaign_name_by_id[c["id"]] = c.get("name", "")
+            for a in structure.get("adsets", []):
+                adset_name_by_id[a["id"]] = a.get("name", "")
+            for a in structure.get("ads", []):
+                ad_name_by_id[a["id"]] = a.get("name", "")
+        except meta_api.MetaAPIError as e:
+            result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {e}")
 
     session = get_session()
     try:
@@ -265,7 +302,7 @@ def sync_once() -> dict:
             form_id = form["id"]
             result["forms_checked"] += 1
             try:
-                leads = meta_api.get_leads(form_id, since=since_unix)
+                leads = meta_api.get_leads(form_id, since=since_unix, access_token=access_token, page_id=page_id)
             except meta_api.MetaAPIError as e:
                 result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {e}")
                 result["form_diagnostics"].append({
@@ -276,6 +313,7 @@ def sync_once() -> dict:
                 continue
 
             new_for_this_form = 0
+            newly_created_leads = []  # 2026-09: commit'dan KEYIN "Lead" CAPI hodisasini yuborish uchun
             for raw in leads:
                 meta_lead_id = raw.get("id")
                 if not meta_lead_id:
@@ -312,18 +350,34 @@ def sync_once() -> dict:
                     raw_field_data=json.dumps(fd, ensure_ascii=False),
                     status="new",
                     lead_created_time=created_dt,
-                    # 2026-09 multi-tenant 2-bosqich: Meta ulanishi hozircha
-                    # GLOBAL (har kompaniya o'z akkauntini ulamagan), shuning
-                    # uchun yangi lidlar birinchi (standart) kompaniyaga
-                    # yoziladi -- `scheduler.py` bu vazifani shu kompaniya
-                    # konteksti bilan ishga tushiradi (`db.get_default_company_id()`).
-                    company_id=db.get_default_company_id(),
+                    # 2026-09 multi-tenant 3-bosqich: endi Meta ulanishi
+                    # kompaniya bo'yicha bo'lgani uchun, yangi lead ANIQ
+                    # O'SHA kompaniyaga (`sync_once(company=...)`ni chaqirgan
+                    # kompaniya) yoziladi -- `company=None` chaqirilsa
+                    # (eski, global CLI holati) standart kompaniyaga tushadi.
+                    company_id=company_id,
                 )
                 session.add(lead)
+                newly_created_leads.append(lead)
                 result["new_leads"] += 1
                 new_for_this_form += 1
 
             session.commit()
+
+            # 2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
+            # yangi lead CRM'ga tushgach, shu HAQIQATNI Meta'ga "Lead" CAPI
+            # hodisasi sifatida qaytarib yuboramiz (algoritm o'xshash
+            # odamlarni topishni shu signal orqali ham o'rganadi). Har bir
+            # yuborish o'z ichida xato-chidamli (try/except) -- bitta
+            # muvaffaqiyatsiz hodisa qolgan sinxronizatsiyani to'xtatmasligi
+            # kerak.
+            if newly_created_leads:
+                import meta_events
+                for lead in newly_created_leads:
+                    try:
+                        meta_events.dispatch_lead_event(session, lead)
+                    except Exception:
+                        logger.exception("Lead CAPI hodisasini yuborishda xatolik (lead_id=%s)", lead.id)
 
             db_count_for_form = session.query(Lead).filter_by(form_id=form_id).count()
             meta_count = form.get("leads_count")
@@ -349,15 +403,15 @@ def sync_once() -> dict:
     # orasida chegaraga to'g'ri kelib qolgan lead bo'lsa, bu holatda
     # qo'lda `/api/trigger/lead-sync`ni qayta ishga tushirish kifoya.
     new_cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
-    kv_store.set_json(_SINCE_CURSOR_KEY, new_cursor)
+    kv_store.set_json(since_key, new_cursor)
 
-    _save_status(result)
+    _save_status(result, company_id=company_id)
     return result
 
 
-def _save_status(result: dict) -> None:
+def _save_status(result: dict, *, company_id: "int | None" = None) -> None:
     try:
-        kv_store.set_json("lead_sync_status", {
+        kv_store.set_json(_status_key(company_id), {
             **result,
             "last_run_at": dt.datetime.utcnow().isoformat(),
         })
@@ -365,8 +419,65 @@ def _save_status(result: dict) -> None:
         logger.exception("lead_sync_status'ni kv_store'ga yozishda xato (o'zi kritik emas)")
 
 
-def get_last_status() -> dict | None:
-    return kv_store.get_json("lead_sync_status", default=None)
+def get_last_status(company_id: "int | None" = None) -> "dict | None":
+    return kv_store.get_json(_status_key(company_id), default=None)
+
+
+class _CompanyCreds:
+    """`sync_once(company=...)`ga uzatish uchun yengil obyekt (`ig_dm_sync.py`
+    bilan bir xil naqsh) -- to'liq `db.Company` ORM qatori shart emas, faqat
+    shu maydonlar kerak (session yopilgandan keyin ham ishlatish uchun
+    detach qilingan)."""
+    def __init__(self, id, meta_page_id, meta_access_token, meta_ad_account_id=None):
+        self.id = id
+        self.meta_page_id = meta_page_id
+        self._meta_access_token_plain = meta_access_token
+        self.meta_ad_account_id = meta_ad_account_id
+
+    def get_meta_access_token(self) -> "str | None":
+        return self._meta_access_token_plain
+
+
+def sync_all_companies() -> dict:
+    """2026-09, multi-tenant: `meta_page_id`+`meta_access_token` ulagan HAR
+    BIR kompaniya bo'yicha aylanib, har birining Meta Lead Ads lidlarini
+    ALOHIDA (o'z hisobi bilan) sinxronlaydi va O'Z `company_id`siga yozadi
+    (`ig_dm_sync.sync_all_companies()` bilan bir xil naqsh).
+    `scheduler.py`ning davriy lead-sync job'i endi shuni chaqiradi -- eski
+    yagona-akkaunt `sync_once()` o'rniga. Bitta kompaniyaning
+    sinxronizatsiyasi muvaffaqiyatsiz bo'lishi qolganlarini to'xtatmaydi."""
+    from db import Company
+
+    session = get_session()
+    try:
+        rows = (
+            session.query(Company)
+            .filter(Company.meta_page_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
+            .all()
+        )
+        companies = [
+            {
+                "id": c.id, "name": c.name, "meta_page_id": c.meta_page_id,
+                "meta_access_token": c.get_meta_access_token(),
+                "meta_ad_account_id": c.meta_ad_account_id,
+            }
+            for c in rows
+        ]
+    finally:
+        session.close()
+
+    per_company = {}
+    for c in companies:
+        fake_company = _CompanyCreds(
+            id=c["id"], meta_page_id=c["meta_page_id"],
+            meta_access_token=c["meta_access_token"], meta_ad_account_id=c["meta_ad_account_id"],
+        )
+        try:
+            per_company[c["id"]] = sync_once(company=fake_company)
+        except Exception as e:
+            logger.exception("Lead sync: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
+            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {e}"]}
+    return {"companies_synced": len(companies), "per_company": per_company}
 
 
 def cleanup_backlog_leads() -> dict:
@@ -393,7 +504,7 @@ def cleanup_backlog_leads() -> dict:
     "calls_unlinked": N} yoki cursor hali o'rnatilmagan bo'lsa {"error": "..."}."""
     from db import Sale, LeadNote, CallRecord
 
-    cutoff_unix = kv_store.get_json(_BACKLOG_CUTOFF_KEY, default=None)
+    cutoff_unix = kv_store.get_json(_backlog_key(None), default=None)
     if cutoff_unix is None:
         return {
             "error": (

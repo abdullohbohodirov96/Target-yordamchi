@@ -53,7 +53,11 @@ def test_first_init_creates_default_company_from_env():
             assert len(companies) == 1, f"aynan 1 ta standart kompaniya kutilgan edi, {len(companies)} ta topildi"
             c = companies[0]
             assert c.plan == "unlimited", f"standart kompaniya 'unlimited' tarifda bo'lishi kerak, olindi: {c.plan}"
-            assert c.meta_access_token == "tok_abc123"
+            # 2026-09: meta_access_token endi SHIFRLANGAN saqlanadi
+            # (crypto_util) -- xom ustun endi qiymatga TENG bo'lmaydi,
+            # faqat get_meta_access_token() orqali ochilgach mos keladi.
+            assert c.meta_access_token != "tok_abc123", "token endi shifrlangan saqlanishi kerak, ochiq matn emas"
+            assert c.get_meta_access_token() == "tok_abc123"
             assert c.meta_ad_account_id == "act_555"
             assert c.telegram_group_id == "-1009999"
         finally:

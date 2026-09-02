@@ -4,14 +4,14 @@
 <div class="page-head">
   <div>
     <h1>Qaysi hisobni ulaymiz?</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi — shu kompaniya uchun qaysi birini ishlatishni tanlang.</p>
+    <p class="page-subtitle" style="margin-bottom:0">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi — shu kompaniya uchun qaysi birini ishlatishni tanlang. Reklama hisobi ulasangiz, quyida Business Portfolio → Ad Account → Dataset (Pixel) tartibida tanlaysiz.</p>
   </div>
 </div>
 
 <div class="card" style="max-width:560px">
-  <form method="post">
+  <form method="post" id="meta-choose-form">
     <div class="field">
-      <label>Facebook sahifa (Page)</label>
+      <label>1) Facebook sahifa (Page)</label>
       <select name="page_id" required>
         {% for p in pages %}
         <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} (Instagram ulangan){% endif %}</option>
@@ -19,14 +19,31 @@
       </select>
     </div>
 
-    {% if accounts %}
+    {% if businesses %}
     <div class="field">
-      <label>Meta reklama hisobi (ixtiyoriy)</label>
-      <select name="ad_account_id">
-        <option value="">— tanlanmasin —</option>
-        {% for a in accounts %}
-        <option value="{{ a.id }}">{{ a.name }}</option>
+      <label>2) Business Portfolio (ixtiyoriy)</label>
+      <select name="business_id" id="meta-business-select">
+        <option value="">— shaxsiy reklama hisobi (Business tanlanmasin) —</option>
+        {% for b in businesses %}
+        <option value="{{ b.id }}">{{ b.name }}</option>
         {% endfor %}
+      </select>
+      <p class="field-hint">Business tanlasangiz, pastdagi Ad Account/Dataset ro'yxati o'sha Business'ga tegishli variantlar bilan yangilanadi.</p>
+    </div>
+    {% endif %}
+
+    {% if fallback_accounts or businesses %}
+    <div class="field">
+      <label>3) Meta reklama hisobi (Ad Account, ixtiyoriy)</label>
+      <select name="ad_account_id" id="meta-account-select">
+        <option value="">— tanlanmasin —</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>4) Dataset / Pixel (ixtiyoriy — tanlanmasa, hisobga biriktirilgan birinchi Pixel avtomatik ishlatiladi)</label>
+      <select name="dataset_id" id="meta-dataset-select">
+        <option value="">— avtomatik aniqlansin —</option>
       </select>
     </div>
     {% endif %}
@@ -38,4 +55,44 @@
 <p class="page-subtitle">
   <a href="{{ url_for('connect_accounts') }}" class="text-blue">&larr; Bekor qilish</a>
 </p>
+
+{% if businesses or fallback_accounts %}
+<script>
+(function () {
+  var BUSINESS_ASSETS = {{ (business_assets or {}) | tojson }};
+  var FALLBACK_ACCOUNTS = {{ (fallback_accounts or []) | tojson }};
+  var businessSelect = document.getElementById("meta-business-select");
+  var accountSelect = document.getElementById("meta-account-select");
+  var datasetSelect = document.getElementById("meta-dataset-select");
+
+  function fillSelect(select, items, placeholder) {
+    if (!select) return;
+    select.innerHTML = "";
+    var opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = placeholder;
+    select.appendChild(opt0);
+    (items || []).forEach(function (item) {
+      var opt = document.createElement("option");
+      opt.value = item.id;
+      opt.textContent = item.name || item.id;
+      select.appendChild(opt);
+    });
+  }
+
+  function refresh() {
+    var businessId = businessSelect ? businessSelect.value : "";
+    var assets = (businessId && BUSINESS_ASSETS[businessId]) || {accounts: FALLBACK_ACCOUNTS, pixels: []};
+    var accounts = businessId ? (assets.accounts || []) : FALLBACK_ACCOUNTS;
+    fillSelect(accountSelect, accounts, "— tanlanmasin —");
+    fillSelect(datasetSelect, assets.pixels || [], "— avtomatik aniqlansin —");
+  }
+
+  if (businessSelect) {
+    businessSelect.addEventListener("change", refresh);
+  }
+  refresh();
+})();
+</script>
+{% endif %}
 {% endblock %}

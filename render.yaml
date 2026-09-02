@@ -44,6 +44,24 @@ services:
         sync: false
       - key: META_PAGE_ID
         sync: false
+      # 2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
+      # "Bitta tugma bilan ulash" (Facebook OAuth) uchun kerak -- Meta App
+      # Dashboard'dan olinadi (docs/META_INTEGRATION_SETUP.md'ga qarang).
+      # Sozlanmagan bo'lsa, tizim eski qo'lda-token forma bilan ishlashda
+      # davom etadi (buzilmaydi) -- ular FAQAT OAuth tugmasini yoqadi.
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      # Bazadagi Meta token'larni (OAuth + Advanced/Manual CAPI) tinch
+      # holatda shifrlash uchun Fernet kaliti -- `python3 -c "from
+      # cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+      # bilan BIR MARTA generatsiya qilib shu yerga qo'ying. SOZLANMASA,
+      # tizim `FLASK_SECRET_KEY`dan zaxira kalit hosil qiladi (ishlaydi,
+      # lekin PRODUCTION uchun alohida kalit tavsiya etiladi -- pastga
+      # qarang, docs/META_INTEGRATION_SETUP.md).
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
       - key: CRON_SECRET
         generateValue: true
       - key: FLASK_SECRET_KEY
