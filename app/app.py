@@ -1699,8 +1699,17 @@ def target_page():
         try:
             data = get_kpis(level=level, date_preset=period, active_only=not show_all, access_token=meta_token, ad_account_id=meta_account)
         except Exception as e:
+            # XAVFSIZLIK TUZATISHI (2026-09, to'liq sayt auditida topilgan):
+            # bu yerda ILGARI `str(e)` to'g'ridan-to'g'ri foydalanuvchiga
+            # (target.html'dagi qizil xato banneriga) chiqarilardi.
+            # Tarmoq/proxy xatosi (masalan `requests.exceptions.ProxyError`)
+            # yuz berganda, uning matni SO'RALGAN TO'LIQ URL'ni -- jumladan
+            # `access_token=...` parametrini OCHIQ HOLDA -- o'z ichiga
+            # oladi edi. To'liq texnik tafsilot pastda baribir logga
+            # yoziladi (diagnostika uchun), lekin ekranga faqat xavfsiz,
+            # umumiy xabar chiqariladi.
             logger.exception("Target: Meta ma'lumotlarini olishda xato")
-            data = {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
+            data = {"error": meta_api.safe_error_message(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
     return render_template("target.html", data=data, period=period, level=level, show_all=show_all)
 
 

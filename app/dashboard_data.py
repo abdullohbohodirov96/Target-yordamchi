@@ -39,6 +39,8 @@ import threading
 import time
 from collections import defaultdict
 
+import requests
+
 import meta_api
 import kpi_bonus
 from db import get_session, Lead, FunnelStage
@@ -339,8 +341,17 @@ def _get_kpis_uncached(
             fields=[id_field, name_field, "spend", "impressions", "reach", "actions"],
             access_token=access_token, ad_account_id=ad_account_id,
         )
-    except meta_api.MetaAPIError as e:
-        return {"error": str(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
+    except (meta_api.MetaAPIError, requests.exceptions.RequestException) as e:
+        # XAVFSIZLIK (2026-09, to'liq audit): `str(e)` o'rniga
+        # `safe_error_message()` -- qarang meta_api.py'dagi izoh, nega
+        # raw exception matnini to'g'ridan-to'g'ri foydalanuvchiga
+        # ko'rsatish xavfli edi (masalan `requests.exceptions.ProxyError`
+        # matni SO'RALGAN TO'LIQ URL'ni, jumladan `access_token=...`ni,
+        # o'z ichiga oladi). Endi tarmoq darajasidagi xatolar
+        # (`requests.exceptions.RequestException` -- Proxy/Connection/
+        # Timeout xatolari) ham shu yerda ANIQ tutiladi, yuqoriga xom
+        # holda "sizib" ketmaydi.
+        return {"error": meta_api.safe_error_message(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
 
     status_by_id = {}
     goal_by_id = {}

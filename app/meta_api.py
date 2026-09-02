@@ -51,6 +51,38 @@ class MetaAPIError(Exception):
     pass
 
 
+def safe_error_message(e: Exception) -> str:
+    """XAVFSIZLIK TUZATISHI (2026-09, foydalanuvchi so'rovi: "webni to'liq
+    tekshirib chiq, xato forntlarini" -- to'liq audit paytida topilgan
+    JIDDIY muammo): `app.py`da bir nechta joyda (masalan `target_page()`)
+    `except Exception as e: ... {"error": str(e)}` qilingan, va bu matn
+    to'g'ridan-to'g'ri HTML'ga (`{{ data.error }}`) chiqarilgan edi.
+
+    Muammo: agar `e` Meta serveriga ULANISHNING O'ZI (proxy/tarmoq xatosi,
+    `requests.exceptions.ProxyError`/`ConnectionError`/`Timeout`) bo'lsa,
+    Python'ning `requests` kutubxonasi bunday xatoning matnida SO'ROV
+    QILINGAN TO'LIQ URL'ni ko'rsatadi -- bu URL esa `access_token=...`
+    parametrini OCHIQ HOLDA o'z ichiga oladi! Ya'ni tarmoq bir zumga
+    uzilib qolsa, foydalanuvchining ekraniga (Target sahifasidagi qizil
+    xato banneriga) HAQIQIY Meta access token'i chiqib qolar edi --
+    skrinshot orqali osongina sizib chiqishi mumkin bo'lgan xavfsizlik
+    kamchiligi.
+
+    Bu funksiya shu muammoni tuzatadi: FAQAT Meta'ning o'zi qaytargan,
+    toza JSON xato xabarini (`MetaAPIError(data["error"])`, tarkibida URL/
+    token bo'lmaydi) foydalanuvchiga ko'rsatishga ruxsat beradi; boshqa
+    HAR QANDAY (tarmoq/proxy/timeout va h.k.) xato uchun umumiy, xavfsiz
+    o'zbekcha xabar qaytaradi. To'liq texnik tafsilot baribir
+    `logger.exception(...)` orqali serverga (foydalanuvchiga ko'rinmaydigan
+    joyga) yoziladi -- diagnostika uchun yo'qolmaydi, faqat ekranga
+    chiqmaydi."""
+    if isinstance(e, MetaAPIError) and e.args and isinstance(e.args[0], dict):
+        msg = e.args[0].get("message")
+        if msg:
+            return str(msg)
+    return "Meta bilan bog'lanishda vaqtinchalik xatolik yuz berdi (tarmoq muammosi bo'lishi mumkin). Birozdan keyin sahifani yangilab ko'ring."
+
+
 def _get(path: str, params: dict | None = None, token: str | None = None) -> dict:
     params = {
         k: (json.dumps(v) if isinstance(v, (dict, list)) else v)

@@ -354,6 +354,19 @@
         });
       }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
       revealEls.forEach(function (el) { io.observe(el); });
+      // XAVFSIZLIK TO'RI (2026-09, to'liq sayt auditida Playwright bilan
+      // tekshirilganda qo'lga kiritilgan ehtiyot chorasi): agar biror
+      // sababdan (brauzer kengaytmasi, kutilmagan qurilma/muhit xatti-
+      // harakati) IntersectionObserver kerakli bo'limni HECH QACHON
+      // "ko'rindi" deb hisoblamasa, mijoz o'sha kontentni (masalan
+      // narxlar yoki FAQ) UMUMAN ko'rmay qolishi mumkin edi -- bu
+      // marketing sahifasi uchun eng yomon holat. Shu sabab, sahifa
+      // ochilgandan 3.5 soniya o'tgach, HALI "ko'rinmagan" qolgan
+      // bo'limlar SO'ZSIZ ko'rsatiladi -- normal holatda bu hech qanday
+      // ta'sir qilmaydi (o'sha vaqtga qadar allaqachon ko'rinadi).
+      setTimeout(function () {
+        revealEls.forEach(function (el) { el.classList.add('is-visible'); });
+      }, 3500);
     }
   }
 

@@ -214,15 +214,33 @@ a { color: inherit; text-decoration: none; }
    kontenti (matn, jadval va h.k.) siqilib, menyu bilan "aralashib" ko'rinib
    qolmasligi uchun (2026-08, foydalanuvchi "html dizayn bir-biriga kirib
    ketgan" deb topgan xato) -- butun ekranni xiralashtirib yopib turadi,
-   ustiga bosilsa menyu yopiladi. Faqat tor ekranda ko'rinadi (720px'dan
-   kattada sidebar shunchaki OVERLAY, kontent aslida ko'rinmay qoladi va
-   backdrop shart emas -- shuning uchun standart holatda yashirin). */
+   ustiga bosilsa menyu yopiladi.
+
+   BUG FIX (2026-09, to'liq sayt auditida Playwright skrinshotlari orqali
+   TOPILGAN, foydalanuvchi "side bar ... g'alati chiqkan" deb ta'riflagan
+   muammoning aynan o'zi bo'lishi mumkin): ILGARI bu backdrop FAQAT tor
+   (<=720px) ekranda ko'rinardi -- katta ekranda esa sidebar sichqoncha
+   bilan ustiga kelinganda (68px'dan 240px'gacha) OVERLAY sifatida
+   kengayardi-yu, orqasidagi kontent hech qanday xiralashtirilmasdan
+   qolardi. Natijada: sidebar to'liq OPAK (screen orqasini ko'rsatmaydi)
+   bo'lgani uchun, ostidagi KPI kartalar/matn sidebar tagida "kesilib"
+   qolardi va faqat sidebar CHETIDAN chiqib turgan matn parchalari
+   ko'rinardi (masalan "Lidlar progressi" so'zining faqat "ressi" qismi)
+   -- bu screenshot orqali TASDIQLANDI va chindan ham "buzilgan/g'alati"
+   ko'rinishga sabab bo'lardi. Endi backdrop KATTA ekranda ham (yengilroq,
+   tezroq) ko'rsatiladi -- shu bilan bu "kesilgan matn" muammosi butunlay
+   yo'qoladi, va foydalanuvchiga sidebar ANIQ vaqtinchalik "flyout" ekani
+   vizual jihatdan bildiriladi (macOS Dock/Notion kabi zamonaviy
+   ilovalarda ham xuddi shu naqsh ishlatiladi). */
 .sidebar-backdrop {
-  display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4);
-  z-index: 29; opacity: 0; transition: opacity 0.16s ease;
+  display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.22);
+  z-index: 29; opacity: 0; transition: opacity 0.15s ease;
 }
+.sidebar-backdrop.show { display: block; opacity: 1; }
 @media (max-width: 720px) {
-  .sidebar-backdrop.show { display: block; opacity: 1; }
+  /* Mobilda menyu bosib ochiladi (hover emas) -- shuning uchun to'liqroq
+     xiralashtirish, real "modal" hissi beradi. */
+  .sidebar-backdrop.show { background: rgba(15, 23, 42, 0.4); }
 }
 
 .container { max-width: 1360px; margin: 0 auto; padding: 28px 24px 64px; animation: fadeInUp 0.28s ease-out; }

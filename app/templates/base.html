@@ -13,6 +13,34 @@
        ko'rinadi -- hech narsa yashirin qolmaydi. -->
   <script>document.documentElement.classList.add('js');</script>
 
+  <!-- Meta Pixel Code -- 2026-09, foydalanuvchi so'rovi: "meta pixel
+       ulimiz ... tog'rilavor" (Meta Events Manager -> "Set up Meta
+       Pixel" -> "Install Meta Pixel on your website" bo'limidan olingan
+       asosiy kod, Pixel ID 2060099542047401). Bu -- Replix'ning O'ZINING
+       marketing saytini (replix.uz) kuzatuvchi brauzer-tomon Pixel'i;
+       kompaniyalarning o'z mijozlari uchun ishlaydigan server-tomon CAPI
+       (`meta_api.py`, har bir Company'ning o'z Pixel'i) bilan ARALASHTIR
+       ILMASLIGI kerak -- ular ikkita mustaqil narsa. Meta'ning o'zi
+       tavsiya qilganidek ("Install the base code on every page of your
+       website"), shu sabab bu BUTUN sayt (landing + CRM) uchun umumiy
+       `base.html`ga qo'yildi -- har bir sahifada ishga tushadi. -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '2060099542047401');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=2060099542047401&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+
   <title>{% block title %}Replix{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 14 kun bepul sinov.{% endblock %}">
   <link rel="canonical" href="{{ request.url_root.rstrip('/') + request.path }}">
