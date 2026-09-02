@@ -3,6 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- 2026-09: pastdagi skript ATAYLAB shu yerda -- "progressive
+       enhancement": [data-reveal] scroll-animatsiyasi (landing.css) FAQAT
+       `.js` klassi mavjud bo'lganda ishlaydi. JS o'chirilgan brauzerda YOKI
+       JS'ni ishga tushirmaydigan qidiruv/AI robotlarida (SEO/AEO uchun MUHIM
+       -- shu loyihaning boshqa qismida aynan shu narsaga alohida e'tibor
+       berilgan) `.js` klassi umuman qo'shilmaydi, natijada barcha kontent
+       (jumladan FAQ va tariflar) HECH QANDAY animatsiyasiz, darhol to'liq
+       ko'rinadi -- hech narsa yashirin qolmaydi. -->
+  <script>document.documentElement.classList.add('js');</script>
+
   <title>{% block title %}Replix{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 14 kun bepul sinov.{% endblock %}">
   <link rel="canonical" href="{{ request.url_root.rstrip('/') + request.path }}">
@@ -209,6 +219,51 @@
       {% endif %}
     {% endwith %}
     {% endblock %}
+    {# 2026-09, foydalanuvchi so'rovi: "misol crm ichiga kirsa tepada yana
+       bolimlar tursin" -- foydalanuvchi biror bo'lim (masalan CRM) ichidagi
+       sahifada bo'lganda, o'sha guruhning QOLGAN bandlari sahifa TEPASIDA
+       ham (gorizontal "tab" qatorida) ko'rinib tursin, shunda sidebar
+       yig'ilgan/tor holatda bo'lsa ham tez almashish mumkin bo'ladi --
+       Deepsales kabi zamonaviy dashboardlarda ikki qavatli navigatsiya
+       (chap sidebar + tepada kontekstli tab qatori) shu tarzda ishlaydi.
+       Sidebar'dagi HAR BIR guruh bilan bir xil endpoint/has_module
+       shartlari qaytariladi, faqat ko'rinishi boshqacha (pastga qarang,
+       .page-subnav). #}
+    {% if current_user.is_authenticated %}
+      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
+      {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
+      {% set _marketing_eps = ['target_page', 'smm_report', 'instagram_dm'] %}
+      {% set _boshqaruv_eps = ['settings_hub', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
+      {% if request.endpoint in _crm_eps and has_module(current_user, 'leads') %}
+      <nav class="page-subnav">
+        <a href="{{ url_for('leads_list') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('leads_list', 'lead_detail') }}">{{ navicon('leads') }}<span>Lidlar</span></a>
+        <a href="{{ url_for('sold_customers_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'sold_customers_list' }}">{{ navicon('cart') }}<span>Sotilgan xaridorlar</span></a>
+        <a href="{{ url_for('followups_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'followups_list' }}">{{ navicon('followup') }}<span>Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span></a>
+      </nav>
+      {% elif request.endpoint in _monitoring_eps %}
+      <nav class="page-subnav">
+        {% if has_module(current_user, 'analytics') %}<a href="{{ url_for('analytics_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'analytics_page' }}">{{ navicon('analytics') }}<span>Analitika</span></a>{% endif %}
+        {% if has_module(current_user, 'individual_check') %}<a href="{{ url_for('individual_check') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'individual_check' }}">{{ navicon('headphones') }}<span>Individual tekshirish</span></a>{% endif %}
+      </nav>
+      {% elif request.endpoint in _marketing_eps and has_module(current_user, 'target') %}
+      <nav class="page-subnav">
+        <a href="{{ url_for('target_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'target_page' }}">{{ navicon('target') }}<span>Target</span></a>
+        <a href="{{ url_for('smm_report') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'smm_report' }}">{{ navicon('analytics') }}<span>SMM hisobot</span></a>
+        <a href="{{ url_for('instagram_dm') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'instagram_dm' }}">{{ navicon('message') }}<span>Instagram xabarlar</span></a>
+      </nav>
+      {% elif request.endpoint in _boshqaruv_eps %}
+      <nav class="page-subnav">
+        {% if has_module(current_user, 'settings') %}<a href="{{ url_for('settings_hub') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_hub' }}">{{ navicon('settings') }}<span>Sozlamalar</span></a>{% endif %}
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('managers') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('managers', 'manager_edit') }}">{{ navicon('managers') }}<span>Menejerlar</span></a>
+        <a href="{{ url_for('payment_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'payment_page' }}">{{ navicon('cart') }}<span>Tarif va to'lov</span></a>
+        {% endif %}
+        {% if current_user.role == 'admin' and current_user.company_id == 1 %}
+        <a href="{{ url_for('companies') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('companies', 'company_edit') }}">{{ navicon('companies') }}<span>Kompaniyalar</span></a>
+        {% endif %}
+      </nav>
+      {% endif %}
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 

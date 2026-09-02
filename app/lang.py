@@ -152,6 +152,7 @@ TRANSLATIONS = {
         # pastidagi "Biz bilan bog'laning" bo'limi uchun.
         "contact.h2": "Biz bilan bog'laning",
         "contact.sub": "Savolingiz bormi? Telefon yoki Telegram orqali yozing, yoki quyidagi formani to'ldiring — tez orada javob beramiz.",
+        "contact.note": "Formani to'ldiring — odatda 1 soat ichida siz bilan bog'lanamiz.",
         "contact.name": "Ismingiz",
         "contact.phone": "Telefon raqamingiz",
         "contact.message": "Xabar (ixtiyoriy)",
@@ -273,6 +274,7 @@ TRANSLATIONS = {
 
         "contact.h2": "Свяжитесь с нами",
         "contact.sub": "Есть вопрос? Напишите по телефону или в Telegram, либо заполните форму ниже — ответим в ближайшее время.",
+        "contact.note": "Заполните форму — обычно отвечаем в течение 1 часа.",
         "contact.name": "Ваше имя",
         "contact.phone": "Номер телефона",
         "contact.message": "Сообщение (необязательно)",

@@ -24,7 +24,22 @@
 .lp-hero {
   max-width: 1180px; margin: 0 auto; padding: 56px 24px 40px;
   display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center;
+  position: relative; overflow: hidden;
 }
+/* 2026-09, foydalanuvchi so'rovi ("...cursori oborvotkan animatsionlar
+   bolsin deepsales webiga qara"): sichqonchaga ergashuvchi yumshoq nurli
+   fon -- faqat haqiqiy sichqonchali qurilmalarda JS orqali harakatlantiriladi
+   (qarang: landing.html, oxirgi <script>). `prefers-reduced-motion`da yoki
+   sensorli qurilmada JS uni umuman ishga tushirmaydi, shu sababli
+   `opacity:0` boshlang'ich holatida ko'rinmay qoladi -- kontentga hech
+   qanday xalaqit bermaydi. */
+.lp-hero-glow {
+  position: absolute; top: 0; left: 0; width: 440px; height: 440px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(37,99,235,0.16) 0%, rgba(37,99,235,0.06) 45%, transparent 72%);
+  pointer-events: none; opacity: 0; z-index: 0; will-change: transform, opacity;
+  transition: opacity 0.3s ease;
+}
+.lp-hero > div, .lp-hero .lp-mock { position: relative; z-index: 1; }
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
   color: var(--blue); background: var(--blue-bg); border-radius: 999px; padding: 6px 13px 6px 11px;
@@ -68,6 +83,20 @@
 .lp-mock-name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .lp-mock-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
 
+/* 2026-09, foydalanuvchi so'rovi ("scrol qivotkanda ... animatsionlar
+   bolsin"): [data-reveal] bilan belgilangan bo'limlar ekranga kirguncha
+   biroz pastda va shaffof turadi, kirgach yumshoq fade+slide-up bilan
+   joyiga "tushadi" (JS: landing.html oxiridagi <script>, IntersectionObserver
+   orqali .is-visible qo'shadi). `prefers-reduced-motion`da JS darhol
+   .is-visible qo'shadi -- shu sabab bazaviy holat "deyarli ko'rinadigan"
+   (opacity 0, lekin transitionsiz sakrab qolmasin uchun) qilib emas, aksincha
+   pastdagi shart bilan ANIQ ko'rsatiladi. */
+.js [data-reveal] { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.js [data-reveal].is-visible { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] { opacity: 1; transform: none; transition: none; }
+}
+
 .lp-section { max-width: 1180px; margin: 0 auto; padding: 64px 24px; }
 .lp-section-alt { background: var(--card); border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); }
 .lp-section-head { max-width: 620px; margin: 0 auto 44px; text-align: center; }
@@ -103,17 +132,45 @@
 .lp-faq-item dt { font-size: 15.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
 .lp-faq-item dd { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin: 0; }
 
-/* 2026-09, "Biz bilan bog'laning" bo'limi uchun (izoh: templates/landing.html) */
-.lp-contact { max-width: 420px; margin: 0 auto; }
-.lp-contact-direct { display: flex; justify-content: center; gap: 22px; flex-wrap: wrap; margin-bottom: 26px; }
-.lp-contact-link {
-  display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
-  color: var(--ink); padding: 9px 14px; border: 1px solid var(--border-light); border-radius: 999px;
-  transition: background 0.12s, border-color 0.12s;
+/* 2026-09, "Biz bilan bog'laning" bo'limi uchun (izoh: templates/landing.html).
+   2026-09 YANGILANDI (foydalanuvchi so'rovi: "formani chiroyliroq qilish
+   kerak") -- oldingi versiya: tekis fon ustida bitta tor (420px) ustun,
+   forma hech qanday karta/soya bilan ajratilmagan, telefon/Telegram
+   havolalari kichkina tekis pastilkalar edi. Endi: Deepsales-uslubidagi
+   ikki ustunli joylashuv -- chapda yirik, ikonka-doiralik aloqa kartalari
+   + ishonch matni, o'ngda haqiqiy "karta" (soya+border) ichida forma. */
+.lp-contact-wrap {
+  max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.15fr;
+  gap: 40px; align-items: start;
 }
-.lp-contact-link:hover { background: var(--card); border-color: var(--border); }
-.lp-contact-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+.lp-contact-info { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.lp-contact-link {
+  display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.lp-contact-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--blue); }
+.lp-contact-link-icon {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; background: var(--blue-bg);
+  color: var(--blue); display: inline-flex; align-items: center; justify-content: center;
+}
+.lp-contact-link-icon svg { width: 19px; height: 19px; }
+.lp-contact-link-text { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.lp-contact-link-text strong { font-size: 15px; font-weight: 700; color: var(--ink); }
+.lp-contact-link-text small { font-size: 12.5px; color: var(--text-dim); font-weight: 500; }
+.lp-contact-note {
+  margin: 10px 2px 0; font-size: 13px; color: var(--text-faint); line-height: 1.6;
+}
+.lp-contact-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md); padding: 30px 28px;
+}
 .lp-contact-form { text-align: left; }
+.lp-contact-form .field:last-of-type { margin-bottom: 22px; }
+@media (max-width: 760px) {
+  .lp-contact-wrap { grid-template-columns: 1fr; gap: 24px; }
+  .lp-contact-card { padding: 24px 20px; }
+}
 
 .lp-pricing { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
 .lp-plan {

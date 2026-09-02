@@ -109,8 +109,18 @@ a { color: inherit; text-decoration: none; }
      turadi, qolganlari yig'ilgan holda kamroq joy egallaydi. */
   display: flex; align-items: center; justify-content: space-between; width: 100%;
   background: none; border: none; cursor: pointer; font-family: inherit;
+  /* BUG FIX (2026-09, foydalanuvchi screenshot bilan ko'rsatdi -- "bunaqa
+     emas", har bir guruh sarlavhasi chiroyisiz "pastilka/quti" bo'lib
+     ko'rinardi): global `button, .btn { border-radius: 6px; box-shadow:
+     var(--shadow-sm); ... }` qoidasi (pastda) HAR QANDAY <button>ga
+     qo'llanadi -- guruh sarlavhasi ilgari <div> edi, endi accordion uchun
+     <button> bo'lgani sababli shu umumiy "tugma" ko'rinishini (soya +
+     dumaloq burchak) OLDI. Bu yerda ATAYLAB bekor qilinadi -- guruh
+     sarlavhasi oddiy matn qatori bo'lib qolishi kerak, tugmaga o'xshamasin. */
+  border-radius: 0; box-shadow: none; transform: none !important;
 }
 .sidebar.open .nav-group-label { opacity: 1; }
+.nav-group-label:hover, .nav-group-label:active { background: none; box-shadow: none; }
 .nav-group-chevron { flex-shrink: 0; width: 14px; height: 14px; display: inline-flex; }
 .nav-group-chevron svg { width: 14px; height: 14px; transition: transform 0.15s; }
 .nav-group-label:not(.collapsed) .nav-group-chevron svg { transform: rotate(-90deg); }
@@ -121,8 +131,15 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 1px;
   transition: background 0.12s, color 0.12s; cursor: pointer; border: none; background: none;
   width: 100%; text-align: left; font-family: inherit; position: relative;
+  /* Xuddi shu bug klassi -- .nav-group-label kabi: ba'zi .nav-item'lar
+     (masalan .sidebar-pin) haqiqiy <button> elementi, shuning uchun
+     global `button, .btn { box-shadow: var(--shadow-sm); ... }` qoidasi
+     ulardan ham "soya/pastilka" ko'rinishini olib qo'yishi mumkin edi.
+     Bu yerda ATAYLAB bekor qilinadi -- barcha nav bandlari (havola bo'lsin,
+     tugma bo'lsin) BIR XIL, tekis ko'rinishda bo'lishi kerak. */
+  box-shadow: none; transform: none !important;
 }
-.nav-item:hover { background: var(--border-light); color: var(--ink); }
+.nav-item:hover { background: var(--border-light); color: var(--ink); box-shadow: none; transform: none; }
 .nav-item.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
 .nav-item.active::before {
   content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
@@ -190,6 +207,28 @@ a { color: inherit; text-decoration: none; }
 
 .container { max-width: 1360px; margin: 0 auto; padding: 28px 24px 64px; animation: fadeInUp 0.28s ease-out; }
 .container.with-sidebar { max-width: none; }
+
+/* 2026-09, foydalanuvchi so'rovi: "misol crm ichiga kirsa tepada yana
+   bolimlar tursin" -- sidebar guruhi ichidagi sahifada bo'lganda, o'sha
+   guruhning bandlari sahifa TEPASIDA gorizontal "tab" qatorida ham
+   ko'rinadi (base.html'ga qarang). Bu ikkinchi navigatsiya qavati ideal
+   dashboard'larda (masalan Deepsales) odatiy uslub -- tez almashish +
+   "qayerdaman" degan aniq kontekst beradi. */
+.page-subnav {
+  display: flex; align-items: center; gap: 4px; margin: -4px 0 20px;
+  padding-bottom: 2px; border-bottom: 1px solid var(--border-light);
+  overflow-x: auto; scrollbar-width: none;
+}
+.page-subnav::-webkit-scrollbar { display: none; }
+.page-subnav-item {
+  display: flex; align-items: center; gap: 7px; padding: 9px 14px 11px;
+  color: var(--text-dim); font-size: 13.5px; font-weight: 500; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s; cursor: pointer;
+}
+.page-subnav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+.page-subnav-item:hover { color: var(--ink); }
+.page-subnav-item.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
 
 /* ---------- Ixcham sana-oralig'i filtri (_date_picker.html) ---------- */
 .date-picker { position: relative; display: inline-block; }
