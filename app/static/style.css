@@ -118,14 +118,34 @@ a { color: inherit; text-decoration: none; }
      dumaloq burchak) OLDI. Bu yerda ATAYLAB bekor qilinadi -- guruh
      sarlavhasi oddiy matn qatori bo'lib qolishi kerak, tugmaga o'xshamasin. */
   border-radius: 0; box-shadow: none; transform: none !important;
+  /* 2026-09, foydalanuvchi qayta-qayta so'rovi ("bunaqa emas chiroyliroq
+     aniqroq qil"): guruhlar orasida deyarli hech qanday bo'shliq yo'q edi
+     (bir guruhning oxirgi bandi bilan keyingi guruh sarlavhasi deyarli
+     yopishib turardi) -- endi har bir guruh sarlavhasidan OLDIN aniq
+     bo'shliq (margin-top) qo'yildi, shu bilan guruhlar vizual jihatdan
+     bir-biridan ANIQ ajraladi. */
+  margin-top: 8px;
 }
 .sidebar.open .nav-group-label { opacity: 1; }
 .nav-group-label:hover, .nav-group-label:active { background: none; box-shadow: none; }
+/* Sarlavha bosiladigan ekanini bildirish uchun (background/soya QAYTA
+   qo'shilmasdan, bug qaytmasin) -- faqat rang biroz to'qlashadi. */
+.nav-group-label:hover { color: var(--text-dim); }
 .nav-group-chevron { flex-shrink: 0; width: 14px; height: 14px; display: inline-flex; }
 .nav-group-chevron svg { width: 14px; height: 14px; transition: transform 0.15s; }
 .nav-group-label:not(.collapsed) .nav-group-chevron svg { transform: rotate(-90deg); }
 .nav-group-label.collapsed .nav-group-chevron svg { transform: rotate(180deg); }
 .nav-group-items.collapsed { display: none; }
+/* 2026-09, foydalanuvchi so'rovi ("bir birini ichiga kirgizib"): guruh
+   ichidagi bandlar endi chapdan yupqa chiziq (guideline) bilan biroz
+   ICHKARIGA suriladi -- shu orqali "bular CRM guruhining farzandlari"
+   degan vizual ierarxiya (daraxt ko'rinishi) aniq bo'ladi. Dashboard kabi
+   guruhga tegishli bo'lmagan bandlar bilan solishtirilsa, farq darhol
+   ko'zga tashlanadi. */
+.nav-group-items {
+  margin-left: 11px; padding-left: 9px; border-left: 1.5px solid var(--border-light);
+  margin-bottom: 2px;
+}
 .nav-item {
   display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius);
   color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 1px;
