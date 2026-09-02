@@ -12,8 +12,21 @@
 
 <div class="tabs" style="margin-bottom:18px">
   <a href="{{ url_for('individual_check', days=days, tab='calls') }}" class="{{ 'active' if tab=='calls' }}">Individual tekshiruv</a>
+  {% if ai_features_disabled %}
+  <a href="{{ url_for('settings_hub') }}" class="text-dim" title="AI funksiyalari Sozlamalardan o'chirilgan -- yoqish uchun bosing" style="opacity:0.6">AI analiz (o'chirilgan)</a>
+  {% else %}
   <a href="{{ url_for('individual_check', days=days, tab='ai') }}" class="{{ 'active' if tab=='ai' }}">AI analiz{% if ai.pending_count %} <span class="badge badge-color-warn" style="margin-left:4px">{{ ai.pending_count }}</span>{% endif %}</a>
+  {% endif %}
 </div>
+
+{% if ai_features_disabled and tab == 'calls' %}
+<div class="card" style="margin-bottom:20px; border-color:#FDE68A; background:#FFFBEB">
+  <p class="page-subtitle" style="margin:0">
+    AI qo'ng'iroq tahlili hozir <strong>o'chirilgan</strong> (xarajatni nazorat qilish uchun admin tomonidan).
+    Qayta yoqish uchun <a href="{{ url_for('settings_hub') }}">Sozlamalar</a> sahifasiga o'ting.
+  </p>
+</div>
+{% endif %}
 
 {% if tab == 'calls' %}
 

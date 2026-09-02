@@ -8,8 +8,8 @@
     <p class="page-subtitle" style="margin-bottom:0">Butun kompaniya bo'yicha umumiy ko'rinish &middot; Yangilangan {{ o.generated_at[:16].replace('T',' ') }} UTC</p>
   </div>
   <div style="display:flex; gap:8px">
-    <a href="{{ url_for('target_page') }}" class="btn toggle-all-btn-outline">Target (reklama)</a>
-    <a href="{{ url_for('analytics_page') }}" class="btn toggle-all-btn-outline">Batafsil Analitika</a>
+    {% if has_module(current_user, 'target') %}<a href="{{ url_for('target_page') }}" class="btn toggle-all-btn-outline">Target (reklama)</a>{% endif %}
+    {% if has_module(current_user, 'analytics') %}<a href="{{ url_for('analytics_page') }}" class="btn toggle-all-btn-outline">Batafsil Analitika</a>{% endif %}
   </div>
 </div>
 

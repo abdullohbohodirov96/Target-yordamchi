@@ -103,6 +103,27 @@ class Company(Base):
     meta_pixel_id = Column(String(32), nullable=True)
     telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
 
+    # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish mumkin
+    # bolsin misol audio tahlilini ochirib turish mumkin bolsin"): admin
+    # o'z kompaniyasi uchun tarifga kirgan bo'limlarni ham qo'lda o'chirib
+    # qo'ya olishi kerak (masalan xarajatni yoki chalg'itadigan bo'limlarni
+    # nazorat qilish uchun) -- `plans.py` FAQAT "tarif nimani RUXSAT
+    # beradi"ni belgilaydi, bu ustun esa o'sha ruxsat ICHIDA "haqiqatda
+    # nimasi YOQILGAN"ni belgilaydi. JSON ro'yxat, masalan
+    # ["individual_check","target"] -- bo'sh/NULL = hech narsa qo'lda
+    # o'chirilmagan (tarif nima bersa, hammasi yoqiq). `permissions.py`
+    # (`has_module`) shu ustunni o'qiydi -- ADMIN uchun ham amal qiladi
+    # (bu "har menejerga alohida ruxsat" emas, "butun kompaniya uchun
+    # funksiyani o'chirish").
+    disabled_modules = Column(Text, nullable=True)
+    # AI-xarajat talab qiluvchi funksiyalar (AI qo'ng'iroq tahlili + ichki
+    # AI-yordamchi) uchun ALOHIDA bitta asosiy tugma -- bular "bo'lim"
+    # emas (masalan "Individual tekshirish" bo'limining ICHIDAGI bitta
+    # tab, yoki har qanday sahifada ko'rinadigan vidjet), shuning uchun
+    # `disabled_modules` ro'yxatiga sig'maydi. NULL/False = yoqiq (agar
+    # tarif AI'ni umuman qo'llab-quvvatlasa -- `plans.py: ai_enabled`).
+    ai_features_disabled = Column(Boolean, nullable=False, default=False)
+
     trial_ends_at = Column(DateTime, nullable=True)
     # 2026-08 (foydalanuvchi so'rovi -- "hammasini akkauntlani tarif asosida
     # ishlidigan qilib ber tolovsiz ishlamasin"): to'lov qilingan MUDDAT.

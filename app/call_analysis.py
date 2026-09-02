@@ -1942,17 +1942,32 @@ def run_pending_analysis(session, limit: int = 10) -> dict:
     bo'lsagina xatolik bilan tugaganlar qayta sinaladi (bu safar, agar
     transkripsiya avval muvaffaqiyatli bo'lgan bo'lsa, faqat tahlil
     qayta sinaladi -- `analyze_call_record` ichidagi mantiq bilan)."""
+    from sqlalchemy import or_ as sa_or_
+
     import call_analytics
-    from db import CallRecord
+    from db import CallRecord, Company
 
     if not is_configured():
         return {"analyzed": 0, "failed": 0, "remaining": 0, "retry_remaining": 0, "error": "OPENAI_API_KEY sozlanmagan"}
 
+    # 2026-09, foydalanuvchi so'rovi ("audio tahlilini ochirib turish mumkin
+    # bolsin"): admin Sozlamalar sahifasidan AI funksiyalarini o'chirgan
+    # kompaniyalarning qo'ng'iroqlari BU YERDA (fon vazifasida) ham
+    # o'tkazib yuboriladi -- shunday qilinmasa toggle faqat sahifada
+    # yashiradi-yu, OpenAI xarajati baribir yozilib ketaverar edi (butun
+    # so'rovning maqsadi aynan shu xarajatni to'xtatish).
+    disabled_company_ids = [
+        c.id for c in session.query(Company.id).filter(Company.ai_features_disabled.is_(True)).all()
+    ]
     min_seconds = call_analytics.get_min_real_talk_seconds()
-    base_filter = (
+    base_filter = [
         CallRecord.recording_url.isnot(None),
         CallRecord.duration_seconds >= min_seconds,
-    )
+    ]
+    if disabled_company_ids:
+        base_filter.append(
+            sa_or_(CallRecord.company_id.is_(None), CallRecord.company_id.notin_(disabled_company_ids))
+        )
     never_tried_q = session.query(CallRecord).filter(*base_filter, CallRecord.ai_analyzed_at.is_(None))
     retry_q = session.query(CallRecord).filter(*base_filter, CallRecord.ai_error.isnot(None))
 

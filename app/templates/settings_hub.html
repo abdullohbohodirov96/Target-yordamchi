@@ -92,6 +92,42 @@
 </div>
 {% endif %}
 
+{% if current_user.role == 'admin' and module_toggle_rows %}
+<div class="card" style="margin-bottom:20px">
+  <h2>Funksiyalarni yoqish/o'chirish</h2>
+  <p class="page-subtitle" style="margin-top:-6px">
+    Tarifingizga kirgan bo'limlardan kerak bo'lmaganlarini vaqtincha o'chirib qo'yishingiz mumkin -- bu barcha (admin va menejer) foydalanuvchilar uchun amal qiladi.
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="set_disabled_modules">
+    {% for row in module_toggle_rows %}
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+      <input type="checkbox" name="enabled_modules" value="{{ row.key }}" id="modtoggle_{{ row.key }}" style="width:auto" {{ 'checked' if row.enabled }}>
+      <label for="modtoggle_{{ row.key }}" style="margin:0; font-weight:400">{{ row.label }}</label>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn" style="margin-top:6px">Saqlash</button>
+  </form>
+</div>
+{% endif %}
+
+{% if current_user.role == 'admin' and ai_plan_supports %}
+<div class="card" style="margin-bottom:20px">
+  <h2 style="display:flex; align-items:center; gap:10px">
+    AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi)
+    {% if ai_features_disabled %}<span class="badge badge-color-bad">o'chirilgan</span>{% else %}<span class="badge badge-color-good">yoqilgan</span>{% endif %}
+  </h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:12px">
+    AI qo'ng'iroq tahlili (Individual tekshirish ichidagi audio tahlili) va ichki AI-yordamchi vidjetini BITTA tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="toggle_ai_features">
+    <input type="hidden" name="ai_features_disabled" value="{{ '0' if ai_features_disabled else '1' }}">
+    <button type="submit" class="btn">{{ "AI funksiyalarini yoqish" if ai_features_disabled else "AI funksiyalarini o'chirish" }}</button>
+  </form>
+</div>
+{% endif %}
+
 {% if current_user.role == 'admin' %}
 <div class="card" style="margin-bottom:20px">
   <h2>AI-yordamchi: javobsiz savollar</h2>

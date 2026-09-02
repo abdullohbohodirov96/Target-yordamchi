@@ -2854,7 +2854,11 @@ def _inject_plan_upsell():
     if company is None:
         return {"company_ai_enabled": True}
     plan_def = plans.get_plan(company.plan)
-    result = {"company_ai_enabled": plan_def.ai_enabled}
+    # 2026-09, foydalanuvchi so'rovi ("audio tahlilini ochirib turish mumkin
+    # bolsin"): tarif AI'ga ruxsat bergan bo'lsa ham, admin buni Sozlamalar
+    # sahifasidan qo'lda o'chirib qo'ygan bo'lishi mumkin
+    # (`Company.ai_features_disabled`) -- bu holda vidjet HAM yashiriladi.
+    result = {"company_ai_enabled": plan_def.ai_enabled and not getattr(company, "ai_features_disabled", False)}
     if current_user.role == "admin":
         days_left = None
         if company.paid_until:
@@ -3368,12 +3372,28 @@ def individual_check():
     tab = request.args.get("tab", "calls")
     if tab not in ("calls", "ai"):
         tab = "calls"
+
+    # 2026-09, foydalanuvchi so'rovi ("audio tahlilini ochirib turish mumkin
+    # bolsin"): admin Sozlamalar sahifasidan AI funksiyalarini o'chirgan
+    # bo'lsa, "AI analiz" tab'i endi "Individual tekshiruv" (xom qo'ng'iroq
+    # ro'yxati)ga qaytariladi -- og'ir DB so'rovlarini ham bekor qilib.
+    company = _current_company()
+    ai_features_disabled = bool(company and company.ai_features_disabled)
+    if ai_features_disabled and tab == "ai":
+        tab = "calls"
+
     since = dt.datetime.utcnow() - dt.timedelta(days=days)
 
     session = get_session()
     try:
         check = call_analytics.build_individual_check(session, since)
-        ai = _build_ai_analysis_view(session, since)
+        if ai_features_disabled:
+            ai = {
+                "disabled": True, "openai_configured": False, "pending_count": 0,
+                "analyzed_count": 0, "error_count": 0, "credit_exhausted_count": 0, "rows": [],
+            }
+        else:
+            ai = _build_ai_analysis_view(session, since)
     finally:
         session.close()
 
@@ -3383,6 +3403,7 @@ def individual_check():
         configured=call_sync.is_configured(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
         ai=ai,
+        ai_features_disabled=ai_features_disabled,
         **check,
     )
 
@@ -3960,6 +3981,40 @@ def settings_hub():
                     session.commit()
                     flash("Savol hal qilingan deb belgilandi.", "success")
 
+            elif action == "set_disabled_modules":
+                # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib
+                # turish mumkin bolsin"): checkbox qilib belgilangan
+                # bo'limlar YOQIQ qoladi, belgilanmaganlari O'CHADI --
+                # lekin FAQAT tarif ruxsat bergan bo'limlar orasida
+                # (`plans.modules_for_plan`), aks holda tarifda umuman
+                # yo'q bo'lim "yoqilgan" bo'lib ko'rinib qolishi mumkin.
+                company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+                if company_row is not None:
+                    allowed_by_plan = set(plans.modules_for_plan(company_row.plan)) & set(permissions.TOGGLEABLE_MODULE_KEYS)
+                    checked = set(request.form.getlist("enabled_modules"))
+                    newly_disabled = [key for key in allowed_by_plan if key not in checked]
+                    company_row.disabled_modules = permissions.serialize_disabled_modules(newly_disabled)
+                    session.commit()
+                    g.pop("_company_cache", None)
+                    flash("Bo'limlar sozlamasi saqlandi.", "success")
+                else:
+                    flash("Kompaniya topilmadi.", "error")
+
+            elif action == "toggle_ai_features":
+                company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+                if company_row is not None:
+                    company_row.ai_features_disabled = request.form.get("ai_features_disabled") == "1"
+                    session.commit()
+                    g.pop("_company_cache", None)
+                    flash(
+                        "AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi) o'chirildi."
+                        if company_row.ai_features_disabled else
+                        "AI funksiyalari yoqildi.",
+                        "success",
+                    )
+                else:
+                    flash("Kompaniya topilmadi.", "error")
+
             return redirect(url_for("settings_hub"))
 
         managers_all = session.query(Manager).filter_by(is_active=True).order_by(Manager.full_name).all()
@@ -3994,6 +4049,26 @@ def settings_hub():
     ))
     capi_has_ad_account = bool(company and company.meta_ad_account_id)
 
+    # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish mumkin
+    # bolsin misol audio tahlilini ochirib turish mumkin bolsin"): admin
+    # o'zining tarifiga kirgan bo'limlarni bu yerdan yoqib/o'chira oladi
+    # (permissions.py: has_module shu Company.disabled_modules'ni o'qiydi),
+    # va AI funksiyalarini (qo'ng'iroq tahlili + AI-yordamchi) BITTA
+    # tugma bilan to'liq o'chira oladi (xarajatni nazorat qilish uchun).
+    module_toggle_rows = []
+    ai_plan_supports = False
+    ai_features_disabled = False
+    if company is not None and current_user.role == "admin":
+        allowed_by_plan = set(plans.modules_for_plan(company.plan))
+        disabled_now = set(permissions.parse_disabled_modules(company.disabled_modules))
+        module_toggle_rows = [
+            {"key": key, "label": label, "enabled": key not in disabled_now}
+            for key, label in permissions.MODULES
+            if key in allowed_by_plan and key in permissions.TOGGLEABLE_MODULE_KEYS
+        ]
+        ai_plan_supports = plans.get_plan(company.plan).ai_enabled
+        ai_features_disabled = bool(company.ai_features_disabled)
+
     return render_template(
         "settings_hub.html",
         min_sale_amount=kpi_bonus.get_min_sale_amount(),
@@ -4003,6 +4078,9 @@ def settings_hub():
         unanswered=unanswered,
         capi_configured=capi_configured,
         capi_has_ad_account=capi_has_ad_account,
+        module_toggle_rows=module_toggle_rows,
+        ai_plan_supports=ai_plan_supports,
+        ai_features_disabled=ai_features_disabled,
     )
 
 
