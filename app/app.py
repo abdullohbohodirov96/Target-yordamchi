@@ -413,6 +413,86 @@ def tg_send_checked(chat_id: int, text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+_OWNER_ONLY_COMMANDS = {"/status", "/analyze", "/pause", "/resume"}
+_BOT_IDENTITY_CACHE: dict = {}
+
+
+def _get_bot_identity() -> dict:
+    """Bot'ning o'z Telegram ID/username'ini (`getMe`) BIR MARTA olib,
+    xotirada keshlaydi -- guruh chatida "bot murojaat qilindimi" tekshiruvi
+    (mention/reply) uchun kerak."""
+    if _BOT_IDENTITY_CACHE:
+        return _BOT_IDENTITY_CACHE
+    import requests
+    try:
+        r = requests.get(f"{TELEGRAM_API}/getMe", timeout=10)
+        data = r.json()
+        if data.get("ok"):
+            _BOT_IDENTITY_CACHE["id"] = data["result"].get("id")
+            _BOT_IDENTITY_CACHE["username"] = (data["result"].get("username") or "").lower()
+    except Exception:
+        logger.exception("Bot identifikatorini (getMe) olishda xatolik")
+    return _BOT_IDENTITY_CACHE
+
+
+def _is_bot_addressed(message: dict) -> bool:
+    """2026-09, foydalanuvchi shikoyati: "qo'shimcha guruhda oddiy
+    gaplashganda bot o'ziga olvurmasin, faqat murojaat qilinsa yozsin,
+    token ketmasin". Guruh chatida bot FAQAT unga to'g'ridan-to'g'ri
+    murojaat qilinganda (@username mention yoki uning O'Z xabariga reply)
+    javob berishi kerak -- aks holda guruhdagi HAR bir oddiy xabar
+    `orchestrator.classify_intent()` (LLM) chaqirig'ini ishga tushirib,
+    keraksiz token sarflardi (aynan shu sabab "balans tugadi" xatosi
+    chiqqan edi)."""
+    identity = _get_bot_identity()
+    reply_to = message.get("reply_to_message")
+    if reply_to and identity.get("id") and reply_to.get("from", {}).get("id") == identity["id"]:
+        return True
+    bot_username = identity.get("username")
+    if bot_username:
+        text = message.get("text") or ""
+        for ent in message.get("entities") or []:
+            if ent.get("type") == "mention":
+                mention_text = text[ent["offset"]: ent["offset"] + ent["length"]]
+                if mention_text.lstrip("@").lower() == bot_username:
+                    return True
+    return False
+
+
+def _is_owner_telegram_chat(chat_id: int) -> bool:
+    """2026-09, XAVFSIZLIK TUZATISHI (foydalanuvchi shikoyati: "bot hisobot
+    tashiyotganda adashtirib yuboryapti -- boshqa kompaniyaga [platforma
+    egasining] hisobotini tashiyapti"): `handle_free_text` (AI suhbat --
+    "Targetolog" assistenti) va `/status`,`/analyze`,`/pause`,`/resume`
+    buyruqlari FAQAT platforma egasining GLOBAL (ENV) Meta hisobi ustida
+    ishlaydi -- ular hech qachon company-scoped bo'lmagan. Endi HAR BIR
+    kompaniyaning O'Z Telegram guruhi bo'lgani (va o'sha guruh a'zolari ham
+    botga yozishi mumkinligi) sababli, bu tekshiruv bo'lmasa istalgan
+    kompaniyaning guruh a'zosi botdan platforma egasining haqiqiy reklama
+    hisobotini so'rab olishi yoki hatto uning reklamasini pauza/ishga
+    tushirishi mumkin edi. Shu sabab bu funksiyalar endi FAQAT: (a) ENV'da
+    sozlangan platforma egasining o'z guruhlari, yoki (b) standart
+    (platforma egasi) kompaniyaga tegishli, `telegram_user_id`si shu
+    chat'ga mos menejer -- uchun ishlaydi. Boshqa har qanday chat (shu
+    jumladan istalgan mijoz-kompaniyaning O'Z `telegram_group_id`si) rad
+    etiladi."""
+    for env_name in ("TELEGRAM_AGENTS_GROUP_ID", "TELEGRAM_REPORT_GROUP_ID"):
+        raw = os.environ.get(env_name, "").strip()
+        if raw:
+            try:
+                if int(raw) == chat_id:
+                    return True
+            except ValueError:
+                pass
+    session = get_session()
+    try:
+        with db.unscoped():
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
+        return bool(manager and manager.company_id == db.get_default_company_id())
+    finally:
+        session.close()
+
+
 def _conv_key(chat_id: int) -> str:
     return f"conv:{chat_id}"
 
@@ -475,7 +555,28 @@ def _run_heavy_in_background(chat_id: int, user_text: str, history_text: str, ve
     tg_send(chat_id, result)
 
 
+_NOT_OWNER_TEXT = (
+    "⚠️ Bu funksiya (erkin suhbat/AI-yordamchi) faqat platforma "
+    "egasining o'z hisobi uchun ishlaydi. Sizning kompaniyangiz uchun "
+    "boshqa buyruqlardan (/vazifalar, /id, /groupid) foydalanishingiz mumkin."
+)
+
+
 def handle_free_text(chat_id: int, user_text: str) -> None:
+    # 2026-09, XAVFSIZLIK TUZATISHI: bu yerdagi butun mantiq (classify_intent,
+    # execute_intent, oylik hisobot, /pause va /resume'ga olib boradigan
+    # ACTION intentlar) FAQAT platforma egasining GLOBAL (ENV orqali
+    # sozlangan) Meta hisobi ustida ishlaydi -- bu yerda "qaysi kompaniya"
+    # degan tushuncha UMUMAN yo'q. Endi har bir kompaniyaning o'z Telegram
+    # guruhi bo'lgani sababli, agar bu tekshiruv bo'lmasa, BOSHQA kompaniya
+    # guruhidagi har qanday a'zo egasining haqiqiy biznes hisobotini/
+    # ma'lumotlarini ko'rishi yoki hatto uning reklamalarini pauza/resume
+    # qilishi mumkin bo'lib qolar edi. Shu uchun bu yerga chiqishdan oldin
+    # chat egasi platforma egasi ekanligi tasdiqlanadi.
+    if not _is_owner_telegram_chat(chat_id):
+        tg_send(chat_id, _NOT_OWNER_TEXT)
+        return
+
     history = get_history(chat_id)
     budget_tracker.set_notify_chat_id(chat_id)
 
@@ -540,9 +641,23 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
 
 
 def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
+    # 2026-09, XAVFSIZLIK TUZATISHI: /status, /analyze, /pause, /resume
+    # to'g'ridan-to'g'ri platforma egasining GLOBAL Meta hisobiga ta'sir
+    # qiladi (haqiqiy reklamani to'xtatish/ishga tushirish, uning hisobotini
+    # ko'rsatish). Bular FAQAT platforma egasining o'z chatidan chaqirilishi
+    # mumkin -- boshqача bo'lsa, istalgan kompaniya guruhidagi a'zo boshqa
+    # birovning (Dunyabunya) haqiqiy reklamalarini boshqarib qo'yishi mumkin.
+    if cmd in _OWNER_ONLY_COMMANDS and not _is_owner_telegram_chat(chat_id):
+        tg_send(chat_id, _NOT_OWNER_TEXT)
+        return
     if cmd == "/start":
         kv_store.set_json(_conv_key(chat_id), [])
-        budget_tracker.set_notify_chat_id(chat_id)
+        if _is_owner_telegram_chat(chat_id):
+            # Byudjet/depozit ogohlantirishlari FAQAT platforma egasining
+            # o'z chatiga yuborilishi kerak -- aks holda boshqa kompaniya
+            # /start bosса, egasining byudjet xabarlari o'sha chatga
+            # "o'g'irlanib" ketishi mumkin edi.
+            budget_tracker.set_notify_chat_id(chat_id)
         tg_send(chat_id, WELCOME_TEXT)
         return
     if cmd == "/status":
@@ -774,11 +889,20 @@ def webhook():
         return jsonify({"ok": True})
 
     chat_id = message["chat"]["id"]
+    chat_type = message.get("chat", {}).get("type", "private")
     text = message["text"].strip()
     try:
         if text.startswith("/"):
             parts = text.split()
             handle_command(chat_id, parts[0].split("@")[0], parts[1:])
+        elif chat_type in ("group", "supergroup") and not _is_bot_addressed(message):
+            # 2026-09, XAVFSIZLIK/XARAJAT TUZATISHI: guruh chatida odamlar
+            # o'zaro oddiy gaplashganda bot javob QAYTARMASLIGI kerak --
+            # aks holda har bir xabar uchun (LLM) chaqiruv ketadi va token
+            # tugab qoladi. Bot faqat unga to'g'ridan-to'g'ri murojaat
+            # qilinganda (@username mention yoki uning javobiga reply)
+            # ishlaydi -- shaxsiy (private) chatlarda bu cheklov qo'llanmaydi.
+            pass
         else:
             handle_free_text(chat_id, text)
     except Exception:
