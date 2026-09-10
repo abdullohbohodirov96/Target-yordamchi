@@ -64,7 +64,17 @@
           {% else %}<span class="badge badge-color-bad">to'lov tugagan</span>{% endif %}
         </td>
         <td class="text-dim">{{ c.created_at.strftime('%d.%m.%Y') if c.created_at else '—' }}</td>
-        <td class="num"><a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>
+        <td class="num" onclick="event.stopPropagation()">
+          <a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue">Tahrirlash</a>
+          {% if c.id != 1 %}
+          <form method="post" action="{{ url_for('company_toggle_active', company_id=c.id) }}" style="display:inline"
+                {% if c.is_active %}onsubmit="return confirm('Rostdan ham &#39;{{ c.name }}&#39; to\'xtatilsinmi? Bu kompaniyaning hamma foydalanuvchisi tizimga kira olmay qoladi.')"{% endif %}>
+            <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">
+              {{ "To'xtatish" if c.is_active else "Yoqish" }}
+            </button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
       <tr class="empty-row"><td colspan="9">Hali kompaniya yo'q.</td></tr>

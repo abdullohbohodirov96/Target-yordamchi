@@ -3742,6 +3742,41 @@ def company_edit(company_id):
     return render_template("company_edit.html", c=c_view)
 
 
+@app.route("/companies/<int:company_id>/toggle-active", methods=["POST"])
+@login_required
+@platform_owner_required
+def company_toggle_active(company_id):
+    """2026-09, foydalanuvchi so'rovi ("kompanyalar bo'limida o'chirishni
+    yoq/o'chirib tashash mumkin bo'lsin"): kompaniyalar RO'YXATIDAN
+    (`company_edit.html` ichiga kirmasdan) BITTA bosish bilan
+    faollashtirish/to'xtatish -- bu mantiqning o'zi (`Company.is_active`)
+    ilgari HAM bor edi (`company_edit`dagi "Hisobni to'xtatish" tugmasi
+    orqali), lekin ro'yxat sahifasida hech qanday tezkor tugma yo'q edi --
+    har safar "Tahrirlash"ga kirib, pastga aylanib, tugmani topish kerak
+    edi. `Company.is_active=False` bo'lsa -- shu kompaniyaning HAMMA
+    foydalanuvchisi (login funksiyasi orqali) tizimga kira olmay qoladi,
+    lekin ma'lumotlari (leadlar, sozlamalar) o'chirilmaydi -- xohlagan
+    payt qaytadan yoqish mumkin."""
+    if company_id == 1:
+        flash("Asosiy (o'zingizning) kompaniyani bu yerdan o'chirib bo'lmaydi.", "error")
+        return redirect(url_for("companies"))
+    session = get_session()
+    try:
+        c = session.get(Company, company_id)
+        if not c:
+            flash("Kompaniya topilmadi.", "error")
+            return redirect(url_for("companies"))
+        c.is_active = not c.is_active
+        session.commit()
+        if c.is_active:
+            flash(f"'{c.name}' qayta faollashtirildi.", "success")
+        else:
+            flash(f"'{c.name}' to'xtatildi -- endi bu kompaniyaning hech kim tizimga kira olmaydi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("companies"))
+
+
 @app.route("/companies/<int:company_id>/managers", methods=["GET", "POST"])
 @login_required
 @platform_owner_required
