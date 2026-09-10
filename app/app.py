@@ -4129,6 +4129,7 @@ def _serve_bytes_with_range(data: bytes, content_type: str) -> Response:
 
 @app.route("/individual-tekshirish/audio/<int:call_id>")
 @login_required
+@module_required("individual_check")  # 2026-09 tuzatish: avval yo'q edi -- modul ruxsati bo'lmagan menejer ham call_id orqali istalgan audio yozuvni eshitib olishi mumkin edi
 def individual_check_audio_proxy(call_id):
     """2026-08 V5, foydalanuvchi ANIQ so'ragan: AI tahlil tab'idagi audio
     pleer ba'zan "0:00/0:00" ko'rsatib, ishlamay qolgan. ANIQLANMAGAN,

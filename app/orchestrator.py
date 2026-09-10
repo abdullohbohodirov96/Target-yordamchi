@@ -1123,8 +1123,15 @@ def _crm_leads_count_today() -> int:
     start_utc, end_utc = date_bounds
     session = db.get_session()
     try:
+        # 2026-09 TUZATISH: `Lead.created_at` CRM bazasiga QACHON yozilgani
+        # (lead_sync.py'ning ~15 daqiqalik polling natijasi), Meta'da
+        # HAQIQATDA qachon yaratilgani emas -- `dashboard_data.py`dagi bir
+        # xil tuzatishga qarang. `lead_created_time` mavjud bo'lsa o'shani
+        # ishlatamiz.
+        from sqlalchemy import func as _sa_func
+        effective_created = _sa_func.coalesce(db.Lead.lead_created_time, db.Lead.created_at)
         return session.query(db.Lead).filter(
-            db.Lead.created_at >= start_utc, db.Lead.created_at < end_utc
+            effective_created >= start_utc, effective_created < end_utc
         ).count()
     finally:
         session.close()
@@ -1154,6 +1161,9 @@ def _crm_leads_count_today() -> int:
 # daqiqada) ishlaydigan cron sifatida ro'yxatga olinadi -- soatlik LLM
 # audit tsiklidan (`job_watch_cycle`) MUSTAQIL.
 # ---------------------------------------------------------------------------
+
+_CPL_TREND_WINDOW_DAYS = 3  # "bugun tinch" bahonasi bilan surunkali yomon reklama o'tkazib yuborilmasligi uchun qo'shimcha tekshiruv oynasi
+
 
 def enforce_cpl_hard_kill(company=None) -> dict:
     """Bugungi (server vaqti bo'yicha "today") faol reklamalarni CPL
@@ -1192,6 +1202,29 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     if result.get("error"):
         logger.error("CPL hard-kill: bugungi ad ma'lumotini olishda xato: %s", result["error"])
         return {"checked": 0, "paused": [], "errors": [result["error"]]}
+
+    # 2026-09 TUZATISH (foydalanuvchi qaytadan xabar qildi -- ilgari ham
+    # aynan shu shikoyat bo'lgan, 1136-qatordagi izohga qarang: "CPL
+    # kattalashib ketyapti, target o'chmayapti"). Sabab: bu tekshiruv FAQAT
+    # "bugun" oynasiga qaraydi. Agar reklama BIR NECHA KUNDAN BERI qimmat
+    # bo'lsa-yu, aynan BUGUN kam sarflagan yoki bugun hali lead kelmagan
+    # bo'lsa, u "hali sinov bosqichida" deb har safar o'tkazib yuborilardi
+    # -- garchi haftalik/kunlar davomidagi CPL'i chegaradan ancha oshgan
+    # bo'lsa ham. Endi qo'shimcha {_CPL_TREND_WINDOW_DAYS} kunlik OYNA ham
+    # tekshiriladi -- "bugun" YOKI shu oynadan BIRI chegaradan oshsa,
+    # reklama baribir pauza qilinadi.
+    window_result = dashboard_data.get_kpis(
+        level="ad", date_preset=f"last_{_CPL_TREND_WINDOW_DAYS}d", active_only=True,
+        access_token=access_token, ad_account_id=ad_account_id,
+    )
+    window_by_ad = {}
+    if window_result.get("error"):
+        logger.warning(
+            "CPL hard-kill: %s kunlik tendensiya ma'lumoti olinmadi (faqat 'bugun' bilan tekshiriladi): %s",
+            _CPL_TREND_WINDOW_DAYS, window_result["error"],
+        )
+    else:
+        window_by_ad = {r["id"]: r for r in window_result.get("rows", [])}
 
     campaign_by_ad = {}
     if protected_campaign_ids:
@@ -1236,6 +1269,32 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                 f"Bugun ${spend:.2f} sarflandi, lekin HALI BIRORTA lead "
                 f"kelmadi (chegara: ${cpl_hard_kill * zero_lead_multiplier:.2f})."
             )
+
+        # "Bugun" chegaradan oshmagan bo'lsa ham, {_CPL_TREND_WINDOW_DAYS}
+        # kunlik tendensiyani tekshiramiz -- surunkali yomon reklama "bugun
+        # tinch" bahonasi bilan cheksiz o'tkazib yuborilmasligi uchun.
+        if not reason:
+            w = window_by_ad.get(ad_id)
+            if w:
+                w_spend = w.get("spend", 0.0)
+                w_cpl = w.get("cpl", 0.0)
+                w_leads = w.get("crm_leads_total", 0)
+                if not w_leads and w.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
+                    w_leads = max(w.get("meta_result") or 0, w.get("meta_leads") or 0)
+                w_zero_lead_limit = cpl_hard_kill * zero_lead_multiplier * _CPL_TREND_WINDOW_DAYS
+                if w_leads > 0 and w_spend >= min_spend and w_cpl > cpl_hard_kill:
+                    reason = (
+                        f"Oxirgi {_CPL_TREND_WINDOW_DAYS} kunda CPL ${w_cpl:.2f} (chegara: "
+                        f"${cpl_hard_kill:.2f}dan yuqori), shu davrda sarflandi ${w_spend:.2f}, "
+                        f"{w_leads} ta lead -- bugungi ko'rsatkich tinch ko'ringan bo'lsa ham, "
+                        f"umumiy tendensiya yomon."
+                    )
+                elif w_leads == 0 and w_spend >= w_zero_lead_limit:
+                    reason = (
+                        f"Oxirgi {_CPL_TREND_WINDOW_DAYS} kunda ${w_spend:.2f} sarflandi, lekin "
+                        f"HALI BIRORTA lead kelmadi (chegara: ${w_zero_lead_limit:.2f})."
+                    )
+
         if not reason:
             continue
 

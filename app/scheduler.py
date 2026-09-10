@@ -763,8 +763,13 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
-    scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
-    scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # call-sync'dan keyin
+    # 2026-09, foydalanuvchi ANIQ so'rovi bilan VAQTINCHA o'chirilgan:
+    # "qo'ng'iroqlarni tahlil qilishni hozircha olib tashi... buni to'liq
+    # yopvor hozircha". Qayta yoqish uchun quyidagi ikki qatorni qaytaring
+    # (kod/ma'lumotlar o'chirilmadi, faqat fon jarayoni to'xtatildi -- shu
+    # bilan OpenAI transkripsiya/tahlil xarajati ham to'xtaydi).
+    # scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
+    # scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # call-sync'dan keyin
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.add_job(job_ig_dm_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="ig-dm-sync")  # AI'siz, tez -- yangi xabar/javobsizlik tekshiruvi

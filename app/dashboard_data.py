@@ -40,6 +40,7 @@ import time
 from collections import defaultdict
 
 import requests
+from sqlalchemy import func
 
 import meta_api
 import kpi_bonus
@@ -432,7 +433,20 @@ def _get_kpis_uncached(
         lead_query = session.query(Lead)
         if date_bounds:
             start_utc, end_utc = date_bounds
-            lead_query = lead_query.filter(Lead.created_at >= start_utc, Lead.created_at < end_utc)
+            # 2026-09 TUZATISH (foydalanuvchi: "vebga ma'lumotlarni noto'g'ri
+            # beryapti"): avval BU YERDA `Lead.created_at` (lead CRM bazasiga
+            # QACHON yozilgani -- lead_sync.py 15 daqiqalik polling natijasi)
+            # bo'yicha filtrlangan edi. Bu Meta'da leadning HAQIQIY yaratilgan
+            # vaqtidan farq qiladi -- masalan 23:58da kelgan lead 00:05da
+            # sinxronlansa, "bugun" emas "ertaga"ga tushib qolardi, va bu
+            # kunlik CPL/lead-soni raqamlarini Meta Ads Manager'dagidan
+            # farqli qilib ko'rsatardi. `lead_created_time` (Meta'ning o'z
+            # `created_time`si, lead_sync.py'da to'ldiriladi) mavjud bo'lsa
+            # o'shani ishlatamiz -- faqat qo'lda kiritilgan (Meta'dan kelmagan)
+            # leadlar uchun `created_time` bo'sh qoladi, ular uchun CRM
+            # yozilgan vaqtiga (`created_at`) tushamiz.
+            effective_created = func.coalesce(Lead.lead_created_time, Lead.created_at)
+            lead_query = lead_query.filter(effective_created >= start_utc, effective_created < end_utc)
         leads = lead_query.all()
         # voronka bosqichi (key) -> kategoriya (active/qualified/unqualified/sold)
         # xaritasi -- admin bosqichlarni o'zgartirgan/qo'shgan bo'lsa ham, dashboard

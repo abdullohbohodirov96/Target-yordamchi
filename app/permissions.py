@@ -118,16 +118,29 @@ def _company_disabled_set(user) -> set:
     return set(getattr(g, cache_attr))
 
 
+# 2026-09, foydalanuvchi ANIQ so'rovi bilan VAQTINCHA to'liq o'chirilgan:
+# "qo'ng'iroqlarni tahlil qilishni hozircha olib tashi... buni to'liq
+# yopvor hozircha". Qayta yoqish uchun -- bu ro'yxatni bo'sh qiling
+# (`set()`) yoki shu bloklarni olib tashlang; kod/ma'lumotlar o'chirilmadi,
+# faqat kirish yopildi (barcha kompaniyalar uchun, har bir menejer/admin
+# ruxsatidan QAT'IY NAZAR).
+GLOBALLY_DISABLED_MODULES = {"individual_check"}
+
+
 def has_module(user, key: str) -> bool:
     """`user` -- Flask-Login `current_user` (ManagerUser) yoki `None`.
 
     Tekshiruv tartibi:
+      0. `GLOBALLY_DISABLED_MODULES`da bo'lsa -- HECH KIM uchun (admin ham)
+         ochilmaydi, kompaniya/menejer sozlamalaridan qat'iy nazar.
       1. Kompaniya darajasida ADMIN qo'lda o'chirib qo'yganmi
          (`Company.disabled_modules`) -- bo'lsa, ADMIN uchun ham,
          MENEJER uchun ham YOPIQ (bu "butun kompaniya uchun funksiyani
          o'chirish", shaxsiy ruxsat emas).
-      2. Admin uchun (agar (1)da o'chirilmagan bo'lsa) har doim True.
+      2. Admin uchun (agar (0)/(1)da o'chirilmagan bo'lsa) har doim True.
       3. Menejer uchun `user.allowed_modules` ro'yxatiga qarab."""
+    if key in GLOBALLY_DISABLED_MODULES:
+        return False
     if user is None or not getattr(user, "is_authenticated", False):
         return False
     if key in _company_disabled_set(user):
