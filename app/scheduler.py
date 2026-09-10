@@ -601,25 +601,68 @@ def job_ig_dm_analysis() -> dict:
         return {"error": str(e)}
 
 
-def job_competitor_analysis() -> str:
+def job_competitor_analysis() -> dict:
     """Har kuni soat 10:00 -- admin qo'shgan raqobatchilarning Meta Ad
     Library'dagi joriy reklamalarini yangilaydi va qisqa amaliy hisobot
-    tayyorlab "to'liq harakat" guruhiga yuboradi (2026-08, foydalanuvchi
-    so'rovi). Raqobatchi qo'shilmagan bo'lsa jim qaytadi."""
-    targets = _full_activity_targets()
+    tayyorlab yuboradi (2026-08, foydalanuvchi so'rovi). Raqobatchi
+    qo'shilmagan bo'lsa jim qaytadi.
+
+    2026-09, multi-tenant xavfsizlik tuzatishi (foydalanuvchi so'rovi:
+    "endi bir necha kompaniya bor, malumotla adashib ketmasin ... tg bot
+    hisobotlar"): ILGARI `competitor_sync.sync_once()`/
+    `competitor_analytics.build_daily_report()` HECH QANDAY kompaniya
+    scope'isiz chaqirilardi -- `Competitor`/`CompetitorAd` modellari
+    `_COMPANY_SCOPED_MODELS` ro'yxatida bor-u, lekin bu vazifa scope'ni
+    hech qachon FAOLLASHTIRMAGANI uchun avtomatik filtr ishlamas edi
+    (`db.py`: `_current_company_id is None` bo'lsa filtrsiz). Natijada
+    BARCHA kompaniyalarning raqobatchilari BITTA hisobotga aralashib,
+    FAQAT platforma egasining `_full_activity_targets()` guruhiga
+    yuborilardi -- boshqa kompaniyalar esa o'zining raqobatchi hisobotini
+    UMUMAN OLMAS edi. Endi har bir faol kompaniya `db.scoped_as(company_id)`
+    bilan ALOHIDA sinxronlanadi va o'zining hisobotini oladi -- platforma
+    egasi eski (`_full_activity_targets()`) guruhiga, boshqa har bir
+    kompaniya FAQAT o'zining `Company.telegram_group_id`siga (sozlanmagan
+    bo'lsa -- hech qayerga, xato emas)."""
+    default_company_id = db.get_default_company_id()
+
+    session = db.get_session()
     try:
-        competitor_sync.sync_once()
-        report = competitor_analytics.build_daily_report()
-    except Exception as e:
-        logger.exception("Raqobatchilar tahlilida xatolik")
+        with db.unscoped():
+            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            company_rows = [{"id": c.id, "telegram_group_id": c.telegram_group_id} for c in companies]
+    finally:
+        session.close()
+
+    results = {}
+    for c in company_rows:
+        company_id = c["id"]
+        is_owner = company_id == default_company_id
+        if is_owner:
+            targets = _full_activity_targets()
+        elif c["telegram_group_id"]:
+            targets = [int(c["telegram_group_id"])]
+        else:
+            targets = []
+        if not targets:
+            results[company_id] = "guruh sozlanmagan -- o'tkazib yuborildi"
+            continue
+        try:
+            with db.scoped_as(company_id):
+                competitor_sync.sync_once()
+                report = competitor_analytics.build_daily_report()
+        except Exception as e:
+            logger.exception("Raqobatchilar tahlilida xatolik (kompaniya #%s)", company_id)
+            for cid in targets:
+                _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {e}")
+            results[company_id] = f"xato: {e}"
+            continue
+        if not report:
+            results[company_id] = "raqobatchi qo'shilmagan"
+            continue
         for cid in targets:
-            _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {e}")
-        return f"xato: {e}"
-    if not report:
-        return "raqobatchi qo'shilmagan"
-    for cid in targets:
-        _tg_send(cid, report)
-    return f"yuborildi -> {targets}"
+            _tg_send(cid, report)
+        results[company_id] = f"yuborildi -> {targets}"
+    return results
 
 
 def job_followup_reminders() -> dict:

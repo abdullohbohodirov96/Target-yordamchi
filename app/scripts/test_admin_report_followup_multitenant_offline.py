@@ -22,8 +22,13 @@ bilan ishlardi:
      filtrsiz edi, umumiy xulosa BARCHA kompaniyalarning (potentsial
      mijoz ismi/telefoni bilan) leadlarini QO'SHIB, platforma egasining
      umumiy guruhiga yuborardi.
+  5. `scheduler.job_competitor_analysis()` -- xuddi shunday, `Competitor`/
+     `CompetitorAd` scope'siz so'ralardi -- BARCHA kompaniyalarning
+     raqobatchilari BITTA hisobotga aralashib, FAQAT platforma egasiga
+     yuborilardi; boshqa kompaniyalar o'zining raqobatchi hisobotini
+     UMUMAN OLMAS edi.
 
-Bu fayl 1-2-4'ni tekshiradi (3-standing-reports xuddi shu naqsh, alohida
+Bu fayl 1-2-4-5'ni tekshiradi (3-standing-reports xuddi shu naqsh, alohida
 test shart emas).
 
 Ishga tushirish:
@@ -43,7 +48,8 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test-secret")
 
 
 def _fresh_modules(db_path, *, owner_meta_ad_account_id=None, owner_meta_access_token=None):
-    for name in ("db", "kv_store", "orchestrator", "monthly_report", "meta_api", "scheduler", "dashboard_data"):
+    for name in ("db", "kv_store", "orchestrator", "monthly_report", "meta_api", "scheduler", "dashboard_data",
+                 "competitor_sync", "competitor_analytics"):
         sys.modules.pop(name, None)
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     # MUHIM: platforma egasi uchun "eski, global ENV" kredensiallari --
@@ -93,6 +99,23 @@ def _make_lead(db_module, *, company_id, full_name, next_contact_at=None, create
         session.add(lead)
         session.commit()
         return lead.id
+    finally:
+        session.close()
+
+
+def _make_competitor_with_ad(db_module, *, company_id, name, domain, ad_text, external_id):
+    session = db_module.get_session()
+    try:
+        comp = db_module.Competitor(company_id=company_id, name=name, domain=domain, is_active=True)
+        session.add(comp)
+        session.commit()
+        ad = db_module.CompetitorAd(
+            company_id=company_id, competitor_id=comp.id, external_id=external_id,
+            body_text=ad_text, is_active=True,
+        )
+        session.add(ad)
+        session.commit()
+        return comp.id
     finally:
         session.close()
 
@@ -222,6 +245,51 @@ def test_job_followup_reminders_does_not_leak_lead_names_across_companies():
         assert "Anvar" not in text_b and "Egasi" not in text_b, \
             f"Kompaniya B'ning guruhida boshqa kompaniyalarning mijoz ismlari bo'lmasligi kerak: {text_b}"
     print("OK: job_followup_reminders() endi har bir kompaniyani ALOHIDA (db.scoped_as) hisoblaydi -- umumiy xulosada boshqa kompaniyaning mijoz ismi/soni chiqmaydi")
+
+
+def test_job_competitor_analysis_does_not_mix_competitors_across_companies():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, orchestrator, scheduler = _fresh_modules(os.path.join(tmp, "t4.db"))
+        company_a = _make_company(db_module, name="Kompaniya A", telegram_group_id="-3001")
+        company_b = _make_company(db_module, name="Kompaniya B", telegram_group_id="-3002")
+
+        _make_competitor_with_ad(
+            db_module, company_id=company_a, name="Rival A", domain="rivala.uz",
+            ad_text="Chegirma A -- 30% arzon", external_id="ext-a-1",
+        )
+        _make_competitor_with_ad(
+            db_module, company_id=company_b, name="Rival B", domain="rivalb.uz",
+            ad_text="Chegirma B -- 50% arzon", external_id="ext-b-1",
+        )
+
+        sent = []
+
+        def fake_tg_send(chat_id, text):
+            sent.append((chat_id, text))
+            return {"ok": True, "error": None}
+
+        with mock.patch.object(scheduler, "_tg_send", side_effect=fake_tg_send):
+            result = scheduler.job_competitor_analysis()
+
+        by_chat = {}
+        for chat_id, text in sent:
+            by_chat.setdefault(chat_id, []).append(text)
+
+        # Platforma egasida raqobatchi yo'q -- hech narsa yuborilmasligi kerak.
+        assert -1009999 not in by_chat, f"raqobatchisi yo'q platforma egasiga hech narsa yuborilmasligi kerak: {result}"
+
+        assert -3001 in by_chat, f"Kompaniya A O'Z guruhiga hisobot olishi kerak: {result}"
+        text_a = "\n".join(by_chat[-3001])
+        assert "Rival A" in text_a and "Chegirma A" in text_a, f"Kompaniya A'ning hisobotida O'Z raqobatchisi bo'lishi kerak: {text_a}"
+        assert "Rival B" not in text_a and "Chegirma B" not in text_a, \
+            f"Kompaniya A'ning hisobotida Kompaniya B'ning raqobatchisi bo'lmasligi kerak: {text_a}"
+
+        assert -3002 in by_chat, f"Kompaniya B O'Z guruhiga hisobot olishi kerak: {result}"
+        text_b = "\n".join(by_chat[-3002])
+        assert "Rival B" in text_b and "Chegirma B" in text_b, f"Kompaniya B'ning hisobotida O'Z raqobatchisi bo'lishi kerak: {text_b}"
+        assert "Rival A" not in text_b and "Chegirma A" not in text_b, \
+            f"Kompaniya B'ning hisobotida Kompaniya A'ning raqobatchisi bo'lmasligi kerak: {text_b}"
+    print("OK: job_competitor_analysis() endi har bir kompaniyani ALOHIDA (db.scoped_as) sinxronlaydi -- boshqa kompaniyaning raqobatchisi hisobotga aralashib ketmaydi")
 
 
 def run_all():
