@@ -2389,11 +2389,12 @@ def leads_list():
         if search_q:
             like = f"%{search_q}%"
             q = q.filter(
-                (Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.campaign_name.ilike(like))
+                (Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.phone2.ilike(like))
+                | (Lead.campaign_name.ilike(like))
             )
         leads = q.limit(300).all()
         rows = [{
-            "id": l.id, "full_name": l.full_name, "phone": l.phone,
+            "id": l.id, "full_name": l.full_name, "phone": l.phone, "phone2": l.phone2,
             "campaign_name": l.campaign_name, "adset_name": l.adset_name, "ad_name": l.ad_name,
             "status": l.status, "source": l.source,
             "created_at": l.created_at, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else None,
@@ -2442,7 +2443,7 @@ def sold_customers_list():
             q = q.filter(Sale.sale_number > 1)
         if search_q:
             like = f"%{search_q}%"
-            q = q.filter((Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)))
+            q = q.filter((Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.phone2.ilike(like)))
         sales = q.limit(500).all()
         rows = [{
             "id": s.id, "lead_id": s.lead_id,
@@ -2470,6 +2471,7 @@ def lead_new():
         if request.method == "POST":
             full_name = request.form.get("full_name", "").strip()
             phone = request.form.get("phone", "").strip()
+            phone2 = request.form.get("phone2", "").strip()
             email = request.form.get("email", "").strip()
             campaign_name = request.form.get("campaign_name", "").strip()
             adset_name = request.form.get("adset_name", "").strip()
@@ -2479,7 +2481,7 @@ def lead_new():
             else:
                 lead = Lead(
                     company_id=current_user.company_id,
-                    full_name=full_name or None, phone=phone or None, email=email or None,
+                    full_name=full_name or None, phone=phone or None, phone2=phone2 or None, email=email or None,
                     campaign_name=campaign_name or None, adset_name=adset_name or None, ad_name=ad_name or None,
                     source="manual", status="new",
                 )
@@ -2886,7 +2888,9 @@ def leads_import():
                     if key9 in seen_keys_this_file:
                         skipped += 1
                         continue
-                    existing = session.query(Lead).filter(Lead.phone.ilike(f"%{key9}%")).first()
+                    existing = session.query(Lead).filter(
+                        Lead.phone.ilike(f"%{key9}%") | Lead.phone2.ilike(f"%{key9}%")
+                    ).first()
                     if existing:
                         skipped += 1
                         continue
@@ -2906,9 +2910,14 @@ def leads_import():
                     except ValueError:
                         lead_created_time = None
 
+                # 2026-09, foydalanuvchi so'rovi: "ikkita nomerdan bittasi
+                # tushmayapti" -- avval faylning ikkinchi telefon ustuni
+                # faqat `quality_note` ichiga erkin matn sifatida yozilardi
+                # (qidirib bo'lmaydi, qo'ng'iroq/kartochkada alohida
+                # ko'rinmasdi). Endi `Lead.phone2` ustunida saqlanadi --
+                # Meta lead-sync bilan bir xil (`lead_sync.py`).
+                lead_phone2 = phone2 if (phone2 and key9_2 and key9_2 != key9) else None
                 quality_note = None
-                if phone2 and key9_2 and key9_2 != key9:
-                    quality_note = f"Qo'shimcha raqam (importdan): {phone2}"
                 if not used_header:
                     leftover = [
                         _import_get_cell(r, i) for i in col_map.get("_leftover_cols", [])
@@ -2928,7 +2937,7 @@ def leads_import():
                     ad_id=_import_strip_id_prefix(_import_get_cell(r, col_map.get("ad_id"))),
                     ad_name=_import_get_cell(r, col_map.get("ad")),
                     form_name=_import_get_cell(r, col_map.get("form")),
-                    full_name=full_name, phone=phone or phone_raw, email=email,
+                    full_name=full_name, phone=phone or phone_raw, phone2=lead_phone2, email=email,
                     quality_note=quality_note,
                     lead_created_time=lead_created_time,
                     source="import", status="new",
@@ -3054,11 +3063,14 @@ def lead_detail(lead_id):
             # boshidanoq email bo'lmasligi mumkin).
             new_full_name = request.form.get("full_name", "").strip()
             new_phone = request.form.get("phone", "").strip()
+            new_phone2 = request.form.get("phone2", "").strip()
             new_email = request.form.get("email", "").strip()
             if "full_name" in request.form:
                 lead.full_name = new_full_name or None
             if "phone" in request.form:
                 lead.phone = new_phone or None
+            if "phone2" in request.form:
+                lead.phone2 = new_phone2 or None
             if "email" in request.form:
                 lead.email = new_email or None
 
@@ -3161,7 +3173,7 @@ def lead_detail(lead_id):
             "value": extra.get(cf.key, ""),
         } for cf in custom_fields]
         lead_view = {
-            "id": lead.id, "full_name": lead.full_name, "phone": lead.phone,
+            "id": lead.id, "full_name": lead.full_name, "phone": lead.phone, "phone2": lead.phone2,
             "email": lead.email, "campaign_name": lead.campaign_name,
             "adset_name": lead.adset_name, "ad_name": lead.ad_name, "source": lead.source,
             "status": lead.status, "quality_note": lead.quality_note,
@@ -3169,6 +3181,14 @@ def lead_detail(lead_id):
             "assigned_manager": lead.assigned_manager.full_name if lead.assigned_manager else None,
             "next_contact_at": lead.next_contact_at, "next_contact_note": lead.next_contact_note,
         }
+        # 2026-09, foydalanuvchi so'rovi: "hamma savolga javobi tushadigan
+        # bo'lsin" -- Meta forma'da admin qo'shgan, kod tanib olmaydigan
+        # BOSHQA savol/javob bo'lsa, shularni ham ko'rsatamiz (masalan
+        # ikkinchi/qo'shimcha telefon `phone2`ga alohida chiqadi, undan
+        # boshqasi shu yerda).
+        other_answers = lead_sync.other_form_answers(
+            lead.raw_field_data, exclude_values=[lead.full_name, lead.phone, lead.phone2, lead.email],
+        )
         stages_view = [{"key": s.key, "label": s.label, "color": s.color} for s in stages]
         # lead.status hozirgi faol bosqichlar ro'yxatida bo'lmasligi mumkin
         # (masalan admin o'sha bosqichni keyinchalik o'chirgan/nofaol qilgan) --
@@ -3182,7 +3202,7 @@ def lead_detail(lead_id):
     return render_template(
         "lead_detail.html", lead=lead_view, notes=notes_view, custom_fields=custom_fields_view,
         stages=stages_view, current_stage_color=current_stage_color, sales=sales_view,
-        now_date=dt.datetime.utcnow().date(),
+        now_date=dt.datetime.utcnow().date(), other_answers=other_answers,
     )
 
 
@@ -4107,7 +4127,9 @@ def individual_check_upload_audio():
         if phone_number:
             key = phone_key9(phone_number)
             if key:
-                lead = session.query(Lead).filter(Lead.phone.ilike(f"%{key}%")).first()
+                lead = session.query(Lead).filter(
+                    Lead.phone.ilike(f"%{key}%") | Lead.phone2.ilike(f"%{key}%")
+                ).first()
                 if lead:
                     lead_id = lead.id
 

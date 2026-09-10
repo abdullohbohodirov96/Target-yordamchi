@@ -42,7 +42,7 @@
       {% for l in leads %}
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
         <td>{{ l.full_name or '—' }}</td>
-        <td class="text-dim">{{ l.phone or '—' }}</td>
+        <td class="text-dim">{{ l.phone or '—' }}{% if l.phone2 %} <span class="text-faint" title="Qo'shimcha telefon: {{ l.phone2 }}">+1</span>{% endif %}</td>
         <td class="text-dim">
           {{ l.campaign_name or '—' }}{% if l.adset_name %} <span class="text-faint">/ {{ l.adset_name }}</span>{% endif %}{% if l.ad_name %} <span class="text-faint">/ {{ l.ad_name }}</span>{% endif %}
         </td>

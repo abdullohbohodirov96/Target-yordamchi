@@ -18,6 +18,7 @@
       <h2>Ma'lumot</h2>
       <dl style="margin:0">
         <div class="kv"><dt>Telefon</dt><dd>{{ lead.phone or '—' }}</dd></div>
+        {% if lead.phone2 %}<div class="kv"><dt>Qo'shimcha telefon</dt><dd>{{ lead.phone2 }}</dd></div>{% endif %}
         <div class="kv"><dt>Email</dt><dd>{{ lead.email or '—' }}</dd></div>
         <div class="kv"><dt>Kampaniya</dt><dd>{{ lead.campaign_name or '—' }}</dd></div>
         <div class="kv"><dt>Adset</dt><dd>{{ lead.adset_name or '—' }}</dd></div>
@@ -44,6 +45,24 @@
       </div>
       {% endif %}
     </div>
+
+    {% if other_answers %}
+    {# 2026-09, foydalanuvchi so'rovi: "hamma savolga javobi tushadigan
+       bo'lsin" -- Meta Instant Form'ga admin qo'shgan, ism/telefon/email
+       bo'lmagan BOSHQA har qanday savolning javobi shu yerda ko'rinadi
+       (`lead_sync.other_form_answers()`). Label sifatida Meta bergan
+       maydon kalitini ko'rsatamiz -- savolning to'liq matni Meta
+       API/webhook javobida kelmaydi. #}
+    <div class="card">
+      <h2>Formaning boshqa javoblari</h2>
+      <p class="page-subtitle" style="margin-top:-6px">Ism/telefon/email'dan tashqari, Instant Form'dagi qolgan savollarga berilgan javoblar.</p>
+      <dl style="margin:0">
+        {% for k, v in other_answers %}
+        <div class="kv"><dt>{{ k.replace('_', ' ')|capitalize }}</dt><dd>{{ v }}</dd></div>
+        {% endfor %}
+      </dl>
+    </div>
+    {% endif %}
 
     <div class="card" id="sales">
       <h2>Sotuvlar</h2>
@@ -140,6 +159,10 @@
       <div class="field">
         <label>Telefon</label>
         <input type="text" name="phone" value="{{ lead.phone or '' }}" placeholder="+998 90 123 45 67">
+      </div>
+      <div class="field">
+        <label>Qo'shimcha telefon (ixtiyoriy)</label>
+        <input type="text" name="phone2" value="{{ lead.phone2 or '' }}" placeholder="+998 90 123 45 67">
       </div>
       <div class="field">
         <label>Email</label>

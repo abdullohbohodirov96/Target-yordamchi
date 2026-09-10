@@ -155,38 +155,107 @@ def _find_by_keys(fd: dict, keys: tuple) -> str | None:
     return None
 
 
-def _extract_name_phone_email(fd: dict) -> tuple[str | None, str | None, str | None]:
+def _find_all_by_keys(fd: dict, keys: tuple) -> list[str]:
+    """`_find_by_keys` bilan bir xil moslik mantig'i, lekin FAQAT birinchi
+    topilganini emas, mos kelgan HAMMA (takrorlanmagan) qiymatlarni,
+    formadagi savollar tartibida qaytaradi -- 2026-09, foydalanuvchi
+    so'rovi: "ikkita nomerdan bittasi tushmayapti" -- ba'zi Instant
+    Form'larda ikkita alohida telefon-turidagi savol bo'ladi (masalan
+    "sizning raqamingiz" + "yaqiningizning raqami"), ikkalasi ham
+    kerak, biri emas."""
+    found = []
+    for fk, v in fd.items():
+        if not v:
+            continue
+        if fk in keys or any(k in fk for k in keys):
+            if v not in found:
+                found.append(v)
+    return found
+
+
+def _extract_name_phone_email(fd: dict) -> tuple[str | None, str | None, str | None, str | None]:
+    """Qaytaradi: (name, phone, phone2, email). `phone2` -- formada
+    IKKINCHI telefon-turidagi savol bo'lsa (masalan qo'shimcha/yaqin
+    kishining raqami), shu yerga tushadi; bo'lmasa `None`."""
     name = _find_by_keys(fd, _NAME_KEYS)
     if not name:
         first = fd.get("first_name", "")
         last = fd.get("last_name", "")
         name = f"{first} {last}".strip() or None
-    phone = _find_by_keys(fd, _PHONE_KEYS)
+    phone_candidates = _find_all_by_keys(fd, _PHONE_KEYS)
     email = _find_by_keys(fd, _EMAIL_KEYS)
 
     # Fallback: agar standart/keng tarqalgan kalitlar orasida topilmasa,
     # QOLGAN barcha maydonlarni skanerlab, telefon/ism'ga O'XSHAGANINI
     # taxmin qilamiz -- bu aynan Excel import'da ishlagan mantiq bilan bir xil
     # (localised savol matnidan generatsiya qilingan g'alati kalitlar uchun).
-    if not phone or not name:
+    if not phone_candidates or not name:
         for k, v in fd.items():
             if k in _NEVER_NAME_OR_PHONE_KEYS or not v:
                 continue
-            if not phone and _looks_phoneish(v):
-                phone = v
+            if _looks_phoneish(v) and v not in phone_candidates:
+                phone_candidates.append(v)
                 continue
             if not name and _looks_nameish(v):
                 name = v
+
+    phone = phone_candidates[0] if phone_candidates else None
+    phone2 = phone_candidates[1] if len(phone_candidates) > 1 else None
 
     if phone:
         normalized = normalize_phone(phone)
         if normalized:
             phone = normalized
+    if phone2:
+        normalized2 = normalize_phone(phone2)
+        if normalized2:
+            phone2 = normalized2
+        # Ikkinchi raqam birinchisi bilan (normalizatsiyadan keyin) bir xil
+        # chiqib qolsa -- bu ikkita savol emas, xuddi shu javobning
+        # ikki xil formatdagi nusxasi, dublikat sifatida ko'rsatmaymiz.
+        if phone2 == phone:
+            phone2 = None
     if isinstance(email, str) and "@" not in email:
         # Ba'zan email deb nomlangan maydonga aslida boshqa narsa tushadi --
         # shubhali bo'lsa, email sifatida saqlamaymiz (bo'sh qoldiramiz).
         email = None
-    return name, phone, email
+    return name, phone, phone2, email
+
+
+_RECOGNIZED_KEY_SUBSTRINGS = _NAME_KEYS + _PHONE_KEYS + _EMAIL_KEYS + ("first_name", "last_name")
+
+
+def other_form_answers(raw_field_data_json: "str | None", *, exclude_values: "list | None" = None) -> list[tuple[str, str]]:
+    """`Lead.raw_field_data`dagi (Meta forma javoblarining TO'LIQ JSON
+    nusxasi) ism/telefon/telefon2/email sifatida ALLAQACHON tanib olingan
+    va CRM'da alohida ko'rsatiladigan maydonlardan boshqa -- ADMIN Meta
+    Instant Form'ga o'zi qo'shgan qolgan har qanday savol/javobni
+    qaytaradi (2026-09, foydalanuvchi so'rovi: "hamma savolga javobi
+    tushadigan bo'lsin" -- forma qanday savol bo'lmasin, javobi CRM'da
+    ko'rinishi kerak, faqat kod tanib oladigan standart maydonlar emas).
+
+    Ekrandagi label sifatida Meta'ning o'zi bergan maydon kalitini
+    (masalan "qoshimcha_izoh") ko'rsatamiz -- Meta webhook/API javobida
+    savolning to'liq matni kelmaydi, faqat shu slug keladi."""
+    if not raw_field_data_json:
+        return []
+    try:
+        fd = json.loads(raw_field_data_json)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(fd, dict):
+        return []
+    exclude_values = {v for v in (exclude_values or []) if v}
+    out = []
+    for k, v in fd.items():
+        if not v or v in exclude_values:
+            continue
+        if k in _NEVER_NAME_OR_PHONE_KEYS:
+            continue
+        if k in _RECOGNIZED_KEY_SUBSTRINGS or any(rk in k for rk in _RECOGNIZED_KEY_SUBSTRINGS):
+            continue
+        out.append((k, v))
+    return out
 
 
 def sync_once(company=None) -> dict:
@@ -323,7 +392,7 @@ def sync_once(company=None) -> dict:
                     continue  # allaqachon bazada bor -- dublikat qilinmaydi
 
                 fd = _field_data_to_dict(raw.get("field_data"))
-                name, phone, email = _extract_name_phone_email(fd)
+                name, phone, phone2, email = _extract_name_phone_email(fd)
                 campaign_id = raw.get("campaign_id")
                 adset_id = raw.get("adset_id")
                 ad_id = raw.get("ad_id")
@@ -346,6 +415,7 @@ def sync_once(company=None) -> dict:
                     source="meta",
                     full_name=name,
                     phone=phone,
+                    phone2=phone2,
                     email=email,
                     raw_field_data=json.dumps(fd, ensure_ascii=False),
                     status="new",

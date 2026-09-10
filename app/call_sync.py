@@ -363,7 +363,9 @@ def sync_once(since: dt.datetime | None = None) -> dict:
             phone_key = phone_key9(mapped["phone_number"])
             lead_id = None
             if phone_key:
-                lead = session.query(Lead).filter(Lead.phone.ilike(f"%{phone_key}%")).first()
+                lead = session.query(Lead).filter(
+                    Lead.phone.ilike(f"%{phone_key}%") | Lead.phone2.ilike(f"%{phone_key}%")
+                ).first()
                 if lead:
                     lead_id = lead.id
 

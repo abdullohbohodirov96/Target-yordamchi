@@ -127,6 +127,18 @@
   <div class="flash flash-error" style="margin-bottom:14px">
     {% for e in lead_sync_status.errors %}<div>{{ e }}</div>{% endfor %}
   </div>
+  {# 2026-09, foydalanuvchi so'rovi: "target leadlarni o'zi tortmayapti,
+     to'xtab qopti" -- ko'pincha bu ham (smm.html'dagi kabi) eski Facebook
+     ulanish ruxsatidan yoki formaning boshqa Page'ga o'tib qolganidan
+     kelib chiqadi -- qayta ulash orqali sahifa/ruxsat qayta tanlanadi. #}
+  <div style="margin-bottom:14px">
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
+    <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsati yoki noto'g'ri sahifadan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+    {% else %}
+    <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+    {% endif %}
+  </div>
   {% endif %}
   {% if lead_sync_status.notices %}
   <div class="flash flash-info" style="margin-bottom:14px">

@@ -279,6 +279,15 @@ class Lead(Base):
 
     full_name = Column(String(255), nullable=True)
     phone = Column(String(64), nullable=True)
+    # 2026-09, foydalanuvchi so'rovi: "ikkita nomerdan bittasi tushmayapti" --
+    # ba'zi Instant Form'larda ADMIN ikkita telefon-turidagi savol qo'shgan
+    # (masalan "sizning raqamingiz" + "qo'shimcha/yaqiningizning raqami").
+    # Avval `lead_sync._extract_name_phone_email()` FAQAT bitta `phone`
+    # qiymatini tanib olardi -- ikkinchisi bazaga umuman yozilmasdan
+    # (faqat xom `raw_field_data` ichida, hech qayerda ko'rsatilmagan holda)
+    # yo'qolib qolardi. Endi ikkinchi telefon-ko'rinishdagi javob shu
+    # ustunga alohida saqlanadi va CRM'da ko'rsatiladi.
+    phone2 = Column(String(64), nullable=True)
     email = Column(String(255), nullable=True)
     raw_field_data = Column(Text, nullable=True)  # Meta'dan kelgan to'liq forma javoblari (JSON matn)
     extra_data = Column(Text, nullable=True)  # admin belgilagan qo'shimcha anketa savollariga javoblar (JSON: {field_key: value})
