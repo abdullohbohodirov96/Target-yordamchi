@@ -68,6 +68,94 @@ BUSINESS_RULES = json.loads((BASE_DIR / "business_rules.json").read_text(encodin
 TARGETOLOG_SYSTEM = f"{TARGETOLOG_ROLE}\n\n---\n\n# BILIM BAZASI\n\n{KNOWLEDGE_BASE}\n\n---\n\n{ACTION_SCHEMA}"
 MARKETOLOG_SYSTEM = f"{MARKETOLOG_ROLE}\n\n---\n\n{ACTION_SCHEMA}"
 
+
+# ---------------------------------------------------------------------------
+# CPL/TARGET CHEGARALARI -- SOZLAMALAR SAHIFASIDAN O'ZGARTIRILADIGAN QISM
+# ---------------------------------------------------------------------------
+# 2026-09, foydalanuvchi ANIQ so'rovi: "bulani webda nastruykidan
+# belgilidigan qil" -- avval bu raqamlar FAQAT business_rules.json faylida
+# edi, ya'ni o'zgartirish uchun kodni qayta deploy qilish kerak edi (va
+# fayldagi standart qiymat -- $1.5 -- haqiqiy biznes narxlaridan (~$5-6/lead)
+# bir necha baravar past bo'lib, yaxshi ishlayotgan targetlarni ham
+# o'chirib yuborayotgan edi). Endi admin "Sozlamalar" sahifasidan bu
+# to'rttasini xohlagan vaqt o'zgartira oladi (`kpi_bonus.get_min_sale_amount`/
+# `get_usd_to_uzs_rate` bilan BIR XIL naqsh -- kv_store'da saqlanadi,
+# o'zgartirilmagan bo'lsa business_rules.json'dagi standart qiymat ishlaydi).
+#
+# `cpl_hard_kill_zero_lead_usd` -- ESKI `cpl_hard_kill_zero_lead_multiplier`
+# (masalan "1.5 x 3 = $4.5") o'rniga TO'G'RIDAN-TO'G'RI dollar summasi --
+# oddiy foydalanuvchi uchun "lead kelmasa necha $ sarflanganda o'chirilsin"
+# ko'proq tushunarli, "multiplikator" emas. Admin hali bu maydonni
+# sozlamagan bo'lsa, eski multiplikator asosida hisoblab olinadi (pastga
+# qarang, `get_zero_lead_kill_usd()`).
+_CPL_RULE_KV_KEYS = {
+    "target_cpa_usd": "cpl_rule_target_cpa_usd",
+    "cpl_hard_kill_usd": "cpl_rule_hard_kill_usd",
+    "cpl_hard_kill_min_spend_usd": "cpl_rule_min_spend_usd",
+    "cpl_hard_kill_zero_lead_usd": "cpl_rule_zero_lead_usd",
+}
+
+
+def get_business_rule(key: str) -> float:
+    """`business_rules.json`dagi standart qiymatni qaytaradi -- LEKIN admin
+    "Sozlamalar" sahifasidan o'zgartirgan bo'lsa (kv_store'da saqlanadi),
+    o'sha YANGI qiymatni. Faqat `_CPL_RULE_KV_KEYS`da ro'yxatdagi kalitlar
+    uchun ishlaydi; boshqalari uchun to'g'ridan-to'g'ri
+    `BUSINESS_RULES.get()`ga teng."""
+    kv_key = _CPL_RULE_KV_KEYS.get(key)
+    if kv_key:
+        try:
+            value = kv_store.get_json(kv_key, default=None)
+        except Exception:
+            # DB vaqtincha yetib bo'lmasa (yoki -- test skriptlaridagidek --
+            # umuman ulanmagan bo'lsa) -- CPL xavfsizlik tekshiruvi
+            # to'xtab qolmasligi uchun business_rules.json'dagi standart
+            # qiymatga qaytamiz, xato ko'tarmaymiz.
+            value = None
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    try:
+        return float(BUSINESS_RULES.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_business_rule(key: str, value: float) -> None:
+    """`app.py`dagi "Sozlamalar" sahifasi shu orqali yangi qiymatni
+    saqlaydi (faqat `_CPL_RULE_KV_KEYS`dagi 4 ta kalit uchun)."""
+    kv_key = _CPL_RULE_KV_KEYS.get(key)
+    if not kv_key:
+        raise ValueError(f"'{key}' sozlamalar sahifasidan o'zgartirib bo'lmaydi.")
+    kv_store.set_json(kv_key, max(0.0, float(value)))
+
+
+def get_zero_lead_kill_usd(cpl_hard_kill: float) -> float:
+    """Lead hali kelmagan reklama uchun "juda ko'p xarajat" chegarasi
+    (dollarda). Admin `cpl_hard_kill_zero_lead_usd`ni sozlamagan bo'lsa,
+    eski `cpl_hard_kill_zero_lead_multiplier` asosida hisoblanadi (orqaga
+    moslik uchun)."""
+    direct = get_business_rule("cpl_hard_kill_zero_lead_usd")
+    if direct > 0:
+        return direct
+    multiplier = float(BUSINESS_RULES.get("cpl_hard_kill_zero_lead_multiplier") or 3.0)
+    return cpl_hard_kill * multiplier
+
+
+def effective_business_rules() -> dict:
+    """`BUSINESS_RULES`ning nusxasi, LEKIN admin Sozlamalar sahifasidan
+    o'zgartirgan 4 ta CPL/target qiymati YANGILANGAN holda -- Marketolog
+    promptiga yuboriladigan "Biznes qoidalari" shu funksiyadan olinishi
+    kerak (statik fayldan emas), aks holda admin sahifadan o'zgartirsa ham
+    LLM eski $1.5'ni ko'rishda davom etardi."""
+    merged = dict(BUSINESS_RULES)
+    for key in _CPL_RULE_KV_KEYS:
+        merged[key] = get_business_rule(key)
+    merged["cpl_hard_kill_zero_lead_usd_effective"] = get_zero_lead_kill_usd(merged.get("cpl_hard_kill_usd", 0.0))
+    return merged
+
 # MODEL TANLASH STRATEGIYASI (xarajatni balanslash uchun -- ataylab qilingan qaror):
 #   - MODEL (Sonnet) -- FAQAT HAQIQIY vazifa/qaror yaratish uchun: Targetolog
 #     action_plan tuzganda (yangi kampaniya, byudjet/auditoriya o'zgarishi,
@@ -1181,7 +1269,10 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     Qaytaradi: {"checked": N, "paused": [...], "errors": [...]}.
     Har bir "paused" elementi: {"ad_id", "name", "reason", "cpl", "spend"}.
     """
-    cpl_hard_kill = float(BUSINESS_RULES.get("cpl_hard_kill_usd") or 0)
+    # 2026-09: bu 3 qiymat endi `get_business_rule()` orqali -- admin
+    # "Sozlamalar" sahifasidan o'zgartirgan bo'lsa, shu YANGI qiymat
+    # ishlatiladi (statik business_rules.json emas).
+    cpl_hard_kill = get_business_rule("cpl_hard_kill_usd")
     if cpl_hard_kill <= 0:
         return {"checked": 0, "paused": [], "errors": [], "note": "cpl_hard_kill_usd sozlanmagan -- tekshiruv o'tkazib yuborildi"}
 
@@ -1191,11 +1282,13 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     # Juda kichik hajmdagi "shovqin"dan (masalan bitta erta/tasodifiy qimmat
     # lead) asossiz pauza qilib yubormaslik uchun minimal xarajat bo'sag'asi
     # -- shu summagacha reklama hali "sinov" bosqichida deb hisoblanadi.
-    min_spend = float(BUSINESS_RULES.get("cpl_hard_kill_min_spend_usd", 3.0))
+    min_spend = get_business_rule("cpl_hard_kill_min_spend_usd") or 3.0
     # Hali BIRORTA HAM lead kelmagan, lekin xarajat allaqachon baland bo'lgan
     # reklama uchun alohida qoida (CPL bu holda 0'ga bo'linish tufayli
-    # hisoblanmaydi -- dashboard_data shunday qaytaradi).
-    zero_lead_multiplier = float(BUSINESS_RULES.get("cpl_hard_kill_zero_lead_multiplier", 3.0))
+    # hisoblanmaydi -- dashboard_data shunday qaytaradi). To'g'ridan-to'g'ri
+    # dollar summasi (admin sozlagan bo'lsa) yoki eski multiplikatordan
+    # hisoblangan qiymat.
+    zero_lead_kill_usd = get_zero_lead_kill_usd(cpl_hard_kill)
     protected_campaign_ids = set(BUSINESS_RULES.get("protected_campaign_ids") or [])
 
     result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True, access_token=access_token, ad_account_id=ad_account_id)
@@ -1264,10 +1357,10 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                 f"CPL ${cpl:.2f} (chegara: ${cpl_hard_kill:.2f}dan yuqori), "
                 f"bugun sarflandi ${spend:.2f}, {effective_leads} ta lead."
             )
-        elif effective_leads == 0 and spend >= cpl_hard_kill * zero_lead_multiplier:
+        elif effective_leads == 0 and spend >= zero_lead_kill_usd:
             reason = (
                 f"Bugun ${spend:.2f} sarflandi, lekin HALI BIRORTA lead "
-                f"kelmadi (chegara: ${cpl_hard_kill * zero_lead_multiplier:.2f})."
+                f"kelmadi (chegara: ${zero_lead_kill_usd:.2f})."
             )
 
         # "Bugun" chegaradan oshmagan bo'lsa ham, {_CPL_TREND_WINDOW_DAYS}
@@ -1281,7 +1374,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                 w_leads = w.get("crm_leads_total", 0)
                 if not w_leads and w.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
                     w_leads = max(w.get("meta_result") or 0, w.get("meta_leads") or 0)
-                w_zero_lead_limit = cpl_hard_kill * zero_lead_multiplier * _CPL_TREND_WINDOW_DAYS
+                w_zero_lead_limit = zero_lead_kill_usd * _CPL_TREND_WINDOW_DAYS
                 if w_leads > 0 and w_spend >= min_spend and w_cpl > cpl_hard_kill:
                     reason = (
                         f"Oxirgi {_CPL_TREND_WINDOW_DAYS} kunda CPL ${w_cpl:.2f} (chegara: "
@@ -1537,7 +1630,10 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
                 "Targetolog taklif qilgan action_plan:\n\n"
                 f"{json.dumps(targetolog_plan, ensure_ascii=False, indent=2)}\n\n"
                 "Biznes qoidalari:\n"
-                f"{json.dumps(BUSINESS_RULES, ensure_ascii=False, indent=2)}",
+                # 2026-09: statik BUSINESS_RULES emas -- admin Sozlamalar
+                # sahifasidan o'zgartirgan CPL/target qiymatlari (bor bo'lsa)
+                # bilan birlashtirilgan versiya.
+                f"{json.dumps(effective_business_rules(), ensure_ascii=False, indent=2)}",
             )
         except TargetologFormatError as e:
             logger.error("Marketolog JSON qaytarmadi. Xom javob: %s", e.raw_text[:1000])

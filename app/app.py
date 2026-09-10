@@ -4388,6 +4388,40 @@ def settings_hub():
                 else:
                     flash("Kompaniya topilmadi.", "error")
 
+            elif action == "set_cpl_rules":
+                # 2026-09, foydalanuvchi so'rovi ("bulani webda nastruykidan
+                # belgilidigan qil"): target avtomatik o'chirish chegaralari
+                # endi shu yerdan o'zgartiriladi (avval faqat
+                # business_rules.json faylida, deploy talab qilardi).
+                fields = {
+                    "target_cpa_usd": "Maqsad/ideal CPL",
+                    "cpl_hard_kill_usd": "CPL o'chirish chegarasi",
+                    "cpl_hard_kill_min_spend_usd": "Minimal sinov xarajati",
+                    "cpl_hard_kill_zero_lead_usd": "Lead yo'q holatda o'chirish chegarasi",
+                }
+                errors = []
+                parsed = {}
+                for key, label in fields.items():
+                    raw = request.form.get(key, "").strip()
+                    try:
+                        value = float(raw)
+                        if value < 0:
+                            raise ValueError
+                        parsed[key] = value
+                    except (TypeError, ValueError):
+                        errors.append(f"“{label}” -- noto'g'ri qiymat, musbat raqam kiriting.")
+                if errors:
+                    for e in errors:
+                        flash(e, "error")
+                else:
+                    for key, value in parsed.items():
+                        orchestrator.set_business_rule(key, value)
+                    flash(
+                        "CPL/target chegaralari saqlandi -- keyingi tekshiruv "
+                        "(har 15 daqiqada, CPL hard-kill) yangi qiymatlarni ishlatadi.",
+                        "success",
+                    )
+
             elif action == "toggle_ai_features":
                 company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
                 if company_row is not None:
@@ -4455,11 +4489,19 @@ def settings_hub():
         ai_plan_supports = plans.get_plan(company.plan).ai_enabled
         ai_features_disabled = bool(company.ai_features_disabled)
 
+    cpl_rules = {
+        "target_cpa_usd": orchestrator.get_business_rule("target_cpa_usd"),
+        "cpl_hard_kill_usd": orchestrator.get_business_rule("cpl_hard_kill_usd"),
+        "cpl_hard_kill_min_spend_usd": orchestrator.get_business_rule("cpl_hard_kill_min_spend_usd"),
+        "cpl_hard_kill_zero_lead_usd": orchestrator.get_zero_lead_kill_usd(orchestrator.get_business_rule("cpl_hard_kill_usd")),
+    }
+
     return render_template(
         "settings_hub.html",
         min_sale_amount=kpi_bonus.get_min_sale_amount(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
         usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(),
+        cpl_rules=cpl_rules,
         managers=manager_rows,
         unanswered=unanswered,
         capi_configured=capi_configured,

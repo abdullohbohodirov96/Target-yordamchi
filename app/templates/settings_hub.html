@@ -44,6 +44,36 @@
 
 {% if current_user.role == 'admin' %}
 <div class="card" style="margin-bottom:20px">
+  <h2>Target avtomatik o'chirish chegaralari (CPL)</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Targetolog agenti har 15 daqiqada barcha faol reklamalarni shu chegaralar bo'yicha tekshiradi (LLM'siz, to'g'ridan-to'g'ri kod bilan -- tezkor va ishonchli) va chegaradan oshganini avtomatik pauza qiladi. Bugungi ko'rsatkich yaxshi bo'lsa ham, oxirgi 3 kunlik tendensiya yomon bo'lsa, baribir pauza qilinadi.</p>
+
+  <form method="post" style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
+    <input type="hidden" name="action" value="set_cpl_rules">
+    <div class="field" style="margin:0; min-width:200px">
+      <label>Maqsad/ideal CPL ($)</label>
+      <input type="number" step="0.1" min="0" name="target_cpa_usd" value="{{ '%.2f'|format(cpl_rules.target_cpa_usd) }}">
+      <div class="text-faint" style="font-size:12px; margin-top:3px">Faqat ma'lumot/tahlil uchun -- o'zi hech narsani o'chirmaydi.</div>
+    </div>
+    <div class="field" style="margin:0; min-width:200px">
+      <label>Bitta lead qancha $dan qimmat bo'lsa -- o'chirilsin</label>
+      <input type="number" step="0.1" min="0" name="cpl_hard_kill_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_usd) }}">
+      <div class="text-faint" style="font-size:12px; margin-top:3px">Masalan lead $17 bo'lsa, buni $10 qilib qo'ysangiz -- avtomatik o'chiriladi.</div>
+    </div>
+    <div class="field" style="margin:0; min-width:200px">
+      <label>Minimal sinov xarajati ($)</label>
+      <input type="number" step="0.1" min="0" name="cpl_hard_kill_min_spend_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_min_spend_usd) }}">
+      <div class="text-faint" style="font-size:12px; margin-top:3px">Shu summagacha reklama "hali sinov bosqichida" hisoblanadi -- bitta erta qimmat lead uchun asossiz o'chirilmaydi.</div>
+    </div>
+    <div class="field" style="margin:0; min-width:200px">
+      <label>Lead yo'q holatda qancha $dan keyin o'chirilsin</label>
+      <input type="number" step="0.1" min="0" name="cpl_hard_kill_zero_lead_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_zero_lead_usd) }}">
+      <div class="text-faint" style="font-size:12px; margin-top:3px">Hali birorta lead kelmagan reklama shu summani sarflasa -- o'chiriladi.</div>
+    </div>
+    <button type="submit" class="btn">Saqlash</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:20px">
   <h2>Bildirishnomalar (Telegram)</h2>
   <p class="page-subtitle" style="margin-top:-6px">Har bir menejer o'zining shaxsiy Telegram ID'sini bog'lasa, unga tegishli eslatmalar (masalan "qayta aloqa" muddati) shaxsiy xabar sifatida yuboriladi. ID'ni topish uchun menejer Telegramda <strong>@userinfobot</strong> ga yozib, o'zining raqamli ID'sini oladi va sizga aytadi.</p>
   <div class="table-scroll">
