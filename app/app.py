@@ -3063,6 +3063,36 @@ def lead_detail(lead_id):
                 lead.email = new_email or None
 
             old_category = stage_by_key[lead.status].category if lead.status in stage_by_key else None
+
+            # 2026-09 TUZATISH (CAPI/daromad xatosi): "Holat" ro'yxatidan
+            # to'g'ridan-to'g'ri "sotildi" kategoriyasidagi bosqichni tanlab
+            # saqlash mumkin edi -- HECH QANDAY `Sale` yozuvisiz (sotuv
+            # summasi FAQAT pastdagi "Sotuvlar" bo'limining `add_sale`
+            # formasi orqali qo'shiladi, 3045-qatordagi eslatmaga qarang).
+            # Natijada: (1) lead dashboard/oylik hisobotda "sotilgan" deb
+            # sanalmaydi (`lead.sale_amount` bo'sh qoladi), (2) Meta CAPI'ga
+            # QIYMATSIZ Purchase hodisasi yuboriladi (`meta_events.
+            # dispatch_purchase_event(..., value=None)` -- algoritm uchun
+            # deyarli foydasiz signal, chunki summasiz "sotib oldi" degan
+            # signal bilan "o'xshash odamlarni qidir" ishlamaydi). Endi:
+            # agar bu leadda HALI birorta haqiqiy (qaytarilmagan) sotuv
+            # yozuvi bo'lmasa, to'g'ridan-to'g'ri "sotildi"ga o'tishga yo'l
+            # qo'yilmaydi.
+            new_category_check = stage_by_key[new_status].category if new_status in stage_by_key else old_category
+            if (
+                new_status in stage_by_key
+                and new_category_check == "sold"
+                and old_category != "sold"
+                and not lead.sale_amount
+            ):
+                flash(
+                    "\"Sotildi\" holatiga o'tish uchun avval pastdagi \"Sotuvlar\" "
+                    "bo'limidan sotuv summasini kiriting -- summasiz sotuv daromad "
+                    "hisobotlarida va Meta CAPI signalida ko'rinmay qoladi.",
+                    "error",
+                )
+                new_status = lead.status  # holatni o'zgartirmaymiz
+
             if new_status in stage_by_key:
                 lead.status = new_status
 
