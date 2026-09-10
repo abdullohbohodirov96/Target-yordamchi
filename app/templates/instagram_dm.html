@@ -34,6 +34,18 @@
   <div class="flash flash-error" style="margin-top:12px">
     {% for e in sync_status.errors %}<div>{{ e }}</div>{% endfor %}
   </div>
+  {# 2026-09, foydalanuvchi so'rovi ("smm hisobotida error bor shu yerdan
+     ulash mumkin bosin") -- SMM hisobotidagi bilan bir xil sabab (Facebook
+     ulanishi eski ruxsat to'plami bilan qilingan), shu sabab bu yerga ham
+     bir xil "Qayta ulash" tugmasi qo'shildi. #}
+  <div style="margin-top:10px">
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
+    <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsatlaridan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+    {% else %}
+    <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+    {% endif %}
+  </div>
 </details>
 {% endif %}
 

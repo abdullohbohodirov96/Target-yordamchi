@@ -36,6 +36,27 @@
     <div class="flash flash-error" style="margin-bottom:10px">
       {% for e in sync_status.errors %}<div>{{ e }}</div>{% endfor %}
     </div>
+    {# 2026-09, foydalanuvchi so'rovi: "smm hisobotida error bor shu yerdan
+       ulash mumkin bosin" -- bu xatolarning katta qismi (masalan "(#10)
+       This endpoint requires the 'pages_read_engagement' permission")
+       Facebook ulanishi ESKI ruxsat to'plami bilan qilinganidan kelib
+       chiqadi -- ya'ni kompaniya `oauth_dialog_url()`ga
+       `pages_read_engagement`/`auth_type=rerequest` qo'shilishidan OLDIN
+       ulangan. Foydalanuvchi buni Meta Developer Console'da qo'lda
+       tuzatishga majbur bo'lmasin deb, shu yerning O'ZIDA "Qayta ulash"
+       tugmasi qo'shildi -- bosilsa `/connect-accounts/facebook/start`ga
+       o'tadi, u YANGI (to'liq) ruxsat ro'yxatini qayta so'raydi. Faqat
+       admin ulanishni almashtira oladi (`connect_facebook_start`
+       `@admin_required`) -- boshqa foydalanuvchilarga tushunarli izoh
+       ko'rsatiladi. #}
+    <div style="margin-bottom:10px">
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
+      <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsatlaridan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+      {% else %}
+      <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+      {% endif %}
+    </div>
     {% endif %}
     {% if sync_status.notices %}
     <div class="flash flash-info" style="margin:0">
