@@ -1196,7 +1196,7 @@ def _call_agent_openai_fallback(system_prompt: str, user_content: str) -> str:
 SNAPSHOT_KV_KEY = "orchestrator_daily_snapshot"
 
 
-def _crm_leads_count_today() -> int:
+def _crm_leads_count_today(company_id: "int | None" = None) -> int:
     """CRM bazamizdagi (Meta emas) HAQIQIY, bugun (Toshkent vaqti) tushgan
     lead yozuvlari soni. 2026-08, foydalanuvchi topgan xato: Telegram audit
     xabari "bugun 29 ta mijoz keldi" deb yozgan, aslida CRM'da bugun bor-yo'g'i
@@ -1204,11 +1204,25 @@ def _crm_leads_count_today() -> int:
     sonini bermasdik, u Meta'ning campaign-darajasidagi "natija" sonini
     (bu xabar/qo'ng'iroq boshlash kabi tugallanmagan harakatlarni ham
     o'z ichiga olishi mumkin) "mijoz" deb noto'g'ri talqin qilgan bo'lishi
-    mumkin edi. Endi aniq, tekshirilgan CRM soni beriladi."""
+    mumkin edi. Endi aniq, tekshirilgan CRM soni beriladi.
+
+    MUHIM (2026-09, multi-tenant xavfsizlik tuzatishi -- foydalanuvchi
+    so'rovi: "endi bir necha kompaniya bor, leadlar adashib chalkashmasin"):
+    bu funksiya FON VAZIFASI (`scheduler.py`) ichidan chaqiriladi, u yerda
+    HTTP so'rovlaridagidek avtomatik tenant-filtr (`db.py`dagi
+    `_apply_tenant_scope`) FAOL EMAS (`_current_company_id` contextvar
+    standart holatda `None` -- ya'ni "filtrsiz"). Ilgari bu yerda HECH
+    QANDAY `company_id` filtri YO'Q edi -- natijada bu son BARCHA
+    kompaniyalarning bugungi leadlarini QO'SHIB hisoblardi, va aynan shu
+    (chalkashgan) son kunlik 9:00dagi Telegram hisobotiga va soatlik AI
+    audit tsikliga uzatilardi. Endi ANIQ `company_id` bo'yicha filtrlanadi
+    (berilmasa -- platforma egasining standart kompaniyasi)."""
     date_bounds = dashboard_data._date_preset_bounds_utc("today")
     if not date_bounds:
         return 0
     start_utc, end_utc = date_bounds
+    if company_id is None:
+        company_id = db.get_default_company_id()
     session = db.get_session()
     try:
         # 2026-09 TUZATISH: `Lead.created_at` CRM bazasiga QACHON yozilgani
@@ -1218,9 +1232,12 @@ def _crm_leads_count_today() -> int:
         # ishlatamiz.
         from sqlalchemy import func as _sa_func
         effective_created = _sa_func.coalesce(db.Lead.lead_created_time, db.Lead.created_at)
-        return session.query(db.Lead).filter(
+        query = session.query(db.Lead).filter(
             effective_created >= start_utc, effective_created < end_utc
-        ).count()
+        )
+        if company_id is not None:
+            query = query.filter(db.Lead.company_id == company_id)
+        return query.count()
     finally:
         session.close()
 
@@ -1459,8 +1476,16 @@ def enforce_cpl_hard_kill_all_companies() -> dict:
     return {"companies_checked": len(companies), "per_company": per_company}
 
 
-def gather_data() -> dict:
+def gather_data(company=None) -> dict:
     """Meta API'dan tahlil uchun kerakli barcha ma'lumotni yig'adi.
+
+    `company` berilsa (2026-09, multi-tenant) -- O'SHA kompaniyaning O'Z
+    Meta hisobi (`access_token`/`ad_account_id`) va O'Z CRM lead soni bilan
+    ishlaydi, VA kunlik solishtirish snapshot'ini (`SNAPSHOT_KV_KEY`)
+    ALOHIDA (kompaniya-bo'yicha) kalit ostida saqlaydi -- aks holda bir
+    nechta kompaniya BIR XIL global snapshot yozuvini bir-birining ustidan
+    yozib, "kecha bilan solishtirish"ni chalkashtirib yuborardi. Berilmasa
+    -- eski global (ENV/standart kompaniya) xatti-harakat.
 
     Shuningdek, KECHAGI (oldingi chaqiruvdagi) kampaniya darajasidagi
     statistikani ham qo'shib beradi ("previous_snapshot") — shu orqali
@@ -1478,14 +1503,19 @@ def gather_data() -> dict:
     VA haqiqiy CRM lead soni alohida, aniq nomlangan blokda beriladi -- va
     pastdagi `comparison_instruction` so'zi bilan model "bugun" so'zini FAQAT
     shu blokka asoslanib ishlatishi kerakligi aniq ta'kidlanadi."""
-    account_structure = meta_api.get_account_structure()
-    ad_insights = meta_api.get_insights(level="ad", date_preset="last_7d")
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
+    company_id = company.id if company else db.get_default_company_id()
+    snapshot_kv_key = SNAPSHOT_KV_KEY if company is None else f"{SNAPSHOT_KV_KEY}:{company_id}"
+
+    account_structure = meta_api.get_account_structure(access_token=access_token, ad_account_id=ad_account_id)
+    ad_insights = meta_api.get_insights(level="ad", date_preset="last_7d", access_token=access_token, ad_account_id=ad_account_id)
     region_breakdown = meta_api.get_insights(
-        level="ad", date_preset="last_7d", breakdowns=["region"]
+        level="ad", date_preset="last_7d", breakdowns=["region"], access_token=access_token, ad_account_id=ad_account_id
     )
-    yesterday_campaign_insights = meta_api.get_insights(level="campaign", date_preset="yesterday")
-    today_campaign_insights = meta_api.get_insights(level="campaign", date_preset="today")
-    today_crm_leads = _crm_leads_count_today()
+    yesterday_campaign_insights = meta_api.get_insights(level="campaign", date_preset="yesterday", access_token=access_token, ad_account_id=ad_account_id)
+    today_campaign_insights = meta_api.get_insights(level="campaign", date_preset="today", access_token=access_token, ad_account_id=ad_account_id)
+    today_crm_leads = _crm_leads_count_today(company_id=company_id)
 
     # MUHIM: bu funksiya endi FAQAT kunlik cron'dan emas, tez-tez (masalan
     # har 30-60 daqiqada) ishlaydigan "kuzatuv" cron'idan ham chaqirilishi
@@ -1494,11 +1524,12 @@ def gather_data() -> dict:
     # aylanib qolardi. Shuning uchun snapshot FAQAT kunda BIR MARTA (sana
     # o'zgarganda) yangilanadi -- shu kunning ichidagi barcha keyingi
     # chaqiruvlar (kuzatuv cron ham, /analyze ham) hammasi bir xil "kecha"
-    # ma'lumotini ko'radi.
-    previous_snapshot = kv_store.get_json(SNAPSHOT_KV_KEY, default=None)
+    # ma'lumotini ko'radi. (2026-09: kalit endi kompaniya-bo'yicha --
+    # yuqoridagi izohga qarang.)
+    previous_snapshot = kv_store.get_json(snapshot_kv_key, default=None)
     today_str = datetime.utcnow().date().isoformat()
     if previous_snapshot is None or previous_snapshot.get("date") != today_str:
-        kv_store.set_json(SNAPSHOT_KV_KEY, {
+        kv_store.set_json(snapshot_kv_key, {
             "date": today_str,
             "campaign_insights": yesterday_campaign_insights,
         })
@@ -1953,7 +1984,7 @@ def execute_intent(
             return light_result
         return _run_pipeline_command(user_text, history_text, chat_id)
     if "METRIC" in verdict:
-        return answer_data_question(user_text, history_text)
+        return answer_data_question(user_text, history_text, chat_id=chat_id)
     return None
 
 
@@ -2164,11 +2195,17 @@ def build_admin_report(
     hisobot_vaqti: str,
     subtitle: str = "Joriy holat",
     insight_kwargs: dict | None = None,
+    company=None,
 ) -> str:
     """"ADMIN TARGET HISOBOTI" qat'iy formatidagi hisobotni quradi (kunlik
     09:00 cron VA oddiy "ma'lumot/hisobot ber" so'rovlari -- IKKALASI HAM shu
     bir xil ko'rinishda javob berishi uchun). Sarlavha/sana/vaqt qismini biz
     o'zimiz (deterministik) yozamiz.
+
+    `company` berilsa (2026-09, multi-tenant, `enforce_cpl_hard_kill(company=
+    ...)` bilan bir xil naqsh) -- O'SHA kompaniyaning O'Z Meta hisobidan
+    hisoblanadi. Berilmasa -- eski global (ENV, platforma egasining hisobi)
+    xatti-harakat.
 
     MUHIM (bug fix, ikkinchi marta): bu funksiya AVVAL raqamlarni OpenAI'ga
     hisoblatgan edi -- va bu ikki marta xato chiqargan: (1) bitta leadni 3
@@ -2183,9 +2220,16 @@ def build_admin_report(
     ko'rsatiladi -- boshqa turdagi kampaniyaga "lead" yorlig'i yopishtirilmaydi."""
     insight_kwargs = insight_kwargs or {"date_preset": "today"}
     header = _admin_report_header(period_label, hisobot_vaqti, subtitle)
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
     try:
-        account_rows = meta_api.get_insights(level="account", fields=meta_api.DEFAULT_FIELDS, **insight_kwargs)
-        campaigns, _totals = monthly_report.compute_campaigns_and_totals(**insight_kwargs)
+        account_rows = meta_api.get_insights(
+            level="account", fields=meta_api.DEFAULT_FIELDS,
+            access_token=access_token, ad_account_id=ad_account_id, **insight_kwargs,
+        )
+        campaigns, _totals = monthly_report.compute_campaigns_and_totals(
+            access_token=access_token, ad_account_id=ad_account_id, **insight_kwargs,
+        )
     except meta_api.MetaAPIError as e:
         return header + f"\u26A0\uFE0F Meta API'dan ma'lumot olishda xatolik: {e}"
 
@@ -2331,7 +2375,7 @@ def _current_tashkent_time() -> tuple[str, str]:
     return now.strftime("%d.%m.%Y"), now.strftime("%H:%M")
 
 
-def answer_data_question(user_text: str, history_text: str = "") -> str:
+def answer_data_question(user_text: str, history_text: str = "", chat_id: "int | None" = None) -> str:
     """Foydalanuvchi hisobdagi aniq metrika/raqamni, umumiy joriy holatni,
     yoki REJALASHTIRILGAN/PAUZADAGI (hali yoqilmagan/o'chirilgan) targetlar
     haqida so'raganda (masalan: 'CPA qancha', 'bugungi ma'lumotlarni ber',
@@ -2343,14 +2387,33 @@ def answer_data_question(user_text: str, history_text: str = "") -> str:
     orqali aniqlanadi) va sarlavhadagi vaqt/izoh. Agar savol aynan
     rejalashtirilgan/pauzadagi targetlar haqida bo'lsa, pastiga
     `account_structure`dan (HAQIQIY `status` maydoni, LLM'siz oddiy
-    filtrlash orqali) PAUSED ro'yxati ham qo'shiladi."""
+    filtrlash orqali) PAUSED ro'yxati ham qo'shiladi.
+
+    2026-09, multi-tenant (foydalanuvchi so'rovi: "leadlar/hisobotlar
+    adashib chalkashmasin"): `chat_id` berilsa, shu chat/guruh qaysi
+    kompaniyaga tegishli ekani (`Company.telegram_group_id`) aniqlanadi va
+    javob O'SHA kompaniyaning O'Z Meta hisobidan quriladi -- boshqa
+    kompaniyaning (yoki platforma egasining) hisobi ko'rsatilmaydi."""
     insight_kwargs, period_label = _resolve_query_period(user_text)
     _, hisobot_vaqti = _current_tashkent_time()
-    report = build_admin_report(period_label, hisobot_vaqti, "So'ralgan ma'lumot", insight_kwargs)
+    company = None
+    if chat_id is not None:
+        company_id = _company_id_for_chat(chat_id)
+        default_id = db.get_default_company_id()
+        if company_id is not None and company_id != default_id:
+            session = db.get_session()
+            try:
+                with db.unscoped():
+                    company = session.query(db.Company).get(company_id)
+            finally:
+                session.close()
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
+    report = build_admin_report(period_label, hisobot_vaqti, "So'ralgan ma'lumot", insight_kwargs, company=company)
 
     if _PLANNED_KEYWORDS.search(user_text):
         try:
-            structure = meta_api.get_account_structure(active_only=False)
+            structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
         except meta_api.MetaAPIError as e:
             report += f"\n\n\u26A0\uFE0F Hisob tuzilmasini olishda xatolik: {e}"
         else:

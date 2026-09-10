@@ -159,7 +159,22 @@ def _tg_send(chat_id: int, text: str) -> dict:
 _ADMIN_REPORT_GUARD_KEY = "admin_report_last_sent_date"
 
 
-def job_admin_report() -> str:
+class _AdminReportCompanyCreds:
+    """`orchestrator.build_admin_report(company=...)`ga uzatish uchun yengil
+    obyekt -- `orchestrator._CplCompanyCreds`/`lead_sync._CompanyCreds` bilan
+    bir xil naqsh (session yopilgandan keyin ham xavfsiz ishlatish uchun,
+    to'liq ORM qatori shart emas)."""
+    def __init__(self, id, name, meta_access_token, meta_ad_account_id):
+        self.id = id
+        self.name = name
+        self._meta_access_token_plain = meta_access_token
+        self.meta_ad_account_id = meta_ad_account_id
+
+    def get_meta_access_token(self) -> "str | None":
+        return self._meta_access_token_plain
+
+
+def job_admin_report() -> dict:
     """Har kuni 09:00 (Toshkent) -- KECHAGI kunning TO'LIQ (24 soatlik)
     natijasini beradi, "bugungi kun" emas (2026-08, foydalanuvchi so'rovi:
     "shunaqa hisobotni bir kun oldingi kunnikini bersin" -- ertalab soat
@@ -170,33 +185,114 @@ def job_admin_report() -> str:
     chaqirilsa (masalan eski tashqi cron-job.org sozlamasi hali ham qolib
     ketgan, yoki qayta-deploy paytida ikki marta ishga tushib qolsa) --
     "boshqa avtomatik bermasin" talabiga ko'ra, ikkinchi chaqiruv JIM
-    o'tkazib yuboriladi, xabar QAYTA yuborilmaydi."""
-    targets = _daily_summary_targets()
-    if not targets:
-        return "hisobot yuboriladigan chat yo'q"
+    o'tkazib yuboriladi, xabar QAYTA yuborilmaydi (kompaniya-bo'yicha
+    alohida "guard" kaliti bilan).
+
+    2026-09, multi-tenant (foydalanuvchi so'rovi: "endi bir necha kompaniya
+    bor, bot ulansa gruppaga ham adashib ketmasin, har kuni ertalab 9da
+    aniq ko'rsatsin"): ILGARI bu funksiya FAQAT platforma egasining (Company
+    #1) hisobini, global ENV o'zgaruvchilaridan hisoblab, `_daily_summary_
+    targets()`dagi (global, ENV'da qattiq yozilgan) guruh(lar)ga yuborardi
+    -- qolgan HAMMA kompaniya HECH QANDAY kunlik hisobot OLMAS edi. Endi:
+      1. Platforma egasi uchun -- ESKI xatti-harakat, O'ZGARISHSIZ (orqaga
+         moslik uchun) -- `_daily_summary_targets()`ga.
+      2. `meta_ad_account_id`+`meta_access_token`+`telegram_group_id`
+         ulagan HAR BIR BOSHQA (faol) kompaniya uchun -- ALOHIDA, O'Z Meta
+         hisobidan hisoblangan hisobot, FAQAT O'ZINING `telegram_group_id`
+         guruhiga (`enforce_cpl_hard_kill_all_companies()` bilan bir xil
+         xavfsizlik naqshi -- boshqa kompaniyaning ma'lumoti begona
+         guruhga sizib chiqmasligi kerak). Guruhini hali sozlamagan
+         kompaniyaga hisobot shunchaki YUBORILMAYDI (xato emas)."""
     now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
     today_str = now.strftime("%Y-%m-%d")
-
-    if kv_store.get_json(_ADMIN_REPORT_GUARD_KEY) == today_str:
-        return f"bugun ({today_str}) allaqachon yuborilgan -- qayta yuborilmadi"
-
     yesterday = now - dt.timedelta(days=1)
+    results: dict = {}
+
+    # 1) Platforma egasi -- eski, global xatti-harakat.
+    owner_targets = _daily_summary_targets()
+    if not owner_targets:
+        results["owner"] = "hisobot yuboriladigan chat yo'q"
+    elif kv_store.get_json(_ADMIN_REPORT_GUARD_KEY) == today_str:
+        results["owner"] = f"bugun ({today_str}) allaqachon yuborilgan -- qayta yuborilmadi"
+    else:
+        try:
+            report = orchestrator.build_admin_report(
+                yesterday.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
+                "Kechagi kun uchun to'liq yakuniy hisobot",
+                insight_kwargs={"date_preset": "yesterday"},
+            )
+        except Exception as e:
+            logger.exception("Admin hisobot xatosi (platforma egasi)")
+            for cid in owner_targets:
+                _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
+            results["owner"] = f"xato: {e}"
+        else:
+            send_results = {cid: _tg_send(cid, report) for cid in owner_targets}
+            kv_store.set_json(_ADMIN_REPORT_GUARD_KEY, today_str)
+            results["owner"] = (
+                f"yuborildi -> {owner_targets}" if all(r["ok"] for r in send_results.values())
+                else f"URINISH QILINDI, lekin ba'zilari rad etildi: {send_results}"
+            )
+
+    # 2) Boshqa har bir Meta ulagan, o'z Telegram guruhini sozlagan kompaniya.
+    default_company_id = db.get_default_company_id()
+    session = db.get_session()
     try:
-        report = orchestrator.build_admin_report(
-            yesterday.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
-            "Kechagi kun uchun to'liq yakuniy hisobot",
-            insight_kwargs={"date_preset": "yesterday"},
+        with db.unscoped():
+            rows = (
+                session.query(db.Company)
+                .filter(
+                    db.Company.meta_ad_account_id.isnot(None),
+                    db.Company.meta_access_token.isnot(None),
+                    db.Company.telegram_group_id.isnot(None),
+                    db.Company.is_active.is_(True),
+                    db.Company.id != default_company_id,
+                )
+                .all()
+            )
+            companies = [
+                {
+                    "id": c.id, "name": c.name, "meta_access_token": c.get_meta_access_token(),
+                    "meta_ad_account_id": c.meta_ad_account_id, "telegram_group_id": c.telegram_group_id,
+                }
+                for c in rows
+            ]
+    finally:
+        session.close()
+
+    for c in companies:
+        guard_key = f"{_ADMIN_REPORT_GUARD_KEY}:{c['id']}"
+        if kv_store.get_json(guard_key) == today_str:
+            results[c["id"]] = f"bugun ({today_str}) allaqachon yuborilgan"
+            continue
+        try:
+            chat_id = int(c["telegram_group_id"])
+        except (TypeError, ValueError):
+            results[c["id"]] = "telegram_group_id noto'g'ri formatda -- o'tkazib yuborildi"
+            continue
+
+        fake_company = _AdminReportCompanyCreds(
+            id=c["id"], name=c["name"],
+            meta_access_token=c["meta_access_token"], meta_ad_account_id=c["meta_ad_account_id"],
         )
-    except Exception as e:
-        logger.exception("Admin hisobot xatosi")
-        for cid in targets:
-            _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
-        return f"xato: {e}"
-    send_results = {cid: _tg_send(cid, report) for cid in targets}
-    kv_store.set_json(_ADMIN_REPORT_GUARD_KEY, today_str)
-    if all(r["ok"] for r in send_results.values()):
-        return f"yuborildi -> {targets}"
-    return f"URINISH QILINDI, lekin ba'zilari rad etildi: {send_results}"
+        try:
+            report = orchestrator.build_admin_report(
+                yesterday.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
+                "Kechagi kun uchun to'liq yakuniy hisobot",
+                insight_kwargs={"date_preset": "yesterday"},
+                company=fake_company,
+            )
+        except Exception as e:
+            logger.exception("Admin hisobot xatosi (kompaniya '%s', id=%s)", c["name"], c["id"])
+            _tg_send(chat_id, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
+            results[c["id"]] = f"xato: {e}"
+            continue
+
+        send_result = _tg_send(chat_id, report)
+        kv_store.set_json(guard_key, today_str)
+        results[c["id"]] = "yuborildi" if send_result["ok"] else f"URINISH QILINDI, lekin rad etildi: {send_result}"
+
+    return results
 
 
 def job_watch_cycle() -> str:
@@ -532,76 +628,126 @@ def job_followup_reminders() -> dict:
       - shu leadga biriktirilgan menejerga (agar `Manager.telegram_user_id`
         to'ldirilgan bo'lsa) SHAXSIY Telegram xabar -- "bugun kimlar bilan
         qayta bog'lanish kerak" ro'yxati (eng ko'p kechikkani birinchi).
-      - "to'liq harakat" guruhiga (_full_activity_targets()) UMUMIY qisqa xulosa -- nechta
+      - kompaniyaning umumiy guruhiga UMUMIY qisqa xulosa -- nechta
         lead kechikkan/bugungi, va biriktirilmagan (egasiz) qayta aloqalar
         bo'lsa alohida ogohlantirish (ular hech kimga yuborilmaydi, chunki
         egasi yo'q -- admin o'zi ko'rib biriktirishi kerak).
     CRM'dagi "/qayta-aloqa" sahifasi bilan BIR XIL mantiq (`app.py:
-    followups_list`)."""
+    followups_list`).
+
+    2026-09, multi-tenant xavfsizlik tuzatishi (foydalanuvchi so'rovi:
+    "endi bir necha kompaniya bor, leadlar adashib chalkashmasin"): ILGARI
+    `session.query(db.Lead)` HECH QANDAY kompaniya filtrisiz edi -- fon
+    vazifalarida (`app.py`dagi HTTP `before_request`dan farqli o'laroq)
+    avtomatik tenant-filtr FAOL EMAS (`db.py`dagi `_apply_tenant_scope`:
+    `_current_company_id is None` bo'lsa filtrsiz o'tkazib yuboradi). Bu
+    HAMMA kompaniyaning bugungi/kechikkan qayta-aloqa leadlarini BITTA
+    ro'yxatga QO'SHIB, umumiy xulosani (masalan "5 ta kechikkan") FAQAT
+    platforma egasining `_full_activity_targets()` guruhiga yuborardi --
+    boshqa kompaniyalarning mijoz ismi/telefoni ham o'sha begona guruhga
+    sizib chiqishi mumkin edi. Endi HAR BIR faol kompaniya bo'yicha
+    ALOHIDA, `db.scoped_as(company_id)` bilan ANIQ tenant-filtrlangan
+    holda ishlaydi -- umumiy xulosa platforma egasi uchun eski
+    (`_full_activity_targets()`) guruhga, boshqa har bir kompaniya uchun
+    FAQAT o'zining `Company.telegram_group_id`siga (sozlanmagan bo'lsa --
+    hech qayerga, xato emas)."""
+    now = dt.datetime.utcnow()
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    default_company_id = db.get_default_company_id()
+
     session = db.get_session()
     try:
-        now = dt.datetime.utcnow()
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
-        due = (
-            session.query(db.Lead)
-            .filter(db.Lead.next_contact_at.isnot(None), db.Lead.next_contact_at <= today_end)
-            .order_by(db.Lead.next_contact_at.asc())
-            .all()
-        )
-        if not due:
-            return {"due_count": 0, "sent_to_managers": 0}
-
-        by_manager: dict[int, list] = {}
-        unassigned = []
-        for lead in due:
-            if lead.assigned_manager_id:
-                by_manager.setdefault(lead.assigned_manager_id, []).append(lead)
-            else:
-                unassigned.append(lead)
-
-        def _line(lead) -> str:
-            days_late = (now.date() - lead.next_contact_at.date()).days
-            when = "BUGUN" if days_late == 0 else f"{days_late} kun KECHIKDI"
-            name = lead.full_name or "Noma'lum"
-            phone = lead.phone or "-"
-            note = f" -- {lead.next_contact_note}" if lead.next_contact_note else ""
-            return f"  • {name} ({phone}) [{when}]{note}"
-
-        sent_to_managers = 0
-        if by_manager:
-            managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys())).all()
-            for m in managers:
-                if not m.telegram_user_id:
-                    continue
-                leads = by_manager.get(m.id, [])
-                if not leads:
-                    continue
-                text = f"\U0001F4DE Bugungi qayta aloqalar ({len(leads)} ta):\n\n" + "\n".join(_line(l) for l in leads)
-                result = _tg_send(int(m.telegram_user_id), text)
-                if result["ok"]:
-                    sent_to_managers += 1
-                else:
-                    logger.warning("Qayta aloqa eslatmasi menejer %s (telegram_user_id=%s)ga yuborilmadi: %s", m.username, m.telegram_user_id, result["error"])
-
-        targets = _full_activity_targets()
-        if targets:
-            overdue_count = sum(1 for l in due if l.next_contact_at.date() < now.date())
-            today_count = len(due) - overdue_count
-            summary = (
-                f"\U0001F514 Qayta aloqa xulosasi: bugun {today_count} ta, kechikkan {overdue_count} ta "
-                f"(jami {len(due)} ta)."
-            )
-            if unassigned:
-                summary += f"\n⚠️ {len(unassigned)} ta lead HECH KIMGA biriktirilmagan -- egasiz qoldi:\n" + "\n".join(_line(l) for l in unassigned[:10])
-            for cid in targets:
-                _tg_send(cid, summary)
-
-        return {"due_count": len(due), "overdue_count": sum(1 for l in due if l.next_contact_at.date() < now.date()), "sent_to_managers": sent_to_managers, "unassigned": len(unassigned)}
-    except Exception as e:
-        logger.exception("Qayta aloqa eslatmasida xatolik")
-        return {"error": str(e)}
+        with db.unscoped():
+            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            company_rows = [{"id": c.id, "telegram_group_id": c.telegram_group_id} for c in companies]
     finally:
         session.close()
+
+    def _line(lead) -> str:
+        days_late = (now.date() - lead.next_contact_at.date()).days
+        when = "BUGUN" if days_late == 0 else f"{days_late} kun KECHIKDI"
+        name = lead.full_name or "Noma'lum"
+        phone = lead.phone or "-"
+        note = f" -- {lead.next_contact_note}" if lead.next_contact_note else ""
+        return f"  • {name} ({phone}) [{when}]{note}"
+
+    total_due = total_overdue = total_sent_to_managers = total_unassigned = 0
+    errors = []
+
+    for crow in company_rows:
+        company_id = crow["id"]
+        session = db.get_session()
+        try:
+            with db.scoped_as(company_id):
+                due = (
+                    session.query(db.Lead)
+                    .filter(db.Lead.next_contact_at.isnot(None), db.Lead.next_contact_at <= today_end)
+                    .order_by(db.Lead.next_contact_at.asc())
+                    .all()
+                )
+                if not due:
+                    continue
+
+                by_manager: dict[int, list] = {}
+                unassigned = []
+                for lead in due:
+                    if lead.assigned_manager_id:
+                        by_manager.setdefault(lead.assigned_manager_id, []).append(lead)
+                    else:
+                        unassigned.append(lead)
+
+                sent_to_managers = 0
+                if by_manager:
+                    managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys())).all()
+                    for m in managers:
+                        if not m.telegram_user_id:
+                            continue
+                        leads = by_manager.get(m.id, [])
+                        if not leads:
+                            continue
+                        text = f"\U0001F4DE Bugungi qayta aloqalar ({len(leads)} ta):\n\n" + "\n".join(_line(l) for l in leads)
+                        result = _tg_send(int(m.telegram_user_id), text)
+                        if result["ok"]:
+                            sent_to_managers += 1
+                        else:
+                            logger.warning("Qayta aloqa eslatmasi menejer %s (telegram_user_id=%s)ga yuborilmadi: %s", m.username, m.telegram_user_id, result["error"])
+
+                if company_id == default_company_id:
+                    targets = _full_activity_targets()
+                else:
+                    targets = []
+                    if crow["telegram_group_id"]:
+                        try:
+                            targets = [int(crow["telegram_group_id"])]
+                        except (TypeError, ValueError):
+                            logger.warning("Company id=%s telegram_group_id noto'g'ri formatda: %r", company_id, crow["telegram_group_id"])
+
+                if targets:
+                    overdue_count = sum(1 for l in due if l.next_contact_at.date() < now.date())
+                    today_count = len(due) - overdue_count
+                    summary = (
+                        f"\U0001F514 Qayta aloqa xulosasi: bugun {today_count} ta, kechikkan {overdue_count} ta "
+                        f"(jami {len(due)} ta)."
+                    )
+                    if unassigned:
+                        summary += f"\n⚠️ {len(unassigned)} ta lead HECH KIMGA biriktirilmagan -- egasiz qoldi:\n" + "\n".join(_line(l) for l in unassigned[:10])
+                    for cid in targets:
+                        _tg_send(cid, summary)
+
+                total_due += len(due)
+                total_overdue += sum(1 for l in due if l.next_contact_at.date() < now.date())
+                total_sent_to_managers += sent_to_managers
+                total_unassigned += len(unassigned)
+        except Exception as e:
+            logger.exception("Qayta aloqa eslatmasida xatolik (company_id=%s)", company_id)
+            errors.append(f"{company_id}: {e}")
+        finally:
+            session.close()
+
+    result = {"due_count": total_due, "overdue_count": total_overdue, "sent_to_managers": total_sent_to_managers, "unassigned": total_unassigned}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def _desired_state(now_hhmm: str, on_time: str, off_time: str) -> str:
@@ -677,7 +823,18 @@ def job_standing_reports() -> str:
     """Foydalanuvchi Telegram orqali qo'shgan QO'SHIMCHA doimiy hisobot
     vaqtlarini (`db.StandingReport`) tekshiradi -- vaqti kelgan va bugun hali
     yuborilmagan hisobotlarni tayyorlab yuboradi. Asosiy 09:00 dagi kunlik
-    hisobotni ALMASHTIRMAYDI, unga QO'SHIMCHA."""
+    hisobotni ALMASHTIRMAYDI, unga QO'SHIMCHA.
+
+    2026-09, multi-tenant tuzatish (foydalanuvchi so'rovi: "leadlar/
+    hisobotlar adashib chalkashmasin"): ILGARI bu yerda BITTA (platforma
+    egasining, global ENV) hisobot quriladi va BARCHA due chat_id'larga
+    (qaysi kompaniyaniki bo'lishidan qat'iy nazar) AYNAN O'SHA hisobot
+    yuborilardi -- ya'ni boshqa kompaniya o'ziga "qo'shimcha hisobot vaqti"
+    sozlasa ham, u platforma egasining ma'lumotini ko'rardi. Endi har bir
+    chat qaysi kompaniyaga tegishli ekani (`Company.telegram_group_id`)
+    aniqlanadi va O'SHA kompaniyaning O'Z hisobi bilan hisoblangan hisobot
+    yuboriladi (bir nechta chat bir xil kompaniyaga tegishli bo'lsa, hisobot
+    bir marta hisoblanadi -- keraksiz qayta so'rovlar yubormaslik uchun)."""
     now = dt.datetime.utcnow() + dt.timedelta(hours=5)
     now_hhmm = now.strftime("%H:%M")
     today_str = now.strftime("%Y-%m-%d")
@@ -698,22 +855,42 @@ def job_standing_reports() -> str:
     if not due_chat_ids:
         return "hozircha hisobot vaqti yo'q"
 
-    try:
-        report_text = orchestrator.build_admin_report(
-            now.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
-            "Qo'shimcha (foydalanuvchi so'ragan) hisobot",
-            insight_kwargs={"date_preset": "today"},
-        )
-    except Exception as e:
-        logger.exception("Qo'shimcha (standing) hisobot xatosi")
-        report_text = f"⚠️ Qo'shimcha hisobotni tayyorlashda xatolik: {e}"
-
+    default_company_id = db.get_default_company_id()
+    report_cache: dict = {}
+    sent = []
     for chat_id in due_chat_ids:
+        company_id = orchestrator._company_id_for_chat(chat_id)
+        if company_id not in report_cache:
+            fake_company = None
+            if company_id is not None and company_id != default_company_id:
+                cs = db.get_session()
+                try:
+                    with db.unscoped():
+                        c = cs.query(db.Company).get(company_id)
+                    if c is not None:
+                        fake_company = _AdminReportCompanyCreds(
+                            id=c.id, name=c.name,
+                            meta_access_token=c.get_meta_access_token(), meta_ad_account_id=c.meta_ad_account_id,
+                        )
+                finally:
+                    cs.close()
+            try:
+                report_cache[company_id] = orchestrator.build_admin_report(
+                    now.strftime("%d.%m.%Y"), now.strftime("%H:%M"),
+                    "Qo'shimcha (foydalanuvchi so'ragan) hisobot",
+                    insight_kwargs={"date_preset": "today"},
+                    company=fake_company,
+                )
+            except Exception as e:
+                logger.exception("Qo'shimcha (standing) hisobot xatosi (company_id=%s)", company_id)
+                report_cache[company_id] = f"⚠️ Qo'shimcha hisobotni tayyorlashda xatolik: {e}"
+
         try:
-            _tg_send(int(chat_id), report_text)
+            _tg_send(int(chat_id), report_cache[company_id])
+            sent.append(chat_id)
         except (TypeError, ValueError):
             pass
-    return f"yuborildi -> {due_chat_ids}"
+    return f"yuborildi -> {sent}"
 
 
 JOBS = {

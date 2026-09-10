@@ -356,7 +356,7 @@ def _daily_breakdown(since: str, until: str) -> list[dict]:
     return daily
 
 
-def compute_campaigns_and_totals(**insight_kwargs) -> tuple[list[dict], dict]:
+def compute_campaigns_and_totals(*, access_token: str | None = None, ad_account_id: str | None = None, **insight_kwargs) -> tuple[list[dict], dict]:
     """Berilgan davr (`time_range={"since":...,"until":...}` YOKI
     `date_preset="..."` -- `meta_api.get_insights` qabul qiladigan istalgan
     parametr) uchun HAR BIR kampaniyaning to'g'ri aniqlangan yo'nalishi
@@ -365,9 +365,13 @@ def compute_campaigns_and_totals(**insight_kwargs) -> tuple[list[dict], dict]:
     `orchestrator.build_admin_report()` (kunlik/on-demand Telegram karta)
     VA shu moduldagi oylik PDF hisobot -- IKKALASI UCHUN ham umumiy,
     bitta ishonchli manba (bir xil xatoning ikki joyda alohida-alohida
-    paydo bo'lishining oldini olish uchun)."""
-    campaign_rows = meta_api.get_full_report(level="campaign", **insight_kwargs)
-    structure = meta_api.get_account_structure(active_only=False)
+    paydo bo'lishining oldini olish uchun).
+
+    `access_token`/`ad_account_id` -- 2026-09, multi-tenant: BERILSA shu
+    ANIQ kompaniyaning hisobidan so'raladi, BERILMASA eski global (ENV)
+    xatti-harakat."""
+    campaign_rows = meta_api.get_full_report(level="campaign", access_token=access_token, ad_account_id=ad_account_id, **insight_kwargs)
+    structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
     objective_by_name = {c.get("name"): c.get("objective") for c in structure.get("campaigns", [])}
     campaigns = [_campaign_metrics(row, objective_by_name) for row in campaign_rows]
     campaigns.sort(key=lambda c: c["spend"], reverse=True)

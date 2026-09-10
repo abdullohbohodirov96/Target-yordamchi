@@ -421,14 +421,22 @@ def get_full_report(
     date_preset: str = "last_7d",
     breakdowns: list[str] | None = None,
     time_range: dict | None = None,
+    *,
+    access_token: str | None = None,
+    ad_account_id: str | None = None,
 ) -> list[dict]:
     """`get_insights()` bilan bir xil, lekin video/engagement metrikalarini ham
     qo'shib qaytaradi. Foydalanuvchi "video necha % odam ko'rgan", "hook rate
     qancha", yoki aniq bir kun/oraliq ("20 iyul", "1-10 avgust") so'raganda
-    ishlatiladi (orchestrator.answer_data_question)."""
+    ishlatiladi (orchestrator.answer_data_question).
+
+    `access_token`/`ad_account_id` -- 2026-09, multi-tenant (`get_insights()`
+    bilan bir xil naqsh): BERILSA shu ANIQ kompaniyaning hisobidan so'raladi,
+    BERILMASA eski global (ENV) xatti-harakat."""
     return get_insights(
         level=level, date_preset=date_preset, breakdowns=breakdowns,
         fields=FULL_REPORTING_FIELDS, time_range=time_range,
+        access_token=access_token, ad_account_id=ad_account_id,
     )
 
 
