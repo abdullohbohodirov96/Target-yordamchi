@@ -448,12 +448,23 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
 /* ---------- Search box ---------- */
 .searchbar { padding: 14px 16px; border-bottom: 1px solid var(--border-light); }
 .search-input-wrap { position: relative; max-width: 280px; }
-.search-input-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-faint); }
-.search-input-wrap input {
+.search-input-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-faint); pointer-events: none; }
+/* BUG FIX (2026-09, sahifama-sahifa audit paytida topildi): bu qoida
+   ilgari `.search-input-wrap input` edi -- lekin `form input[type="text"]`
+   qoidasi (pastda, umumiy forma maydonlari uchun) CSS SPETSIFIKLIGI
+   bo'yicha undan KUCHLIROQ edi (ikkita element selektor + atribut vs.
+   bitta klass + element), shuning uchun uning 32px chap padding'ini
+   (qidiruv ikonkasiga joy uchun) 12px bilan bosib qo'yardi -- natijada
+   lupa ikonkasi "Ism, telefon..." matnining ustiga chiqib, "I" harfini
+   yashirardi. Endi `.searchbar` klassi ham qo'shildi -- shu bilan bu
+   qoida yetarlicha spetsifik bo'lib, umumiy forma qoidasidan ustun
+   turadi (ancestor `<form>` yoki oddiy `<div class="searchbar">`
+   bo'lishidan qat'iy nazar, .searchbar klassi hamma joyda bor). */
+.searchbar .search-input-wrap input {
   width: 100%; padding: 8px 12px 8px 32px; font-size: 13.5px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit;
 }
-.search-input-wrap input:focus { outline: none; border-color: #94A3B8; background: #fff; box-shadow: 0 0 0 3px rgba(15,23,42,0.06); }
+.searchbar .search-input-wrap input:focus { outline: none; border-color: #94A3B8; background: #fff; box-shadow: 0 0 0 3px rgba(15,23,42,0.06); }
 
 /* ---------- Filter pills (leads page) ---------- */
 .filters { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
