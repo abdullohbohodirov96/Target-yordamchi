@@ -474,7 +474,7 @@ form label { display: block; font-size: 12px; font-weight: 500; color: var(--tex
 form .field { margin-bottom: 16px; }
 form input[type="text"], form input[type="password"], form input[type="number"],
 form input[type="date"], form input[type="datetime-local"],
-form input[type="tel"], form input[type="email"],
+form input[type="tel"], form input[type="email"], form input[type="url"],
 form select, form textarea {
   width: 100%; padding: 9px 12px; font-size: 13.5px; font-family: inherit;
   border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);
@@ -854,10 +854,18 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .app-detail-back:hover { color: var(--blue); background: none; box-shadow: none; transform: none; }
 .app-detail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 
+/* `.copy-field` ba'zan `<form>` ichida, ba'zan (kiruvchi URL kabi)
+   undan TASHQARIDA ishlatiladi -- shu sabab `input` uchun global "form
+   input[type=text]" qoidasiga tayanmasdan, o'zining TO'LIQ (padding/
+   border/fon) uslubiga ega -- aks holda formadan tashqarida turgan
+   input xunuk (stilsiz, brauzer standart) ko'rinib qolardi. */
 .copy-field { display: flex; gap: 8px; align-items: stretch; max-width: 620px; }
 .copy-field input {
-  flex: 1; min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px;
+  flex: 1; min-width: 0; width: auto;
+  padding: 9px 12px; font-size: 12px; font-family: "SFMono-Regular", Consolas, monospace;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--border-light); color: var(--text-dim);
 }
+.copy-field input:focus { outline: none; border-color: #94A3B8; }
 .copy-field .copy-btn { flex-shrink: 0; white-space: nowrap; font-size: 12.5px; padding: 9px 14px; }
 .copy-field .copy-btn.copied { background: var(--good); }
 
