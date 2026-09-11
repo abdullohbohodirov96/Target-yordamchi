@@ -158,29 +158,40 @@
          xil "yassi" ko'rinish) -- guruh ICHIDAGI bo'limlar orasida
          almashish esa FAQAT tepadagi page-subnav orqali (pastga qarang)
          amalga oshiriladi. #}
+      {# 2026-09, foydalanuvchi so'rovi (screenshot bilan ko'rsatdi -- "Marketing"
+         ustiga kelganda paydo bo'ladigan qora oynacha "Instagram xabarlar"
+         yozuvi ustiga chiqib, chalkash/buzilgandek ko'rinardi): sabab --
+         brauzerning STANDART `title=""` tooltip'i sichqoncha pozitsiyasiga
+         qarab o'zi joylashadi, uni na o'rni na uslubi boshqarib bo'lmaydi,
+         zich joylashgan ikonkalar ustida qo'shni bandga chiqib qolishi
+         mumkin. Endi HAMMA asosiy sidebar bandlari uchun `title` o'rniga
+         o'zimizning CSS orqali chizilgan tooltip ishlatiladi (pastda,
+         `.nav-item[data-tooltip]`) -- doim ikonka O'NG TOMONIDA, aniq
+         joyda chiqadi, faqat sidebar YIG'ILGAN holatda (matn yashirin
+         bo'lganda) ko'rinadi. `aria-label` ekran o'quvchilar uchun saqlanadi. #}
       {% if has_module(current_user, 'dashboard') %}
-      <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint=='dashboard' }}" title="Dashboard">
+      <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint=='dashboard' }}" data-tooltip="Dashboard" aria-label="Dashboard">
         <span class="nav-icon">{{ navicon('dashboard') }}</span><span class="nav-text">Dashboard</span>
       </a>
       {% endif %}
       {% if has_module(current_user, 'leads') %}
-      <a href="{{ url_for('leads_list') }}" class="nav-item {{ 'active' if request.endpoint in _crm_eps }}" title="CRM">
+      <a href="{{ url_for('leads_list') }}" class="nav-item {{ 'active' if request.endpoint in _crm_eps }}" data-tooltip="CRM" aria-label="CRM">
         <span class="nav-icon">{{ navicon('leads') }}</span><span class="nav-text">CRM</span>
       </a>
       {% endif %}
 
       {% if has_module(current_user, 'analytics') or has_module(current_user, 'individual_check') %}
       {% set _monitoring_href = url_for('analytics_page') if has_module(current_user, 'analytics') else url_for('individual_check') %}
-      <a href="{{ _monitoring_href }}" class="nav-item {{ 'active' if request.endpoint in _monitoring_eps }}" title="Monitoring">
+      <a href="{{ _monitoring_href }}" class="nav-item {{ 'active' if request.endpoint in _monitoring_eps }}" data-tooltip="Monitoring" aria-label="Monitoring">
         <span class="nav-icon">{{ navicon('analytics') }}</span><span class="nav-text">Monitoring</span>
       </a>
       {% endif %}
 
       {% if has_module(current_user, 'target') %}
-      <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint in _marketing_eps }}" title="Marketing">
+      <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint in _marketing_eps }}" data-tooltip="Marketing (Target, SMM)" aria-label="Marketing">
         <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Marketing</span>
       </a>
-      <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint in _ig_dm_eps }}" title="Instagram xabarlar">
+      <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint in _ig_dm_eps }}" data-tooltip="Instagram xabarlar" aria-label="Instagram xabarlar">
         <span class="nav-icon">{{ navicon('instagram') }}{% if ig_dm_unanswered_count %}<span class="nav-icon-dot"></span>{% endif %}</span><span class="nav-text">Instagram xabarlar{% if ig_dm_unanswered_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ ig_dm_unanswered_count }}</span>{% endif %}</span>
       </a>
       {% endif %}
@@ -191,7 +202,7 @@
       {% elif current_user.role == 'admin' %}
       {% set _boshqaruv_href = url_for('managers') %}
       {% endif %}
-      <a href="{{ _boshqaruv_href }}" class="nav-item {{ 'active' if request.endpoint in _boshqaruv_eps }}" title="Boshqaruv">
+      <a href="{{ _boshqaruv_href }}" class="nav-item {{ 'active' if request.endpoint in _boshqaruv_eps }}" data-tooltip="Boshqaruv" aria-label="Boshqaruv">
         <span class="nav-icon">{{ navicon('settings') }}</span><span class="nav-text">Boshqaruv</span>
       </a>
       {% endif %}
@@ -202,7 +213,7 @@
          ko'radi (integratsiya/API kalitlari boshqaruvi -- xavfsizlik
          darajasi "Boshqaruv" bilan bir xil). #}
       {% if current_user.role == 'admin' %}
-      <a href="{{ url_for('marketplace') }}" class="nav-item {{ 'active' if request.endpoint == 'marketplace' }}" title="Marketplace">
+      <a href="{{ url_for('marketplace') }}" class="nav-item {{ 'active' if request.endpoint == 'marketplace' }}" data-tooltip="Marketplace" aria-label="Marketplace">
         <span class="nav-icon">{{ navicon('cart') }}</span><span class="nav-text">Marketplace</span>
       </a>
       {% endif %}
@@ -234,6 +245,7 @@
     </div>
   </aside>
   <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <div class="nav-tooltip" id="navTooltip" hidden></div>
   {% endif %}
 
   <main class="container{{ ' with-sidebar' if (current_user.is_authenticated and not _hide_chrome) }}" id="mainContent">
@@ -384,6 +396,32 @@
     // havola (yuqoridagi HTML'ga qarang, "ikkita joyda ko'rsatish" bug fix).
     // Eski `.nav-group-label`/`.nav-group-items` boshqaruv kodi shu sabab
     // olib tashlandi -- bu elementlar endi umuman render qilinmaydi.
+
+    // 2026-09, foydalanuvchi so'rovi (screenshot: "Marketing" ustiga
+    // borganda chiqqan tooltip "Instagram xabarlar" bilan to'qnashib,
+    // buzilgandek ko'ringan): standart brauzer `title` o'rniga -- yagona
+    // (`#navTooltip`, `position: fixed`) tooltip elementi sichqoncha
+    // bandning USTIGA kelganda ikonka o'ng tomoniga aniq joylashtiriladi.
+    // `position: fixed` bo'lgani uchun `.sidebar`/`.sidebar-nav`dagi
+    // `overflow` uni HECH QACHON kesib tashlamaydi. Faqat sidebar
+    // YIG'ILGAN holatda ko'rsatiladi -- ochilganda matnning o'zi ko'rinib
+    // turadi, tooltip keraksiz bo'lardi.
+    var tooltip = document.getElementById('navTooltip');
+    if (tooltip) {
+      sidebar.querySelectorAll('.nav-item[data-tooltip]').forEach(function (item) {
+        item.addEventListener('mouseenter', function () {
+          if (sidebar.classList.contains('open')) return;
+          var rect = item.getBoundingClientRect();
+          tooltip.textContent = item.getAttribute('data-tooltip');
+          tooltip.style.top = (rect.top + rect.height / 2) + 'px';
+          tooltip.style.left = (rect.right + 10) + 'px';
+          tooltip.hidden = false;
+        });
+        item.addEventListener('mouseleave', function () { tooltip.hidden = true; });
+        item.addEventListener('click', function () { tooltip.hidden = true; });
+      });
+      sidebar.addEventListener('mouseleave', function () { tooltip.hidden = true; });
+    }
   })();
   </script>
   {% endif %}

@@ -225,6 +225,23 @@ a { color: inherit; text-decoration: none; }
 .nav-text { overflow: hidden; text-overflow: ellipsis; opacity: 0; width: 0; transition: opacity 0.1s; }
 .sidebar.open .nav-text { opacity: 1; width: auto; }
 
+/* 2026-09, foydalanuvchi so'rovi (screenshot: "Marketing" ustiga borganda
+   chiqqan qora oynacha "Instagram xabarlar" bilan to'qnashib, buzilgandek
+   ko'ringan): standart brauzer `title` tooltip'i o'rniga -- ikonka O'NG
+   TOMONIDA, aniq joyda chiqadigan o'z tooltipimiz.
+   MUHIM: bu oddiy CSS `::after` bilan QILINMAYDI -- `.sidebar`/`.sidebar-nav`
+   ikkalasi ham `overflow` bilan sidebar chegarasidan tashqariga chiqqan
+   HAR NARSANI kesib tashlaydi (kengayish animatsiyasi uchun kerak), shuning
+   uchun tooltip sidebar ICHIDA absolute emas, balki `position: fixed`
+   bilan (pastdagi <script>, DOMContentLoaded ichida) BUTUN sahifaga
+   nisbatan joylashtiriladi -- shu orqali hech qanday overflow uni kesib
+   tashlay olmaydi. */
+.nav-tooltip {
+  position: fixed; background: var(--ink); color: #fff; font-size: 12px; font-weight: 500;
+  line-height: 1.3; padding: 6px 10px; border-radius: 7px; white-space: nowrap;
+  pointer-events: none; box-shadow: var(--shadow-md); z-index: 1000; transform: translateY(-50%);
+}
+
 .sidebar-bottom { border-top: 1px solid var(--border-light); padding: 10px; flex-shrink: 0; }
 .nav-user-info { color: var(--ink); font-weight: 500; cursor: default; }
 .nav-user-info:hover { background: none; }
@@ -946,12 +963,16 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: #CBD5E1; }
 .app-card.active { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg), var(--shadow-md); }
+/* 2026-09, foydalanuvchi so'rovi ("marketplace ... ikonkalani to'liq bo'p
+   tursin" -- hozircha kam xizmat ulangani uchun kartalar juda "bo'sh"
+   ko'rinardi): ikonka aniq kattalashtirildi -- kartaning yuqori qismini
+   to'liqroq egallaydi, "bo'sh joy ko'p" taassurotini kamaytiradi. */
 .app-icon {
-  width: 46px; height: 46px; border-radius: 13px; display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
-  box-shadow: 0 2px 5px rgba(15,23,42,0.15); margin-bottom: 12px;
+  width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 19px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(15,23,42,0.18); margin-bottom: 14px;
 }
-.app-icon-lg { width: 52px; height: 52px; border-radius: 14px; font-size: 17px; margin-bottom: 0; }
+.app-icon-lg { width: 64px; height: 64px; border-radius: 17px; font-size: 21px; margin-bottom: 0; }
 .app-card-name { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
 .app-card-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; line-height: 1.3; }
 .app-card-badge { font-size: 10px; padding: 3px 8px; margin-top: auto; align-self: flex-start; }
