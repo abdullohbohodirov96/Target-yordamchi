@@ -3484,6 +3484,41 @@ def _inject_followups_badge():
         session.close()
 
 
+_IG_DM_BADGE_CACHE_TTL_SECONDS = 30
+_ig_dm_badge_cache: dict[str, tuple[float, int]] = {}
+_ig_dm_badge_cache_lock = threading.Lock()
+
+
+@app.context_processor
+def _inject_ig_dm_badge():
+    """`base.html`dagi sidebar "Instagram xabarlar" bandiga javobsiz
+    (is_unanswered) suhbatlar sonini qizil belgi sifatida qo'shadi --
+    `_inject_followups_badge()` bilan bir xil qisqa muddatli (TTL) kesh
+    naqshi (2026-09, "habarlani alohida panelga chiqaz side barga" so'rovi
+    bilan birga qo'shildi)."""
+    if not (current_user.is_authenticated and permissions.has_module(current_user, "target")):
+        return {}
+
+    cache_key = current_user.username
+    now = time.monotonic()
+    with _ig_dm_badge_cache_lock:
+        cached = _ig_dm_badge_cache.get(cache_key)
+    if cached and (now - cached[0]) < _IG_DM_BADGE_CACHE_TTL_SECONDS:
+        return {"ig_dm_unanswered_count": cached[1]}
+
+    session = get_session()
+    try:
+        count = session.query(IgDmConversation).filter_by(is_unanswered=True).count()
+        with _ig_dm_badge_cache_lock:
+            _ig_dm_badge_cache[cache_key] = (now, count)
+        return {"ig_dm_unanswered_count": count}
+    except Exception:
+        logger.exception("Instagram xabarlar belgisini hisoblashda xatolik")
+        return {}
+    finally:
+        session.close()
+
+
 @app.context_processor
 def _inject_plan_upsell():
     """`base.html`ga joriy kompaniyaning tarif ma'lumotini beradi:
