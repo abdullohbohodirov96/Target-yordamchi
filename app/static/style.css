@@ -118,8 +118,29 @@ a { color: inherit; text-decoration: none; }
      muvozanatlangan holda turadi, tepaga yopishmaydi). */
   flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px;
   display: flex; flex-direction: column; justify-content: center; gap: 3px;
-  scrollbar-width: thin;
+  scrollbar-width: thin; position: relative;
 }
+/* 2026-09, foydalanuvchi so'rovi ("bo'limlar orasida o'tganda animatsiya
+   bo'lsin ... tepaga chiqsa tepaga uchib chiqsin, pastga bossa pastga
+   dumalab tushsin"): ilgari "faol band" belgisi (ko'k fon) shunchaki
+   `.nav-item.active`ning o'ziga CSS orqali statik qo'yilardi -- sahifa
+   to'liq qayta yuklangani (bu SPA emas, oddiy ko'p-sahifali Flask ilova)
+   uchun band biridan ikkinchisiga o'tganda hech qanday HARAKAT ko'rinmas,
+   ko'k fon shunchaki yangi joyda "sakrab" paydo bo'lardi. Endi alohida,
+   ANIMATSIYALANADIGAN "suzuvchi" ko'k fon (`.nav-active-indicator`)
+   qo'shildi -- u sahifalar orasida JS orqali (pastda, script blokida)
+   OLDINGI bosilgan bandning pozitsiyasidan YANGI faol bandning
+   pozitsiyasiga SILJIYDI (tepaga yoki pastga, yo'nalishga qarab), shu
+   bilan "band tepaga/pastga o'tsa" degan tuyg'u hosil bo'ladi.
+   `.js .nav-item.active` fonini shaffof qiladi (faqat JS ishlayotgan
+   paytda -- indicator o'zi ko'rsatadi), JS o'chiq holatda esa statik
+   CSS fon (pastroqda, `.nav-item.active`) baribir ishlaydi. */
+.nav-active-indicator {
+  position: absolute; left: 10px; right: 10px; top: 0; height: 0; opacity: 0;
+  background: var(--blue-bg); border-radius: var(--radius-lg); pointer-events: none;
+  transition: top 0.32s cubic-bezier(0.22,1,0.36,1), height 0.32s cubic-bezier(0.22,1,0.36,1), opacity 0.15s ease;
+}
+.js .nav-item.active { background: transparent; }
 .nav-group-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--text-faint); padding: 12px 10px 4px; white-space: nowrap; overflow: hidden;

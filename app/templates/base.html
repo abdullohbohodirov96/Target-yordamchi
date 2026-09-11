@@ -422,6 +422,87 @@
       });
       sidebar.addEventListener('mouseleave', function () { tooltip.hidden = true; });
     }
+
+    // 2026-09, foydalanuvchi so'rovi ("bo'limlar orasida o'tganda
+    // animatsiya bo'lsin, tepaga uchib chiqsin, pastga dumalab tushsin"):
+    // "suzuvchi" faol-band ko'rsatkichi -- CSS'dagi izohga qarang
+    // (`.nav-active-indicator`). Bu yerda: (1) sahifa yuklanganda, agar
+    // OLDINGI sahifadan saqlangan pozitsiya bo'lsa, indicator O'SHA joyda
+    // (animatsiyasiz) paydo bo'ladi, keyin bir freym o'tib YANGI faol
+    // bandga SILJIYDI (CSS transition orqali); (2) har bir nav-havolaga
+    // bosilganda, hozirgi faol bandning pozitsiyasi sessionStorage'ga
+    // yoziladi -- keyingi (yangi) sahifa aynan shu yerdan animatsiyani
+    // boshlaydi.
+    var navEl = sidebar.querySelector('.sidebar-nav');
+    if (navEl) {
+      var indicator = document.createElement('div');
+      indicator.className = 'nav-active-indicator';
+      navEl.insertBefore(indicator, navEl.firstChild);
+
+      var POS_KEY = 'target_crm_sidebar_indicator_top';
+
+      function currentActive() { return navEl.querySelector('.nav-item.active'); }
+
+      function measureTop(el) {
+        var navRect = navEl.getBoundingClientRect();
+        return (el.getBoundingClientRect().top - navRect.top) + navEl.scrollTop;
+      }
+
+      function placeIndicator(el, animate) {
+        if (!el) { indicator.style.opacity = '0'; return; }
+        var top = measureTop(el);
+        var height = el.getBoundingClientRect().height;
+        if (!animate) {
+          indicator.style.transition = 'none';
+          indicator.style.top = top + 'px';
+          indicator.style.height = height + 'px';
+          indicator.style.opacity = '1';
+          void indicator.offsetHeight; // reflow -- "none"ni haqiqatan qo'llash uchun
+          indicator.style.transition = '';
+        } else {
+          indicator.style.top = top + 'px';
+          indicator.style.height = height + 'px';
+          indicator.style.opacity = '1';
+        }
+      }
+
+      (function initIndicator() {
+        var active = currentActive();
+        if (!active) return;
+        var prevTop = null;
+        try { prevTop = sessionStorage.getItem(POS_KEY); } catch (e) {}
+        if (prevTop !== null && !isNaN(parseFloat(prevTop))) {
+          indicator.style.transition = 'none';
+          indicator.style.top = prevTop + 'px';
+          indicator.style.height = active.getBoundingClientRect().height + 'px';
+          indicator.style.opacity = '1';
+          void indicator.offsetHeight;
+          indicator.style.transition = '';
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { placeIndicator(active, true); });
+          });
+        } else {
+          placeIndicator(active, false);
+        }
+      })();
+
+      // Sidebar ochilib-yopilganda (hover/pin) yoki oyna o'lchami
+      // o'zgarganda -- band balandligi/kengligi o'zgarmasa ham, xavfsizlik
+      // uchun qayta o'lchaymiz (animatsiyasiz, shunchaki joyida tursin).
+      window.addEventListener('resize', function () { placeIndicator(currentActive(), false); });
+      sidebar.addEventListener('transitionend', function (e) {
+        if (e.propertyName === 'width') placeIndicator(currentActive(), false);
+      });
+
+      navEl.querySelectorAll('.nav-item[href]').forEach(function (link) {
+        link.addEventListener('click', function () {
+          var active = currentActive();
+          if (active) {
+            try { sessionStorage.setItem(POS_KEY, String(measureTop(active))); } catch (e) {}
+          }
+        });
+      });
+    }
   })();
   </script>
   {% endif %}
