@@ -5,89 +5,230 @@
 <div class="page-head">
   <div>
     <h1>Marketplace</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Boshqa xizmatlar/CRM'lar bilan ulanish -- hammasi shu yerda, bitta joyda.</p>
+    <p class="page-subtitle" style="margin-bottom:0">Boshqa xizmatlar va CRM'lar bilan ulanish — ilovani tanlang, keyin "Ulash" tugmasini bosing.</p>
   </div>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <h2>Meta Ads (Facebook + Instagram)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    {% if view.meta_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
-    &nbsp;Reklama xarajati, lead natijalari, Instagram xabarlar va SMM hisobot uchun.
-  </p>
-  <a href="{{ url_for('connect_accounts') }}" class="btn toggle-all-btn-outline">Akkauntlarni ulash &rarr;</a>
+<div class="app-grid" id="mp-grid">
+  <button type="button" class="app-card" data-panel="panel-meta">
+    <span class="app-icon" style="background:linear-gradient(135deg,#1877F2,#7C3AED)">M</span>
+    <span class="app-card-name">Meta Ads</span>
+    <span class="app-card-sub">Facebook + Instagram</span>
+    {% if view.meta_connected %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
+  </button>
+
+  <button type="button" class="app-card" data-panel="panel-telegram">
+    <span class="app-icon" style="background:linear-gradient(135deg,#29A9EB,#5FC1F0)">✈</span>
+    <span class="app-card-name">Telegram bot</span>
+    <span class="app-card-sub">Guruh bildirishnomalari</span>
+    {% if view.telegram_connected %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
+  </button>
+
+  <button type="button" class="app-card" data-panel="panel-crm"
+          data-crm="amoCRM" data-icon-bg="linear-gradient(135deg,#F2631F,#FFA451)" data-icon-text="amo">
+    <span class="app-icon" style="background:linear-gradient(135deg,#F2631F,#FFA451)">amo</span>
+    <span class="app-card-name">amoCRM</span>
+    <span class="app-card-sub">Lead almashish</span>
+    {% if view.webhook_out_crm_name == 'amoCRM' %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
+  </button>
+
+  <button type="button" class="app-card" data-panel="panel-crm"
+          data-crm="Bitrix24" data-icon-bg="linear-gradient(135deg,#00A3FF,#3DD1FF)" data-icon-text="B24">
+    <span class="app-icon" style="background:linear-gradient(135deg,#00A3FF,#3DD1FF)">B24</span>
+    <span class="app-card-name">Bitrix24</span>
+    <span class="app-card-sub">Lead almashish</span>
+    {% if view.webhook_out_crm_name == 'Bitrix24' %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
+  </button>
+
+  <button type="button" class="app-card" data-panel="panel-crm"
+          data-crm="Boshqa CRM" data-icon-bg="linear-gradient(135deg,#64748B,#94A3B8)" data-icon-text="🔌">
+    <span class="app-icon" style="background:linear-gradient(135deg,#64748B,#94A3B8)">🔌</span>
+    <span class="app-card-name">Boshqa CRM</span>
+    <span class="app-card-sub">Zapier, Make va h.k.</span>
+    {% if view.webhook_out_crm_name and view.webhook_out_crm_name not in ('amoCRM', 'Bitrix24') %}
+    <span class="badge badge-color-good app-card-badge">ulangan</span>
+    {% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
+  </button>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <h2>Telegram bot guruhi</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    {% if view.telegram_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
-    &nbsp;Kunlik hisobot, qayta-aloqa eslatmalari va Target boshqaruvi shu guruhga yuboriladi.
-  </p>
-  <a href="{{ url_for('connect_accounts') }}" class="btn toggle-all-btn-outline">Telegram guruhni ulash &rarr;</a>
+<!-- ============ Meta Ads paneli ============ -->
+<div id="panel-meta" class="app-detail" hidden>
+  <button type="button" class="app-detail-back" onclick="mpClose()">← Ilovalarga qaytish</button>
+  <div class="app-detail-head">
+    <span class="app-icon app-icon-lg" style="background:linear-gradient(135deg,#1877F2,#7C3AED)">M</span>
+    <div>
+      <h2 style="margin:0; font-size:17px">Meta Ads</h2>
+      <p class="page-subtitle" style="margin:2px 0 0">Facebook + Instagram — reklama xarajati, lead natijalari va Instagram xabarlar shu orqali keladi.</p>
+    </div>
+  </div>
+  <div class="card">
+    <p class="page-subtitle" style="margin:0 0 14px">
+      {% if view.meta_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+      &nbsp;Akkauntni ulash yoki almashtirish uchun quyidagi tugmani bosing.
+    </p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn">Ulash →</a>
+  </div>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <h2>CRM / boshqa tizimlar &mdash; chiquvchi ulanish</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    Yangi lead Replix'da paydo bo'lganda (Meta'dan, qo'lda kiritilgan yoki boshqa manbadan), shu manzilga avtomatik yuboriladi.
-    <strong>Deyarli har qanday CRM</strong> (amoCRM, Bitrix24 va h.k.) yoki avtomatlashtirish xizmati (Zapier, Make) bilan ishlaydi &mdash;
-    o'sha tizimda "webhook orqali qabul qilish" manzilini shu yerga qo'ysangiz bo'ldi.
-  </p>
+<!-- ============ Telegram paneli ============ -->
+<div id="panel-telegram" class="app-detail" hidden>
+  <button type="button" class="app-detail-back" onclick="mpClose()">← Ilovalarga qaytish</button>
+  <div class="app-detail-head">
+    <span class="app-icon app-icon-lg" style="background:linear-gradient(135deg,#29A9EB,#5FC1F0)">✈</span>
+    <div>
+      <h2 style="margin:0; font-size:17px">Telegram bot guruhi</h2>
+      <p class="page-subtitle" style="margin:2px 0 0">Kunlik hisobot, qayta-aloqa eslatmalari va Target boshqaruvi shu guruhga yuboriladi.</p>
+    </div>
+  </div>
+  <div class="card">
+    <p class="page-subtitle" style="margin:0 0 14px">
+      {% if view.telegram_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+      &nbsp;Guruhni ulash yoki almashtirish uchun quyidagi tugmani bosing.
+    </p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn">Ulash →</a>
+  </div>
+</div>
 
-  {% if view.webhook_out_url %}
-  <p class="text-faint" style="font-size:12.5px; margin:0 0 10px">
-    Holat:
-    {% if view.webhook_out_last_status == 'ok' %}<span class="badge badge-color-good">ishlayapti</span>
-    {% elif view.webhook_out_last_status == 'error' %}<span class="badge badge-color-bad">xato</span>
-    {% else %}<span class="badge">hali sinalmagan</span>{% endif %}
-    {% if view.webhook_out_last_at %} &middot; Oxirgi urinish: {{ view.webhook_out_last_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
-    {% if view.webhook_out_last_error %}<br><span style="color:var(--bad, #DC2626)">{{ view.webhook_out_last_error }}</span>{% endif %}
-  </p>
+<!-- ============ CRM paneli (amoCRM / Bitrix24 / Boshqa -- bitta umumiy shablon) ============ -->
+<div id="panel-crm" class="app-detail" hidden>
+  <button type="button" class="app-detail-back" onclick="mpClose()">← Ilovalarga qaytish</button>
+  <div class="app-detail-head">
+    <span class="app-icon app-icon-lg" id="crm-icon">?</span>
+    <div>
+      <h2 style="margin:0; font-size:17px" id="crm-title">CRM</h2>
+      <p class="page-subtitle" style="margin:2px 0 0">Deyarli har qanday CRM yoki avtomatlashtirish xizmati (amoCRM, Bitrix24, Zapier, Make va h.k.) bilan ishlaydi.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h2>1. Lead'larni <span class="crm-name-slot">CRM</span>'ga yuborish</h2>
+    <p class="page-subtitle" style="margin-top:-6px">
+      <span class="crm-name-slot">CRM</span> tizimida "Webhook orqali qabul qilish" / "Incoming webhook" manzilini toping va shu yerga joylashtiring.
+      Replix'da yangi lead paydo bo'lganda, shu manzilga avtomatik JSON yuboriladi.
+    </p>
+
+    {% if view.webhook_out_url %}
+    <p class="text-faint" style="font-size:12.5px; margin:0 0 10px">
+      Holat:
+      {% if view.webhook_out_last_status == 'ok' %}<span class="badge badge-color-good">ishlayapti</span>
+      {% elif view.webhook_out_last_status == 'error' %}<span class="badge badge-color-bad">xato</span>
+      {% else %}<span class="badge">hali sinalmagan</span>{% endif %}
+      {% if view.webhook_out_last_at %} &middot; Oxirgi urinish: {{ view.webhook_out_last_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      {% if view.webhook_out_last_error %}<br><span style="color:var(--bad, #DC2626)">{{ view.webhook_out_last_error }}</span>{% endif %}
+    </p>
+    {% endif %}
+
+    <form method="post" style="display:flex; flex-direction:column; gap:10px; max-width:620px">
+      <input type="hidden" name="action" value="set_outgoing">
+      <input type="hidden" name="crm_name" id="crm-name-input" value="{{ view.webhook_out_crm_name or '' }}">
+      <div class="field" style="margin:0">
+        <label>Webhook URL</label>
+        <input type="url" name="webhook_out_url" placeholder="https://..." value="{{ view.webhook_out_url or '' }}">
+      </div>
+      <div class="field" style="margin:0">
+        <label>Maxfiy kalit (ixtiyoriy)</label>
+        <input type="text" name="webhook_out_secret" placeholder="tekshirish uchun (ixtiyoriy)" value="{{ view.webhook_out_secret or '' }}">
+        <span class="text-faint" style="font-size:12px">Har bir so'rov bilan birga <code>X-Replix-Secret</code> sarlavhasida yuboriladi.</span>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+        <button type="submit" class="btn">Saqlash</button>
+        {% if view.webhook_out_url %}
+        <button type="submit" name="action" value="test_outgoing" formnovalidate class="toggle-all-btn toggle-all-btn-outline">Sinov yuborish</button>
+        {% endif %}
+      </div>
+    </form>
+    <p class="text-faint" style="font-size:12px; margin:10px 0 0">URL'ni bo'sh qoldirib "Saqlash" bossangiz, chiquvchi ulanish o'chadi. Yangi URL kiritilganda faqat SHU VAQTDAN KEYIN yaratiladigan lead'lar yuboriladi.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. <span class="crm-name-slot">CRM</span>'dan lead qabul qilish</h2>
+    <p class="page-subtitle" style="margin-top:-6px">
+      Quyidagi manzilni nusxalab, <span class="crm-name-slot">CRM</span> (yoki Zapier/Make ssenariysi)ning chiquvchi webhook sozlamasiga joylashtiring — kelgan ma'lumot avtomatik yangi lead sifatida Replix CRM'ga tushadi.
+      Manzil FAQAT sizning kompaniyangizga tegishli.
+    </p>
+
+    <div class="copy-field" style="margin:0 0 10px">
+      <input type="text" readonly value="{{ view.inbound_url }}" id="mp-inbound-url">
+      <button type="button" class="btn copy-btn" onclick="mpCopy('mp-inbound-url', this)">Nusxalash</button>
+    </div>
+    <p class="text-faint" style="font-size:12px; margin:0 0 14px">
+      Yuboriladigan JSON'da kamida <code>full_name</code> yoki <code>phone</code> bo'lishi kerak (<code>email</code>, <code>phone2</code>, <code>note</code> — ixtiyoriy; <code>name</code>/<code>telefon</code> kabi variantlar ham tanib olinadi).
+      {% if view.inbound_lead_last_at %}Oxirgi marta lead qabul qilingan: {{ view.inbound_lead_last_at.strftime('%Y-%m-%d %H:%M') }}.{% else %}Hali hech qanday lead qabul qilinmagan.{% endif %}
+    </p>
+
+    <form method="post" onsubmit="return confirm('Manzilni yangilashga ishonchingiz komilmi? Eski manzil ENDI ishlamay qoladi.');">
+      <input type="hidden" name="action" value="regenerate_inbound">
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Manzilni yangilash</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var CRM_TEXT = {
+    "amoCRM": {icon: "amo", bg: "linear-gradient(135deg,#F2631F,#FFA451)"},
+    "Bitrix24": {icon: "B24", bg: "linear-gradient(135deg,#00A3FF,#3DD1FF)"},
+    "Boshqa CRM": {icon: "🔌", bg: "linear-gradient(135deg,#64748B,#94A3B8)"}
+  };
+
+  function showPanel(id) {
+    document.querySelectorAll(".app-detail").forEach(function (p) { p.hidden = (p.id !== id); });
+    document.querySelectorAll(".app-card").forEach(function (c) { c.classList.remove("active"); });
+    var panel = document.getElementById(id);
+    if (panel) panel.scrollIntoView({behavior: "smooth", block: "start"});
+  }
+
+  document.querySelectorAll(".app-card").forEach(function (card) {
+    card.addEventListener("click", function () {
+      var target = card.getAttribute("data-panel");
+      var crm = card.getAttribute("data-crm");
+      if (crm) {
+        var info = CRM_TEXT[crm] || {icon: crm.slice(0, 3), bg: "linear-gradient(135deg,#64748B,#94A3B8)"};
+        document.getElementById("crm-title").textContent = crm;
+        document.getElementById("crm-icon").textContent = info.icon;
+        document.getElementById("crm-icon").style.background = info.bg;
+        document.getElementById("crm-name-input").value = crm;
+        document.querySelectorAll(".crm-name-slot").forEach(function (el) { el.textContent = crm; });
+      }
+      card.classList.add("active");
+      showPanel(target);
+    });
+  });
+
+  window.mpClose = function () {
+    document.querySelectorAll(".app-detail").forEach(function (p) { p.hidden = true; });
+    document.querySelectorAll(".app-card").forEach(function (c) { c.classList.remove("active"); });
+    document.getElementById("mp-grid").scrollIntoView({behavior: "smooth", block: "start"});
+  };
+
+  window.mpCopy = function (inputId, btn) {
+    var input = document.getElementById(inputId);
+    var text = input.value;
+    var done = function () {
+      var original = btn.textContent;
+      btn.textContent = "✓ Nusxalandi";
+      btn.classList.add("copied");
+      setTimeout(function () { btn.textContent = original; btn.classList.remove("copied"); }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {
+        input.select(); document.execCommand("copy"); done();
+      });
+    } else {
+      input.select(); document.execCommand("copy"); done();
+    }
+  };
+
+  // 2026-09: agar CRM webhook allaqachon sozlangan bo'lsa (masalan admin
+  // sahifani yangilab qaytsa), tegishli CRM panelini avtomatik ochiq
+  // ko'rsatish -- "qayerga sozlagan edim" deb qidirib yurmasin.
+  {% if view.webhook_out_crm_name %}
+  (function () {
+    var card = document.querySelector('.app-card[data-crm="{{ view.webhook_out_crm_name }}"]');
+    if (card) card.click();
+  })();
   {% endif %}
-
-  <form method="post" style="display:flex; flex-direction:column; gap:10px; max-width:620px">
-    <input type="hidden" name="action" value="set_outgoing">
-    <div class="field" style="margin:0">
-      <label>Webhook URL</label>
-      <input type="url" name="webhook_out_url" placeholder="https://..." value="{{ view.webhook_out_url or '' }}">
-    </div>
-    <div class="field" style="margin:0">
-      <label>Maxfiy kalit (ixtiyoriy)</label>
-      <input type="text" name="webhook_out_secret" placeholder="tekshirish uchun (ixtiyoriy)" value="{{ view.webhook_out_secret or '' }}">
-      <span class="text-faint" style="font-size:12px">Har bir so'rov bilan birga <code>X-Replix-Secret</code> sarlavhasida yuboriladi -- qabul qiluvchi tomon (agar tekshirmoqchi bo'lsa) shu qiymat bilan solishtirishi mumkin.</span>
-    </div>
-    <div style="display:flex; gap:10px; flex-wrap:wrap">
-      <button type="submit" class="btn">Saqlash</button>
-      {% if view.webhook_out_url %}
-      <button type="submit" name="action" value="test_outgoing" formnovalidate class="toggle-all-btn toggle-all-btn-outline">Sinov yuborish</button>
-      {% endif %}
-    </div>
-  </form>
-  <p class="text-faint" style="font-size:12px; margin:10px 0 0">URL'ni bo'sh qoldirib "Saqlash" bossangiz, chiquvchi ulanish o'chadi. Yangi URL kiritilganda faqat SHU VAQTDAN KEYIN yaratiladigan lead'lar yuboriladi -- eski lead'lar birdaniga yuborilib ketmaydi.</p>
-</div>
-
-<div class="card">
-  <h2>CRM / boshqa tizimlar &mdash; kiruvchi ulanish</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    Tashqi tizim (masalan boshqa saytdagi forma, Zapier/Make ssenariysi yoki CRM'ning o'zi) shu manzilga JSON yuborsa,
-    avtomatik yangi lead sifatida Replix CRM'ingizga tushadi. Manzil FAQAT sizning kompaniyangizga tegishli -- boshqa hech kim ko'rmaydi.
-  </p>
-
-  <div class="field" style="margin:0 0 10px">
-    <label>Sizning shaxsiy manzilingiz</label>
-    <input type="text" readonly value="{{ view.inbound_url }}" onclick="this.select()" style="font-family:monospace; font-size:12.5px">
-  </div>
-  <p class="text-faint" style="font-size:12px; margin:0 0 14px">
-    Yuboriladigan JSON'da kamida <code>full_name</code> yoki <code>phone</code> bo'lishi kerak (<code>email</code>, <code>phone2</code>, <code>note</code> &mdash; ixtiyoriy;
-    turli nom variantlari, masalan <code>name</code>/<code>telefon</code>/<code>phone_number</code>, ham tanib olinadi).
-    {% if view.inbound_lead_last_at %}Oxirgi marta lead qabul qilingan: {{ view.inbound_lead_last_at.strftime('%Y-%m-%d %H:%M') }}.{% else %}Hali hech qanday lead qabul qilinmagan.{% endif %}
-  </p>
-
-  <form method="post" onsubmit="return confirm('Manzilni yangilashga ishonchingiz komilmi? Eski manzil ENDI ishlamay qoladi -- uni ishlatgan tizimlarda ham yangilash kerak bo\'ladi.');">
-    <input type="hidden" name="action" value="regenerate_inbound">
-    <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Manzilni yangilash</button>
-  </form>
-</div>
+})();
+</script>
 
 {% endblock %}

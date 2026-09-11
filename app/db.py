@@ -183,6 +183,13 @@ class Company(Base):
     webhook_out_last_status = Column(String(16), nullable=True)  # "ok" | "error"
     webhook_out_last_at = Column(DateTime, nullable=True)
     webhook_out_last_error = Column(Text, nullable=True)
+    # 2026-09: Marketplace endi "Play Market" uslubidagi ilova-kataloglar
+    # ko'rinishida (amoCRM/Bitrix24/Boshqa har biri o'z kartasi/ikonkasi
+    # bilan) -- LEKIN texnik jihatdan ular BARCHASI xuddi shu bitta
+    # universal webhook mexanizmini ishlatadi (yuqoridagi `webhook_out_*`).
+    # Shu sabab qaysi CRM tanlanganini FAQAT ko'rsatish/belgi ("Ulangan:
+    # amoCRM") uchun eslab qolamiz -- bu ulanishning o'zini o'zgartirmaydi.
+    webhook_out_crm_name = Column(String(64), nullable=True)
     inbound_lead_token = Column(String(64), nullable=True, unique=True, index=True)
     inbound_lead_last_at = Column(DateTime, nullable=True)
 

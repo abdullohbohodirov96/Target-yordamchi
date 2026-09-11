@@ -1166,6 +1166,10 @@ def marketplace():
                 had_url_before = bool(c.webhook_out_url)
                 c.webhook_out_url = new_url
                 c.webhook_out_secret = request.form.get("webhook_out_secret", "").strip() or None
+                # 2026-09: qaysi "ilova kartasi" (amoCRM/Bitrix24/Boshqa)
+                # orqali sozlanganini eslab qolamiz -- faqat marketplace
+                # katalogida to'g'ri karta "ulangan" deb ko'rinishi uchun.
+                c.webhook_out_crm_name = (request.form.get("crm_name", "").strip() or None) if new_url else None
                 # 2026-09: chiquvchi webhook ENDI birinchi marta sozlanganda
                 # (avval bo'sh bo'lib, endi URL kiritilganda) -- BARCHA
                 # eski/mavjud lead'lar "allaqachon yuborilgan" deb
@@ -1217,6 +1221,7 @@ def marketplace():
         view = {
             "webhook_out_url": c.webhook_out_url,
             "webhook_out_secret": c.webhook_out_secret,
+            "webhook_out_crm_name": c.webhook_out_crm_name,
             "webhook_out_last_status": c.webhook_out_last_status,
             "webhook_out_last_at": c.webhook_out_last_at,
             "webhook_out_last_error": c.webhook_out_last_error,
