@@ -778,6 +778,25 @@ class IgDmMessage(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class CannedReply(Base):
+    """Instagram DM'ga javob yozishda ishlatiladigan TAYYOR shablon (2026-09,
+    foydalanuvchi so'rovi: "tayor ozini shablonlarini yaratib olish mumkin
+    bolsin ... chat ozida yozayotganda tezkorlik bilan qo'ya olsin"). Menejer
+    o'zi yaratadi/o'chiradi, kompaniya ichida BARCHA menejerlar bir xil
+    ro'yxatni ko'radi (bitta jamoaning umumiy tayyor javoblari). Matn
+    JS orqali (sahifa qayta yuklanmasdan) javob maydoniga bosish bilan
+    joylashtiriladi -- shuning uchun bu jadval faqat CRUD, alohida "yozish"
+    logikasi yo'q."""
+    __tablename__ = "canned_replies"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    title = Column(String(64), nullable=False)  # ro'yxatda ko'rinadigan qisqa nom, masalan "Narx so'ralganda"
+    text = Column(Text, nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
 class CustomField(Base):
     """Admin CRM anketa savollarini (lead'ni to'ldirishda menejer javob berishi
     kerak bo'lgan qo'shimcha maydonlarni) o'zi qo'sha/tahrirlay oladi -- kodga
@@ -920,12 +939,23 @@ class KVEntry(Base):
 # bilan bog'langan jadvalni QO'LDA tozalash kerak, chunki bu ustunlar oddiy
 # nullable FK (ORM darajasida `cascade="all, delete-orphan"` YO'Q) --
 # `session.delete(company)` o'zi bolalarini o'chirmaydi.
-_COMPANY_SCOPED_MODELS = [
-    Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost,
-    Competitor, CompetitorAd, AssistantUnanswered, MetaEventLog,
-    IgDmMessage, IgDmConversation, CustomField, FunnelStage,
-    StandingTask, StandingReport,
-]
+#
+# MUHIM (2026-09 BUG FIX -- xavfsizlik tekshiruvi paytida topilgan JIDDIY
+# muammo): bu yerda ILGARI o'zining ALOHIDA `_COMPANY_SCOPED_MODELS` ro'yxati
+# bor edi -- pastdagi (haqiqiy tenant-filtri, `_TENANT_FILTERED_MODELS`ning
+# asosi) ro'yxatdan MUSTAQIL, XUDDI SHU NOM bilan. Ikkinchisi modul
+# yuklanganda BIRINCHISINI "soyalab" (shadow) qo'yardi (Python'da bir xil
+# nom ikki marta belgilansa, oxirgisi qoladi) -- shuning uchun bu funksiya
+# aslida HAR DOIM pastdagi (tenant-filtri) ro'yxatdan foydalanib kelgan, bu
+# yerdagisi esa O'LIK kod edi. XAVFLI OQIBAT: kimdir shu yerdagi ro'yxatga
+# yangi jadval qo'shsa (masalan `CannedReply` xuddi shunday qilingan edi),
+# u FAQAT shu funksiyaga (cascade-delete) qo'shilgan deb o'ylardi, lekin
+# ASOSIY tenant-filtriga (har bir so'rovni kompaniya bo'yicha ChEKLASH)
+# UMUMAN qo'shilmagan bo'lib qolardi -- ya'ni yangi jadval boshqa
+# kompaniyalarga OCHIQ (kross-tenant ma'lumot sizib chiqishi) bo'lib
+# qolar edi. Endi BITTA manba (`_TENANT_FILTERED_MODELS`, pastga qarang) --
+# yangi jadval qo'shilganda faqat O'SHA yerga qo'shish kifoya, ikkalasi
+# (cascade-delete VA tenant-filtri) avtomatik sinxron qoladi.
 
 
 def delete_company_cascade(session, company_id: int) -> dict:
@@ -935,10 +965,11 @@ def delete_company_cascade(session, company_id: int) -> dict:
     faqat aniq tasdiqlangandan keyin (kompaniya nomi qo'lda kiritilgach)
     chaqirishi kerak -- bu yerda o'zi hech qanday tasdiqlash so'ramaydi.
     Natija -- jadval nomi -> o'chirilgan qatorlar soni lug'ati (log/xabar
-    uchun)."""
+    uchun). `_TENANT_FILTERED_MODELS`dan foydalanadi -- yuqoridagi izohga
+    qarang (bir yagona manba, cascade-delete VA tenant-filtri doim sinxron)."""
     counts: dict[str, int] = {}
     with unscoped():
-        for model in _COMPANY_SCOPED_MODELS:
+        for model in _TENANT_FILTERED_MODELS:
             n = session.query(model).filter(model.company_id == company_id).delete(synchronize_session=False)
             counts[model.__tablename__] = n
         # KVEntry -- alohida (company_id ustuni yo'q, `orchestrator.py`dagi
@@ -1026,7 +1057,7 @@ def _migrate_widen_columns() -> None:
 _COMPANY_SCOPED_MODELS = [
     Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost, Competitor,
     CompetitorAd, AssistantUnanswered, CustomField, FunnelStage, StandingTask,
-    StandingReport, IgDmConversation, IgDmMessage, MetaEventLog,
+    StandingReport, IgDmConversation, IgDmMessage, MetaEventLog, CannedReply,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

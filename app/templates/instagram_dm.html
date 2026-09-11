@@ -5,7 +5,13 @@
 <div class="page-head">
   <div>
     <h1>Instagram xabarlar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Instagram Direct (DM) suhbatlar -- javobsiz qolgan xabarlar va AI lid-sifat bahosi. Xarajatni nazorat qilish uchun AI bahosi DAVRIY (har 2-3 soatda) yangilanadi, real-vaqtda emas.</p>
+    <p class="page-subtitle" style="margin-bottom:0">Instagram Direct (DM) suhbatlar -- shu yerdan to'g'ridan-to'g'ri javob yozing. Javobsiz qolsa, {{ unanswered_alert_minutes }}+ daqiqadan so'ng Telegram guruhingizga ogohlantirish boradi.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('instagram_dm', refresh=1, c=selected_id) if selected_id else url_for('instagram_dm', refresh=1) }}" class="btn btn-outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M5 15a7 7 0 0011.9 3.1M19 9A7 7 0 007.1 5.9"/></svg>
+      Yangilash
+    </a>
   </div>
 </div>
 
@@ -13,13 +19,16 @@
 <div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
   <h2 class="text-bad">Instagram DM ulanmagan</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu bo'lim ishlashi uchun <code>META_ACCESS_TOKEN</code>/<code>META_PAGE_ID</code> allaqachon sozlangan bo'lishi
-    (SMM hisobot bilan bir xil), VA Instagram Business akkauntga xabar o'qish ruxsati
-    (<code>instagram_manage_messages</code>) berilgan bo'lishi kerak. O'z akkauntingiz uchun bu odatda Meta App
-    Dashboard → App Roles → "Instagram Testers" bo'limiga akkauntingizni tester sifatida qo'shish orqali (to'liq
-    ommaviy App Review shart emas) yoqiladi.
+    Bu bo'lim ishlashi uchun Marketplace bo'limida Meta (Facebook/Instagram) ulangan bo'lishi VA Instagram Business
+    akkauntga xabar o'qish/yozish ruxsati (<code>instagram_manage_messages</code>) berilgan bo'lishi kerak. O'z
+    akkauntingiz uchun bu odatda Meta App Dashboard → App Roles → "Instagram Testers" bo'limiga akkauntingizni
+    tester sifatida qo'shish orqali (to'liq ommaviy App Review shart emas) yoqiladi.
   </p>
 </div>
+{% endif %}
+
+{% if refresh_error %}
+<div class="flash flash-error" style="margin-bottom:20px">{{ refresh_error }}</div>
 {% endif %}
 
 {% if sync_status and sync_status.errors %}
@@ -34,10 +43,6 @@
   <div class="flash flash-error" style="margin-top:12px">
     {% for e in sync_status.errors %}<div>{{ e }}</div>{% endfor %}
   </div>
-  {# 2026-09, foydalanuvchi so'rovi ("smm hisobotida error bor shu yerdan
-     ulash mumkin bosin") -- SMM hisobotidagi bilan bir xil sabab (Facebook
-     ulanishi eski ruxsat to'plami bilan qilingan), shu sabab bu yerga ham
-     bir xil "Qayta ulash" tugmasi qo'shildi. #}
   <div style="margin-top:10px">
     {% if current_user.role == 'admin' %}
     <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
@@ -54,7 +59,6 @@
   <div class="kpi-card">
     <div class="kpi-label">Javobsiz</div>
     <div class="kpi-value {{ 'bad' if stats.unanswered_count else '' }}">{{ stats.unanswered_count }}</div>
-    <div class="text-faint" style="font-size:11px; margin-top:2px">{{ unanswered_alert_minutes }}+ daqiqa javobsiz bo'lsa Telegram'ga ogohlantirish boradi</div>
   </div>
   <div class="kpi-card"><div class="kpi-label">Bugungi yangi mijoz xabari</div><div class="kpi-value">{{ stats.new_customer_messages_today }}</div></div>
   <div class="kpi-card"><div class="kpi-label">🔥 Issiq lidlar</div><div class="kpi-value good">{{ stats.hot_count }}</div></div>
@@ -62,50 +66,166 @@
   <div class="kpi-card"><div class="kpi-label">❄️ Sovuq</div><div class="kpi-value text-dim">{{ stats.cold_count }}</div></div>
 </div>
 
-<div class="panel">
-  <div class="table-scroll">
-  <table>
-    <thead>
-      <tr>
-        <th>Mijoz</th>
-        <th>Oxirgi xabar</th>
-        <th>Kimdan</th>
-        <th>Holat</th>
-        <th>Lid sifati (AI)</th>
-        <th>Xulosa (AI)</th>
-      </tr>
-    </thead>
-    <tbody>
+<div class="dm-layout">
+  <div class="dm-list-panel panel">
+    <div class="dm-list-head">
+      <div class="dm-filter-tabs">
+        <a href="{{ url_for('instagram_dm') }}" class="dm-filter-tab {{ 'active' if not only_unanswered }}">Barchasi <span class="text-faint">{{ stats.total_conversations }}</span></a>
+        <a href="{{ url_for('instagram_dm', filter='unanswered') }}" class="dm-filter-tab {{ 'active' if only_unanswered }}">Javobsiz <span class="text-faint">{{ stats.unanswered_count }}</span></a>
+      </div>
+    </div>
+    <div class="dm-list">
       {% for c in conversations %}
-      <tr>
-        <td>{{ c.customer }}</td>
-        <td class="text-dim" style="max-width:280px; white-space:normal">
-          {{ c.last_message_text or '—' }}
-          {% if c.last_message_at %}<div class="text-faint" style="font-size:11px">{{ c.last_message_at.strftime('%d.%m %H:%M') }}</div>{% endif %}
-        </td>
-        <td>{% if c.last_message_from == 'customer' %}<span class="badge badge-color-blue">Mijoz</span>{% elif c.last_message_from == 'business' %}<span class="badge badge-color-dim">Biz</span>{% else %}—{% endif %}</td>
-        <td>
-          {% if c.is_unanswered %}
-          <span class="badge badge-color-bad">Javobsiz</span>
-          {% if c.unanswered_since %}<div class="text-faint" style="font-size:11px">{{ c.unanswered_since.strftime('%d.%m %H:%M') }}dan beri</div>{% endif %}
-          {% else %}
-          <span class="badge badge-color-good">Javob berilgan</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if c.ai_lead_quality == 'hot' %}<span class="badge badge-color-good">🔥 Issiq</span>
-          {% elif c.ai_lead_quality == 'warm' %}<span class="badge badge-color-blue">🌤 Iliq</span>
-          {% elif c.ai_lead_quality == 'cold' %}<span class="badge badge-color-dim">❄️ Sovuq</span>
-          {% else %}<span class="text-faint">{{ 'tahlil navbatida' if c.needs_analysis else 'hali tahlil qilinmagan' }}</span>{% endif %}
-          {% if c.ai_error %}<div class="text-bad" style="font-size:11px; margin-top:2px" title="{{ c.ai_error }}">AI xatosi</div>{% endif %}
-        </td>
-        <td class="text-dim" style="max-width:320px; white-space:normal">{{ c.ai_summary or '—' }}</td>
-      </tr>
+      <a href="{{ url_for('instagram_dm', c=c.id, filter=('unanswered' if only_unanswered else none)) }}"
+         class="dm-list-item {{ 'active' if selected_id == c.id }} {{ 'unanswered' if c.is_unanswered }}">
+        <div class="dm-list-item-top">
+          <span class="dm-list-item-name">{{ c.customer }}</span>
+          {% if c.last_message_at %}<span class="dm-list-item-time">{{ c.last_message_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
+        </div>
+        <div class="dm-list-item-preview">
+          {% if c.last_message_from == 'business' %}<span class="text-faint">Siz: </span>{% endif %}{{ c.last_message_text or '—' }}
+        </div>
+        <div class="dm-list-item-badges">
+          {% if c.is_unanswered %}<span class="badge badge-color-bad">Javobsiz</span>{% endif %}
+          {% if c.ai_lead_quality == 'hot' %}<span class="badge badge-color-good">🔥</span>
+          {% elif c.ai_lead_quality == 'warm' %}<span class="badge badge-color-blue">🌤</span>
+          {% elif c.ai_lead_quality == 'cold' %}<span class="badge badge-color-dim">❄️</span>{% endif %}
+        </div>
+      </a>
       {% else %}
-      <tr class="empty-row"><td colspan="6">Hali Instagram DM suhbati yo'q (yoki hali sinxronlanmagan).</td></tr>
+      <div class="dm-empty">
+        <p>{{ "Hali Instagram DM suhbati yo'q." if configured else "Instagram hali ulanmagan." }}</p>
+        {% if configured %}<a href="{{ url_for('instagram_dm', refresh=1) }}" class="text-blue">Hozir tekshirib ko'rish</a>{% endif %}
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+  </div>
+
+  <div class="dm-thread-panel panel">
+    {% if selected %}
+    <div class="dm-thread-header">
+      <div>
+        <strong>{{ selected.customer }}</strong>
+        <div class="text-faint" style="font-size:12px">Instagram orqali
+          {% if selected.ai_lead_quality == 'hot' %} · <span class="text-good">🔥 Issiq lid</span>
+          {% elif selected.ai_lead_quality == 'warm' %} · <span class="text-blue">🌤 Iliq lid</span>
+          {% elif selected.ai_lead_quality == 'cold' %} · <span class="text-dim">❄️ Sovuq lid</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% if selected.ai_summary %}
+    <div class="dm-ai-summary"><strong>AI xulosasi:</strong> {{ selected.ai_summary }}</div>
+    {% endif %}
+    <div class="dm-messages">
+      {% for m in messages %}
+      <div class="dm-bubble-row {{ 'from-business' if m.sender == 'business' else 'from-customer' }}">
+        <div class="dm-bubble">
+          <div class="dm-bubble-text">{{ m.text or '—' }}</div>
+          {% if m.sent_at %}<div class="dm-bubble-time">{{ m.sent_at.strftime('%d.%m %H:%M') }}</div>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="dm-empty"><p>Bu suhbatda hali xabar yo'q.</p></div>
+      {% endfor %}
+    </div>
+
+    {% if canned_replies %}
+    <div class="dm-templates" id="dmTemplates">
+      {% for t in canned_replies %}
+      <button type="button" class="dm-template-chip" data-text="{{ t.text }}">{{ t.title }}</button>
+      {% endfor %}
+      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">⚙ Shablonlar</button>
+    </div>
+    {% else %}
+    <div class="dm-templates">
+      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">+ Shablon yaratish</button>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('instagram_dm_reply') }}" class="dm-composer">
+      <input type="hidden" name="conversation_id" value="{{ selected.id }}">
+      <textarea name="text" id="dmReplyText" placeholder="Xabar yozing..." rows="2" required></textarea>
+      <button type="submit" class="btn">Yuborish</button>
+    </form>
+    {% else %}
+    <div class="dm-empty dm-empty-center">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:40px;height:40px;opacity:0.3"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.465L3 21l1.633-4.276C3.6 15.36 3 13.73 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      <p>Chap tomondan suhbatni tanlang</p>
+    </div>
+    {% endif %}
   </div>
 </div>
+
+<!-- Shablonlarni boshqarish (2026-09, foydalanuvchi so'rovi: "tayor ozini
+     shablonlarini yaratib olish mumkin bolsin usha chat ozida text
+     yozvotkanda tezkrolik bilan vsavit qila olsin") -->
+<div class="modal-overlay" id="dmTemplateModal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2>Javob shablonlari</h2>
+      <button type="button" class="modal-close" id="dmTemplateModalClose" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="page-subtitle" style="margin-top:-6px">Tayyor javoblar -- yaratib qo'ysangiz, keyin javob yozayotganda bitta bosish bilan matnga qo'shib olasiz. Butun jamoa (barcha menejerlar) bir xil ro'yxatni ko'radi.</p>
+
+      {% if canned_replies %}
+      <div style="margin-bottom:16px">
+        {% for t in canned_replies %}
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--border-light)">
+          <div>
+            <div style="font-weight:600; font-size:13.5px">{{ t.title }}</div>
+            <div class="text-dim" style="font-size:13px; margin-top:2px">{{ t.text }}</div>
+          </div>
+          <form method="post" action="{{ url_for('instagram_dm_templates') }}" style="flex-shrink:0" onsubmit="return confirm('&#39;{{ t.title }}&#39; shabloni o\'chirilsinmi?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="template_id" value="{{ t.id }}">
+            <input type="hidden" name="c" value="{{ selected_id or '' }}">
+            <button type="submit" class="text-bad" style="background:none; border:none; padding:0; font:inherit; cursor:pointer">O'chirish</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('instagram_dm_templates') }}">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="c" value="{{ selected_id or '' }}">
+        <div class="field"><label>Shablon nomi</label><input type="text" name="title" placeholder="Masalan: Narx so'ralganda" required maxlength="64"></div>
+        <div class="field"><label>Matni</label><textarea name="text" rows="3" placeholder="Tayyor javob matni..." required></textarea></div>
+        <button type="submit" class="block">Shablon qo'shish</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var replyText = document.getElementById('dmReplyText');
+  document.querySelectorAll('.dm-template-chip[data-text]').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      if (!replyText) return;
+      var text = chip.getAttribute('data-text');
+      var cur = replyText.value;
+      replyText.value = cur ? (cur.replace(/\s+$/, '') + '\n' + text) : text;
+      replyText.focus();
+      replyText.selectionStart = replyText.selectionEnd = replyText.value.length;
+    });
+  });
+
+  var modal = document.getElementById('dmTemplateModal');
+  var openBtn = document.getElementById('dmTemplateManageBtn');
+  var closeBtn = document.getElementById('dmTemplateModalClose');
+  if (modal && openBtn) {
+    openBtn.addEventListener('click', function () { modal.classList.add('open'); });
+    closeBtn.addEventListener('click', function () { modal.classList.remove('open'); });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('open'); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') modal.classList.remove('open'); });
+  }
+
+  var messages = document.querySelector('.dm-messages');
+  if (messages) messages.scrollTop = messages.scrollHeight;
+})();
+</script>
 {% endblock %}

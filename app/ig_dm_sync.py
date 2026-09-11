@@ -84,6 +84,20 @@ def _get_ig_business_id(*, page_id: str | None = None, access_token: str | None 
             _ig_business_id_cache[cache_key] = meta_api.get_instagram_business_account_id(page_id=page_id, access_token=access_token)
         except meta_api.MetaAPIError:
             _ig_business_id_cache[cache_key] = None
+        except Exception:
+            # 2026-09: TARMOQ darajasidagi xato (proxy/timeout/ulanish uzilishi)
+            # `MetaAPIError` EMAS. Avval bu yerda tutilmagan bo'lsa ham fon
+            # vazifasi (`sync_all_companies`) tashqi `except Exception`i orqali
+            # yutilardi -- lekin YANGI "chatni ochganda darhol yangilash"
+            # (`refresh_conversation`) va "Yangilash" tugmasi ENDI shu
+            # funksiyani to'g'ridan-to'g'ri HTTP so'rov ichida chaqiradi:
+            # tutilmagan tarmoq xatosi butun "Instagram xabarlar" sahifasini
+            # 500 bilan qulatib qo'yishi mumkin edi. Endi jim yutiladi
+            # (keshga None yoziladi) -- chaqiruvchi buni "hozircha aniqlab
+            # bo'lmadi" deb talqin qiladi, sahifa saqlangan holatni ko'rsatib
+            # davom etadi.
+            logger.exception("IG DM: Instagram Business ID olishda tarmoq xatosi (page_id=%s)", page_id)
+            _ig_business_id_cache[cache_key] = None
     return _ig_business_id_cache[cache_key]
 
 
@@ -106,6 +120,64 @@ def _friendly_meta_error(e: meta_api.MetaAPIError) -> str:
             "App Roles -> Instagram Testers ro'yxatida borligini) tekshiring."
         )
     return message
+
+
+def friendly_send_error(e: meta_api.MetaAPIError) -> str:
+    """`_friendly_meta_error()` bilan bir xil maqsad, lekin O'QISH emas
+    YOZISH (menejer javob yuborganda) uchun -- 2026-09, foydalanuvchi
+    so'rovi: "manager jovob berolidigan qilishim kerak". Bu yerda ENG KO'P
+    uchraydigan xato boshqacha: Meta'ning "24 soatlik javob berish oynasi"
+    qoidasi (mijoz 24 soatdan ko'proq oldin yozgan bo'lsa, oddiy matn javobi
+    rad etiladi -- Meta'ning rasmiy siyosati, kod xatosi emas)."""
+    meta_err = e.args[0] if e.args else {}
+    message = meta_err.get("message", str(e)) if isinstance(meta_err, dict) else str(e)
+    code = meta_err.get("code") if isinstance(meta_err, dict) else None
+    subcode = meta_err.get("error_subcode") if isinstance(meta_err, dict) else None
+    lower_msg = message.lower()
+    if subcode == 2018278 or "outside of allowed window" in lower_msg or ("24" in message and "hour" in lower_msg):
+        return (
+            "Bu mijozga javob yozib bo'lmadi -- Meta'ning 24 soatlik javob berish oynasi o'tib ketgan "
+            "(mijoz 24 soatdan ko'proq oldin yozgan). BU KODDAGI XATO EMAS -- Meta'ning barcha "
+            "Instagram/Messenger biznes akkauntlari uchun majburiy siyosati (spam'dan himoya). "
+            "Mijoz yangi xabar yozsa, javob berish oynasi qayta ochiladi."
+        )
+    if code in (10, 200, 294) or "permission" in lower_msg:
+        return (
+            f"Instagram DM'ga yozish uchun ruxsat yetarli emas (Meta xatosi: \"{message}\"). "
+            "Meta App Dashboard'da tokenga 'instagram_manage_messages' ruxsati borligini tekshiring."
+        )
+    return message
+
+
+def refresh_conversation(company, conversation) -> dict:
+    """Bitta suhbatni Meta'dan DARHOL (navbatdagi 15 daqiqalik sinxronizatsiyani
+    kutmasdan) yangilaydi -- 2026-09, foydalanuvchi so'rovi: "gaplashish joyini
+    suhbat oborilsin shu yerda" -- menejer chatni ochganda eng so'nggi
+    xabarlarni ko'rishi kerak. AI ishlatilmaydi (arzon, faqat Graph API
+    o'qish), va faqat BITTA (aynan ochilgan) suhbat uchun -- butun ro'yxatni
+    qayta tortish shart emas. Qaytaradi: {"ok": bool, "error": str|None}."""
+    if not is_configured(company):
+        return {"ok": False, "error": None}
+    session = get_session()
+    try:
+        ig_business_id = _get_ig_business_id(page_id=company.meta_page_id, access_token=company.get_meta_access_token())
+        try:
+            _upsert_conversation_and_messages(
+                session, {"id": conversation.external_id, "participants": {"data": []}}, ig_business_id,
+                company_id=conversation.company_id, page_id=company.meta_page_id, access_token=company.get_meta_access_token(),
+            )
+        except meta_api.MetaAPIError as e:
+            return {"ok": False, "error": _friendly_meta_error(e)}
+        except Exception as e:
+            # Tarmoq/proxy darajasidagi xato -- `_get_ig_business_id`dagi bilan
+            # bir xil sabab: bu funksiya HTTP so'rov ichida chaqiriladi, shuning
+            # uchun sahifani qulatmasdan, jim "yangilab bo'lmadi" deb qaytishi
+            # kerak (saqlangan eski holat baribir ko'rsatiladi).
+            logger.exception("IG DM: suhbatni jonli yangilashda kutilmagan xato (conversation_id=%s)", conversation.id)
+            return {"ok": False, "error": meta_api.safe_error_message(e)}
+        return {"ok": True, "error": None}
+    finally:
+        session.close()
 
 
 def _upsert_conversation_and_messages(

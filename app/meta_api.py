@@ -1330,3 +1330,26 @@ def get_instagram_conversation_messages(conversation_id: str, limit: int = 40, *
         "fields": f"messages.limit({limit}){{id,message,created_time,from,to}}",
     }, token=_get_page_access_token(page_id, access_token))
     return ((data.get("messages") or {}).get("data")) or []
+
+
+def send_instagram_message(recipient_ig_id: str, text: str, *, page_id: str | None = None, access_token: str | None = None) -> dict:
+    """Instagram Direct'ga menejer ilova ICHIDAN yozgan javobni yuboradi
+    (2026-09, foydalanuvchi so'rovi: "habarlar joyida ... manager jovob
+    berolidigan qilishim kerak" -- avval bu modul FAQAT o'qir edi). Meta'ning
+    "Send API"si -- Messenger bilan bir xil endpoint (`/{page_id}/messages`),
+    IGSID orqali qabul qiluvchi avtomatik Instagram deb aniqlanadi, alohida
+    `platform` parametri shart emas.
+
+    MUHIM: Meta "24 soatlik javob berish oynasi" siyosatini qo'llaydi --
+    mijoz OXIRGI xabar yuborganidan 24 soatdan ko'p vaqt o'tgan bo'lsa,
+    oddiy matn javobi RAD ETILADI. BU KOD XATOSI EMAS -- Meta'ning barcha
+    Instagram/Messenger biznes akkauntlari uchun majburiy (spam'dan himoya)
+    siyosati; chaqiruvchi (`app.py`) bu xatoni `ig_dm_sync.friendly_send_error()`
+    orqali tushunarli qilib ko'rsatadi."""
+    resolved_page_id = page_id or PAGE_ID
+    payload = {
+        "recipient": {"id": recipient_ig_id},
+        "message": {"text": text},
+        "messaging_type": "RESPONSE",
+    }
+    return _post(f"{resolved_page_id}/messages", payload, token=_get_page_access_token(page_id, access_token))

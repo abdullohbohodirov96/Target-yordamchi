@@ -37,7 +37,7 @@ import permissions
 import plans
 import lang as lang_module
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company, IgDmConversation, IgDmMessage, CannedReply
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_sync
 import call_sync
@@ -4899,24 +4899,205 @@ def smm_report():
 @login_required
 @module_required("target")
 def instagram_dm():
-    """Instagram Direct (DM) suhbatlari -- lid-sifat bahosi (AI, davriy) va
-    javobsiz qolgan xabarlar ro'yxati (2026-08, foydalanuvchi so'rovi: "ig
-    chatlarni tahlilini ham qoshish kerak"). `ig_dm_sync.py` har 15
-    daqiqada Meta'dan yangilaydi, `ig_dm_analysis.py` har 2-3 soatda AI
-    bahosini yangilaydi -- bu sahifa faqat ALLAQACHON saqlangan holatni
-    ko'rsatadi (o'zi hech qanday tashqi so'rov yubormaydi)."""
+    """Instagram Direct (DM) suhbatlari -- to'liq gaplashish oynasi (2026-09,
+    foydalanuvchi so'rovi: "habarlar joyida bombosh ... manager jovob
+    berolidigan qilishim kerak ... gaplashish joyini suhbat oborilsin shu
+    yerda"): chap tomonda suhbatlar ro'yxati, o'ng tomonda tanlangan
+    suhbatning to'liq yozishmasi + menejer javob yoza oladigan maydon
+    (`instagram_dm_reply` route'i yuboradi).
+
+    `ig_dm_sync.py` fonda har 15 daqiqada Meta'dan yangilaydi,
+    `ig_dm_analysis.py` har 2-3 soatda AI bahosini yangilaydi -- BU sahifa
+    odatda ALLAQACHON saqlangan holatni ko'rsatadi, lekin ikkita ISTISNO
+    bor (ikkalasi ham AI ISHLATMAYDI, faqat arzon Graph API o'qish):
+      - `?c=<id>` bilan bitta suhbat ochilganda -- SHU suhbat darhol
+        Meta'dan yangilanadi (`ig_dm_sync.refresh_conversation`), chunki
+        menejer ochib o'tirgan chatda eski xabar ko'rinishi yaramaydi.
+      - `?refresh=1` bilan -- BUTUN ro'yxat qo'lda qayta tortiladi
+        (`ig_dm_sync.sync_once`) -- "nega bombosh" degan holatni menejer
+        o'zi darhol tekshirib ko'rishi uchun (15 daqiqa kutmasdan)."""
+    company = _current_company()
+    selected_id = request.args.get("c", type=int)
+    only_unanswered = request.args.get("filter") == "unanswered"
+    refresh_error = None
+
+    if company is not None and request.args.get("refresh"):
+        try:
+            result = ig_dm_sync.sync_once(company=_MetaCreds(company))
+        except Exception as e:
+            # Tarmoq/proxy darajasidagi kutilmagan xato -- bu tugma HTTP
+            # so'rov ichida chaqiriladi, shuning uchun sahifani 500 bilan
+            # qulatmasdan, xatoni banner sifatida ko'rsatishi kerak.
+            logger.exception("IG DM: qo'lda 'Yangilash' bosilganda kutilmagan xato")
+            result = {"errors": [meta_api.safe_error_message(e)]}
+        if result.get("errors"):
+            refresh_error = result["errors"][0]
+        elif not result.get("configured"):
+            pass
+        else:
+            flash(f"Yangilandi -- {result.get('conversations_checked', 0)} suhbat tekshirildi, {result.get('new_messages', 0)} yangi xabar.", "success")
+
     session = get_session()
     try:
+        if company is not None and selected_id:
+            conv = session.get(IgDmConversation, selected_id)
+            if conv is not None and ig_dm_sync.is_configured(company):
+                live = ig_dm_sync.refresh_conversation(company, conv)
+                if live.get("error"):
+                    refresh_error = live["error"]
+                session.expire_all()  # refresh_conversation boshqa session'da commit qildi -- shu yerdagi keshni tozalash kerak
+
         report = ig_dm_analytics.build_dm_report(session)
+
+        selected = None
+        messages = []
+        if selected_id:
+            selected = next((c for c in report["conversations"] if c["id"] == selected_id), None)
+            if selected:
+                msg_rows = (
+                    session.query(IgDmMessage)
+                    .filter_by(conversation_id=selected_id)
+                    .order_by(IgDmMessage.sent_at.asc(), IgDmMessage.id.asc())
+                    .all()
+                )
+                messages = [{"sender": m.sender, "text": m.text, "sent_at": m.sent_at} for m in msg_rows]
+
+        templates_rows = (
+            session.query(CannedReply)
+            .order_by(CannedReply.sort_order.asc(), CannedReply.id.asc())
+            .all()
+        ) if company is not None else []
+        canned_replies = [{"id": t.id, "title": t.title, "text": t.text} for t in templates_rows]
     finally:
         session.close()
+
+    conversations = report["conversations"]
+    if only_unanswered:
+        conversations = [c for c in conversations if c["is_unanswered"]]
+
     return render_template(
         "instagram_dm.html",
-        configured=ig_dm_sync.is_configured(),
-        sync_status=ig_dm_sync.get_last_status(),
+        configured=ig_dm_sync.is_configured(company) if company is not None else False,
+        sync_status=ig_dm_sync.get_last_status(company.id if company is not None else None),
         unanswered_alert_minutes=ig_dm_sync.UNANSWERED_ALERT_MINUTES,
-        **report,
+        stats=report["stats"],
+        conversations=conversations,
+        selected=selected,
+        selected_id=selected_id,
+        messages=messages,
+        only_unanswered=only_unanswered,
+        canned_replies=canned_replies,
+        refresh_error=refresh_error,
     )
+
+
+class _MetaCreds:
+    """`ig_dm_sync.sync_once(company=...)`ga uzatish uchun yengil obyekt --
+    `_current_company()` allaqachon session'dan uzilgan (expunged) qator
+    qaytaradi, lekin `sync_once` faqat uchta maydonni (`id`,
+    `meta_page_id`, `meta_access_token` -- DEKODLANGAN holda) kutadi
+    (`ig_dm_sync._CompanyCreds` bilan bir xil naqsh)."""
+    def __init__(self, company):
+        self.id = company.id
+        self.meta_page_id = company.meta_page_id
+        self.meta_access_token = company.get_meta_access_token()
+
+
+@app.route("/instagram-xabarlar/reply", methods=["POST"])
+@login_required
+@module_required("target")
+def instagram_dm_reply():
+    """Menejer Instagram DM suhbatiga to'g'ridan-to'g'ri ilova ICHIDAN javob
+    yozadi (2026-09, foydalanuvchi so'rovi: "bu yerda manager jovob
+    berolidigan qilishim kerak"). Meta'ning "Send API"siga yuboradi
+    (`meta_api.send_instagram_message`), muvaffaqiyatli bo'lsa yozishma
+    tarixiga ("business" sifatida) saqlaydi va suhbatni "javob berilgan"
+    holatiga o'tkazadi -- keyingi 15 daqiqalik fon sinxronizatsiyasini
+    kutish shart emas."""
+    conversation_id = request.form.get("conversation_id", type=int)
+    text = (request.form.get("text") or "").strip()
+    company = _current_company()
+
+    if not conversation_id or not text:
+        flash("Xabar matni bo'sh bo'lishi mumkin emas.", "error")
+        return redirect(url_for("instagram_dm", c=conversation_id))
+
+    if company is None or not ig_dm_sync.is_configured(company):
+        flash("Instagram ulanmagan -- javob yuborib bo'lmadi.", "error")
+        return redirect(url_for("instagram_dm", c=conversation_id))
+
+    session = get_session()
+    try:
+        conv = session.get(IgDmConversation, conversation_id)
+        if conv is None or not conv.customer_ig_id:
+            flash("Bu suhbat topilmadi (yoki mijozning Instagram ID'i noma'lum).", "error")
+            return redirect(url_for("instagram_dm", c=conversation_id))
+
+        try:
+            meta_api.send_instagram_message(
+                conv.customer_ig_id, text,
+                page_id=company.meta_page_id, access_token=company.get_meta_access_token(),
+            )
+        except meta_api.MetaAPIError as e:
+            flash(ig_dm_sync.friendly_send_error(e), "error")
+            return redirect(url_for("instagram_dm", c=conversation_id))
+
+        now = dt.datetime.utcnow()
+        session.add(IgDmMessage(
+            conversation_id=conv.id, sender="business", text=text,
+            sent_at=now, company_id=conv.company_id,
+        ))
+        conv.message_count = (conv.message_count or 0) + 1
+        conv.last_message_at = now
+        conv.last_message_text = text
+        conv.last_message_from = "business"
+        conv.is_unanswered = False
+        conv.unanswered_since = None
+        conv.unanswered_alert_sent_at = None
+        session.commit()
+        flash("Javob yuborildi.", "success")
+    finally:
+        session.close()
+
+    return redirect(url_for("instagram_dm", c=conversation_id))
+
+
+@app.route("/instagram-xabarlar/templates", methods=["POST"])
+@login_required
+@module_required("target")
+def instagram_dm_templates():
+    """Tayyor javob shablonlarini (2026-09, foydalanuvchi so'rovi: "tayor
+    ozini shablonlarini yaratib olish mumkin bolsin") qo'shish/o'chirish --
+    butun kompaniya uchun umumiy (har bir menejer bir xil ro'yxatni
+    ko'radi/ishlatadi)."""
+    company = _current_company()
+    action = request.form.get("action")
+    selected_id = request.form.get("c", type=int)
+
+    if company is not None:
+        session = get_session()
+        try:
+            if action == "add":
+                title = (request.form.get("title") or "").strip()
+                text = (request.form.get("text") or "").strip()
+                if title and text:
+                    max_order = session.query(CannedReply).count()
+                    session.add(CannedReply(company_id=company.id, title=title, text=text, sort_order=max_order))
+                    session.commit()
+                    flash("Shablon qo'shildi.", "success")
+                else:
+                    flash("Shablon nomi va matni to'ldirilishi kerak.", "error")
+            elif action == "delete":
+                template_id = request.form.get("template_id", type=int)
+                t = session.get(CannedReply, template_id) if template_id else None
+                if t:
+                    session.delete(t)
+                    session.commit()
+                    flash("Shablon o'chirildi.", "success")
+        finally:
+            session.close()
+
+    return redirect(url_for("instagram_dm", c=selected_id) if selected_id else url_for("instagram_dm"))
 
 
 # ---------------------------------------------------------------------------
