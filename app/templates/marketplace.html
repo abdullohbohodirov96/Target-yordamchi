@@ -10,13 +10,16 @@
 </div>
 
 <div class="app-grid" id="mp-grid">
-  {# 2026-09, foydalanuvchi so'rovi ("servicelani ozini ikonkasin qoy" --
-     harf-belgili "M"/"🔌" o'rniga xizmatning O'ZIGA XOS, tanib olinadigan
-     shakli): Meta uchun rasmiy "infinity" belgisiga o'xshash chiziqli
-     SVG, Telegram uchun qog'oz-samolyot SVG (emoji '✈' o'rniga -- emoji
-     ekrandan-ekranga/OS'dan-OS'ga boshqacha ko'rinadi va past sifatli
-     chiqadi). Ikkalasi ham soddalashtirilgan, umumiy taniqli
-     piktogrammalar -- aniq logotip fayli emas. #}
+  {# 2026-09, foydalanuvchi so'rovi ("servicelani ozini ikonkasin qoy ...
+     harbiri" -- HAR BIR karta uchun harf-belgi/emoji o'rniga xizmatning
+     mazmuniga mos, tanib olinadigan shakl): Meta -- "infinity" belgisiga
+     o'xshash chiziqli SVG; Telegram -- qog'oz-samolyot SVG (emoji '✈'
+     o'rniga -- ekrandan-ekranga boshqacha/past sifatli chiqadi); amoCRM --
+     lead-voronkasi (funnel) belgisi; Bitrix24 -- ustunli board/kanban
+     belgisi; Boshqa CRM -- vilka (ulanish) belgisi. Barchasi
+     soddalashtirilgan, umumiy piktogrammalar -- aniq logotip fayli EMAS
+     (mualliflik huquqi muammosisiz, lekin harf-belgidan ko'ra ancha
+     "haqiqiy ilova" hissini beradi). #}
   <button type="button" class="app-card" data-panel="panel-meta">
     <span class="app-icon" style="background:linear-gradient(135deg,#1877F2,#7C3AED)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M6.7 8.2c-2.6 0-4.7 2.1-4.7 4.8s2.1 4.8 4.7 4.8c2.1 0 3.5-1.5 4.7-3.2.3-.4.6-.8.9-1.3.2.3.4.6.6.9 1.2 1.8 2.7 3.6 4.9 3.6 2.6 0 4.7-2.1 4.7-4.8s-2.1-4.8-4.7-4.8c-2.1 0-3.5 1.5-4.7 3.2-.3.4-.6.8-.9 1.3-.2-.3-.4-.6-.6-.9-1.2-1.8-2.7-3.6-4.9-3.6z"/></svg></span>
     <span class="app-card-name">Meta Ads</span>
@@ -32,16 +35,16 @@
   </button>
 
   <button type="button" class="app-card" data-panel="panel-crm"
-          data-crm="amoCRM" data-icon-bg="linear-gradient(135deg,#F2631F,#FFA451)" data-icon-text="amo">
-    <span class="app-icon" style="background:linear-gradient(135deg,#F2631F,#FFA451)">amo</span>
+          data-crm="amoCRM" data-icon-bg="linear-gradient(135deg,#F2631F,#FFA451)">
+    <span class="app-icon" style="background:linear-gradient(135deg,#F2631F,#FFA451)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6 8v6l-4 2v-8L4 4z"/></svg></span>
     <span class="app-card-name">amoCRM</span>
     <span class="app-card-sub">Lead almashish</span>
     {% if view.webhook_out_crm_name == 'amoCRM' %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
   </button>
 
   <button type="button" class="app-card" data-panel="panel-crm"
-          data-crm="Bitrix24" data-icon-bg="linear-gradient(135deg,#00A3FF,#3DD1FF)" data-icon-text="B24">
-    <span class="app-icon" style="background:linear-gradient(135deg,#00A3FF,#3DD1FF)">B24</span>
+          data-crm="Bitrix24" data-icon-bg="linear-gradient(135deg,#00A3FF,#3DD1FF)">
+    <span class="app-icon" style="background:linear-gradient(135deg,#00A3FF,#3DD1FF)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15M15 4.5v15"/></svg></span>
     <span class="app-card-name">Bitrix24</span>
     <span class="app-card-sub">Lead almashish</span>
     {% if view.webhook_out_crm_name == 'Bitrix24' %}<span class="badge badge-color-good app-card-badge">ulangan</span>{% else %}<span class="badge app-card-badge">ulanmagan</span>{% endif %}
@@ -183,9 +186,11 @@
 <script>
 (function () {
   var PLUG_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4M15 3v4M6 7h12l-1 5a5 5 0 01-10 0L6 7z"/><path d="M12 16v5"/></svg>';
+  var FUNNEL_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6 8v6l-4 2v-8L4 4z"/></svg>';
+  var BOARD_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15M15 4.5v15"/></svg>';
   var CRM_TEXT = {
-    "amoCRM": {icon: "amo", bg: "linear-gradient(135deg,#F2631F,#FFA451)"},
-    "Bitrix24": {icon: "B24", bg: "linear-gradient(135deg,#00A3FF,#3DD1FF)"},
+    "amoCRM": {icon: FUNNEL_ICON_SVG, bg: "linear-gradient(135deg,#F2631F,#FFA451)"},
+    "Bitrix24": {icon: BOARD_ICON_SVG, bg: "linear-gradient(135deg,#00A3FF,#3DD1FF)"},
     "Boshqa CRM": {icon: PLUG_ICON_SVG, bg: "linear-gradient(135deg,#64748B,#94A3B8)"}
   };
 
