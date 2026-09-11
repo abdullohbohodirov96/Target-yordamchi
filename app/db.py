@@ -914,6 +914,49 @@ class KVEntry(Base):
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
 
 
+# 2026-09, foydalanuvchi so'rovi: "kompaniyalarni o'chirib tashlash chiqar"
+# -- ro'yxatda ilgari FAQAT "Yoqish/To'xtatish" (Company.is_active, hech
+# narsa o'chirmaydi) bor edi. Haqiqiy O'CHIRISH uchun har bir `company_id`
+# bilan bog'langan jadvalni QO'LDA tozalash kerak, chunki bu ustunlar oddiy
+# nullable FK (ORM darajasida `cascade="all, delete-orphan"` YO'Q) --
+# `session.delete(company)` o'zi bolalarini o'chirmaydi.
+_COMPANY_SCOPED_MODELS = [
+    Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost,
+    Competitor, CompetitorAd, AssistantUnanswered, MetaEventLog,
+    IgDmMessage, IgDmConversation, CustomField, FunnelStage,
+    StandingTask, StandingReport,
+]
+
+
+def delete_company_cascade(session, company_id: int) -> dict:
+    """`company_id`ga tegishli BARCHA ma'lumotni (menejerlar, leadlar,
+    qo'ng'iroqlar, SMM, IG DM, sozlamalar va h.k.) va kompaniyaning o'zini
+    QAYTARIB BO'LMAYDIGAN tarzda o'chiradi. Chaqiruvchi (`app.py`) buni
+    faqat aniq tasdiqlangandan keyin (kompaniya nomi qo'lda kiritilgach)
+    chaqirishi kerak -- bu yerda o'zi hech qanday tasdiqlash so'ramaydi.
+    Natija -- jadval nomi -> o'chirilgan qatorlar soni lug'ati (log/xabar
+    uchun)."""
+    counts: dict[str, int] = {}
+    with unscoped():
+        for model in _COMPANY_SCOPED_MODELS:
+            n = session.query(model).filter(model.company_id == company_id).delete(synchronize_session=False)
+            counts[model.__tablename__] = n
+        # KVEntry -- alohida (company_id ustuni yo'q, `orchestrator.py`dagi
+        # `_scoped_kv_key()` naqshiga ko'ra kalit oxirida ":{company_id}"
+        # qo'shib saqlanadi). Aniq mos kelishi uchun Python'da tekshiramiz.
+        suffix = f":{company_id}"
+        kv_deleted = 0
+        for row in session.query(KVEntry).all():
+            if row.key.endswith(suffix):
+                session.delete(row)
+                kv_deleted += 1
+        counts["kv_store"] = kv_deleted
+        company = session.get(Company, company_id)
+        if company is not None:
+            session.delete(company)
+    return counts
+
+
 def _migrate_add_missing_columns() -> None:
     """MUHIM BUG FIX: `Base.metadata.create_all()` FAQAT hali mavjud bo'lmagan
     YANGI jadvallarni yaratadi -- ALLAQACHON mavjud jadvalga keyinroq model

@@ -62,11 +62,19 @@
     </div>
   </div>
   <div class="card">
-    <p class="page-subtitle" style="margin:0 0 14px">
-      {% if view.meta_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
-      &nbsp;Akkauntni ulash yoki almashtirish uchun quyidagi tugmani bosing.
+    <p class="page-subtitle" style="margin:0 0 6px">
+      {% if view.meta_connected %}<span class="badge badge-color-good">reklama hisobi ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+      {% if view.ig_connected %}<span class="badge badge-color-good" style="margin-left:6px">Instagram ulangan</span>{% else %}<span class="badge badge-color-warn" style="margin-left:6px">Instagram ulanmagan</span>{% endif %}
     </p>
-    <a href="{{ url_for('connect_accounts') }}" class="btn">Ulash →</a>
+    {% if view.meta_connected %}
+    <p class="text-faint" style="font-size:12.5px; margin:0 0 14px">
+      {% if view.meta_ad_account_name %}Reklama hisobi: <strong>{{ view.meta_ad_account_name }}</strong>{% endif %}
+      {% if not view.ig_connected %}<br><span style="color:var(--warn)">⚠ Instagram akkaunt ulanmagan — Instagram'ga yoziladigan xabar (SMS) reklamalari va IG statistikasi to'liq ishlashi uchun buni ham ulash kerak.</span>{% endif %}
+    </p>
+    {% else %}
+    <p class="page-subtitle" style="margin:0 0 14px">Akkauntni ulash uchun quyidagi tugmani bosing.</p>
+    {% endif %}
+    <a href="{{ url_for('connect_accounts') }}" class="btn">{{ "Boshqarish / almashtirish →" if view.meta_connected else "Ulash →" }}</a>
   </div>
 </div>
 
@@ -81,11 +89,13 @@
     </div>
   </div>
   <div class="card">
-    <p class="page-subtitle" style="margin:0 0 14px">
+    <p class="page-subtitle" style="margin:0 0 6px">
       {% if view.telegram_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
-      &nbsp;Guruhni ulash yoki almashtirish uchun quyidagi tugmani bosing.
     </p>
-    <a href="{{ url_for('connect_accounts') }}" class="btn">Ulash →</a>
+    <p class="text-faint" style="font-size:12.5px; margin:0 0 14px">
+      {% if view.telegram_connected %}Guruh ID: <strong>{{ view.telegram_group_id }}</strong>{% else %}Guruhni ulash yoki almashtirish uchun quyidagi tugmani bosing.{% endif %}
+    </p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn">{{ "Boshqarish / almashtirish →" if view.telegram_connected else "Ulash →" }}</a>
   </div>
 </div>
 

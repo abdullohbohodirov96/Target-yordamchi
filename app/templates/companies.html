@@ -73,6 +73,8 @@
               {{ "To'xtatish" if c.is_active else "Yoqish" }}
             </button>
           </form>
+          <button type="button" class="text-bad company-delete-open" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px"
+                  data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">O'chirish</button>
           {% endif %}
         </td>
       </tr>
@@ -81,6 +83,36 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</div>
+
+<!-- 2026-09, foydalanuvchi so'rovi: "kompaniyalarni o'chirib tashlash chiqar"
+     -- bu QAYTARIB BO'LMAYDIGAN amal (barcha leadlar/qo'ng'iroqlar/SMM va
+     h.k. o'chadi), shuning uchun oddiy confirm() o'rniga admin kompaniya
+     NOMINI aniq qo'lda kiritishi shart -- "O'chirish" tugmasi shu yozilgan
+     matn kompaniya nomiga to'liq mos kelmaguncha o'chiq turadi. -->
+<div class="modal-overlay" id="companyDeleteModal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2 class="text-bad">Kompaniyani o'chirish</h2>
+      <button type="button" class="modal-close" id="companyDeleteClose" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="page-subtitle" style="margin-top:-6px">
+        <strong>"<span id="companyDeleteName"></span>"</strong> kompaniyasi va unga tegishli BARCHA ma'lumot
+        (menejerlar, leadlar, qo'ng'iroqlar, SMM, Instagram xabarlari, sozlamalar) <strong class="text-bad">butunlay va qaytarib bo'lmaydigan tarzda</strong> o'chiriladi.
+        Faqat kirishni to'xtatmoqchi bo'lsangiz, buning o'rniga "To'xtatish"ni ishlating.
+      </p>
+      <form method="post" id="companyDeleteForm">
+        <div class="field">
+          <label>Tasdiqlash uchun kompaniya nomini aynan shunday yozing: <strong id="companyDeleteNameHint"></strong></label>
+          <input type="text" id="companyDeleteInput" name="confirm_name" autocomplete="off" autofocus>
+        </div>
+        <button type="submit" class="block" id="companyDeleteSubmit" disabled style="background:var(--bad)">Butunlay o'chirish</button>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -95,6 +127,36 @@
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();
+
+(function () {
+  var overlay = document.getElementById('companyDeleteModal');
+  var closeBtn = document.getElementById('companyDeleteClose');
+  var nameEl = document.getElementById('companyDeleteName');
+  var hintEl = document.getElementById('companyDeleteNameHint');
+  var input = document.getElementById('companyDeleteInput');
+  var submitBtn = document.getElementById('companyDeleteSubmit');
+  var form = document.getElementById('companyDeleteForm');
+  var currentName = '';
+
+  function close() { overlay.classList.remove('open'); input.value = ''; submitBtn.disabled = true; }
+
+  document.querySelectorAll('.company-delete-open').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentName = btn.getAttribute('data-company-name');
+      nameEl.textContent = currentName;
+      hintEl.textContent = currentName;
+      form.action = "{{ url_for('company_delete', company_id=0) }}".replace('/0/', '/' + btn.getAttribute('data-company-id') + '/');
+      input.value = '';
+      submitBtn.disabled = true;
+      overlay.classList.add('open');
+      setTimeout(function () { input.focus(); }, 50);
+    });
+  });
+  input.addEventListener('input', function () { submitBtn.disabled = (input.value !== currentName); });
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('open')) close(); });
 })();
 </script>
 {% endblock %}

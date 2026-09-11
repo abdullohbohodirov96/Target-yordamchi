@@ -1247,7 +1247,17 @@ def marketplace():
             "inbound_url": inbound_url,
             "inbound_lead_last_at": c.inbound_lead_last_at,
             "meta_connected": bool(c.meta_page_id and c.meta_access_token),
+            "meta_ad_account_name": c.meta_ad_account_name,
+            "meta_ad_account_id": c.meta_ad_account_id,
+            # 2026-09, foydalanuvchi savoli ("Instagram ni ham ulash kerakmi
+            # SMS/xabar kelishi uchun?"): Instagram akkaunt (ig_business_id)
+            # va reklama hisobi/sahifa ULANISHI ALOHIDA-ALOHIDA narsa --
+            # shu sabab bu yerda alohida ko'rsatiladi (Marketplace'da
+            # "ulangan" degan bitta belgi o'rniga aniq nima ulanganini
+            # ko'rsatish uchun).
+            "ig_connected": bool(c.ig_business_id),
             "telegram_connected": bool(c.telegram_group_id),
+            "telegram_group_id": c.telegram_group_id,
         }
     finally:
         session.close()
@@ -3982,6 +3992,44 @@ def company_toggle_active(company_id):
             flash(f"'{c.name}' qayta faollashtirildi.", "success")
         else:
             flash(f"'{c.name}' to'xtatildi -- endi bu kompaniyaning hech kim tizimga kira olmaydi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("companies"))
+
+
+@app.route("/companies/<int:company_id>/delete", methods=["POST"])
+@login_required
+@platform_owner_required
+def company_delete(company_id):
+    """2026-09, foydalanuvchi so'rovi: "kompaniyalarni o'chirib tashlash
+    chiqar" -- `company_toggle_active`dan (faqat kirishni yopadi, ma'lumot
+    qoladi) FARQLI o'laroq, bu QAYTARIB BO'LMAYDIGAN o'chirish: kompaniyaning
+    O'ZI va unga tegishli BARCHA ma'lumot (menejerlar, leadlar, qo'ng'iroqlar,
+    SMM, IG DM va h.k. -- `db.delete_company_cascade()`ga qarang) butunlay
+    o'chiriladi. Xato bilan bosilib ketmasligi uchun admin kompaniya NOMINI
+    aniq (harfma-harf) kiritishi shart (`companies.html`dagi modal)."""
+    if company_id == 1:
+        flash("Asosiy (o'zingizning) kompaniyani o'chirib bo'lmaydi.", "error")
+        return redirect(url_for("companies"))
+    session = get_session()
+    try:
+        c = session.get(Company, company_id)
+        if not c:
+            flash("Kompaniya topilmadi.", "error")
+            return redirect(url_for("companies"))
+        confirm_name = request.form.get("confirm_name", "").strip()
+        if confirm_name != c.name:
+            flash(f"O'chirish bekor qilindi -- kiritilgan nom kompaniya nomiga ('{c.name}') to'liq mos kelmadi.", "error")
+            return redirect(url_for("companies"))
+        name = c.name
+        counts = db.delete_company_cascade(session, company_id)
+        session.commit()
+        total_rows = sum(counts.values())
+        flash(f"'{name}' kompaniyasi va unga tegishli {total_rows} ta yozuv butunlay o'chirildi.", "success")
+    except Exception:
+        session.rollback()
+        logger.exception("Kompaniyani o'chirishda xatolik (company_id=%s)", company_id)
+        flash("O'chirishda kutilmagan xatolik yuz berdi -- hech narsa o'zgartirilmadi.", "error")
     finally:
         session.close()
     return redirect(url_for("companies"))
