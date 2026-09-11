@@ -1355,6 +1355,13 @@ def _is_reduce_data_error(e: "MetaAPIError") -> bool:
     return "reduce the amount of data" in message.lower()
 
 
+# 2026-09 TUZATISH: qayta urinish endi BIR MARTA emas, shu qiymatga
+# yetguncha DAVOM ETADI (pastga qarang) -- juda faol/uzoq tarixli
+# akkauntlarda bitta yarmiga tushirish yetarli bo'lmagani jonli saytda
+# kuzatilgan (foydalanuvchi xabari, 2026-09-11).
+_MIN_LIMIT = 3
+
+
 def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
     ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
@@ -1364,13 +1371,20 @@ def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, 
 
     2026-09: Meta "Please reduce the amount of data..." xatosi bilan rad
     etsa (ko'p yillik tarixi bo'lgan faol akkauntlarda uchraydi) --
-    `limit`ni yarmiga tushirib, BIR MARTA avtomatik qayta uriniladi (Meta
-    o'zi tavsiya qilgan yechim), kod xatosini foydalanuvchiga
-    ko'rsatmasdan."""
+    `limit`ni HAR SAFAR yarmiga tushirib, minimal qiymatga yetguncha
+    QAYTA-QAYTA avtomatik uriniladi (Meta o'zi tavsiya qilgan yechim),
+    kod xatosini foydalanuvchiga ko'rsatmasdan.
+
+    2026-09 TUZATISH: avval faqat BITTA marta (50 -> 25) qayta urinilar
+    edi -- juda katta/faol akkauntlarda 25 ham yetarli bo'lmay, xato
+    baribir foydalanuvchiga chiqib qolardi (jonli saytda kuzatilgan bug).
+    Endi `current_limit` `_MIN_LIMIT`ga yetguncha (50 -> 25 -> 12 -> 6 ->
+    3) qayta-qayta pasaytirib sinaladi -- faqat ENG kichik qiymatda ham
+    rad etilsa, xato yuqoriga chiqariladi."""
     resolved_page_id = page_id or PAGE_ID
     token = _get_page_access_token(page_id, access_token)
     current_limit = limit
-    for attempt in range(2):
+    while True:
         try:
             data = _get(f"{resolved_page_id}/conversations", {
                 "platform": "instagram",
@@ -1379,8 +1393,8 @@ def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, 
             }, token=token)
             return data.get("data", [])
         except MetaAPIError as e:
-            if attempt == 0 and _is_reduce_data_error(e) and current_limit > 5:
-                current_limit = max(5, current_limit // 2)
+            if _is_reduce_data_error(e) and current_limit > _MIN_LIMIT:
+                current_limit = max(_MIN_LIMIT, current_limit // 2)
                 continue
             raise
 
@@ -1389,18 +1403,20 @@ def get_instagram_conversation_messages(conversation_id: str, limit: int = 40, *
     """Bitta suhbatning so'nggi xabarlarini (eng yangisi birinchi) qaytaradi:
     har birida `id`, `message` (matn), `created_time`, `from` (yuboruvchi
     IGSID/ism) bor. Xuddi shu "reduce the amount of data" avtomatik
-    qayta urinish -- `get_instagram_conversations()`dagi izohga qarang."""
+    qayta urinish -- `get_instagram_conversations()`dagi izohga qarang
+    (2026-09 tuzatish: endi minimal qiymatga yetguncha qayta-qayta
+    pasaytiriladi, bitta marta emas)."""
     token = _get_page_access_token(page_id, access_token)
     current_limit = limit
-    for attempt in range(2):
+    while True:
         try:
             data = _get(conversation_id, {
                 "fields": f"messages.limit({current_limit}){{id,message,created_time,from,to}}",
             }, token=token)
             return ((data.get("messages") or {}).get("data")) or []
         except MetaAPIError as e:
-            if attempt == 0 and _is_reduce_data_error(e) and current_limit > 5:
-                current_limit = max(5, current_limit // 2)
+            if _is_reduce_data_error(e) and current_limit > _MIN_LIMIT:
+                current_limit = max(_MIN_LIMIT, current_limit // 2)
                 continue
             raise
 
