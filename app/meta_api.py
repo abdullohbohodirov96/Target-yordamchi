@@ -551,10 +551,29 @@ def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> 
          Dashboard -> App Review -> Permissions and Features'da shu
          ruxsatni so'rab (testerlar uchun review shart emas, faqat
          "Request" bosish kifoya bo'lishi kerak), keyin bu ro'yxatga
-         qaytarib qo'shishi mumkin."""
+         qaytarib qo'shishi mumkin.
+
+    BUG FIX (2026-09, foydalanuvchi so'rovi -- Instagram xabarlarga javob
+    yozganda "(#230) Requires instagram_manage_messages permission"):
+    `ig_dm_sync.py`/`meta_api.py`dagi Instagram DM funksiyalari ALLAQACHON
+    `instagram_manage_messages` ruxsatini talab qilar edi (izohlarda ham
+    aniq yozilgan), LEKIN bu ruxsat shu OAuth "ulash" oynasining scope
+    ro'yxatiga HECH QACHON qo'shilmagan edi -- ya'ni Facebook hech qachon
+    bu ruxsatni SO'RAMAGAN, shuning uchun "Facebook bilan qayta ulash"
+    tugmasi necha marta bosilmasin, bu ruxsat HECH QACHON berilmasdi
+    (so'ralmagan narsa berilmaydi). Endi qo'shildi.
+
+    OGOHLANTIRISH (yuqoridagi `instagram_manage_insights` saboqiga qarang):
+    agar Facebook bu ruxsatni ham "Invalid Scopes" bilan rad etsa (ya'ni
+    OAuth oynasining O'ZI ochilmay, xato qaytarsa) -- bu ruxsat App
+    Dashboard'da avval ALOHIDA "yoqilishi" (Instagram -> Instagram API
+    setup / "Instagram Messaging" mahsuloti qo'shilishi va akkaunt
+    Instagram Tester sifatida qo'shilishi) kerakligini bildiradi, KOD
+    XATOSI EMAS. Shunday bo'lsa, bu qatorni vaqtincha qaytarib olib
+    tashlash kerak bo'ladi (aks holda ads/pages ulanishi ham buziladi)."""
     from urllib.parse import urlencode
 
-    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic"]
+    scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_manage_messages"]
     if include_ads_scope:
         scopes += ["ads_management", "ads_read", "business_management"]
     params = {
