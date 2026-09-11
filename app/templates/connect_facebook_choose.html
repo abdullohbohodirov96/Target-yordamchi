@@ -1,60 +1,87 @@
 {% extends "base.html" %}
 {% block title %}Facebook hisobini tanlash — Replix{% endblock %}
+{% block hide_chrome %}yes{% endblock %}
+{% block flash %}{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1>Qaysi hisobni ulaymiz?</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi — shu kompaniya uchun qaysi birini ishlatishni tanlang. Reklama hisobi ulasangiz, quyida Business Portfolio → Ad Account → Dataset (Pixel) tartibida tanlaysiz.</p>
+<div class="wizard-shell">
+  <div class="wizard-card">
+    <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
+    <h1 class="wizard-title">Qaysi hisobni ulaymiz?</h1>
+    <p class="login-subtitle" style="margin-bottom:26px">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi. Har bir qadamda nima tanlashingiz kerakligi pastda tushuntirilgan — shoshilmasdan tanlang, keyin istalgan vaqt Marketplace bo'limidan qayta ulashingiz mumkin.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+        <div class="login-error">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 8v5"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>
+          <span>{{ msg }}</span>
+        </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" id="meta-choose-form">
+      <div class="wizard-step">
+        <div class="wizard-step-num">1</div>
+        <div class="wizard-step-body">
+          <label class="wizard-step-label">Facebook sahifa (Page) <span class="wizard-required">majburiy</span></label>
+          <p class="wizard-step-hint">Instagram akkauntingiz odatda shu sahifaga ulangan bo'ladi — agar bir nechta sahifa ko'rinsa, yonida <strong>"Instagram ulangan"</strong> deb yozilganini tanlang.</p>
+          <select name="page_id" class="wizard-select" required>
+            {% for p in pages %}
+            <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} — Instagram ulangan ✓{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {% if businesses %}
+      <div class="wizard-step">
+        <div class="wizard-step-num">2</div>
+        <div class="wizard-step-body">
+          <label class="wizard-step-label">Business Portfolio <span class="wizard-optional">ixtiyoriy</span></label>
+          <p class="wizard-step-hint">Reklama hisobingiz biror Business Manager ostida bo'lsa, shu yerdan tanlang — pastdagi reklama hisobi/Pixel ro'yxati shunga qarab yangilanadi. Shaxsiy (Business'siz) reklama hisobingiz bo'lsa, bo'sh qoldiring.</p>
+          <select name="business_id" id="meta-business-select" class="wizard-select">
+            <option value="">— shaxsiy reklama hisobi (Business tanlanmasin) —</option>
+            {% for b in businesses %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if fallback_accounts or businesses %}
+      <div class="wizard-step">
+        <div class="wizard-step-num">{{ 3 if businesses else 2 }}</div>
+        <div class="wizard-step-body">
+          <label class="wizard-step-label">Meta reklama hisobi (Ad Account) <span class="wizard-optional">ixtiyoriy</span></label>
+          <p class="wizard-step-hint">Faqat Target/reklama tahlili funksiyasi uchun kerak. Instagram xabarlar yoki CRM'ga bu shart emas — agar hozircha ulamoqchi bo'lmasangiz, bo'sh qoldirib "Ulash"ni bosavering.</p>
+          <select name="ad_account_id" id="meta-account-select" class="wizard-select">
+            <option value="">— tanlanmasin —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num">{{ 4 if businesses else 3 }}</div>
+        <div class="wizard-step-body">
+          <label class="wizard-step-label">Dataset / Pixel <span class="wizard-optional">ixtiyoriy</span></label>
+          <p class="wizard-step-hint">Bu -- xarid/lid hodisalarini Meta'ga qayta yuboradigan (CAPI) sozlama. Tanlanmasa, hisobingizga biriktirilgan birinchi Pixel avtomatik ishlatiladi.</p>
+          <select name="dataset_id" id="meta-dataset-select" class="wizard-select">
+            <option value="">— avtomatik aniqlansin —</option>
+          </select>
+        </div>
+      </div>
+      {% endif %}
+
+      <button type="submit" class="block wizard-submit">Ulash</button>
+    </form>
+
+    <p style="text-align:center; margin:18px 0 0">
+      <a href="{{ url_for('connect_accounts') }}" class="text-blue">&larr; Bekor qilish</a>
+    </p>
   </div>
 </div>
-
-<div class="card" style="max-width:560px">
-  <form method="post" id="meta-choose-form">
-    <div class="field">
-      <label>1) Facebook sahifa (Page)</label>
-      <select name="page_id" required>
-        {% for p in pages %}
-        <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} (Instagram ulangan){% endif %}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    {% if businesses %}
-    <div class="field">
-      <label>2) Business Portfolio (ixtiyoriy)</label>
-      <select name="business_id" id="meta-business-select">
-        <option value="">— shaxsiy reklama hisobi (Business tanlanmasin) —</option>
-        {% for b in businesses %}
-        <option value="{{ b.id }}">{{ b.name }}</option>
-        {% endfor %}
-      </select>
-      <p class="field-hint">Business tanlasangiz, pastdagi Ad Account/Dataset ro'yxati o'sha Business'ga tegishli variantlar bilan yangilanadi.</p>
-    </div>
-    {% endif %}
-
-    {% if fallback_accounts or businesses %}
-    <div class="field">
-      <label>3) Meta reklama hisobi (Ad Account, ixtiyoriy)</label>
-      <select name="ad_account_id" id="meta-account-select">
-        <option value="">— tanlanmasin —</option>
-      </select>
-    </div>
-
-    <div class="field">
-      <label>4) Dataset / Pixel (ixtiyoriy — tanlanmasa, hisobga biriktirilgan birinchi Pixel avtomatik ishlatiladi)</label>
-      <select name="dataset_id" id="meta-dataset-select">
-        <option value="">— avtomatik aniqlansin —</option>
-      </select>
-    </div>
-    {% endif %}
-
-    <button type="submit" class="block">Ulash</button>
-  </form>
-</div>
-
-<p class="page-subtitle">
-  <a href="{{ url_for('connect_accounts') }}" class="text-blue">&larr; Bekor qilish</a>
-</p>
 
 {% if businesses or fallback_accounts %}
 <script>

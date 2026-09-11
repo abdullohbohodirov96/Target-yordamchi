@@ -558,6 +558,57 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .login-error svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; }
 
+/* ---------- Ulash "sehrgar" ekrani (2026-09, foydalanuvchi so'rovi:
+   "facebook ulaganda page va boshqalarni tanlash oynasi bor shuni
+   aniqroq chiroyliroq qil alohida oyna ochib kattaroq qilib tushuntirib
+   tanlash qildir") -- `.login-shell`/`.login-card` bilan bir xil "katta,
+   chalg'ituvchi menyusiz, markazlashgan" naqsh (`base.html`dagi
+   `hide_chrome` orqali sidebar/tab-qator o'chiriladi), lekin kengroq --
+   bu yerda ko'proq (4 tagacha) qadam bor. */
+.wizard-shell {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 25% 20%, #ffffff 0%, #F1F5F9 55%, #E2E8F0 100%);
+  margin: -28px -24px; padding: 32px 24px;
+}
+.wizard-card {
+  width: 100%; max-width: 640px; background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  padding: 40px 40px 34px; box-shadow: 0 1px 3px rgba(15,23,42,0.05), 0 16px 40px rgba(15,23,42,0.08);
+  position: relative; overflow: hidden;
+}
+.wizard-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+}
+.wizard-title { font-size: 24px; margin: 4px 0 4px; }
+
+.wizard-step { display: flex; gap: 16px; padding: 18px 0; border-top: 1px solid var(--border-light); }
+.wizard-step:first-of-type { border-top: none; padding-top: 0; }
+.wizard-step-num {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--blue-bg); color: var(--blue);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; margin-top: 2px;
+}
+.wizard-step-body { flex: 1; min-width: 0; }
+.wizard-step-label { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.wizard-required, .wizard-optional {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 2px 8px; border-radius: 999px;
+}
+.wizard-required { background: var(--bad-bg); color: var(--bad); }
+.wizard-optional { background: var(--border-light); color: var(--text-faint); }
+.wizard-step-hint { font-size: 13px; color: var(--text-faint); margin: 0 0 10px; line-height: 1.5; }
+.wizard-select {
+  width: 100%; padding: 13px 14px; font-size: 14.5px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text); cursor: pointer;
+}
+.wizard-select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.wizard-submit { margin-top: 10px; padding: 13px 16px; font-size: 15px; }
+
+@media (max-width: 640px) {
+  .wizard-shell { margin: -16px -12px; padding: 20px 14px; }
+  .wizard-card { padding: 28px 20px 24px; }
+  .wizard-step { gap: 12px; }
+}
+
 /* ---------- Detail page ---------- */
 .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-faint); margin-bottom: 16px; }
 .back-link:hover { color: var(--text-dim); }
