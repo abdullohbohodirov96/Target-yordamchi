@@ -5045,13 +5045,22 @@ def instagram_dm():
 class _MetaCreds:
     """`ig_dm_sync.sync_once(company=...)`ga uzatish uchun yengil obyekt --
     `_current_company()` allaqachon session'dan uzilgan (expunged) qator
-    qaytaradi, lekin `sync_once` faqat uchta maydonni (`id`,
-    `meta_page_id`, `meta_access_token` -- DEKODLANGAN holda) kutadi
-    (`ig_dm_sync._CompanyCreds` bilan bir xil naqsh)."""
+    qaytaradi, lekin `sync_once` faqat to'rtta maydonni (`id`,
+    `meta_page_id`, `meta_access_token` -- DEKODLANGAN holda,
+    `ig_dm_sync_since`) kutadi (`ig_dm_sync._CompanyCreds` bilan bir xil
+    naqsh).
+
+    2026-09 BUG TUZATILDI (foydalanuvchi topdi): `ig_dm_sync_since`
+    bu yerda UNUTILGAN edi -- shu sabab qo'lda "Yangilash" tugmasi
+    (pastdagi `?refresh=1` yo'li) `since` filtrisiz, HAR SAFAR akkauntning
+    BUTUN tarixini qayta so'rardi (fon rejadagi avtomatik
+    `sync_all_companies()` esa to'g'ri ishlardi -- faqat shu QO'LDA
+    tugma buzuq edi)."""
     def __init__(self, company):
         self.id = company.id
         self.meta_page_id = company.meta_page_id
         self.meta_access_token = company.get_meta_access_token()
+        self.ig_dm_sync_since = company.ig_dm_sync_since
 
 
 @app.route("/instagram-xabarlar/reply", methods=["POST"])

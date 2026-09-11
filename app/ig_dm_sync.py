@@ -330,8 +330,15 @@ def sync_once(company=None) -> dict:
     session = get_session()
     try:
         try:
+            # 2026-09, foydalanuvchi so'rovi: standart limit 50 -> 10.
+            # `since` filtri (yuqorida) allaqachon so'rovni asosan
+            # kamaytiradi -- bu QO'SHIMCHA ehtiyot chorasi, `_MIN_LIMIT`
+            # gacha avtomatik pasayadigan qayta-urinish zanjiri (pastda)
+            # ENDI yuqoriroq nuqtadan (10) emas, kichikroq nuqtadan (10)
+            # boshlanadi, shu bilan "reduce the amount of data" xatosiga
+            # duch kelish ehtimoli yanada kamayadi.
             conversations = meta_api.get_instagram_conversations(
-                limit=50, page_id=page_id, access_token=access_token, since=sync_since,
+                limit=10, page_id=page_id, access_token=access_token, since=sync_since,
             )
         except meta_api.MetaAPIError as e:
             result["errors"].append(_friendly_meta_error(e))
