@@ -120,7 +120,7 @@ def test_ig_dm_sync_all_companies_isolates_conversations_per_company():
         def fake_ig_business_id(*, page_id=None, access_token=None):
             return {"page_a": "IG_A", "page_b": "IG_B"}.get(page_id)
 
-        def fake_conversations(*, limit=50, page_id=None, access_token=None):
+        def fake_conversations(*, limit=50, page_id=None, access_token=None, since=None):
             conv_id = f"conv_{page_id}"
             return [{"id": conv_id, "updated_time": dt.datetime.utcnow().isoformat(), "participants": {"data": [
                 {"id": {"page_a": "IG_A", "page_b": "IG_B"}.get(page_id)},

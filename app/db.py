@@ -94,6 +94,17 @@ class Company(Base):
     meta_ad_account_id = Column(String(32), nullable=True)
     meta_page_id = Column(String(32), nullable=True)
     ig_business_id = Column(String(32), nullable=True)
+    # 2026-09, foydalanuvchi so'rovi ("xabarlani bittada hammasini
+    # tortmasin, ulangandan buyog'i tushadigan qil"): Instagram DM
+    # sinxronizatsiyasi avval HAR SAFAR akkauntning BUTUN (ko'p yillik)
+    # suhbat tarixini tortishga urinardi -- juda faol/uzoq tarixli
+    # akkauntlarda Meta buni "Please reduce the amount of data..." deb rad
+    # etardi (jonli saytda kuzatilgan xato). Endi (qayta) ulangan har safar
+    # shu vaqt belgilanadi va `ig_dm_sync.py` FAQAT shu vaqtdan KEYINGI
+    # suhbatlarni so'raydi (Meta'ga yuboriladigan so'rov hajmini keskin
+    # kamaytiradi) -- eski tarixni "tashlab yuborish" emas, shunchaki
+    # ENDI KEYINGI sinxronizatsiyalar cheksiz o'sib bormasligi uchun.
+    ig_dm_sync_since = Column(DateTime, nullable=True)
     # 2026-09, foydalanuvchi so'rovi ("capi nima bo'lsa hammasini avtomatik
     # tugma orqali qiladigan qil"): Meta Conversions API (CAPI) uchun Pixel
     # ID. Ilgari bu FAQAT global ENV o'zgaruvchisi (META_PIXEL_ID) orqali,

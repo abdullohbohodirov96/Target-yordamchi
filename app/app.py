@@ -1355,6 +1355,11 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
         c.set_meta_access_token(token)
         c.meta_page_id = page["id"]
         c.ig_business_id = page.get("ig")
+        # 2026-09, foydalanuvchi so'rovi ("ulangandan buyog'i tushadigan
+        # qil"): har (qayta) ulanganda Instagram DM sinxronizatsiyasi shu
+        # vaqtdan boshlab hisoblanadi -- `ig_dm_sync.py`/`meta_api.py`ga
+        # qarang.
+        c.ig_dm_sync_since = dt.datetime.utcnow()
         # 2026-09, JONLI XATO TOPILDI: foydalanuvchi "Facebook bilan qayta
         # ulash"ni necha marta bossa ham, Instagram DM'da "(#230) Requires
         # instagram_manage_messages" xatosi davom etardi -- sabab, YANGI

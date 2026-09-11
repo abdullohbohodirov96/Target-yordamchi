@@ -25,6 +25,8 @@ import re
 import json
 import time
 import hashlib
+import calendar
+import datetime as dt
 import concurrent.futures
 import requests
 
@@ -1362,7 +1364,10 @@ def _is_reduce_data_error(e: "MetaAPIError") -> bool:
 _MIN_LIMIT = 3
 
 
-def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
+def get_instagram_conversations(
+    limit: int = 50, *, page_id: str | None = None, access_token: str | None = None,
+    since: "dt.datetime | None" = None,
+) -> list[dict]:
     """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
     ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
     Ishtirokchilarning IGSID/username'i shu yerda keladi, lekin xabarlar
@@ -1380,15 +1385,29 @@ def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, 
     baribir foydalanuvchiga chiqib qolardi (jonli saytda kuzatilgan bug).
     Endi `current_limit` `_MIN_LIMIT`ga yetguncha (50 -> 25 -> 12 -> 6 ->
     3) qayta-qayta pasaytirib sinaladi -- faqat ENG kichik qiymatda ham
-    rad etilsa, xato yuqoriga chiqariladi."""
+    rad etilsa, xato yuqoriga chiqariladi.
+
+    2026-09, foydalanuvchi so'rovi ("xabarlani bittada hammasini
+    tortmasin, ulangandan buyog'i tushadigan qil"): `since` berilsa (odatda
+    `company.ig_dm_sync_since` -- akkaunt oxirgi marta ulangan/qayta
+    ulangan vaqt), Meta'dan FAQAT shu vaqtdan KEYIN yangilangan suhbatlar
+    so'raladi -- bu ko'p yillik butun tarixni har safar qayta tortishning
+    OLDINI oladi (yuqoridagi limit-pasaytirish -- shunga qaramay hali ham
+    juda katta bo'lib qolsa ishlaydigan ZAXIRA himoya, bu esa ASOSIY
+    yechim)."""
     resolved_page_id = page_id or PAGE_ID
     token = _get_page_access_token(page_id, access_token)
     current_limit = limit
+    base_params = {
+        "platform": "instagram",
+        "fields": "id,updated_time,participants",
+    }
+    if since is not None:
+        base_params["since"] = calendar.timegm(since.utctimetuple())
     while True:
         try:
             data = _get(f"{resolved_page_id}/conversations", {
-                "platform": "instagram",
-                "fields": "id,updated_time,participants",
+                **base_params,
                 "limit": current_limit,
             }, token=token)
             return data.get("data", [])

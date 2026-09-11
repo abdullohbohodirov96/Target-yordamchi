@@ -315,6 +315,7 @@ def sync_once(company=None) -> dict:
 
     page_id = company.meta_page_id if company else None
     access_token = company.meta_access_token if company else None
+    sync_since = getattr(company, "ig_dm_sync_since", None) if company else None
 
     ig_business_id = _get_ig_business_id(page_id=page_id, access_token=access_token)
     if not ig_business_id:
@@ -329,7 +330,9 @@ def sync_once(company=None) -> dict:
     session = get_session()
     try:
         try:
-            conversations = meta_api.get_instagram_conversations(limit=50, page_id=page_id, access_token=access_token)
+            conversations = meta_api.get_instagram_conversations(
+                limit=50, page_id=page_id, access_token=access_token, since=sync_since,
+            )
         except meta_api.MetaAPIError as e:
             result["errors"].append(_friendly_meta_error(e))
             _save_status(result, company_id=company.id if company else None)
@@ -383,13 +386,35 @@ def sync_all_companies() -> dict:
             .filter(Company.meta_page_id.isnot(None), Company.meta_access_token.isnot(None), Company.is_active.is_(True))
             .all()
         )
-        companies = [{"id": c.id, "name": c.name, "meta_page_id": c.meta_page_id, "meta_access_token": c.get_meta_access_token()} for c in rows]
+        # 2026-09, foydalanuvchi so'rovi ("ulangandan buyog'i tushadigan
+        # qil"): bu funksiya (yangi ustun qo'shilishidan OLDIN) ulangan
+        # kompaniyalarda `ig_dm_sync_since` hali NULL bo'ladi -- ularga
+        # ENDI (hozirgi vaqtdan boshlab) belgilab qo'yamiz, aks holda
+        # "since" filtri hech qachon ishlamay, eski butun tarixni tortishga
+        # urinish davom etaverardi.
+        now = dt.datetime.utcnow()
+        needs_backfill = [c for c in rows if c.ig_dm_sync_since is None]
+        if needs_backfill:
+            for c in needs_backfill:
+                c.ig_dm_sync_since = now
+            session.commit()
+        companies = [
+            {
+                "id": c.id, "name": c.name, "meta_page_id": c.meta_page_id,
+                "meta_access_token": c.get_meta_access_token(),
+                "ig_dm_sync_since": c.ig_dm_sync_since,
+            }
+            for c in rows
+        ]
     finally:
         session.close()
 
     per_company = {}
     for c in companies:
-        fake_company = _CompanyCreds(id=c["id"], meta_page_id=c["meta_page_id"], meta_access_token=c["meta_access_token"])
+        fake_company = _CompanyCreds(
+            id=c["id"], meta_page_id=c["meta_page_id"], meta_access_token=c["meta_access_token"],
+            ig_dm_sync_since=c["ig_dm_sync_since"],
+        )
         try:
             per_company[c["id"]] = sync_once(company=fake_company)
         except Exception as e:
@@ -403,10 +428,11 @@ class _CompanyCreds:
     bilan bir xil) -- to'liq `db.Company` ORM qatori shart emas, faqat shu
     uchta maydon kerak (session yopilgandan keyin ham ishlatish uchun
     detach qilingan)."""
-    def __init__(self, id, meta_page_id, meta_access_token):
+    def __init__(self, id, meta_page_id, meta_access_token, ig_dm_sync_since=None):
         self.id = id
         self.meta_page_id = meta_page_id
         self.meta_access_token = meta_access_token
+        self.ig_dm_sync_since = ig_dm_sync_since
 
 
 def mark_alert_sent(conversation_id: int) -> None:
