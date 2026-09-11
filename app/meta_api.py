@@ -1342,29 +1342,67 @@ def get_instagram_media_insights(
 # to'xtatmaydi).
 # ---------------------------------------------------------------------------
 
+def _is_reduce_data_error(e: "MetaAPIError") -> bool:
+    """2026-09, JONLI XATO: `instagram_manage_messages` tuzatilgandan
+    KEYIN chiqqan YANGI (BOSHQA) Meta xatosi -- "Please reduce the amount
+    of data you're asking for, then retry your request". Bu ruxsat bilan
+    ALOQASI YO'Q -- Meta so'ralgan `limit`/`fields` hajmi juda katta deb
+    hisoblaganda (masalan, ko'p yillik DM tarixi bo'lgan faol akkaunt)
+    qaytaradi. Meta'ning O'ZI aytganidek -- yechim shunchaki kamroq
+    so'rash va qayta urinish."""
+    meta_err = e.args[0] if e.args else {}
+    message = meta_err.get("message", "") if isinstance(meta_err, dict) else str(e)
+    return "reduce the amount of data" in message.lower()
+
+
 def get_instagram_conversations(limit: int = 50, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
     ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
     Ishtirokchilarning IGSID/username'i shu yerda keladi, lekin xabarlar
     matni EMAS -- ular alohida `get_instagram_conversation_messages()`
-    orqali so'raladi (Meta shunday ikki bosqichli ishlaydi)."""
+    orqali so'raladi (Meta shunday ikki bosqichli ishlaydi).
+
+    2026-09: Meta "Please reduce the amount of data..." xatosi bilan rad
+    etsa (ko'p yillik tarixi bo'lgan faol akkauntlarda uchraydi) --
+    `limit`ni yarmiga tushirib, BIR MARTA avtomatik qayta uriniladi (Meta
+    o'zi tavsiya qilgan yechim), kod xatosini foydalanuvchiga
+    ko'rsatmasdan."""
     resolved_page_id = page_id or PAGE_ID
-    data = _get(f"{resolved_page_id}/conversations", {
-        "platform": "instagram",
-        "fields": "id,updated_time,participants",
-        "limit": limit,
-    }, token=_get_page_access_token(page_id, access_token))
-    return data.get("data", [])
+    token = _get_page_access_token(page_id, access_token)
+    current_limit = limit
+    for attempt in range(2):
+        try:
+            data = _get(f"{resolved_page_id}/conversations", {
+                "platform": "instagram",
+                "fields": "id,updated_time,participants",
+                "limit": current_limit,
+            }, token=token)
+            return data.get("data", [])
+        except MetaAPIError as e:
+            if attempt == 0 and _is_reduce_data_error(e) and current_limit > 5:
+                current_limit = max(5, current_limit // 2)
+                continue
+            raise
 
 
 def get_instagram_conversation_messages(conversation_id: str, limit: int = 40, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Bitta suhbatning so'nggi xabarlarini (eng yangisi birinchi) qaytaradi:
     har birida `id`, `message` (matn), `created_time`, `from` (yuboruvchi
-    IGSID/ism) bor."""
-    data = _get(conversation_id, {
-        "fields": f"messages.limit({limit}){{id,message,created_time,from,to}}",
-    }, token=_get_page_access_token(page_id, access_token))
-    return ((data.get("messages") or {}).get("data")) or []
+    IGSID/ism) bor. Xuddi shu "reduce the amount of data" avtomatik
+    qayta urinish -- `get_instagram_conversations()`dagi izohga qarang."""
+    token = _get_page_access_token(page_id, access_token)
+    current_limit = limit
+    for attempt in range(2):
+        try:
+            data = _get(conversation_id, {
+                "fields": f"messages.limit({current_limit}){{id,message,created_time,from,to}}",
+            }, token=token)
+            return ((data.get("messages") or {}).get("data")) or []
+        except MetaAPIError as e:
+            if attempt == 0 and _is_reduce_data_error(e) and current_limit > 5:
+                current_limit = max(5, current_limit // 2)
+                continue
+            raise
 
 
 def send_instagram_message(recipient_ig_id: str, text: str, *, page_id: str | None = None, access_token: str | None = None) -> dict:
