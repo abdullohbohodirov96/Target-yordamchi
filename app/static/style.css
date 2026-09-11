@@ -4,7 +4,14 @@
    request is blocked on some network. */
 
 :root {
-  --bg: #F8FAFC;
+  /* 2026-09, foydalanuvchi so'rovi ("umumiy interfeysniyam boshqacharo qil,
+     oddiy bo'lib qolgan"): rangli asos (--blue) ATAYLAB O'ZGARTIRILMAYDI --
+     u Replix logotipiga pikselma-piksel mos (yuqoridagi eski izohga qarang),
+     logotipni o'zgartirmasdan boshqa rangga o'tish LOGO bilan to'qnashardi.
+     "Boshqacha/premium" taassurot buning o'rniga shrift (zamonaviy Plus
+     Jakarta Sans), kenroq radius, chuqurroq soya va tugmalardagi gradient
+     orqali beriladi -- brend rangiga sodiq qolgan holda. */
+  --bg: #F6F7FB;
   --card: #FFFFFF;
   --border: #E2E8F0;
   --border-light: #F1F5F9;
@@ -16,6 +23,7 @@
      asosiy accent rang endi Replix logotipidagi ko'k bilan bir xil (avval
      #2563EB edi, deyarli farqsiz lekin endi logo bilan pikselma-piksel mos). */
   --blue: #2B6EF5;
+  --blue-deep: #1E56C4;
   --blue-bg: #EFF6FF;
   --good: #059669;
   --good-bg: #ECFDF5;
@@ -23,16 +31,19 @@
   --bad-bg: #FEF2F2;
   --warn: #D97706;
   --warn-bg: #FFFBEB;
-  --radius: 8px;
-  --radius-lg: 10px;
+  --radius: 10px;
+  --radius-lg: 14px;
   --sidebar-bg: #FBFCFE;
-  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* 2026-08: dizaynga chuqurlik (depth) qo'shish uchun -- avval kartalar
      faqat ingichka border bilan tekis (flat) ko'rinardi, bu "eski"/tekis
      taassurot qoldirardi. Endi juda yengil soya bilan zamonaviy SaaS
-     ko'rinishi (masalan Stripe/Linear uslubi) beriladi. */
+     ko'rinishi (masalan Stripe/Linear uslubi) beriladi.
+     2026-09 (yana bir bor kuchaytirildi, "oddiy bo'lib qolgan" so'roviga
+     ko'ra): soya biroz chuqurroq/yumshoqroq -- kartalar sahifadan aniqroq
+     "ko'tarilib" turadi. */
   --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.05);
-  --shadow-md: 0 2px 6px rgba(15,23,42,0.05), 0 8px 20px rgba(15,23,42,0.07);
+  --shadow-md: 0 4px 10px rgba(15,23,42,0.06), 0 14px 30px rgba(15,23,42,0.09);
 }
 
 * { box-sizing: border-box; }
@@ -209,7 +220,7 @@ a { color: inherit; text-decoration: none; }
   transition: background 0.12s, color 0.12s;
 }
 .nav-item:hover .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: #E7ECF3; color: var(--ink); }
-.nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: var(--blue); color: #fff; }
+.nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: linear-gradient(155deg, var(--blue), var(--blue-deep)); color: #fff; }
 .nav-icon svg { width: 18px; height: 18px; }
 .nav-text { overflow: hidden; text-overflow: ellipsis; opacity: 0; width: 0; transition: opacity 0.1s; }
 .sidebar.open .nav-text { opacity: 1; width: auto; }
@@ -545,11 +556,16 @@ form input[type="date"]::-webkit-datetime-edit { padding: 0; }
    to'liq rangli gradienti esa faqat o'sha widget uchun o'ziga xos belgi
    bo'lib qoladi -- har bir tugmani rang-barang qilish ortiqcha bo'lardi). */
 button, .btn {
-  display: inline-block; background: var(--blue); color: #fff; border: none; font-family: inherit;
-  padding: 10px 16px; border-radius: 6px; font-size: 13.5px; font-weight: 500; cursor: pointer;
-  transition: background 0.15s, transform 0.1s, box-shadow 0.15s; box-shadow: var(--shadow-sm);
+  /* 2026-09, foydalanuvchi so'rovi ("oddiy bo'lib qolgan, boshqacharo
+     qil"): tekis bitta rang o'rniga yengil gradient -- brend ko'k rangi
+     saqlanadi (yuqoridagi izohga qarang), lekin tugma sal "hajmli"/premium
+     ko'rinadi (Linear/Stripe uslubidagi zamonaviy tugmalar shunga o'xshash). */
+  display: inline-block; background: linear-gradient(155deg, var(--blue), var(--blue-deep));
+  color: #fff; border: none; font-family: inherit;
+  padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; font-weight: 500; cursor: pointer;
+  transition: filter 0.15s, transform 0.1s, box-shadow 0.15s; box-shadow: var(--shadow-sm);
 }
-button:hover, .btn:hover { background: #1E56C4; box-shadow: var(--shadow-md); transform: translateY(-1px); }
+button:hover, .btn:hover { filter: brightness(1.06); box-shadow: var(--shadow-md); transform: translateY(-1px); }
 button:active, .btn:active { transform: translateY(0); }
 /* BUG FIX (2026-09, dizayn/CSS tekshiruvi): avval FAQAT `button.block` edi
    -- ko'plab formalardagi <button class="block"> (masalan "Saqlash"/

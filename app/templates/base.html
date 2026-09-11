@@ -63,7 +63,12 @@
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='favicon/apple-touch-icon.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- 2026-09, foydalanuvchi so'rovi ("interfeys oddiy bo'lib qolgan,
+       boshqacharo qil"): IBM Plex Sans -> Plus Jakarta Sans -- zamonaviy
+       SaaS mahsulotlarida (Linear va sh.k.) keng ishlatiladigan, o'ziga
+       xos harflari bilan Inter/IBM Plex'dan farqli "premium" taassurot
+       beruvchi shrift. -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_v('style.css') }}">
   {% block extra_head %}{% endblock %}
 </head>
