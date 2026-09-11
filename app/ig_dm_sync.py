@@ -222,7 +222,10 @@ def _upsert_conversation_and_messages(
         row.customer_username = customer_participant.get("username") or row.customer_username
 
     try:
-        raw_messages = meta_api.get_instagram_conversation_messages(external_id, limit=40, page_id=page_id, access_token=access_token)
+        # 2026-09, foydalanuvchi so'rovi: standart limit (10) `meta_api.
+        # get_instagram_conversation_messages()`ning o'zidan olinadi --
+        # bu yerda qayta belgilanmaydi (avval limit=40 qattiq yozilgan edi).
+        raw_messages = meta_api.get_instagram_conversation_messages(external_id, page_id=page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
         raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
 
@@ -299,13 +302,21 @@ def sync_once(company=None) -> dict:
     Qaytaradi:
     {"configured": bool, "conversations_checked": N, "new_messages": N,
     "overdue": [{"conversation_id", "customer", "preview", "since_minutes"}],
-    "errors": [...]}.
+    "errors": [...], "error_stage": str|None}.
 
     `overdue` -- `UNANSWERED_ALERT_MINUTES`dan ko'proq vaqt javobsiz qolgan
     VA hali ogohlantirish yuborilmagan suhbatlar (Telegram xabarini
     `scheduler.job_ig_dm_sync` yuboradi va shu suhbatning
-    `unanswered_alert_sent_at`ini belgilaydi)."""
-    result = {"configured": True, "conversations_checked": 0, "new_messages": 0, "overdue": [], "errors": []}
+    `unanswered_alert_sent_at`ini belgilaydi).
+
+    2026-09, foydalanuvchi so'rovi ("sync_once natijasida qaysi bosqich
+    xato berganini ko'rsat"): `error_stage` -- xato bo'lsa, ANIQ qaysi
+    Graph API bosqichida ("conversations_list" -- suhbatlar ro'yxatini
+    olishda, yoki "conversation_messages" -- BITTA suhbatning xabarlarini
+    olishda) yuz bergani. Bir nechta suhbat xabar-bosqichida xato bersa,
+    shu maydon BIRINCHI xato bergan bosqichni saqlaydi (batafsili --
+    `errors` ro'yxatida, har biri alohida)."""
+    result = {"configured": True, "conversations_checked": 0, "new_messages": 0, "overdue": [], "errors": [], "error_stage": None}
     company_id = company.id if company else db.get_default_company_id()
     if not is_configured(company):
         result["configured"] = False
@@ -342,6 +353,7 @@ def sync_once(company=None) -> dict:
             )
         except meta_api.MetaAPIError as e:
             result["errors"].append(_friendly_meta_error(e))
+            result["error_stage"] = "conversations_list"
             _save_status(result, company_id=company.id if company else None)
             return result
 
@@ -355,6 +367,8 @@ def sync_once(company=None) -> dict:
                 )
             except meta_api.MetaAPIError as e:
                 result["errors"].append(_friendly_meta_error(e))
+                if result["error_stage"] is None:
+                    result["error_stage"] = "conversation_messages"
                 continue
             result["new_messages"] += outcome["new_messages"]
             row = outcome["row"]

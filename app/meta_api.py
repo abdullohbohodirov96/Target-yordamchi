@@ -24,11 +24,14 @@ import os
 import re
 import json
 import time
+import logging
 import hashlib
 import calendar
 import datetime as dt
 import concurrent.futures
 import requests
+
+logger = logging.getLogger("meta_api")
 
 GRAPH_API_VERSION = "v21.0"
 GRAPH_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
@@ -1357,6 +1360,39 @@ def _is_reduce_data_error(e: "MetaAPIError") -> bool:
     return "reduce the amount of data" in message.lower()
 
 
+def _is_timeout_error(e: "MetaAPIError") -> bool:
+    """2026-09, JONLI XATO (foydalanuvchi topdi): "reduce the amount of
+    data"dan ALOHIDA -- Meta ba'zan (odatda og'ir/uzoq NESTED so'rovlarda,
+    masalan bitta suhbat obyekti ICHIDA `messages.limit(N){...}` orqali
+    xabarlarni so'rashda) JSON xato tanasida to'g'ridan-to'g'ri
+    `{"error": {"message": "Timeout", ...}}` qaytaradi -- bu ham
+    `limit`ni kamaytirib qayta urinish bilan tuzatiladi (kamroq ma'lumot
+    = serverda tezroq javob)."""
+    meta_err = e.args[0] if e.args else {}
+    message = meta_err.get("message", "") if isinstance(meta_err, dict) else str(e)
+    return "timeout" in message.lower()
+
+
+def _log_meta_error(endpoint: str, e: "MetaAPIError", *, elapsed: float, attempt: int) -> None:
+    """Diagnostika logi -- 2026-09, foydalanuvchi so'rovi: "qaysi IG
+    endpoint xato berdi, Meta error code, error_subcode, message, elapsed
+    time". XAVFSIZLIK: bu yerga HECH QACHON `access_token`/to'liq so'rov
+    URL'i (query string) chiqarilmaydi -- faqat Meta'ning JSON xato
+    tanasidan olingan (token'siz) maydonlar."""
+    meta_err = e.args[0] if e.args else {}
+    if isinstance(meta_err, dict):
+        code = meta_err.get("code")
+        subcode = meta_err.get("error_subcode")
+        message = meta_err.get("message", str(e))
+    else:
+        code, subcode, message = None, None, str(e)
+    logger.warning(
+        "Meta Graph API xatosi: endpoint=%s attempt=%s code=%s error_subcode=%s "
+        "message=%r elapsed_ms=%d",
+        endpoint, attempt, code, subcode, message, round(elapsed * 1000),
+    )
+
+
 # 2026-09 TUZATISH: qayta urinish endi BIR MARTA emas, shu qiymatga
 # yetguncha DAVOM ETADI (pastga qarang) -- juda faol/uzoq tarixli
 # akkauntlarda bitta yarmiga tushirish yetarli bo'lmagani jonli saytda
@@ -1404,37 +1440,64 @@ def get_instagram_conversations(
     }
     if since is not None:
         base_params["since"] = calendar.timegm(since.utctimetuple())
+    endpoint = f"{resolved_page_id}/conversations"
+    attempt = 0
     while True:
+        attempt += 1
+        started = time.monotonic()
         try:
-            data = _get(f"{resolved_page_id}/conversations", {
+            data = _get(endpoint, {
                 **base_params,
                 "limit": current_limit,
             }, token=token)
             return data.get("data", [])
         except MetaAPIError as e:
-            if _is_reduce_data_error(e) and current_limit > _MIN_LIMIT:
+            _log_meta_error(endpoint, e, elapsed=time.monotonic() - started, attempt=attempt)
+            if (_is_reduce_data_error(e) or _is_timeout_error(e)) and current_limit > _MIN_LIMIT:
                 current_limit = max(_MIN_LIMIT, current_limit // 2)
                 continue
             raise
 
 
-def get_instagram_conversation_messages(conversation_id: str, limit: int = 40, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
+def get_instagram_conversation_messages(conversation_id: str, limit: int = 10, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
     """Bitta suhbatning so'nggi xabarlarini (eng yangisi birinchi) qaytaradi:
     har birida `id`, `message` (matn), `created_time`, `from` (yuboruvchi
-    IGSID/ism) bor. Xuddi shu "reduce the amount of data" avtomatik
-    qayta urinish -- `get_instagram_conversations()`dagi izohga qarang
-    (2026-09 tuzatish: endi minimal qiymatga yetguncha qayta-qayta
-    pasaytiriladi, bitta marta emas)."""
+    IGSID/ism) bor.
+
+    2026-09 TUZATISH (foydalanuvchi topgan JONLI XATO -- "Yangilash"
+    tugmasi bosilganda UI'da "Meta error: Timeout" chiqardi): avval bu
+    funksiya suhbat obyektining O'ZINI NESTED `fields=messages.limit(N)
+    {...}` so'rovi bilan so'rardi (`GET /{conversation_id}?fields=
+    messages.limit(40){...}`) -- Meta'da bunday ICHKI-EDGE expansion
+    TO'G'RIDAN-TO'G'RI `/{conversation_id}/messages` edge'iga qaraganda
+    SEKINROQ/OG'IRROQ ishlanadi va faol suhbatlarda server-tomon
+    "Timeout" xatosi bilan tugashi kuzatilgan. Endi to'g'ridan-to'g'ri
+    xabarlar edge'i ishlatiladi (`GET /{conversation_id}/messages
+    ?fields=id,message,created_time,from,to&limit=N`) -- standart limit
+    ham 40'dan 10'ga tushirildi.
+
+    Ikki xil xato holatida ham (Meta "reduce the amount of data..." YOKI
+    "Timeout" qaytarsa) `limit` HAR SAFAR yarmiga tushirilib (10 -> 5 ->
+    3), minimal qiymatga (`_MIN_LIMIT`) yetguncha QAYTA-QAYTA avtomatik
+    uriniladi -- `get_instagram_conversations()`dagi bilan bir xil naqsh.
+    Har bir muvaffaqiyatsiz urinish diagnostika uchun logga yoziladi
+    (`_log_meta_error` -- access_token HECH QACHON logga chiqmaydi)."""
     token = _get_page_access_token(page_id, access_token)
     current_limit = limit
+    endpoint = f"{conversation_id}/messages"
+    attempt = 0
     while True:
+        attempt += 1
+        started = time.monotonic()
         try:
-            data = _get(conversation_id, {
-                "fields": f"messages.limit({current_limit}){{id,message,created_time,from,to}}",
+            data = _get(endpoint, {
+                "fields": "id,message,created_time,from,to",
+                "limit": current_limit,
             }, token=token)
-            return ((data.get("messages") or {}).get("data")) or []
+            return data.get("data", [])
         except MetaAPIError as e:
-            if _is_reduce_data_error(e) and current_limit > _MIN_LIMIT:
+            _log_meta_error(endpoint, e, elapsed=time.monotonic() - started, attempt=attempt)
+            if (_is_reduce_data_error(e) or _is_timeout_error(e)) and current_limit > _MIN_LIMIT:
                 current_limit = max(_MIN_LIMIT, current_limit // 2)
                 continue
             raise

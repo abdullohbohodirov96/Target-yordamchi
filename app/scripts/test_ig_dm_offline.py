@@ -104,6 +104,7 @@ def test_sync_new_unanswered_conversation_flagged_overdue():
         assert result["conversations_checked"] == 1
         assert result["new_messages"] == 2
         assert len(result["overdue"]) == 1, f"45 daqiqa > 30 daqiqa chegarasi -- overdue bo'lishi kerak edi: {result}"
+        assert result["error_stage"] is None, "xato bo'lmaganda error_stage None qolishi kerak"
 
         session = db_module.get_session()
         row = session.query(db_module.IgDmConversation).filter_by(external_id="conv1").first()
@@ -186,7 +187,33 @@ def test_sync_handles_meta_error_per_conversation():
         assert result["new_messages"] == 1  # faqat conv_ok muvaffaqiyatli
         assert result["errors"], "conv_bad xatosi errors ro'yxatiga tushishi kerak"
         assert any("ruxsat" in e.lower() or "permission" in e.lower() for e in result["errors"])
-    print("OK: bitta suhbatning Meta xatosi butun sinxronizatsiyani to'xtatmaydi (qolganlari davom etadi)")
+        # 2026-09, foydalanuvchi so'rovi: natija ANIQ qaysi bosqichda xato
+        # bo'lganini ko'rsatishi kerak (bu xato xabarlar-bosqichida, bitta
+        # suhbat uchun -- "conversations_list" EMAS).
+        assert result["error_stage"] == "conversation_messages", (
+            f"kutilgan 'conversation_messages', olindi {result['error_stage']!r}"
+        )
+    print("OK: bitta suhbatning Meta xatosi butun sinxronizatsiyani to'xtatmaydi (qolganlari davom etadi), error_stage='conversation_messages' to'g'ri belgilanadi")
+
+
+def test_sync_conversations_list_error_sets_error_stage():
+    """2026-09, foydalanuvchi so'rovi: suhbatlar RO'YXATINI olishning
+    o'zida (bitta suhbatgacha ham yetib bormasdan) Meta xato bersa,
+    `error_stage` aynan 'conversations_list' bo'lishi kerak -- yuqoridagi
+    testdagi 'conversation_messages' holatidan FARQLI."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _, ig_dm_sync, _ = _fresh_modules(os.path.join(tmp, "t6b.db"))
+        error = ig_dm_sync.meta_api.MetaAPIError({"message": "Timeout", "code": 1})
+        with mock.patch.object(ig_dm_sync.meta_api, "get_instagram_business_account_id", return_value="BIZ_ID"), \
+             mock.patch.object(ig_dm_sync.meta_api, "get_instagram_conversations", side_effect=error):
+            result = ig_dm_sync.sync_once()
+
+        assert result["conversations_checked"] == 0
+        assert result["errors"]
+        assert result["error_stage"] == "conversations_list", (
+            f"kutilgan 'conversations_list', olindi {result['error_stage']!r}"
+        )
+    print("OK: suhbatlar ro'yxatini olishning o'zida xato bo'lsa, error_stage='conversations_list' to'g'ri belgilanadi")
 
 
 # ---------------------------------------------------------------------------
