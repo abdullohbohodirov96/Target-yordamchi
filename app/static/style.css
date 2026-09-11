@@ -25,6 +25,7 @@
   --warn-bg: #FFFBEB;
   --radius: 8px;
   --radius-lg: 10px;
+  --sidebar-bg: #FBFCFE;
   --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* 2026-08: dizaynga chuqurlik (depth) qo'shish uchun -- avval kartalar
      faqat ingichka border bilan tekis (flat) ko'rinardi, bu "eski"/tekis
@@ -65,7 +66,14 @@ a { color: inherit; text-decoration: none; }
    ochiq turadi, bu holda asosiy kontent HAQIQATAN suriladi). */
 .sidebar {
   position: fixed; top: 0; left: 0; height: 100vh; width: 68px; z-index: 30;
-  background: var(--card); border-right: 1px solid var(--border);
+  /* 2026-09, foydalanuvchi so'rovi ("side bar sal xunuro bo'p qogan ...
+     boshqa servicelarga kirib ko'rib"): ilgari sidebar fon rangi asosiy
+     kontent kartalari bilan bir xil oq (--card) edi -- panel sifatida
+     "yo'qolib" ko'rinardi. Zamonaviy SaaS panellarida (Linear/Vercel/
+     Notion) chap rail odatda asosiy kontentdan picha to'qroq/farqli fonga
+     ega bo'ladi, shu orqali "bu alohida navigatsiya paneli" ekani darhol
+     ko'zga tashlanadi. */
+  background: var(--sidebar-bg); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
   transition: width 0.16s ease, box-shadow 0.16s ease;
 }
@@ -89,7 +97,16 @@ a { color: inherit; text-decoration: none; }
 .sidebar.open .brand-full-logo { display: block; }
 
 .sidebar-nav {
+  /* 2026-09, foydalanuvchi so'rovi ("faqta tepada tuibride ikonkalar
+     boshqa joy bosh, chiroyliroq qil"): ilgari bandlar oddiy blok bo'lib
+     TEPAGA yopishib turardi -- band soni kam (5-7 ta) bo'lgani uchun
+     ostida katta, "buzilgandek" ko'ringan bo'sh joy qolardi. Endi
+     flex+`justify-content: center` bilan butun band to'plami rail
+     balandligi bo'ylab MARKAZLASHTIRILADI (xuddi shu fayl boshida
+     ta'riflangan "Mac dock uslubi" g'oyasiga mos -- dock ham markazda
+     muvozanatlangan holda turadi, tepaga yopishmaydi). */
   flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
   scrollbar-width: thin;
 }
 .nav-group-label {
@@ -147,8 +164,8 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 2px;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius);
-  color: var(--text-dim); font-size: 13.5px; white-space: nowrap; margin-bottom: 1px;
+  display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--radius-lg);
+  color: var(--text-dim); font-size: 13.5px; white-space: nowrap;
   transition: background 0.12s, color 0.12s; cursor: pointer; border: none; background: none;
   width: 100%; text-align: left; font-family: inherit; position: relative;
   /* Xuddi shu bug klassi -- .nav-group-label kabi: ba'zi .nav-item'lar
@@ -165,8 +182,35 @@ a { color: inherit; text-decoration: none; }
   content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
   width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--blue);
 }
-.nav-icon { flex-shrink: 0; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
-.nav-icon svg { width: 20px; height: 20px; }
+/* 2026-09, foydalanuvchi so'rovi ("chiroyliroq qil ... boshqa servicelga
+   kirib ko'rib"): zamonaviy SaaS panellar (masalan Linear/Raycast/Attio
+   uslubidagi icon-rail'lar)da ikonka DOIM (faqat hover/active'da emas)
+   yumshoq, dumaloq burchakli "chip" fonga ega bo'ladi -- shu orqali har
+   bir band o'zi mustaqil, ataylab loyihalangan element sifatida ko'rinadi,
+   rail esa bir nechta yupqa chiziqli ikonka + katta bo'sh joy emas,
+   izchil vizual ritmga ega bo'ladi. Foydalanuvchi avatari (.nav-avatar) va
+   yig'ish/kengaytirish strelkasi (.sidebar-pin-icon) bundan ISTISNO --
+   ular asosiy navigatsiya bandi emas, shuning uchun o'z ko'rinishini
+   saqlaydi (`:not()` bilan). */
+.nav-icon { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; position: relative; }
+/* 2026-09, foydalanuvchi so'rovi bilan bog'liq: sidebar YIG'ILGAN (faqat
+   ikonka) holatda "Instagram xabarlar"ning javobsiz-son belgisi (badge)
+   `.nav-text` ichida bo'lgani uchun butunlay ko'rinmas edi -- endi ikonka
+   ustida kichik qizil nuqta ham qo'shildi, sidebar OCHILGANDA esa (to'liq
+   raqamli belgi ko'ringanda) bu nuqta yashiriladi (takrorlanmasin). */
+.nav-icon-dot {
+  position: absolute; top: -2px; right: -2px; width: 9px; height: 9px;
+  border-radius: 50%; background: var(--bad); border: 2px solid var(--sidebar-bg);
+}
+.sidebar.open .nav-icon-dot { display: none; }
+.nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) {
+  width: 30px; height: 30px; border-radius: 9px;
+  background: var(--border-light); color: var(--text-dim);
+  transition: background 0.12s, color 0.12s;
+}
+.nav-item:hover .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: #E7ECF3; color: var(--ink); }
+.nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: var(--blue); color: #fff; }
+.nav-icon svg { width: 18px; height: 18px; }
 .nav-text { overflow: hidden; text-overflow: ellipsis; opacity: 0; width: 0; transition: opacity 0.1s; }
 .sidebar.open .nav-text { opacity: 1; width: auto; }
 

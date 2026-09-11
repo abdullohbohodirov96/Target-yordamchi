@@ -176,7 +176,7 @@
         <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Marketing</span>
       </a>
       <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint in _ig_dm_eps }}" title="Instagram xabarlar">
-        <span class="nav-icon">{{ navicon('instagram') }}</span><span class="nav-text">Instagram xabarlar{% if ig_dm_unanswered_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ ig_dm_unanswered_count }}</span>{% endif %}</span>
+        <span class="nav-icon">{{ navicon('instagram') }}{% if ig_dm_unanswered_count %}<span class="nav-icon-dot"></span>{% endif %}</span><span class="nav-text">Instagram xabarlar{% if ig_dm_unanswered_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ ig_dm_unanswered_count }}</span>{% endif %}</span>
       </a>
       {% endif %}
 
