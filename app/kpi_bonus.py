@@ -61,6 +61,7 @@ import calendar
 import datetime as dt
 import math
 
+import db
 import kv_store
 
 SALARY_FIXED = 4_000_000.0
@@ -68,19 +69,41 @@ MIN_SALE_AMOUNT = 500_000.0          # "minimal chek qoidasi" -- standart (admin
 _MIN_SALE_AMOUNT_KEY = "kpi_min_sale_amount"
 
 
-def get_min_sale_amount() -> float:
+def _scoped_key(base_key: str, company_id: "int | None") -> str:
+    """2026-09, MUHIM ko'p-kompaniyalilik tuzatishi (foydalanuvchi so'rovi:
+    "ikkita-uchta kompaniya ochilsa ular orasida ma'lumotlar aralashib
+    ketvoti"): bu qiymatlar avval FAQAT bitta GLOBAL kv_store kaliti bilan
+    saqlanardi -- ya'ni QAYSI kompaniyaning admini "Sozlamalar"da
+    o'zgartirsa ham, HAMMA kompaniyaning KPI/ROI hisobi (va CPL hard-kill
+    chegaralari) sezilmasdan o'zgarib ketardi. Endi standart (birinchi,
+    "Asosiy") kompaniya uchun ESKI, suffikssiz kalit ishlatiladi (mavjud
+    sozlamalar yo'qolmasligi uchun), boshqa HAR BIR kompaniya uchun esa
+    o'ziga alohida (`base_key:company_id`) kalit -- birining sozlamasi
+    ikkinchisiga sira ta'sir qilmaydi."""
+    if company_id is None:
+        return base_key
+    try:
+        if company_id == db.get_default_company_id():
+            return base_key
+    except Exception:
+        pass
+    return f"{base_key}:{company_id}"
+
+
+def get_min_sale_amount(company_id: "int | None" = None) -> float:
     """Admin "Sozlamalar" sahifasida o'zgartirishi mumkin bo'lgan minimal
-    chek qiymatini qaytaradi (kv_store'da saqlanadi) -- o'zgartirilmagan
-    bo'lsa standart `MIN_SALE_AMOUNT` (500 000 so'm) qaytadi."""
-    value = kv_store.get_json(_MIN_SALE_AMOUNT_KEY, default=None)
+    chek qiymatini qaytaradi (kv_store'da, HAR BIR kompaniya UCHUN ALOHIDA
+    saqlanadi) -- o'zgartirilmagan bo'lsa standart `MIN_SALE_AMOUNT`
+    (500 000 so'm) qaytadi."""
+    value = kv_store.get_json(_scoped_key(_MIN_SALE_AMOUNT_KEY, company_id), default=None)
     try:
         return float(value) if value is not None else MIN_SALE_AMOUNT
     except (TypeError, ValueError):
         return MIN_SALE_AMOUNT
 
 
-def set_min_sale_amount(value: float) -> None:
-    kv_store.set_json(_MIN_SALE_AMOUNT_KEY, max(0.0, float(value)))
+def set_min_sale_amount(value: float, company_id: "int | None" = None) -> None:
+    kv_store.set_json(_scoped_key(_MIN_SALE_AMOUNT_KEY, company_id), max(0.0, float(value)))
 
 
 # Dollar/so'm kursi -- dashboard'da ROI hisoblashda ishlatiladi (sotuv summasi
@@ -93,12 +116,13 @@ USD_TO_UZS_RATE = 11_800.0           # standart (admin o'zgartirmagan bo'lsa) --
 _USD_TO_UZS_RATE_KEY = "usd_to_uzs_rate"
 
 
-def get_usd_to_uzs_rate() -> float:
+def get_usd_to_uzs_rate(company_id: "int | None" = None) -> float:
     """Admin "Sozlamalar" sahifasida o'zgartirishi mumkin bo'lgan dollar/so'm
-    kursini qaytaradi (kv_store'da saqlanadi) -- o'zgartirilmagan bo'lsa
-    standart `USD_TO_UZS_RATE` qaytadi. Real kurs muntazam o'zgargani uchun
-    buni vaqti-vaqti bilan yangilab turish tavsiya etiladi."""
-    value = kv_store.get_json(_USD_TO_UZS_RATE_KEY, default=None)
+    kursini qaytaradi (kv_store'da, HAR BIR kompaniya uchun ALOHIDA
+    saqlanadi) -- o'zgartirilmagan bo'lsa standart `USD_TO_UZS_RATE`
+    qaytadi. Real kurs muntazam o'zgargani uchun buni vaqti-vaqti bilan
+    yangilab turish tavsiya etiladi."""
+    value = kv_store.get_json(_scoped_key(_USD_TO_UZS_RATE_KEY, company_id), default=None)
     try:
         rate = float(value) if value is not None else USD_TO_UZS_RATE
         return rate if rate > 0 else USD_TO_UZS_RATE
@@ -106,8 +130,8 @@ def get_usd_to_uzs_rate() -> float:
         return USD_TO_UZS_RATE
 
 
-def set_usd_to_uzs_rate(value: float) -> None:
-    kv_store.set_json(_USD_TO_UZS_RATE_KEY, max(1.0, float(value)))
+def set_usd_to_uzs_rate(value: float, company_id: "int | None" = None) -> None:
+    kv_store.set_json(_scoped_key(_USD_TO_UZS_RATE_KEY, company_id), max(1.0, float(value)))
 
 
 REPEAT_WINDOW_DAYS = 15              # "qayta xarid" bonusi uchun oyna

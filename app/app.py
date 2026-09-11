@@ -686,7 +686,7 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
             tg_send(chat_id, f"⚠️ Xatolik: {e}")
         return
     if cmd == "/vazifalar":
-        tg_send(chat_id, _format_standing_tasks_text())
+        tg_send(chat_id, _format_standing_tasks_text(chat_id))
         return
     if cmd == "/vazifa_off" and args:
         _deactivate_standing_task(chat_id, args[0])
@@ -720,20 +720,39 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
     tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish), /groupid (shu guruhning ID'sini ko'rsatish).")
 
 
-def _format_standing_tasks_text() -> str:
-    """`/vazifalar` buyrug'iga javob -- barcha FAOL doimiy (schedule_on_off/
-    schedule_report) vazifalarni ro'yxat qiladi. MUHIM: ID'lar oldiga `T`
-    (task) yoki `R` (report) prefiksi qo'yiladi -- ikkala jadval alohida
-    o'zining ID ketma-ketligidan boshlangani uchun (masalan T1 va R1 ikki
-    XIL yozuv bo'lishi mumkin), prefikssiz bare-ID bilan `/vazifa_off`
-    qaysi jadvalga tegishli ekanini bilolmay, XATO yozuvni bekor qilib
-    qo'yishi mumkin edi -- shu bug oldini olish uchun ID'lar ENDI hech qachon
-    bare raqam sifatida ko'rsatilmaydi/qabul qilinmaydi."""
+def _format_standing_tasks_text(chat_id: int) -> str:
+    """`/vazifalar` buyrug'iga javob -- shu CHATNING kompaniyasiga tegishli
+    FAOL doimiy (schedule_on_off/schedule_report) vazifalarni ro'yxat
+    qiladi. MUHIM: ID'lar oldiga `T` (task) yoki `R` (report) prefiksi
+    qo'yiladi -- ikkala jadval alohida o'zining ID ketma-ketligidan
+    boshlangani uchun (masalan T1 va R1 ikki XIL yozuv bo'lishi mumkin),
+    prefikssiz bare-ID bilan `/vazifa_off` qaysi jadvalga tegishli ekanini
+    bilolmay, XATO yozuvni bekor qilib qo'yishi mumkin edi -- shu bug
+    oldini olish uchun ID'lar ENDI hech qachon bare raqam sifatida
+    ko'rsatilmaydi/qabul qilinmaydi.
+
+    2026-09, MUHIM ko'p-kompaniyalilik tuzatishi (foydalanuvchi so'rovi:
+    "kompaniyalar orasida ma'lumotlar aralashib ketvoti, tg hisobot
+    aralash"): ILGARI bu funksiya BARCHA kompaniyalarning faol vazifalarini
+    (kampaniya nomlari bilan!) HAR QANDAY kompaniyaning Telegram
+    guruhiga/chatiga ko'rsatardi -- `/vazifalar` yozgan har qanday
+    menejer boshqa kompaniyalarning targeting jadvalini ko'rar edi. Endi
+    FAQAT so'ragan chatning O'Z kompaniyasiga tegishli vazifalar
+    ko'rsatiladi."""
     from db import StandingTask, StandingReport
+    company_id = orchestrator._company_id_for_chat(chat_id)
     session = get_session()
     try:
-        tasks = session.query(StandingTask).filter_by(is_active=True).order_by(StandingTask.id).all()
-        reports = session.query(StandingReport).filter_by(is_active=True).order_by(StandingReport.id).all()
+        tasks = (
+            session.query(StandingTask)
+            .filter_by(is_active=True, company_id=company_id)
+            .order_by(StandingTask.id).all()
+        )
+        reports = (
+            session.query(StandingReport)
+            .filter_by(is_active=True, company_id=company_id)
+            .order_by(StandingReport.id).all()
+        )
         lines = ["\U0001F4CB Faol doimiy vazifalar:\n"]
         if not tasks and not reports:
             lines.append("Hozircha yo'q.")
@@ -755,7 +774,15 @@ def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
     """`raw_id` — `T<id>` (StandingTask) yoki `R<id>` (StandingReport)
     prefiksli identifikator (`/vazifalar` chiqargani bilan bir xil). Prefikssiz
     bare raqam qabul qilinmaydi -- ikki jadval ID'lari mos kelib qolib,
-    noto'g'ri yozuv bekor qilinishining oldini olish uchun ataylab shunday."""
+    noto'g'ri yozuv bekor qilinishining oldini olish uchun ataylab shunday.
+
+    2026-09, MUHIM ko'p-kompaniyalilik tuzatishi (`_format_standing_tasks_
+    text()`dagi bilan bir xil sabab): ILGARI bu funksiya ID bo'yicha
+    to'g'ridan-to'g'ri `session.get()` qilardi -- hech qanday egalik
+    tekshiruvisiz, ya'ni ID'ni bilgan/taxmin qilgan har qanday kompaniya
+    boshqa kompaniyaning vazifasini bekor qila olardi. Endi topilgan
+    yozuvning `company_id`si so'ragan chatning O'Z kompaniyasiga mos
+    kelishi SHART."""
     from db import StandingTask, StandingReport
     raw = (raw_id or "").strip().upper()
     if len(raw) < 2 or raw[0] not in ("T", "R") or not raw[1:].isdigit():
@@ -763,10 +790,11 @@ def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
         return
     kind, item_id = raw[0], int(raw[1:])
     model = StandingTask if kind == "T" else StandingReport
+    company_id = orchestrator._company_id_for_chat(chat_id)
     session = get_session()
     try:
         obj = session.get(model, item_id)
-        if not obj or not obj.is_active:
+        if not obj or not obj.is_active or obj.company_id != company_id:
             tg_send(chat_id, f"{raw} topilmadi yoki allaqachon bekor qilingan. /vazifalar bilan ro'yxatni tekshiring.")
             return
         obj.is_active = False
@@ -1898,7 +1926,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
             session.query(Sale)
             .filter(
                 Sale.is_returned == False,  # noqa: E712
-                Sale.amount >= kpi_bonus.get_min_sale_amount(),
+                Sale.amount >= kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
                 Sale.sold_at >= start, Sale.sold_at < end,
             )
             .all()
@@ -2247,7 +2275,7 @@ def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
         .filter(
             Sale.manager_id == manager.id,
             Sale.is_returned == False,  # noqa: E712
-            Sale.amount >= kpi_bonus.get_min_sale_amount(),
+            Sale.amount >= kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
             Sale.sold_at >= start, Sale.sold_at < end,
         )
         .order_by(Sale.sold_at.asc())
@@ -2434,7 +2462,7 @@ def sold_customers_list():
         q = (
             session.query(Sale)
             .join(Lead, Sale.lead_id == Lead.id)
-            .filter(Sale.is_returned == False, Sale.amount >= kpi_bonus.get_min_sale_amount())  # noqa: E712
+            .filter(Sale.is_returned == False, Sale.amount >= kpi_bonus.get_min_sale_amount(company_id=current_user.company_id))  # noqa: E712
             .order_by(Sale.sold_at.desc())
         )
         if purchase_filter == "1":
@@ -3873,7 +3901,7 @@ def individual_check():
         "individual_check.html",
         days=days, tab=tab,
         configured=call_sync.is_configured(),
-        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
+        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
         ai=ai,
         ai_features_disabled=ai_features_disabled,
         **check,
@@ -3888,7 +3916,7 @@ def _build_ai_analysis_view(session, since) -> dict:
     ko'rinishi uchun)."""
     from db import CallRecord, Lead, Manager
 
-    min_seconds = call_analytics.get_min_real_talk_seconds()
+    min_seconds = call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id)
     analyzed = (
         session.query(CallRecord)
         .filter(CallRecord.ai_analyzed_at.isnot(None), CallRecord.started_at >= since)
@@ -4385,7 +4413,7 @@ def individual_check_set_threshold():
         seconds = int(value)
         if seconds < 0:
             raise ValueError
-        call_analytics.set_min_real_talk_seconds(seconds)
+        call_analytics.set_min_real_talk_seconds(seconds, company_id=current_user.company_id)
         flash(f"Chegara {seconds} soniyaga o'rnatildi.", "success")
     except (TypeError, ValueError):
         flash("Noto'g'ri qiymat -- butun son (soniya) kiriting.", "error")
@@ -4421,7 +4449,7 @@ def settings_hub():
                     value = float(raw)
                     if value < 0:
                         raise ValueError
-                    kpi_bonus.set_min_sale_amount(value)
+                    kpi_bonus.set_min_sale_amount(value, company_id=current_user.company_id)
                     flash(f"Minimal sotuv summasi {value:,.0f} so'mga o'rnatildi (bu chegaradan kichik sotuvlar KPI/bonusga kirmaydi).".replace(",", " "), "success")
                 except (TypeError, ValueError):
                     flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
@@ -4432,7 +4460,7 @@ def settings_hub():
                     value = float(raw)
                     if value <= 0:
                         raise ValueError
-                    kpi_bonus.set_usd_to_uzs_rate(value)
+                    kpi_bonus.set_usd_to_uzs_rate(value, company_id=current_user.company_id)
                     flash(f"Dollar/so'm kursi 1$ = {value:,.0f} so'mga o'rnatildi (ROI hisobida ishlatiladi).".replace(",", " "), "success")
                 except (TypeError, ValueError):
                     flash("Noto'g'ri qiymat -- kursni raqam ko'rinishida kiriting.", "error")
@@ -4502,7 +4530,7 @@ def settings_hub():
                         flash(e, "error")
                 else:
                     for key, value in parsed.items():
-                        orchestrator.set_business_rule(key, value)
+                        orchestrator.set_business_rule(key, value, company_id=current_user.company_id)
                     flash(
                         "CPL/target chegaralari saqlandi -- keyingi tekshiruv "
                         "(har 15 daqiqada, CPL hard-kill) yangi qiymatlarni ishlatadi.",
@@ -4577,17 +4605,20 @@ def settings_hub():
         ai_features_disabled = bool(company.ai_features_disabled)
 
     cpl_rules = {
-        "target_cpa_usd": orchestrator.get_business_rule("target_cpa_usd"),
-        "cpl_hard_kill_usd": orchestrator.get_business_rule("cpl_hard_kill_usd"),
-        "cpl_hard_kill_min_spend_usd": orchestrator.get_business_rule("cpl_hard_kill_min_spend_usd"),
-        "cpl_hard_kill_zero_lead_usd": orchestrator.get_zero_lead_kill_usd(orchestrator.get_business_rule("cpl_hard_kill_usd")),
+        "target_cpa_usd": orchestrator.get_business_rule("target_cpa_usd", company_id=current_user.company_id),
+        "cpl_hard_kill_usd": orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
+        "cpl_hard_kill_min_spend_usd": orchestrator.get_business_rule("cpl_hard_kill_min_spend_usd", company_id=current_user.company_id),
+        "cpl_hard_kill_zero_lead_usd": orchestrator.get_zero_lead_kill_usd(
+            orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
+            company_id=current_user.company_id,
+        ),
     }
 
     return render_template(
         "settings_hub.html",
-        min_sale_amount=kpi_bonus.get_min_sale_amount(),
-        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(),
-        usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(),
+        min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
+        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
+        usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
         cpl_rules=cpl_rules,
         managers=manager_rows,
         unanswered=unanswered,

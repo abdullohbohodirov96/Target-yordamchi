@@ -96,16 +96,42 @@ _CPL_RULE_KV_KEYS = {
 }
 
 
-def get_business_rule(key: str) -> float:
+def _scoped_kv_key(base_key: str, company_id: "int | None") -> str:
+    """2026-09, MUHIM ko'p-kompaniyalilik tuzatishi (foydalanuvchi so'rovi:
+    "ikkita-uchta kompaniya ochilsa ular orasida ma'lumotlar aralashib
+    ketvoti, shuni to'liq to'g'rila"): CPL/target chegaralari avval FAQAT
+    bitta GLOBAL kv_store kaliti bilan saqlanardi -- ya'ni QAYSI
+    kompaniyaning admini "Sozlamalar"dan CPL chegarasini o'zgartirsa ham,
+    bu HAMMA kompaniyaning CPL hard-kill tekshiruvi (haqiqiy reklamalarni
+    pauza qilish!) VA Marketolog LLM'ga yuboriladigan "biznes qoidalari"
+    uchun ham darhol qo'llanardi -- bitta kompaniyaning sozlamasi
+    boshqasining live reklamalarini kutilmagan holda pauza qilib
+    yuborishi (yoki aksincha, pauza qilinishi kerak bo'lgan reklamani
+    pauza qilmasligi) mumkin edi. Endi standart (birinchi, "Asosiy")
+    kompaniya ESKI suffikssiz kalitni ishlatadi (mavjud sozlama
+    yo'qolmasligi uchun), boshqa har bir kompaniya esa o'ziga alohida
+    (`base_key:company_id`) kalitni -- `kpi_bonus._scoped_key()` bilan
+    bir xil naqsh."""
+    if company_id is None:
+        return base_key
+    try:
+        if company_id == db.get_default_company_id():
+            return base_key
+    except Exception:
+        pass
+    return f"{base_key}:{company_id}"
+
+
+def get_business_rule(key: str, company_id: "int | None" = None) -> float:
     """`business_rules.json`dagi standart qiymatni qaytaradi -- LEKIN admin
-    "Sozlamalar" sahifasidan o'zgartirgan bo'lsa (kv_store'da saqlanadi),
-    o'sha YANGI qiymatni. Faqat `_CPL_RULE_KV_KEYS`da ro'yxatdagi kalitlar
-    uchun ishlaydi; boshqalari uchun to'g'ridan-to'g'ri
-    `BUSINESS_RULES.get()`ga teng."""
+    "Sozlamalar" sahifasidan o'zgartirgan bo'lsa (kv_store'da, HAR BIR
+    kompaniya UCHUN ALOHIDA saqlanadi), o'sha YANGI qiymatni. Faqat
+    `_CPL_RULE_KV_KEYS`da ro'yxatdagi kalitlar uchun ishlaydi; boshqalari
+    uchun to'g'ridan-to'g'ri `BUSINESS_RULES.get()`ga teng."""
     kv_key = _CPL_RULE_KV_KEYS.get(key)
     if kv_key:
         try:
-            value = kv_store.get_json(kv_key, default=None)
+            value = kv_store.get_json(_scoped_kv_key(kv_key, company_id), default=None)
         except Exception:
             # DB vaqtincha yetib bo'lmasa (yoki -- test skriptlaridagidek --
             # umuman ulanmagan bo'lsa) -- CPL xavfsizlik tekshiruvi
@@ -123,37 +149,39 @@ def get_business_rule(key: str) -> float:
         return 0.0
 
 
-def set_business_rule(key: str, value: float) -> None:
+def set_business_rule(key: str, value: float, company_id: "int | None" = None) -> None:
     """`app.py`dagi "Sozlamalar" sahifasi shu orqali yangi qiymatni
-    saqlaydi (faqat `_CPL_RULE_KV_KEYS`dagi 4 ta kalit uchun)."""
+    saqlaydi (faqat `_CPL_RULE_KV_KEYS`dagi 4 ta kalit uchun) -- FAQAT
+    shu `company_id`ning o'ziga, boshqa kompaniyalarga tegmaydi."""
     kv_key = _CPL_RULE_KV_KEYS.get(key)
     if not kv_key:
         raise ValueError(f"'{key}' sozlamalar sahifasidan o'zgartirib bo'lmaydi.")
-    kv_store.set_json(kv_key, max(0.0, float(value)))
+    kv_store.set_json(_scoped_kv_key(kv_key, company_id), max(0.0, float(value)))
 
 
-def get_zero_lead_kill_usd(cpl_hard_kill: float) -> float:
+def get_zero_lead_kill_usd(cpl_hard_kill: float, company_id: "int | None" = None) -> float:
     """Lead hali kelmagan reklama uchun "juda ko'p xarajat" chegarasi
     (dollarda). Admin `cpl_hard_kill_zero_lead_usd`ni sozlamagan bo'lsa,
     eski `cpl_hard_kill_zero_lead_multiplier` asosida hisoblanadi (orqaga
     moslik uchun)."""
-    direct = get_business_rule("cpl_hard_kill_zero_lead_usd")
+    direct = get_business_rule("cpl_hard_kill_zero_lead_usd", company_id=company_id)
     if direct > 0:
         return direct
     multiplier = float(BUSINESS_RULES.get("cpl_hard_kill_zero_lead_multiplier") or 3.0)
     return cpl_hard_kill * multiplier
 
 
-def effective_business_rules() -> dict:
+def effective_business_rules(company_id: "int | None" = None) -> dict:
     """`BUSINESS_RULES`ning nusxasi, LEKIN admin Sozlamalar sahifasidan
     o'zgartirgan 4 ta CPL/target qiymati YANGILANGAN holda -- Marketolog
     promptiga yuboriladigan "Biznes qoidalari" shu funksiyadan olinishi
     kerak (statik fayldan emas), aks holda admin sahifadan o'zgartirsa ham
-    LLM eski $1.5'ni ko'rishda davom etardi."""
+    LLM eski $1.5'ni ko'rishda davom etardi. `company_id` berilsa -- O'SHA
+    kompaniyaning O'Z sozlamalari (boshqa kompaniyaning emas)."""
     merged = dict(BUSINESS_RULES)
     for key in _CPL_RULE_KV_KEYS:
-        merged[key] = get_business_rule(key)
-    merged["cpl_hard_kill_zero_lead_usd_effective"] = get_zero_lead_kill_usd(merged.get("cpl_hard_kill_usd", 0.0))
+        merged[key] = get_business_rule(key, company_id=company_id)
+    merged["cpl_hard_kill_zero_lead_usd_effective"] = get_zero_lead_kill_usd(merged.get("cpl_hard_kill_usd", 0.0), company_id=company_id)
     return merged
 
 # MODEL TANLASH STRATEGIYASI (xarajatni balanslash uchun -- ataylab qilingan qaror):
@@ -1279,17 +1307,22 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     O'SHA kompaniyaning O'Z reklama hisobi/tokeni bilan tekshiriladi va
     pauza qilinadi (2026-09, multi-tenant, `lead_sync.sync_once`/
     `ig_dm_sync.sync_once` bilan bir xil naqsh). Berilmasa -- eski global
-    (ENV) xatti-harakat. `BUSINESS_RULES` (chegaralar) barcha kompaniyalar
-    uchun HOZIRCHA umumiy/global -- kompaniya-bo'yicha moslashtirish shu
-    bosqichda qilinmadi.
+    (ENV) xatti-harakat. `BUSINESS_RULES` (chegaralar) ENDI HAR BIR
+    kompaniya uchun ALOHIDA (`get_business_rule(..., company_id=company.id)`)
+    -- avval bitta kompaniyaning Sozlamalar sahifasidan o'zgartirgan CPL
+    chegarasi HAMMA kompaniyaga qo'llanardi, bu tuzatildi (2026-09,
+    foydalanuvchi so'rovi: "ikkita-uchta kompaniya ochilsa ular orasida
+    ma'lumotlar aralashib ketvoti").
 
     Qaytaradi: {"checked": N, "paused": [...], "errors": [...]}.
     Har bir "paused" elementi: {"ad_id", "name", "reason", "cpl", "spend"}.
     """
+    company_id = company.id if company else None
     # 2026-09: bu 3 qiymat endi `get_business_rule()` orqali -- admin
     # "Sozlamalar" sahifasidan o'zgartirgan bo'lsa, shu YANGI qiymat
-    # ishlatiladi (statik business_rules.json emas).
-    cpl_hard_kill = get_business_rule("cpl_hard_kill_usd")
+    # ishlatiladi (statik business_rules.json emas), VA HAR BIR kompaniya
+    # uchun ALOHIDA (`company_id` bo'yicha).
+    cpl_hard_kill = get_business_rule("cpl_hard_kill_usd", company_id=company_id)
     if cpl_hard_kill <= 0:
         return {"checked": 0, "paused": [], "errors": [], "note": "cpl_hard_kill_usd sozlanmagan -- tekshiruv o'tkazib yuborildi"}
 
@@ -1299,13 +1332,13 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     # Juda kichik hajmdagi "shovqin"dan (masalan bitta erta/tasodifiy qimmat
     # lead) asossiz pauza qilib yubormaslik uchun minimal xarajat bo'sag'asi
     # -- shu summagacha reklama hali "sinov" bosqichida deb hisoblanadi.
-    min_spend = get_business_rule("cpl_hard_kill_min_spend_usd") or 3.0
+    min_spend = get_business_rule("cpl_hard_kill_min_spend_usd", company_id=company_id) or 3.0
     # Hali BIRORTA HAM lead kelmagan, lekin xarajat allaqachon baland bo'lgan
     # reklama uchun alohida qoida (CPL bu holda 0'ga bo'linish tufayli
     # hisoblanmaydi -- dashboard_data shunday qaytaradi). To'g'ridan-to'g'ri
     # dollar summasi (admin sozlagan bo'lsa) yoki eski multiplikatordan
     # hisoblangan qiymat.
-    zero_lead_kill_usd = get_zero_lead_kill_usd(cpl_hard_kill)
+    zero_lead_kill_usd = get_zero_lead_kill_usd(cpl_hard_kill, company_id=company_id)
     protected_campaign_ids = set(BUSINESS_RULES.get("protected_campaign_ids") or [])
 
     result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True, access_token=access_token, ad_account_id=ad_account_id)

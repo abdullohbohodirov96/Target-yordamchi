@@ -586,15 +586,25 @@ def cleanup_backlog_leads() -> dict:
         }
     cutoff_dt = dt.datetime.utcfromtimestamp(cutoff_unix)
 
+    # 2026-09, MUHIM ko'p-kompaniyalilik tuzatishi: bu funksiya #190 bug'i
+    # tuzatilgandan KEYINGI eski (bitta kompaniya davridagi) backlog'ni
+    # tozalash uchun yozilgan edi -- hech qanday company_id filtri
+    # bo'lmagani uchun, endi (5 ta kompaniya bilan) qayta ishga tushirilsa
+    # BOSHQA kompaniyalarning HALI HAM haqiqiy/amaldagi Meta lead'larini
+    # (agar ular ham shu cutoff'dan oldin yaratilgan bo'lsa) o'chirib
+    # yuborishi mumkin edi. Endi FAQAT standart (birinchi, "Asosiy")
+    # kompaniyaning lead'lari bilan cheklanadi -- bu funksiya asl
+    # mo'ljallangan doirasidan chiqmaydi.
     session = get_session()
     try:
         stats = {"deleted": 0, "kept_has_sale": 0, "notes_deleted": 0, "calls_unlinked": 0}
-        candidates = (
-            session.query(Lead)
-            .filter(Lead.source == "meta")
-            .filter((Lead.created_at < cutoff_dt) | (Lead.created_at.is_(None)))
-            .all()
-        )
+        with db.scoped_as(db.get_default_company_id()):
+            candidates = (
+                session.query(Lead)
+                .filter(Lead.source == "meta")
+                .filter((Lead.created_at < cutoff_dt) | (Lead.created_at.is_(None)))
+                .all()
+            )
         for lead in candidates:
             has_sale = session.query(Sale).filter_by(lead_id=lead.id).first() is not None
             if has_sale:

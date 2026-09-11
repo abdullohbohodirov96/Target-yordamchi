@@ -22,6 +22,7 @@ ASOSIY MANTIQ (foydalanuvchi so'ragan qoidalar bo'yicha):
 import datetime as dt
 from collections import defaultdict
 
+import db
 import kv_store
 
 SESSION_GAP = dt.timedelta(hours=2)
@@ -29,16 +30,30 @@ MIN_REAL_TALK_SECONDS = 60  # standart (admin o'zgartirmagan bo'lsa shu ishlatil
 _MIN_REAL_TALK_KEY = "call_min_real_talk_seconds"
 
 
-def get_min_real_talk_seconds() -> int:
-    value = kv_store.get_json(_MIN_REAL_TALK_KEY, default=None)
+def _scoped_key(base_key: str, company_id: "int | None") -> str:
+    """`kpi_bonus._scoped_key()` bilan bir xil naqsh (2026-09, ko'p-
+    kompaniyalilik tuzatishi) -- standart kompaniya ESKI suffikssiz kalitni
+    ishlatadi, boshqa har bir kompaniya o'ziga alohida kalitni."""
+    if company_id is None:
+        return base_key
+    try:
+        if company_id == db.get_default_company_id():
+            return base_key
+    except Exception:
+        pass
+    return f"{base_key}:{company_id}"
+
+
+def get_min_real_talk_seconds(company_id: "int | None" = None) -> int:
+    value = kv_store.get_json(_scoped_key(_MIN_REAL_TALK_KEY, company_id), default=None)
     try:
         return int(value) if value is not None else MIN_REAL_TALK_SECONDS
     except (TypeError, ValueError):
         return MIN_REAL_TALK_SECONDS
 
 
-def set_min_real_talk_seconds(value: int) -> None:
-    kv_store.set_json(_MIN_REAL_TALK_KEY, max(0, int(value)))
+def set_min_real_talk_seconds(value: int, company_id: "int | None" = None) -> None:
+    kv_store.set_json(_scoped_key(_MIN_REAL_TALK_KEY, company_id), max(0, int(value)))
 
 # `CallRecord.started_at` UTC'da saqlanadi (Moi Zvonki unix timestamp'idan
 # `dt.datetime.utcfromtimestamp` orqali). Foydalanuvchiga "Individual
