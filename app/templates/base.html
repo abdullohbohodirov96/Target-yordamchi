@@ -156,6 +156,17 @@
         <span class="nav-icon">{{ navicon('settings') }}</span><span class="nav-text">Boshqaruv</span>
       </a>
       {% endif %}
+
+      {# 2026-09, foydalanuvchi so'rovi ("pasidan side br tegida marketplace
+         qoshishimiz kerak"): ulanadigan servislar (FB/IG, CRM'lar, TG bot
+         guruh) uchun BITTA joy -- sidebar'ning pastki qismida, faqat admin
+         ko'radi (integratsiya/API kalitlari boshqaruvi -- xavfsizlik
+         darajasi "Boshqaruv" bilan bir xil). #}
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('marketplace') }}" class="nav-item {{ 'active' if request.endpoint == 'marketplace' }}" title="Marketplace">
+        <span class="nav-icon">{{ navicon('cart') }}</span><span class="nav-text">Marketplace</span>
+      </a>
+      {% endif %}
     </nav>
 
     <div class="sidebar-bottom">

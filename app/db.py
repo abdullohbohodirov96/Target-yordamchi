@@ -163,6 +163,29 @@ class Company(Base):
     # tarif AI'ni umuman qo'llab-quvvatlasa -- `plans.py: ai_enabled`).
     ai_features_disabled = Column(Boolean, nullable=False, default=False)
 
+    # ---------------------------------------------------------------------
+    # 2026-09, foydalanuvchi so'rovi ("Marketplace" -- "hamma crmlarni ulash
+    # mumkin bolsin, kop integratsiyalarni qilish mumkin bolsin"): har bir
+    # tashqi CRM (amoCRM, Bitrix24, Zapier/Make va h.k.) uchun ALOHIDA
+    # (OAuth) integratsiya yozish oylab vaqt va real hisob/kalitlar talab
+    # qiladi -- shu sabab UNIVERSAL WEBHOOK yondashuvi tanlandi
+    # (`integrations.py`), bu DEYARLI HAR QANDAY zamonaviy tizim bilan
+    # ishlaydi (ularning deyarli barchasida "webhook orqali qabul
+    # qilish"/"chiquvchi avtomatlashtirish" funksiyasi bor):
+    #   - CHIQUVCHI: Replix'da yangi lead paydo bo'lganda, shu URL'ga JSON
+    #     POST qilinadi (tashqi CRM/Zapier/Make shu manzilni "webhook orqali
+    #     qabul qilish" sozlamasiga qo'yadi).
+    #   - KIRUVCHI: har bir kompaniya o'zining UNIKAL tokeni bilan shaxsiy
+    #     URL'ga ega (`/api/webhook/leads/<token>`) -- tashqi tizim shu
+    #     yerga POST qilsa, avtomatik yangi Lead sifatida tushadi.
+    webhook_out_url = Column(String(500), nullable=True)
+    webhook_out_secret = Column(String(128), nullable=True)
+    webhook_out_last_status = Column(String(16), nullable=True)  # "ok" | "error"
+    webhook_out_last_at = Column(DateTime, nullable=True)
+    webhook_out_last_error = Column(Text, nullable=True)
+    inbound_lead_token = Column(String(64), nullable=True, unique=True, index=True)
+    inbound_lead_last_at = Column(DateTime, nullable=True)
+
     trial_ends_at = Column(DateTime, nullable=True)
     # 2026-08 (foydalanuvchi so'rovi -- "hammasini akkauntlani tarif asosida
     # ishlidigan qilib ber tolovsiz ishlamasin"): to'lov qilingan MUDDAT.
@@ -334,6 +357,16 @@ class Lead(Base):
     lead_created_time = Column(DateTime, nullable=True)  # Meta'da lead yaratilgan vaqt
     created_at = Column(DateTime, default=dt.datetime.utcnow)
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+    # 2026-09, "Marketplace" / universal CRM webhook (`integrations.py`):
+    # bu lead kompaniyaning chiquvchi webhook'iga (agar sozlangan bo'lsa)
+    # yuborilganmi/yo'qmi shu yerda kuzatiladi -- NULL = hali yuborilmagan
+    # (yoki chiquvchi webhook umuman sozlanmagan). Muvaffaqiyatli
+    # yuborilgach vaqt yoziladi, xato bo'lsa faqat `webhook_delivery_error`
+    # to'ldiriladi (qayta avtomatik urinilmaydi -- cheksiz "qayta urinish"
+    # tsiklidan qochish uchun, admin xohlasa qo'lda qayta urinishi mumkin).
+    webhook_delivered_at = Column(DateTime, nullable=True)
+    webhook_delivery_error = Column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_leads_status", "status"),

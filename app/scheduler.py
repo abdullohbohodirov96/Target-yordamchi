@@ -76,6 +76,7 @@ import competitor_analytics
 import meta_api
 import db
 import kv_store
+import integrations
 
 logger = logging.getLogger("scheduler")
 
@@ -403,6 +404,23 @@ def job_lead_sync() -> dict:
     except Exception as e:
         logger.exception("Lead sync xatosi")
         return {"error": str(e)}
+
+
+def job_deliver_webhooks() -> dict:
+    """2026-09, "Marketplace" (foydalanuvchi so'rovi -- "hamma crmlarni
+    ulash mumkin bolsin"): chiquvchi CRM webhook sozlagan HAR BIR
+    kompaniya uchun, hali yuborilmagan yangi lead'larni tashqi CRM'ga
+    yuboradi (`integrations.dispatch_pending_webhooks`). AI/OpenAI
+    xarajati yo'q -- shuning uchun tez-tez (har 5 daqiqada) ishga
+    tushirish xavfsiz."""
+    session = db.get_session()
+    try:
+        return integrations.dispatch_pending_webhooks(session)
+    except Exception as e:
+        logger.exception("CRM webhook yetkazishda xatolik")
+        return {"error": str(e)}
+    finally:
+        session.close()
 
 
 def job_call_sync() -> dict:
@@ -931,6 +949,7 @@ JOBS = {
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
+    "crm-webhook-out": job_deliver_webhooks,
     "lead-cleanup": job_lead_cleanup,
     "standing-tasks": job_standing_tasks,
     "standing-reports": job_standing_reports,
@@ -971,6 +990,7 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
     scheduler.add_job(job_cpl_hard_kill, CronTrigger(minute="*/15", timezone=TIMEZONE), id="cpl-hard-kill")  # LLM'siz, tez CPL xavfsizlik qatlami
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
+    scheduler.add_job(job_deliver_webhooks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="crm-webhook-out")  # 2026-09, "Marketplace" -- AI xarajatisiz, tez-tez xavfsiz
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
     # 2026-09: avval foydalanuvchi so'rovi bilan ikkalasi HAM vaqtincha

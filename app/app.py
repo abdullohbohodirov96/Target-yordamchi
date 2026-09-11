@@ -48,6 +48,7 @@ import smm_sync
 import smm_analytics
 import ig_dm_sync
 import ig_dm_analytics
+import integrations
 from phone_utils import phone_key9
 
 logging.basicConfig(level=logging.INFO)
@@ -1135,6 +1136,143 @@ def connect_accounts():
         capi_configured=meta_events.capi_credentials_configured(company),
         manual_capi_configured=bool(company.meta_capi_dataset_id and company.get_meta_capi_token()),
     )
+
+
+# ---------------------------------------------------------------------------
+# "Marketplace" -- 2026-09, foydalanuvchi ANIQ so'rovi: "sidebar pastida
+# marketplace qo'shishimiz kerak, ulanadigan app/servislarni (FB, IG,
+# har xil CRM'lar va boshqalar, TG bot guruh) shu yerdan aniq va sodda
+# ulash". Bitta joyda: (1) mavjud FB/IG/Telegram ulash (`/connect-accounts`
+# ga havola), (2) UNIVERSAL CRM webhook -- chiquvchi va kiruvchi
+# (`integrations.py`ga qarang, nega har bir CRM uchun alohida integratsiya
+# emas -- universal webhook tanlanganini tushuntiradi).
+# ---------------------------------------------------------------------------
+@app.route("/marketplace", methods=["GET", "POST"])
+@login_required
+@admin_required
+def marketplace():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        session = get_session()
+        try:
+            c = session.get(Company, company.id)
+            if action == "set_outgoing":
+                new_url = request.form.get("webhook_out_url", "").strip() or None
+                had_url_before = bool(c.webhook_out_url)
+                c.webhook_out_url = new_url
+                c.webhook_out_secret = request.form.get("webhook_out_secret", "").strip() or None
+                # 2026-09: chiquvchi webhook ENDI birinchi marta sozlanganda
+                # (avval bo'sh bo'lib, endi URL kiritilganda) -- BARCHA
+                # eski/mavjud lead'lar "allaqachon yuborilgan" deb
+                # belgilanadi, shu bilan tashqi CRM'ga birdaniga yuzlab
+                # eski lead tushib ketmaydi (`lead_sync.py`dagi backlog
+                # mantig'i bilan bir xil g'oya) -- FAQAT shu vaqtdan keyin
+                # yaratiladigan YANGI lead'lar yuboriladi.
+                if new_url and not had_url_before:
+                    now = dt.datetime.utcnow()
+                    (
+                        session.query(Lead)
+                        .filter(Lead.company_id == company.id, Lead.webhook_delivered_at.is_(None))
+                        .update({Lead.webhook_delivered_at: now}, synchronize_session=False)
+                    )
+                if not new_url:
+                    c.webhook_out_last_status = None
+                    c.webhook_out_last_at = None
+                    c.webhook_out_last_error = None
+                session.commit()
+                flash("Chiquvchi CRM webhook saqlandi." if new_url else "Chiquvchi CRM webhook o'chirildi.", "success")
+            elif action == "test_outgoing":
+                if not c.webhook_out_url:
+                    flash("Avval webhook URL kiriting.", "error")
+                else:
+                    outcome = integrations.send_test_webhook(c.webhook_out_url, c.webhook_out_secret)
+                    if outcome["ok"]:
+                        flash("Sinov xabari muvaffaqiyatli yuborildi!", "success")
+                    else:
+                        flash(f"Sinov xabari yuborilmadi: {outcome['error']}", "error")
+            elif action == "regenerate_inbound":
+                c.inbound_lead_token = integrations.generate_inbound_token()
+                session.commit()
+                flash("Kiruvchi webhook manzili yangilandi (eskisi endi ishlamaydi).", "success")
+            else:
+                flash("Noma'lum amal.", "error")
+        finally:
+            session.close()
+        return redirect(url_for("marketplace"))
+
+    # GET: kiruvchi token hali yo'q bo'lsa -- shu yerda (ko'rsatishdan oldin)
+    # avtomatik yaratib qo'yamiz, shunda admin darhol o'z shaxsiy URL'ini
+    # ko'radi (alohida "yaratish" tugmasini bosishi shart emas).
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        token = integrations.ensure_inbound_token(c)
+        session.commit()  # `ensure_inbound_token` yangi token yaratgan bo'lsa ham, yo'q ham -- xavfsiz no-op
+        inbound_url = url_for("webhook_leads_intake", token=token, _external=True)
+        view = {
+            "webhook_out_url": c.webhook_out_url,
+            "webhook_out_secret": c.webhook_out_secret,
+            "webhook_out_last_status": c.webhook_out_last_status,
+            "webhook_out_last_at": c.webhook_out_last_at,
+            "webhook_out_last_error": c.webhook_out_last_error,
+            "inbound_url": inbound_url,
+            "inbound_lead_last_at": c.inbound_lead_last_at,
+            "meta_connected": bool(c.meta_page_id and c.meta_access_token),
+            "telegram_connected": bool(c.telegram_group_id),
+        }
+    finally:
+        session.close()
+
+    return render_template("marketplace.html", company=company, view=view)
+
+
+@app.route("/api/webhook/leads/<token>", methods=["POST"])
+def webhook_leads_intake(token):
+    """2026-09, "Marketplace" KIRUVCHI tomoni -- HAR BIR kompaniyaning
+    o'z shaxsiy (taxmin qilib bo'lmaydigan) `token`i orqali autentifikatsiya
+    qilinadi, login SHART EMAS (tashqi CRM/Zapier o'zi POST qiladi).
+    Xom JSON'ni `integrations.parse_inbound_payload()` moslashtiradi
+    (turli kalit nomlari qo'llab-quvvatlanadi), so'ng yangi `Lead` sifatida
+    O'SHA (token'ga tegishli) kompaniyaga yoziladi."""
+    session = get_session()
+    try:
+        with db.unscoped():
+            company = session.query(Company).filter_by(inbound_lead_token=token).first()
+        if company is None or not company.is_active:
+            return jsonify({"ok": False, "error": "noto'g'ri yoki eskirgan token"}), 404
+
+        data = request.get_json(silent=True) or {}
+        parsed = integrations.parse_inbound_payload(data)
+        if not parsed["full_name"] and not parsed["phone"]:
+            return jsonify({"ok": False, "error": "kamida ism yoki telefon kerak"}), 400
+
+        lead = Lead(
+            company_id=company.id,
+            source="webhook",
+            status="new",
+            full_name=parsed["full_name"],
+            phone=parsed["phone"],
+            phone2=parsed["phone2"],
+            email=parsed["email"],
+            quality_note=parsed["note"],
+            raw_field_data=json.dumps(parsed["raw"], ensure_ascii=False),
+        )
+        session.add(lead)
+        c = session.get(Company, company.id)
+        c.inbound_lead_last_at = dt.datetime.utcnow()
+        session.commit()
+        return jsonify({"ok": True, "lead_id": lead.id})
+    except Exception:
+        logger.exception("Kiruvchi CRM webhook xatosi (token=%s...)", token[:8])
+        session.rollback()
+        return jsonify({"ok": False, "error": "ichki xatolik"}), 500
+    finally:
+        session.close()
 
 
 def _normalize_oauth_page(p: dict) -> dict:
