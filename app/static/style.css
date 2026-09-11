@@ -966,37 +966,47 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    kartalar sonidan ko'proq (bo'sh, "hech narsa yo'q") grid ustunlarini
    ZAXIRALAYDI, shuning uchun 5 ta karta katta ekranning faqat chap
    tomonini egallab, o'ng tomoni butunlay bo'sh qolardi ("kam tanlov"
-   taassurotining aynan sababi). `auto-fit` esa bo'sh ustunlarni yig'ishtirib,
-   MAVJUD kartalarni butun qator bo'ylab CHO'ZADI. Shu bilan birga minimal
-   o'lcham ham kattalashtirildi -- kartalarning o'zi ham kattaroq. */
-.app-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 20px; margin-bottom: 26px;
-}
+   taassurotining aynan sababi).
+   MUHIM (keyinroq topilgan ikkinchi bug, foydalanuvchi яна xuddi shu
+   shikoyatni qildi): CSS Grid `auto-fit` bilan ham muammo chiqdi --
+   Grid ustun SONI butun jadval uchun BIR MARTA hisoblanadi (qatorlar
+   bo'yicha alohida emas), shuning uchun ikonka/karta kattalashtirilgach
+   5 ta karta ekranga 4 tadan sig'ib qolganda, 5-karta ALOHIDA qatorga
+   tushib, o'sha qatorda CHO'ZILMAY, kichik holida "yolg'iz" osilib
+   qolardi -- xuddi eski muammoning o'zi, faqat oxirgi kartada. Shu
+   sabab endi CSS Grid emas, FLEXBOX (`flex-wrap`) ishlatiladi --
+   flexbox'da har bir QATOR o'zining ortiqcha bo'sh joyini MUSTAQIL
+   taqsimlaydi, shuning uchun oxirgi qatorda nechta karta qolishidan
+   qat'iy nazar (hatto bittagina qolsa ham) ular shu qatorni to'ldirib
+   cho'ziladi. */
+.app-grid { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 26px; }
 .app-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left;
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 22px 20px 18px; box-shadow: var(--shadow-sm); cursor: pointer; position: relative;
-  font-family: inherit; width: 100%; min-height: 168px;
+  padding: 26px 22px 20px; box-shadow: var(--shadow-sm); cursor: pointer; position: relative;
+  font-family: inherit; min-height: 190px;
+  flex: 1 1 220px; max-width: 420px;
   transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
 .app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: #CBD5E1; }
 .app-card.active { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg), var(--shadow-md); }
-/* 2026-09, foydalanuvchi so'rovi ("marketplace ... ikonkalani to'liq bo'p
-   tursin" -- hozircha kam xizmat ulangani uchun kartalar juda "bo'sh"
-   ko'rinardi): ikonka aniq kattalashtirildi -- kartaning yuqori qismini
-   to'liqroq egallaydi, "bo'sh joy ko'p" taassurotini kamaytiradi. */
+/* 2026-09, foydalanuvchi so'rovi ("ikonkalani kattalashtir, to'ldirish
+   kerak" -- avvalgi 68px hali ham "bo'sh joy ko'p" taassurotini to'liq
+   yo'qotmagan edi): ikonka yana kattalashtirildi (68px -> 80px), karta
+   ham mutanosib ravishda kattaroq (min-height 168 -> 190, padding oshdi),
+   nom/subtitr shrifti ham bir picha kattalashtirildi -- karta o'zi
+   "to'liq" his qiladi, atrofida ortiqcha bo'sh joy qolmaydi. */
 .app-icon {
-  width: 68px; height: 68px; border-radius: 18px; display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(15,23,42,0.18); margin-bottom: 16px;
+  width: 80px; height: 80px; border-radius: 20px; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(15,23,42,0.2); margin-bottom: 18px;
 }
-.app-icon svg { width: 32px; height: 32px; }
-.app-icon-lg { width: 72px; height: 72px; border-radius: 19px; font-size: 23px; margin-bottom: 0; }
-.app-icon-lg svg { width: 34px; height: 34px; }
-.app-card-name { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.3; }
-.app-card-sub { font-size: 12.5px; color: var(--text-faint); margin-top: 3px; line-height: 1.3; }
-.app-card-badge { font-size: 10.5px; padding: 4px 9px; margin-top: auto; align-self: flex-start; }
+.app-icon svg { width: 36px; height: 36px; }
+.app-icon-lg { width: 88px; height: 88px; border-radius: 22px; font-size: 26px; margin-bottom: 0; }
+.app-icon-lg svg { width: 40px; height: 40px; }
+.app-card-name { font-size: 16.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+.app-card-sub { font-size: 13px; color: var(--text-faint); margin-top: 4px; line-height: 1.35; }
+.app-card-badge { font-size: 11px; padding: 4px 10px; margin-top: auto; align-self: flex-start; }
 .app-card-badge:not(.badge-color-good):not(.badge-color-bad):not(.badge-color-warn) { background: var(--border-light); color: var(--text-dim); }
 
 .app-detail { margin-bottom: 20px; }
@@ -1006,6 +1016,18 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .app-detail-back:hover { color: var(--blue); background: none; box-shadow: none; transform: none; }
 .app-detail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+
+/* 2026-09, foydalanuvchi so'rovi ("ulashniyam chiroyliroq qil" -- Meta/
+   Telegram detal panellari faqat bitta belgi + qisqa jumla + kichik
+   tugmadan iborat bo'lib, katta bo'sh oq karta ichida "yo'qolib"
+   ko'rinardi): endi ulanish nima BERISHINI ko'rsatuvchi qisqa, HAQIQIY
+   (soxta emas) foyda-ro'yxati qo'shildi, tugma esa katta, aniq CTA
+   ko'rinishiga keltirildi -- panel to'liqroq, tugma esa haqiqiy
+   "asosiy harakat" his qiladi. */
+.app-connect-benefits { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.app-connect-benefits li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--text-dim); line-height: 1.4; }
+.app-connect-benefits svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--good); margin-top: 1px; }
+.btn-connect-cta { font-size: 15px; padding: 13px 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 
 /* `.copy-field` ba'zan `<form>` ichida, ba'zan (kiruvchi URL kabi)
    undan TASHQARIDA ishlatiladi -- shu sabab `input` uchun global "form
@@ -1023,8 +1045,8 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .copy-field .copy-btn.copied { background: var(--good); }
 
 @media (max-width: 640px) {
-  .app-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
-  .app-card { padding: 12px; }
+  .app-grid { gap: 10px; }
+  .app-card { padding: 12px; flex-basis: 128px; min-height: unset; }
   .copy-field { flex-direction: column; }
 }
 

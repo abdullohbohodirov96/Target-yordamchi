@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Marketplace — Replix{% endblock %}
 {% block content %}
+{% set check_icon_svg %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg>{% endset %}
 
 <div class="page-head">
   <div>
@@ -82,9 +83,15 @@
       {% if not view.ig_connected %}<br><span style="color:var(--warn)">⚠ Instagram akkaunt ulanmagan — Instagram'ga yoziladigan xabar (SMS) reklamalari va IG statistikasi to'liq ishlashi uchun buni ham ulash kerak.</span>{% endif %}
     </p>
     {% else %}
-    <p class="page-subtitle" style="margin:0 0 14px">Akkauntni ulash uchun quyidagi tugmani bosing.</p>
+    <p class="page-subtitle" style="margin:0 0 12px">Ulaganingizdan so'ng, avtomatik ravishda:</p>
+    <ul class="app-connect-benefits">
+      <li>{{ check_icon_svg|safe }}Reklama xarajati, CPL va ROI Target sahifasida real vaqtda ko'rinadi</li>
+      <li>{{ check_icon_svg|safe }}Lead Ads'dan kelgan lidlar avtomatik CRM'ga tushadi — qo'lda kiritish shart emas</li>
+      <li>{{ check_icon_svg|safe }}Instagram Direct xabarlarga shu tizim ichidan to'g'ridan-to'g'ri javob yozasiz</li>
+      <li>{{ check_icon_svg|safe }}CPL belgilangan chegaradan oshsa, reklama avtomatik pauza qilinadi</li>
+    </ul>
     {% endif %}
-    <a href="{{ url_for('connect_accounts') }}" class="btn">{{ "Boshqarish / almashtirish →" if view.meta_connected else "Ulash →" }}</a>
+    <a href="{{ url_for('connect_accounts') }}" class="btn btn-connect-cta">{{ "Boshqarish / almashtirish →" if view.meta_connected else "Ulash →" }}</a>
   </div>
 </div>
 
@@ -102,10 +109,18 @@
     <p class="page-subtitle" style="margin:0 0 6px">
       {% if view.telegram_connected %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
     </p>
-    <p class="text-faint" style="font-size:12.5px; margin:0 0 14px">
-      {% if view.telegram_connected %}Guruh ID: <strong>{{ view.telegram_group_id }}</strong>{% else %}Guruhni ulash yoki almashtirish uchun quyidagi tugmani bosing.{% endif %}
-    </p>
-    <a href="{{ url_for('connect_accounts') }}" class="btn">{{ "Boshqarish / almashtirish →" if view.telegram_connected else "Ulash →" }}</a>
+    {% if view.telegram_connected %}
+    <p class="text-faint" style="font-size:12.5px; margin:0 0 14px">Guruh ID: <strong>{{ view.telegram_group_id }}</strong></p>
+    {% else %}
+    <p class="page-subtitle" style="margin:0 0 12px">Ulaganingizdan so'ng, guruhingizga avtomatik keladi:</p>
+    <ul class="app-connect-benefits">
+      <li>{{ check_icon_svg|safe }}Har kuni kompaniyangizning umumiy hisoboti (lidlar, sotuvlar, xarajat)</li>
+      <li>{{ check_icon_svg|safe }}30+ daqiqa javobsiz qolgan Instagram xabarlari haqida ogohlantirish</li>
+      <li>{{ check_icon_svg|safe }}CPL chegarasi oshib, reklama avtomatik pauza qilinganda darhol xabar</li>
+      <li>{{ check_icon_svg|safe }}Qayta aloqa (follow-up) eslatmalari va vaqtida bajarilmagan vazifalar</li>
+    </ul>
+    {% endif %}
+    <a href="{{ url_for('connect_accounts') }}" class="btn btn-connect-cta">{{ "Boshqarish / almashtirish →" if view.telegram_connected else "Ulash →" }}</a>
   </div>
 </div>
 
