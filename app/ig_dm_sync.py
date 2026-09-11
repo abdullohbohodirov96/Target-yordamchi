@@ -101,6 +101,17 @@ def _get_ig_business_id(*, page_id: str | None = None, access_token: str | None 
     return _ig_business_id_cache[cache_key]
 
 
+def invalidate_ig_business_id_cache(page_id: "str | None") -> None:
+    """`meta_api.invalidate_page_token_cache()` bilan bir xil sabab --
+    kompaniya qayta ulanganda (yangi token/scope), shu Page uchun eski
+    keshlangan natijani (xususan, avvalgi urinishda xato bo'lib `None`
+    saqlangan bo'lsa) olib tashlaydi, aks holda keyingi sinxronizatsiya
+    process qayta ishga tushmaguncha eski (noto'g'ri) natijani qaytarib
+    davom etardi."""
+    cache_key = page_id or "__default__"
+    _ig_business_id_cache.pop(cache_key, None)
+
+
 def _message_sender(raw_msg: dict, ig_business_id: "str | None") -> str:
     from_id = (raw_msg.get("from") or {}).get("id")
     if ig_business_id and from_id == ig_business_id:

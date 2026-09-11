@@ -1355,6 +1355,17 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
         c.set_meta_access_token(token)
         c.meta_page_id = page["id"]
         c.ig_business_id = page.get("ig")
+        # 2026-09, JONLI XATO TOPILDI: foydalanuvchi "Facebook bilan qayta
+        # ulash"ni necha marta bossa ham, Instagram DM'da "(#230) Requires
+        # instagram_manage_messages" xatosi davom etardi -- sabab, YANGI
+        # (kengroq scope'li) token bazaga saqlansa ham, `meta_api.py`/
+        # `ig_dm_sync.py`dagi process-darajasidagi Page Access Token/IG
+        # Business ID keshlari ESKI (torroq ruxsat bilan olingan) natijani
+        # cheksiz (server qayta ishga tushmaguncha) qaytarib berardi. Shu
+        # Page uchun ikkala keshni ham darhol tozalaymiz -- shu tufayli
+        # KEYINGI so'rov YANGI tokendan yangi Page Access Token oladi.
+        meta_api.invalidate_page_token_cache(page["id"])
+        ig_dm_sync.invalidate_ig_business_id_cache(page["id"])
         if account:
             c.meta_ad_account_id = account["id"]
             c.meta_ad_account_name = account.get("name")

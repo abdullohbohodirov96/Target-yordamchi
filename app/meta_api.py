@@ -309,6 +309,22 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
     return token
 
 
+def invalidate_page_token_cache(page_id: "str | None") -> None:
+    """2026-09, JONLI XATO TOPILDI: kompaniya "Facebook bilan qayta ulash"
+    orqali YANGI (kengroq scope'li, masalan `instagram_manage_messages`
+    qo'shilgan) foydalanuvchi tokeniga o'tsa ham, `_get_page_access_token()`
+    yuqoridagi `_page_token_cache`da ESKI (torroq ruxsat bilan olingan)
+    Page Access Tokenni CHEKSIZ (process qayta ishga tushmaguncha) saqlab
+    qolardi -- shuning uchun Instagram DM ("#230 Requires
+    instagram_manage_messages") xatosi qayta ulanishdan KEYIN ham davom
+    etardi (foydalanuvchi buni bir necha marta qayta ulanib ham hal qila
+    olmadi). Bu funksiya `_save_facebook_connection()`dan (app.py) HAR
+    safar chaqiriladi -- shu Page uchun eski keshni olib tashlaydi, keyingi
+    chaqiruv YANGI foydalanuvchi tokenidan yangi Page Access Token oladi."""
+    if page_id and page_id in _page_token_cache:
+        del _page_token_cache[page_id]
+
+
 # ---------------------------------------------------------------------------
 # INSIGHTS (tahlil uchun ma'lumot olish)
 # ---------------------------------------------------------------------------
