@@ -118,13 +118,14 @@ def _company_disabled_set(user) -> set:
     return set(getattr(g, cache_attr))
 
 
-# 2026-09, foydalanuvchi ANIQ so'rovi bilan VAQTINCHA to'liq o'chirilgan:
-# "qo'ng'iroqlarni tahlil qilishni hozircha olib tashi... buni to'liq
-# yopvor hozircha". Qayta yoqish uchun -- bu ro'yxatni bo'sh qiling
-# (`set()`) yoki shu bloklarni olib tashlang; kod/ma'lumotlar o'chirilmadi,
-# faqat kirish yopildi (barcha kompaniyalar uchun, har bir menejer/admin
-# ruxsatidan QAT'IY NAZAR).
-GLOBALLY_DISABLED_MODULES = {"individual_check"}
+# 2026-09: avval foydalanuvchi so'rovi bilan VAQTINCHA to'liq o'chirilgan edi
+# ("qo'ng'iroqlarni tahlil qilishni hozircha olib tashi... buni to'liq
+# yopvor hozircha"). Endi foydalanuvchi ANIQ qaytarishni so'radi ("individual
+# tekshiruv... audiolar chiqib tursin, qaytar uni") -- shuning uchun QAYTA
+# YOQILDI. Kod/ma'lumotlar hech qachon o'chirilmagan edi, faqat kirish
+# yopiq edi. Agar kelajakda yana vaqtincha o'chirish kerak bo'lsa -- shu
+# ro'yxatga qaytadan `{"individual_check"}` qo'ying.
+GLOBALLY_DISABLED_MODULES: set[str] = set()
 
 
 def has_module(user, key: str) -> bool:
