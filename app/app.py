@@ -339,6 +339,25 @@ def module_required(key: str):
 app.jinja_env.globals["has_module"] = permissions.has_module
 app.jinja_env.globals["get_plan"] = plans.get_plan
 app.jinja_env.globals["current_year"] = lambda: dt.datetime.utcnow().year
+
+# 2026-09, foydalanuvchi shikoyati: CSS'ga (style.css) yangi qoidalar
+# qo'shilgandan keyin ham sahifa ESKI (buzilgan) ko'rinishda qolaverdi --
+# sabab yuqoridagi 7 kunlik statik-fayl keshi (`SEND_FILE_MAX_AGE_DEFAULT`):
+# fayl NOMI o'zgarmagani uchun brauzer eski nusxani ishlatishda davom etadi.
+# Endi statik fayl havolasiga uning mtime'iga asoslangan `?v=` qo'shiladi --
+# fayl mazmuni o'zgarganda URL ham o'zgaradi, shu bilan brauzer 7 kun
+# kutmasdan avtomatik yangisini yuklaydi (keshlash tezligi saqlanadi).
+_STATIC_DIR = os.path.join(app.root_path, "static")
+
+
+def _asset_v(filename: str) -> str:
+    try:
+        return str(int(os.path.getmtime(os.path.join(_STATIC_DIR, filename))))
+    except OSError:
+        return "0"
+
+
+app.jinja_env.globals["asset_v"] = _asset_v
 # 2026-09, foydalanuvchi so'rovi ("Google qidiruvda birinchi chiqishi
 # kerak... Google'ni ham qo'shish kerak"): Google Search Console orqali
 # domenni tasdiqlash uchun kerak bo'ladigan meta-teg. Qiymatni Search

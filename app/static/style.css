@@ -823,26 +823,28 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    ikonkali karta bo'lib ko'rinadi, bosilganda o'zining ulash sahifasi
    ochiladi ("ichiga kirsa ulash bosin"). */
 .app-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px; margin-bottom: 22px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px; margin-bottom: 24px;
 }
 .app-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left;
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 16px; box-shadow: var(--shadow-sm); cursor: pointer; position: relative;
-  font-family: inherit; width: 100%; transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  padding: 18px 16px 14px; box-shadow: var(--shadow-sm); cursor: pointer; position: relative;
+  font-family: inherit; width: 100%; min-height: 148px;
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
-.app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: #CBD5E1; }
+.app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: #CBD5E1; }
 .app-card.active { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg), var(--shadow-md); }
 .app-icon {
-  width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  width: 46px; height: 46px; border-radius: 13px; display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 5px rgba(15,23,42,0.15); margin-bottom: 12px;
 }
-.app-icon-lg { width: 52px; height: 52px; border-radius: 14px; font-size: 17px; }
-.app-card-name { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-top: 6px; }
-.app-card-sub { font-size: 11.5px; color: var(--text-faint); }
-.app-card-badge { position: absolute; top: 12px; right: 12px; font-size: 10px; padding: 3px 7px; }
+.app-icon-lg { width: 52px; height: 52px; border-radius: 14px; font-size: 17px; margin-bottom: 0; }
+.app-card-name { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+.app-card-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; line-height: 1.3; }
+.app-card-badge { font-size: 10px; padding: 3px 8px; margin-top: auto; align-self: flex-start; }
+.app-card-badge:not(.badge-color-good):not(.badge-color-bad):not(.badge-color-warn) { background: var(--border-light); color: var(--text-dim); }
 
 .app-detail { margin-bottom: 20px; }
 .app-detail-back {
