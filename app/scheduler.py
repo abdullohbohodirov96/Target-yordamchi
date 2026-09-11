@@ -414,16 +414,20 @@ def job_call_sync() -> dict:
     o'zgartirilsa/to'ldirilsa ham, bazadagi ESKI yozuvlar avtomatik
     to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas).
 
-    2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("audio tushsa DARHOL
-    tahlil qilinsin, schedulerni kutmasdan"): avval yangi qo'ng'iroqlar
-    FAQAT alohida `job_call_analysis` cron'i (soatning :10/:30/:50
-    daqiqalarida) orqali tahlil qilinardi -- ya'ni yangi yozuv bilan
-    tahlil orasida 20 daqiqagacha kechikish bo'lishi mumkin edi. ENDI,
-    agar shu sinxronizatsiya YANGI yozuv(lar) qo'shgan bo'lsa, DARHOL
-    (shu job ichida, `job_call_analysis`ni kutmasdan) tahlil navbati
-    ishga tushiriladi -- `job_call_analysis` cron'i baribir QOLADI
-    (xavfsizlik to'ri sifatida -- masalan avvalgi urinish xato bergan
-    "qayta urinish" navbatini tozalash uchun)."""
+    2026-09, foydalanuvchi ANIQ so'rovi ("audio tahlil keremas, manga
+    faqat moi zvonkidan ulangan audiolar chiqib kelib tursin"): bu job
+    ENDI faqat qo'ng'iroq yozuvlarini (audio bilan) tortib olib, Individual
+    tekshirish sahifasida ko'rinadigan qiladi -- HECH QANDAY AI
+    tahlil/transkripsiya avtomatik ishga TUSHMAYDI (bu xarajat qiladi,
+    foydalanuvchi buni ANIQ istamadi). Ilgari bu yerda "yangi yozuv kelsa
+    darhol AI tahlil qilinsin" degan qo'shimcha qadam bor edi -- o'sha olib
+    tashlandi. `job_call_analysis` cron'i ham ataylab o'chiq qoldirilgan
+    (pastga, `start_scheduler()`ga qarang). Agar kelajakda foydalanuvchi AI
+    tahlilni QAYTA yoqishni so'rasa -- Sozlamalar sahifasidagi "AI
+    funksiyalarini o'chirish" tugmasi (`Company.ai_features_disabled`)
+    yordamida HAR BIR kompaniya o'zi alohida yoqib/o'chira oladi, YOKI shu
+    yerga qaytadan immediate-analysis qadamini (yoki pastdagi
+    `job_call_analysis` cron'ini) qo'shish kerak."""
     try:
         result = call_sync.sync_once()
         if not result.get("configured"):
@@ -432,20 +436,6 @@ def job_call_sync() -> dict:
             result["reconcile"] = call_sync.reconcile_existing_records()
         except Exception:
             logger.exception("Qo'ng'iroq yozuvlarini tozalashda xatolik")
-        if result.get("new_calls"):
-            try:
-                # Portlash/keskin ko'tarilishning oldini olish uchun BIR
-                # martalik yuqori chegara -- odatiy holatda yangi
-                # qo'ng'iroqlar soni buncha ko'p bo'lmaydi (bir necha
-                # daqiqada bir nechta qo'ng'iroq), lekin xavfsizlik uchun.
-                immediate_limit = min(result["new_calls"], 15)
-                session = db.get_session()
-                try:
-                    result["immediate_analysis"] = call_analysis.run_pending_analysis(session, limit=immediate_limit)
-                finally:
-                    session.close()
-            except Exception:
-                logger.exception("Yangi qo'ng'iroqlarni DARHOL tahlil qilishda xatolik")
         return result
     except Exception as e:
         logger.exception("Qo'ng'iroq sync xatosi")
@@ -983,13 +973,17 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
-    # 2026-09, foydalanuvchi ANIQ so'rovi bilan VAQTINCHA o'chirilgan:
-    # "qo'ng'iroqlarni tahlil qilishni hozircha olib tashi... buni to'liq
-    # yopvor hozircha". Qayta yoqish uchun quyidagi ikki qatorni qaytaring
-    # (kod/ma'lumotlar o'chirilmadi, faqat fon jarayoni to'xtatildi -- shu
-    # bilan OpenAI transkripsiya/tahlil xarajati ham to'xtaydi).
-    # scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
-    # scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # call-sync'dan keyin
+    # 2026-09: avval foydalanuvchi so'rovi bilan ikkalasi HAM vaqtincha
+    # o'chirilgan edi ("qo'ng'iroqlarni tahlil qilishni hozircha olib
+    # tashi... buni to'liq yopvor hozircha"). Endi foydalanuvchi ANIQ
+    # aytdi: "audio tahlil keremas, manga faqat moi zvonkidan ulangan
+    # audiolar chiqib kelib tursin" -- ya'ni FAQAT qo'ng'iroq
+    # sinxronizatsiyasi (audiolarning o'zi) kerak, AI tahlil (OpenAI
+    # xarajati) EMAS. Shu sabab `call-sync` QAYTA YOQILDI, `call-analysis`
+    # esa ATAYLAB o'chiq qoldirildi (`job_call_sync` o'zi ham endi AI
+    # tahlilni avtomatik ishga tushirmaydi -- yuqoridagi izohga qarang).
+    scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
+    # scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # ATAYLAB o'chiq -- AI tahlil kerak emas
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.add_job(job_ig_dm_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="ig-dm-sync")  # AI'siz, tez -- yangi xabar/javobsizlik tekshiruvi
