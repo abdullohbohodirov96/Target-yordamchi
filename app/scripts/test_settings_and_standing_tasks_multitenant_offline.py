@@ -244,6 +244,123 @@ def test_vazifa_off_cannot_deactivate_another_companys_task():
     print("OK: /vazifa_off endi boshqa kompaniyaning vazifasini ID bo'yicha bekor qilishga yo'l qo'ymaydi (egalik tekshiruvi qo'shildi)")
 
 
+def test_vazifalar_from_unregistered_chat_does_not_leak_default_companys_tasks():
+    """2026-09, YANGI JONLI BUG (foydalanuvchining "bot boshqala yozsa
+    registratsiya qiling deb tushuntirsin" so'rovini tekshirish paytida
+    topilgan): `orchestrator._company_id_for_chat()` HECH QAYSI
+    kompaniyaga ulanmagan ("yot") chat uchun ham STANDART (platforma
+    egasining HAQIQIY) kompaniyaga tushib qolardi -- ya'ni butunlay
+    begona (hech qanday guruhga/menejerga ulanmagan) odam /vazifalar
+    yozsa, platforma egasining haqiqiy target vazifalarini (kampaniya
+    nomi bilan!) ko'rar edi. Endi bunday chat uchun ro'yxatdan o'tish
+    yo'riqnomasi yuboriladi, haqiqiy ma'lumot EMAS."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_modules(os.path.join(tmp, "v3.db"))
+        default_company_id = db_module.get_default_company_id()
+        session = db_module.get_session()
+        try:
+            session.add(db_module.StandingTask(
+                company_id=default_company_id, chat_id="-9001", object_id="camp_owner",
+                object_name="Platforma egasining HAQIQIY targeti", on_time="09:00", off_time="22:00", is_active=True,
+            ))
+            session.commit()
+        finally:
+            session.close()
+
+        sent = []
+        UNREGISTERED_CHAT = -777333999  # hech qanday Company.telegram_group_id/Manager.telegram_user_id'ga mos emas
+        with mock.patch.object(app_module, "tg_send", side_effect=lambda cid, text: sent.append((cid, text))):
+            app_module.handle_command(UNREGISTERED_CHAT, "/vazifalar", [])
+
+        assert len(sent) == 1
+        text = sent[0][1]
+        assert "Platforma egasining HAQIQIY targeti" not in text, (
+            f"begona chatga platforma egasining haqiqiy target ma'lumoti SIZIB CHIQMASLIGI kerak: {text}"
+        )
+        assert text == app_module._REGISTER_HELP_TEXT, "begona chatga ro'yxatdan o'tish yo'riqnomasi yuborilishi kerak"
+        assert "replix.uz/signup" in text
+    print("OK: /vazifalar hali ro'yxatdan o'tmagan begona chatga platforma egasining haqiqiy vazifalarini SIZDIRMAYDI -- o'rniga ro'yxatdan o'tish yo'riqnomasi yuboradi")
+
+
+def test_vazifa_off_from_unregistered_chat_cannot_deactivate_default_companys_task():
+    """Xuddi yuqoridagi bilan bir xil bug, lekin YOZISH (bekor qilish)
+    tomoni: begona chat, agar platforma egasining haqiqiy T<id>'sini
+    bilsa/taxmin qilsa, uning HAQIQIY avtomatik yoqish/o'chirish
+    vazifasini BEKOR qila OLMASLIGI kerak."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_modules(os.path.join(tmp, "v4.db"))
+        default_company_id = db_module.get_default_company_id()
+        session = db_module.get_session()
+        try:
+            task = db_module.StandingTask(
+                company_id=default_company_id, chat_id="-9001", object_id="camp_owner",
+                object_name="Platforma egasining HAQIQIY targeti", on_time="09:00", off_time="22:00", is_active=True,
+            )
+            session.add(task)
+            session.commit()
+            task_id = task.id
+        finally:
+            session.close()
+
+        sent = []
+        UNREGISTERED_CHAT = -777333999
+        with mock.patch.object(app_module, "tg_send", side_effect=lambda cid, text: sent.append((cid, text))):
+            app_module.handle_command(UNREGISTERED_CHAT, "/vazifa_off", [f"T{task_id}"])
+
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                task_after = session.get(db_module.StandingTask, task_id)
+            assert task_after.is_active, "begona chat platforma egasining HAQIQIY vazifasini bekor qila OLMASLIGI kerak"
+        finally:
+            session.close()
+        assert sent == [(UNREGISTERED_CHAT, app_module._REGISTER_HELP_TEXT)]
+    print("OK: /vazifa_off begona chatdan platforma egasining haqiqiy vazifasini bekor qila olmaydi -- ro'yxatdan o'tish yo'riqnomasi yuboriladi")
+
+
+def test_start_and_unknown_command_give_registration_help_to_unregistered_chat():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_modules(os.path.join(tmp, "v5.db"))
+        UNREGISTERED_CHAT = -777333999
+        sent = []
+        with mock.patch.object(app_module, "tg_send", side_effect=lambda cid, text: sent.append((cid, text))):
+            app_module.handle_command(UNREGISTERED_CHAT, "/start", [])
+            app_module.handle_command(UNREGISTERED_CHAT, "/notacommand", [])
+        assert sent == [
+            (UNREGISTERED_CHAT, app_module._REGISTER_HELP_TEXT),
+            (UNREGISTERED_CHAT, app_module._REGISTER_HELP_TEXT),
+        ]
+    print("OK: /start va noma'lum buyruqlar ham begona chatga qadam-baqadam ro'yxatdan o'tish yo'riqnomasini beradi")
+
+
+def test_registered_manager_chat_gets_light_welcome_not_owner_welcome():
+    """Kompaniyaga ALLAQACHON ulangan (menejer sifatida `telegram_user_id`
+    bilan biriktirilgan, lekin platforma EGASI bo'lmagan) chat uchun --
+    to'liq ro'yxatdan o'tish yo'riqnomasi ORTIQCHA, lekin egaga xos
+    WELCOME_TEXT (target buyurtma berish taklifi) ham NOTO'G'RI --
+    o'rtacha, faqat mavjud buyruqlarni eslatuvchi xabar kerak."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_modules(os.path.join(tmp, "v6.db"))
+        company_id = _make_company(db_module, name="A'zo Kompaniya", telegram_group_id="-5001")
+        session = db_module.get_session()
+        try:
+            session.add(db_module.Manager(
+                company_id=company_id, full_name="Menejer", username="azo_menejer",
+                password_hash="x", role="manager", telegram_user_id="555444",
+            ))
+            session.commit()
+        finally:
+            session.close()
+
+        sent = []
+        with mock.patch.object(app_module, "tg_send", side_effect=lambda cid, text: sent.append((cid, text))):
+            app_module.handle_command(555444, "/start", [])
+        assert sent == [(555444, app_module._REGISTERED_MEMBER_WELCOME_TEXT)]
+        assert sent[0][1] != app_module.WELCOME_TEXT
+        assert sent[0][1] != app_module._REGISTER_HELP_TEXT
+    print("OK: kompaniyaga ulangan (lekin egasi bo'lmagan) menejerning shaxsiy chati /start'da o'ziga mos, qisqa xush kelibsiz xabarini oladi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

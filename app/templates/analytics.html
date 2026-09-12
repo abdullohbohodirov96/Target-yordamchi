@@ -101,7 +101,7 @@
     <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ call_summary.total_sessions }}</div></div>
     <div class="kpi-card"><div class="kpi-label">Shubhali</div><div class="kpi-value {{ 'bad' if call_summary.suspicious_count }}">{{ call_summary.suspicious_count }}</div></div>
   </div>
-  <p class="page-subtitle" style="margin:0 0 12px">Batafsil tahlil: <a href="{{ url_for('individual_check') }}" class="text-blue">Individual tekshirish &rarr;</a></p>
+  <p class="page-subtitle" style="margin:0 0 12px">Batafsil tahlil: <a href="{{ url_for('individual_check') }}" class="text-blue">Audio &rarr;</a></p>
   {% endif %}
 </div>
 

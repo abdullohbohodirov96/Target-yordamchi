@@ -582,6 +582,70 @@ _NOT_OWNER_TEXT = (
 )
 
 
+# 2026-09, foydalanuvchi so'rovi ("bot boshqala yozsa registratsiya qiling
+# va ozingizni qoshing dib qadamma qadam harbir bosqichni chuntirsin webga
+# link bersin"): AVVAL, hali HECH QANDAY kompaniyaga (yoki platforma
+# egasiga) bog'lanmagan "yot" chat/guruh `/vazifalar` yozganda -- pastdagi
+# JONLI BUG TUZATISHI izohiga qarang -- `orchestrator._company_id_for_chat()`
+# noma'lum chat uchun STANDART (platforma egasining haqiqiy) kompaniyaga
+# tushib qolardi, ya'ni begona odam platforma egasining haqiqiy target
+# vazifalari/hisobot vaqtlarini ko'rishi MUMKIN edi. Endi bunday "yot" chat
+# aniqlanadi (`_is_registered_chat()`) va unga o'rniga ANIQ, qadam-baqadam
+# ro'yxatdan o'tish yo'riqnomasi (veb-havola bilan) yuboriladi.
+_REGISTER_HELP_TEXT = (
+    "\U0001F44B Salom! Men — Replix'ning Telegram boti.\n\n"
+    "Sizning kompaniyangiz (yoki shaxsiy hisobingiz) hali tizimga ulanmagan "
+    "-- shu sabab hozircha sizga hech qanday hisobot/buyruq ko'rsata olmayman.\n\n"
+    "Ro'yxatdan o'tish uchun:\n"
+    "1️⃣ https://replix.uz/signup havolasiga o'ting va kompaniyangiz "
+    "uchun bepul (yoki tarifli) hisob oching.\n"
+    "2️⃣ Kirgandan so'ng, \"Menejerlar\" bo'limidan o'zingizni "
+    "(yoki xodimingizni) admin sifatida qo'shing.\n"
+    "3️⃣ Shu yerga (botga) /id deb yozing -- chiqqan raqamni "
+    "menejer profilingizdagi \"Telegram ID\" maydoniga kiriting -- shundan "
+    "keyin shaxsiy eslatmalar shu chatga keladi.\n"
+    "4️⃣ Agar bu GURUH bo'lsa -- /groupid deb yozing, chiqqan "
+    "raqamni \"Akkauntlarni ulash\" sahifasidagi \"Telegram guruh ID\" "
+    "maydoniga kiriting -- shundan keyin kompaniyangizning hisobot/"
+    "ogohlantirishlari shu guruhga keladi.\n\n"
+    "Savol bo'lsa, https://replix.uz saytidagi aloqa formasi orqali yozing."
+)
+
+# Kompaniyaga/menejerga ALLAQACHON ulangan (lekin platforma egasi
+# bo'lmagan) chat uchun -- to'liq ro'yxatdan o'tish yo'riqnomasi shart
+# emas, faqat mavjud buyruqlar eslatiladi.
+_REGISTERED_MEMBER_WELCOME_TEXT = (
+    "\U0001F44B Salom! Bu Replix boti.\n\n"
+    "Mavjud buyruqlar:\n"
+    "/vazifalar — kompaniyangizning faol doimiy vazifalari/hisobot vaqtlari\n"
+    "/vazifa_off <ID> — birini bekor qilish\n"
+    "/id — shaxsiy Telegram ID'ingizni ko'rish\n"
+    "/groupid — shu guruhning Telegram ID'sini ko'rish"
+)
+
+
+def _is_registered_chat(chat_id: int) -> bool:
+    """Bu chat/guruh ALLAQACHON biror kompaniyaga (yoki platforma egasiga)
+    bog'langanmi: (a) platforma egasining o'z chat/guruhi
+    (`_is_owner_telegram_chat`), (b) biror `Company.telegram_group_id`
+    shu chatga teng, yoki (c) biror `Manager.telegram_user_id` shu chatga
+    teng. Uchalasi ham bo'lmasa -- bu "yot" (hali ro'yxatdan o'tmagan)
+    chat, va unga haqiqiy biznes ma'lumot (masalan `/vazifalar`)
+    KO'RSATILMASLIGI kerak (pastdagi JONLI BUG TUZATISHIga qarang)."""
+    if _is_owner_telegram_chat(chat_id):
+        return True
+    session = get_session()
+    try:
+        with db.unscoped():
+            if session.query(Company).filter_by(telegram_group_id=str(chat_id)).first():
+                return True
+            if session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first():
+                return True
+        return False
+    finally:
+        session.close()
+
+
 def handle_free_text(chat_id: int, user_text: str) -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: bu yerdagi butun mantiq (classify_intent,
     # execute_intent, oylik hisobot, /pause va /resume'ga olib boradigan
@@ -594,7 +658,12 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
     # qilishi mumkin bo'lib qolar edi. Shu uchun bu yerga chiqishdan oldin
     # chat egasi platforma egasi ekanligi tasdiqlanadi.
     if not _is_owner_telegram_chat(chat_id):
-        tg_send(chat_id, _NOT_OWNER_TEXT)
+        # 2026-09, foydalanuvchi so'rovi: hali HECH QAYSI kompaniyaga
+        # ulanmagan ("yot") chatga -- shu "erkin suhbat egaga xos" degan
+        # umumiy xabar o'rniga -- ANIQ ro'yxatdan o'tish yo'riqnomasi
+        # (havola bilan) ko'rsatiladi; kompaniyaga ALLAQACHON ulangan
+        # (lekin egasi bo'lmagan) chatga esa avvalgidek qisqa tushuntirish.
+        tg_send(chat_id, _NOT_OWNER_TEXT if _is_registered_chat(chat_id) else _REGISTER_HELP_TEXT)
         return
 
     history = get_history(chat_id)
@@ -672,13 +741,25 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
         return
     if cmd == "/start":
         kv_store.set_json(_conv_key(chat_id), [])
+        # 2026-09, foydalanuvchi so'rovi: "bot boshqala yozsa registratsiya
+        # qiling va ozingizni qoshing dib qadamma qadam harbir bosqichni
+        # chuntirsin webga link bersin" -- ILGARI /start HAR DOIM to'liq
+        # "Men Targetolog, target buyurtma bering" (WELCOME_TEXT) xabarini
+        # yuborardi, hatto hali HECH QANDAY kompaniyaga ulanmagan begona
+        # odamga ham -- bu chalkashtirar edi (keyin erkin yozganda
+        # bloklanib, "bu funksiya faqat egaga" degan tushunarsiz xabar
+        # olardi). Endi uchta holat ANIQ ajratiladi.
         if _is_owner_telegram_chat(chat_id):
             # Byudjet/depozit ogohlantirishlari FAQAT platforma egasining
             # o'z chatiga yuborilishi kerak -- aks holda boshqa kompaniya
             # /start bosса, egasining byudjet xabarlari o'sha chatga
             # "o'g'irlanib" ketishi mumkin edi.
             budget_tracker.set_notify_chat_id(chat_id)
-        tg_send(chat_id, WELCOME_TEXT)
+            tg_send(chat_id, WELCOME_TEXT)
+        elif _is_registered_chat(chat_id):
+            tg_send(chat_id, _REGISTERED_MEMBER_WELCOME_TEXT)
+        else:
+            tg_send(chat_id, _REGISTER_HELP_TEXT)
         return
     if cmd == "/status":
         tg_send(chat_id, kv_store.get_json(f"last_report:{chat_id}", default="Hali tahlil ishga tushirilmagan."))
@@ -706,9 +787,30 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
             tg_send(chat_id, f"⚠️ Xatolik: {e}")
         return
     if cmd == "/vazifalar":
+        # 2026-09, JONLI BUG TUZATISHI (foydalanuvchi so'rovi bilan
+        # topilgan): `_format_standing_tasks_text()` ichidagi
+        # `orchestrator._company_id_for_chat()` HALI hech qaysi
+        # kompaniyaga ulanmagan ("yot") chat uchun ham STANDART (platforma
+        # egasining haqiqiy) kompaniyaga tushib qolardi -- ya'ni begona
+        # odam /vazifalar yozsa, platforma egasining haqiqiy target
+        # vazifalari/hisobot vaqtlari (kampaniya nomlari bilan!) unga
+        # ko'rsatilardi. Endi bunday chat uchun buning o'rniga ro'yxatdan
+        # o'tish yo'riqnomasi yuboriladi.
+        if not _is_registered_chat(chat_id):
+            tg_send(chat_id, _REGISTER_HELP_TEXT)
+            return
         tg_send(chat_id, _format_standing_tasks_text(chat_id))
         return
     if cmd == "/vazifa_off" and args:
+        # 2026-09, JONLI BUG TUZATISHI: xuddi /vazifalar'dagi bilan bir
+        # xil sabab -- hali ro'yxatdan o'tmagan chat uchun ham
+        # `_company_id_for_chat()` STANDART kompaniyaga tushib qolardi,
+        # ya'ni begona odam, agar platforma egasining haqiqiy T<id>/R<id>
+        # raqamini bilsa/tахmin qilsa, uning HAQIQIY avtomatik yoqish/
+        # o'chirish vazifasini BEKOR QILA OLARDI.
+        if not _is_registered_chat(chat_id):
+            tg_send(chat_id, _REGISTER_HELP_TEXT)
+            return
         _deactivate_standing_task(chat_id, args[0])
         return
     if cmd == "/id":
@@ -736,6 +838,9 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
             "ID\" maydoniga kiritib saqlang -- shundan keyin targeting/xarajat "
             "va CPL avtomatik pauza ogohlantirishlari shu guruhga yuboriladi.",
         )
+        return
+    if not _is_registered_chat(chat_id):
+        tg_send(chat_id, _REGISTER_HELP_TEXT)
         return
     tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish), /groupid (shu guruhning ID'sini ko'rsatish).")
 

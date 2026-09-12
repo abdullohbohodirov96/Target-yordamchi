@@ -38,7 +38,7 @@
       <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
       <div class="text-faint" style="font-size:12.5px">Hozirgi qiymat: {{ min_real_talk_seconds }} soniya</div>
     </div>
-    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Individual tekshirishda sozlash &rarr;</a>
+    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Audio bo'limida sozlash &rarr;</a>
   </div>
 </div>
 
@@ -148,7 +148,7 @@
     {% if ai_features_disabled %}<span class="badge badge-color-bad">o'chirilgan</span>{% else %}<span class="badge badge-color-good">yoqilgan</span>{% endif %}
   </h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:12px">
-    AI qo'ng'iroq tahlili (Individual tekshirish ichidagi audio tahlili) va ichki AI-yordamchi vidjetini BITTA tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
+    AI qo'ng'iroq tahlili (Audio bo'limi ichidagi tahlil) va ichki AI-yordamchi vidjetini BITTA tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
   </p>
   <form method="post">
     <input type="hidden" name="action" value="toggle_ai_features">

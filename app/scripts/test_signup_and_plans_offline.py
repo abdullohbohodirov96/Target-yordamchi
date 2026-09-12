@@ -122,7 +122,9 @@ def test_trial_plan_blocks_individual_check_even_for_admin():
         # yo'naltiriladi (individual tekshirish sahifasining o'zi
         # ko'rinmasligi kerak).
         assert "mavjud emas" in html
-        assert "Individual tekshirish" not in html or "Tariflar" in html
+        # 2026-09, foydalanuvchi so'rovi: "Individual tekshirish" bo'limi
+        # UI'da "Audio" deb nomlandi (route/endpoint o'zgarmadi).
+        assert "Audio" not in html or "Tariflar" in html
     print("OK: 'sinov' tarifida Individual tekshirish ADMIN uchun ham yopiq (kompaniya-darajasidagi cheklov)")
 
 

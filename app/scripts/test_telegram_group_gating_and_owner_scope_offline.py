@@ -213,14 +213,21 @@ def test_owner_only_commands_work_from_owner_chat():
 
 
 def test_start_command_does_not_hijack_budget_notify_for_non_owner():
+    """2026-09 QAYTA TUZATISH (foydalanuvchi so'rovi: "bot boshqala yozsa
+    registratsiya qiling ... deb qadamma-qadam tushuntirsin, webga link
+    bersin"): -200999 hech qanday kompaniyaga/menejerga ULANMAGAN ("yot")
+    chat -- endi unga avvalgi umumiy WELCOME_TEXT (Targetolog uchun,
+    egasiga xos) EMAS, balki aniq ro'yxatdan o'tish yo'riqnomasi
+    (`_REGISTER_HELP_TEXT`) yuboriladi. Byudjet ogohlantirish manzili
+    baribir O'G'IRLANMASLIGI kerakligi o'zgarmagan."""
     with tempfile.TemporaryDirectory() as tmp:
         db_module, app_module = _fresh_app(os.path.join(tmp, "s9.db"), owner_group_env=-200555)
         with mock.patch.object(app_module, "tg_send") as mock_send, \
              mock.patch.object(app_module.budget_tracker, "set_notify_chat_id") as mock_notify:
             app_module.handle_command(-200999, "/start", [])
-        mock_send.assert_called_once_with(-200999, app_module.WELCOME_TEXT)
+        mock_send.assert_called_once_with(-200999, app_module._REGISTER_HELP_TEXT)
         mock_notify.assert_not_called()
-    print("OK: /start boshqa (egasiga tegishli bo'lmagan) chatdan chaqirilsa -- xush kelibsiz xabari yuboriladi, LEKIN byudjet ogohlantirish manzili O'G'IRLANMAYDI")
+    print("OK: /start hali ro'yxatdan o'tmagan chatdan chaqirilsa -- qadam-baqadam ro'yxatdan o'tish yo'riqnomasi yuboriladi, byudjet ogohlantirish manzili O'G'IRLANMAYDI")
 
 
 def test_start_command_sets_budget_notify_for_owner_chat():

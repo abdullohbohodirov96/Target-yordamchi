@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Individual tekshirish — Replix{% endblock %}
+{% block title %}Audio — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Individual tekshirish</h1>
+    <h1>Audio</h1>
     <p class="page-subtitle" style="margin-bottom:0">Moi Zvonki qo'ng'iroq yozuvlari lidlar bilan solishtirilib, menejer HAQIQATDA gaplashganmi tekshiriladi. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
   {% include "_date_picker.html" %}
 </div>
 
 <div class="tabs" style="margin-bottom:18px">
-  <a href="{{ url_for('individual_check', days=days, tab='calls') }}" class="{{ 'active' if tab=='calls' }}">Individual tekshiruv</a>
+  <a href="{{ url_for('individual_check', days=days, tab='calls') }}" class="{{ 'active' if tab=='calls' }}">Audio</a>
   {% if ai_features_disabled %}
   <a href="{{ url_for('settings_hub') }}" class="text-dim" title="AI funksiyalari Sozlamalardan o'chirilgan -- yoqish uchun bosing" style="opacity:0.6">AI analiz (o'chirilgan)</a>
   {% else %}
