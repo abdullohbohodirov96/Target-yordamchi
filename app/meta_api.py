@@ -24,6 +24,7 @@ import os
 import re
 import json
 import time
+import hmac
 import logging
 import hashlib
 import calendar
@@ -50,6 +51,15 @@ PIXEL_ID = os.environ.get("META_PIXEL_ID", "")  # Conversions API (CAPI) uchun -
 # `app.py`da ko'rsatilmaydi -- qo'lda token kiritish (eski usul) ishlayveradi.
 META_APP_ID = os.environ.get("META_APP_ID", "")
 META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+
+# 2026-09, foydalanuvchi so'rovi (item 9 -- webhook arxitekturasi): Meta App
+# Dashboard'da "Webhooks" bo'limida Callback URL bilan birga QO'LDA
+# kiritiladigan ixtiyoriy matn (Meta'ning O'ZI TANLAMAYDI -- BIZ o'ylab
+# topamiz va ikkala tomonga -- shu yerga ENV sifatida, va Meta Dashboard'ga
+# -- bir xil qiymatni kiritamiz). Verifikatsiya handshake'ida
+# (`GET /webhooks/instagram?hub.verify_token=...`) solishtirish uchun
+# ishlatiladi -- `app.py`dagi route'ga qarang.
+META_WEBHOOK_VERIFY_TOKEN = os.environ.get("META_WEBHOOK_VERIFY_TOKEN", "")
 
 
 class MetaAPIError(Exception):
@@ -1401,62 +1411,94 @@ _MIN_LIMIT = 3
 
 
 def get_instagram_conversations(
-    limit: int = 50, *, page_id: str | None = None, access_token: str | None = None,
-    since: "dt.datetime | None" = None,
-) -> list[dict]:
+    limit: int = 5, *, page_id: str | None = None, access_token: str | None = None,
+    after: str | None = None,
+) -> tuple[list[dict], "str | None"]:
     """Page'ga (Instagram Business akkauntiga) kelgan DM suhbatlarning
-    ro'yxatini qaytaradi (eng oxirgi yangilangandan boshlab).
-    Ishtirokchilarning IGSID/username'i shu yerda keladi, lekin xabarlar
-    matni EMAS -- ular alohida `get_instagram_conversation_messages()`
-    orqali so'raladi (Meta shunday ikki bosqichli ishlaydi).
+    ro'yxatini qaytaradi: `(items, next_cursor)`. `items`da FAQAT `id` va
+    `updated_time` bor -- ishtirokchilar (`participants`) VA xabarlar
+    ALOHIDA, faqat kerak bo'lganda so'raladi (pastga qarang).
 
-    2026-09: Meta "Please reduce the amount of data..." xatosi bilan rad
-    etsa (ko'p yillik tarixi bo'lgan faol akkauntlarda uchraydi) --
-    `limit`ni HAR SAFAR yarmiga tushirib, minimal qiymatga yetguncha
-    QAYTA-QAYTA avtomatik uriniladi (Meta o'zi tavsiya qilgan yechim),
-    kod xatosini foydalanuvchiga ko'rsatmasdan.
+    2026-09 TUZATISH (foydalanuvchi topgan JONLI XATO -- oxirgi fix'dan
+    KEYIN ham "Please reduce the amount of data" davom etdi): muammo
+    aslida shu funksiyaning O'ZIDA edi -- bitta so'rovda `participants`ni
+    ham (nested, potentsial og'ir) so'rash VA `since` filtri (Meta'ning
+    o'zi buni qanchalik "arzon" hisoblashi noaniq) birgalikda Meta'ni
+    "juda ko'p ma'lumot" deb hisoblashga majbur qilgan bo'lishi mumkin.
+    Endi bu so'rov IMKON QADAR YENGIL:
+      - `since` UMUMAN Meta'ga YUBORILMAYDI (pastga, `ig_dm_sync.py`dagi
+        izohga qarang -- filtrlash endi FAQAT LOKAL, olingan
+        `updated_time` bo'yicha).
+      - `fields` FAQAT `id,updated_time` -- `participants` bu yerda
+        SO'RALMAYDI (`get_instagram_conversation_participants()` orqali,
+        har bir suhbat uchun ALOHIDA, faqat kerak bo'lganda).
+      - Standart `limit` 5 (avval 10/50 edi).
 
-    2026-09 TUZATISH: avval faqat BITTA marta (50 -> 25) qayta urinilar
-    edi -- juda katta/faol akkauntlarda 25 ham yetarli bo'lmay, xato
-    baribir foydalanuvchiga chiqib qolardi (jonli saytda kuzatilgan bug).
-    Endi `current_limit` `_MIN_LIMIT`ga yetguncha (50 -> 25 -> 12 -> 6 ->
-    3) qayta-qayta pasaytirib sinaladi -- faqat ENG kichik qiymatda ham
-    rad etilsa, xato yuqoriga chiqariladi.
+    Agar shunga qaramay Meta "reduce the amount of data..." yoki
+    "Timeout" bilan rad etsa -- BITTA qo'shimcha DIAGNOSTIK urinish
+    qilinadi: `fields=id` (hatto `updated_time`siz), `limit=1` -- eng
+    kichik mumkin bo'lgan so'rov. Agar SHU HAM rad etilsa, demak muammo
+    endi `limit`/`fields` hajmida emas (masalan token/ruxsat/tarmoq) --
+    xato ko'tariladi, `error_stage="conversations_list_minimal"` bilan
+    belgilanadi (`e.stage` atributi orqali, `ig_dm_sync.py` shuni o'qib
+    natijaga yozadi).
 
-    2026-09, foydalanuvchi so'rovi ("xabarlani bittada hammasini
-    tortmasin, ulangandan buyog'i tushadigan qil"): `since` berilsa (odatda
-    `company.ig_dm_sync_since` -- akkaunt oxirgi marta ulangan/qayta
-    ulangan vaqt), Meta'dan FAQAT shu vaqtdan KEYIN yangilangan suhbatlar
-    so'raladi -- bu ko'p yillik butun tarixni har safar qayta tortishning
-    OLDINI oladi (yuqoridagi limit-pasaytirish -- shunga qaramay hali ham
-    juda katta bo'lib qolsa ishlaydigan ZAXIRA himoya, bu esa ASOSIY
-    yechim)."""
+    `after` -- cursor-based pagination (`paging.cursors.after`) uchun;
+    berilsa shu sahifadan boshlab so'raladi. ESLATMA: hozircha
+    `ig_dm_sync.sync_once()` FAQAT BITTA sahifani (eng yangi `limit`
+    ta suhbatni) so'raydi -- avtomatik keyingi sahifalarga o'tmaydi
+    (eski suhbatlar kerak bo'lmagani uchun; `next_cursor` shunchaki
+    KELAJAKDA to'liq/chuqur sinxronizatsiya kerak bo'lsa ishlatilishi
+    uchun qaytariladi)."""
     resolved_page_id = page_id or PAGE_ID
     token = _get_page_access_token(page_id, access_token)
-    current_limit = limit
-    base_params = {
-        "platform": "instagram",
-        "fields": "id,updated_time,participants",
-    }
-    if since is not None:
-        base_params["since"] = calendar.timegm(since.utctimetuple())
     endpoint = f"{resolved_page_id}/conversations"
-    attempt = 0
-    while True:
+    params = {"platform": "instagram", "fields": "id,updated_time", "limit": limit}
+    if after:
+        params["after"] = after
+
+    attempt = 1
+    started = time.monotonic()
+    try:
+        data = _get(endpoint, params, token=token)
+    except MetaAPIError as e:
+        _log_meta_error(endpoint, e, elapsed=time.monotonic() - started, attempt=attempt)
+        if not (_is_reduce_data_error(e) or _is_timeout_error(e)):
+            raise
+        # Diagnostik ZAXIRA urinish -- eng kichik mumkin bo'lgan so'rov.
+        minimal_params = {"platform": "instagram", "fields": "id", "limit": 1}
         attempt += 1
         started = time.monotonic()
         try:
-            data = _get(endpoint, {
-                **base_params,
-                "limit": current_limit,
-            }, token=token)
-            return data.get("data", [])
-        except MetaAPIError as e:
-            _log_meta_error(endpoint, e, elapsed=time.monotonic() - started, attempt=attempt)
-            if (_is_reduce_data_error(e) or _is_timeout_error(e)) and current_limit > _MIN_LIMIT:
-                current_limit = max(_MIN_LIMIT, current_limit // 2)
-                continue
+            data = _get(endpoint, minimal_params, token=token)
+        except MetaAPIError as e2:
+            _log_meta_error(endpoint, e2, elapsed=time.monotonic() - started, attempt=attempt)
+            e2.stage = "conversations_list_minimal"
             raise
+    items = data.get("data", [])
+    next_cursor = ((data.get("paging") or {}).get("cursors") or {}).get("after")
+    return items, next_cursor
+
+
+def get_instagram_conversation_participants(
+    conversation_id: str, *, page_id: str | None = None, access_token: str | None = None,
+) -> dict:
+    """2026-09, foydalanuvchi so'rovi: suhbatlar RO'YXATI so'rovi endi
+    `participants`ni o'z ichiga OLMAYDI (yuqoridagi
+    `get_instagram_conversations()`ga qarang) -- shu maydon endi HAR BIR
+    suhbat uchun ALOHIDA, ENG YENGIL mumkin bo'lgan so'rov bilan olinadi:
+    `GET /{conversation_id}?fields=participants,updated_time`. Faqat
+    HALI mijozi (`customer_ig_id`) bazada noma'lum bo'lgan (yangi)
+    suhbatlar uchun chaqiriladi -- allaqachon ma'lum bo'lsa, bu so'rov
+    UMUMAN qilinmaydi (`ig_dm_sync.py`dagi chaqiruvchiga qarang)."""
+    token = _get_page_access_token(page_id, access_token)
+    endpoint = conversation_id
+    started = time.monotonic()
+    try:
+        return _get(endpoint, {"fields": "participants,updated_time"}, token=token)
+    except MetaAPIError as e:
+        _log_meta_error(endpoint, e, elapsed=time.monotonic() - started, attempt=1)
+        raise
 
 
 def get_instagram_conversation_messages(conversation_id: str, limit: int = 10, *, page_id: str | None = None, access_token: str | None = None) -> list[dict]:
@@ -1524,3 +1566,52 @@ def send_instagram_message(recipient_ig_id: str, text: str, *, page_id: str | No
         "messaging_type": "RESPONSE",
     }
     return _post(f"{resolved_page_id}/messages", payload, token=_get_page_access_token(page_id, access_token))
+
+
+# ---------------------------------------------------------------------------
+# Webhook (real-time) -- 2026-09, foydalanuvchi so'rovi (item 9): "yangi
+# Instagram DM kelganda Meta webhook orqali DBga yozilsin. Polling/Yangilash
+# faqat fallback va initial sync bo'lsin." QAT'IY TALAB QILINADIGAN QO'LDA
+# QADAM (Meta App Dashboard -> Webhooks -> Instagram bo'limida): Callback
+# URL ("https://<domen>/webhooks/instagram") va Verify Token (yuqoridagi
+# `META_WEBHOOK_VERIFY_TOKEN` bilan BIR XIL qiymat) kiritilishi va
+# "messages" maydoni obuna qilinishi kerak -- bu Meta'ning O'ZI talab
+# qiladigan, kod orqali AVTOMATLASHTIRIB BO'LMAYDIGAN qadam. Quyidagi
+# funksiya esa AVTOMATLASHTIRISH MUMKIN bo'lgan ikkinchi qadamni bajaradi:
+# har bir Page'ni ilovaning webhook'iga OBUNA QILISH (`subscribed_apps`).
+# ---------------------------------------------------------------------------
+
+def subscribe_page_to_messaging_webhook(page_id: str, access_token: str) -> dict:
+    """`POST /{page_id}/subscribed_apps?subscribed_fields=messages` --
+    shu Page'ni ilovaning (App Dashboard'da sozlangan) webhook'iga
+    "messages" hodisalari uchun obuna qiladi. Kompaniya Facebook orqali
+    (qayta) ulanganda `app.py`dagi `_save_facebook_connection()`dan
+    BEST-EFFORT (xato bo'lsa asosiy ulanishni TO'XTATMAYDIGAN) tarzda
+    chaqiriladi -- App-darajasidagi Callback URL/Verify Token sozlamasi
+    (yuqoridagi izohga qarang) BU FUNKSIYADAN OLDIN, Meta App
+    Dashboard'da QO'LDA bir marta qilingan bo'lishi SHART, aks holda
+    Meta bu so'rovni "App-level webhook sozlanmagan" xatosi bilan rad
+    etadi."""
+    return _post(
+        f"{page_id}/subscribed_apps",
+        {"subscribed_fields": "messages"},
+        token=access_token,
+    )
+
+
+def verify_webhook_signature(payload_body: bytes, signature_header: "str | None") -> bool:
+    """Meta'dan kelgan webhook POST so'rovining haqiqiyligini tekshiradi:
+    `X-Hub-Signature-256` header'i (`"sha256=<hex>"` formatida) `payload_
+    body`ning `META_APP_SECRET` kaliti bilan hisoblangan HMAC-SHA256
+    imzosiga TENG bo'lishi kerak. Vaqt-hujumidan (timing attack) himoya
+    uchun `hmac.compare_digest` ishlatiladi (oddiy `==` EMAS). `app.py`
+    ushbu tekshiruvdan O'TMAGAN so'rovlarni RAD ETADI (401) -- aks holda
+    ISTALGAN kishi soxta "yangi xabar" yuborib, bazaga yolg'on yozuv
+    kiritishi mumkin edi."""
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    if not META_APP_SECRET:
+        return False
+    expected = hmac.new(META_APP_SECRET.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()
+    provided = signature_header.split("=", 1)[1]
+    return hmac.compare_digest(expected, provided)

@@ -120,12 +120,26 @@ def test_ig_dm_sync_all_companies_isolates_conversations_per_company():
         def fake_ig_business_id(*, page_id=None, access_token=None):
             return {"page_a": "IG_A", "page_b": "IG_B"}.get(page_id)
 
-        def fake_conversations(*, limit=50, page_id=None, access_token=None, since=None):
+        def fake_conversations(*, limit=5, page_id=None, access_token=None, after=None):
+            # 2026-09 QAYTA TUZATISH: `since` ENDI bu funksiyaga UMUMAN
+            # yuborilmaydi (item 1) -- shu sabab bu yerda ham endi qabul
+            # qilinmaydi (haqiqiy `meta_api.get_instagram_conversations()`
+            # bilan bir xil imzo). Qaytish shakli ham `(items, next_cursor)`
+            # tuple'ga o'zgardi.
             conv_id = f"conv_{page_id}"
-            return [{"id": conv_id, "updated_time": dt.datetime.utcnow().isoformat(), "participants": {"data": [
+            # 2026-09, item 5: `sync_all_companies()` bu suhbatlarni
+            # ulanish vaqti (`ig_dm_sync_since`, avtomatik backfill --
+            # shu funksiyaning O'ZI chaqirilishidan sal OLDIN belgilanadi)
+            # bilan LOKAL solishtiradi -- shuning uchun bu sinov
+            # suhbatining `updated_time`si BEMALOL keyinroq (5 daqiqa)
+            # bo'lishi kerak, aks holda millisoniya darajasidagi
+            # yaqinlik tasodifan filtrlab yuborishi mumkin edi.
+            updated_time = (dt.datetime.utcnow() + dt.timedelta(minutes=5)).isoformat()
+            items = [{"id": conv_id, "updated_time": updated_time, "participants": {"data": [
                 {"id": {"page_a": "IG_A", "page_b": "IG_B"}.get(page_id)},
                 {"id": f"CUST_{page_id}", "username": f"mijoz_{page_id}"},
             ]}}]
+            return items, None
 
         def fake_messages(conversation_id, limit=40, page_id=None, access_token=None):
             return [{

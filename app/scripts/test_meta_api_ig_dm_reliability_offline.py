@@ -108,23 +108,108 @@ def test_messages_reduce_data_error_also_retries_with_shrinking_limit():
     print("OK: 'reduce the amount of data' xatosida ham xuddi shunday limit pasaytirib qayta uriniladi")
 
 
-def test_conversations_timeout_also_retries_with_shrinking_limit():
-    limits_tried = []
+def test_conversations_list_is_minimal_and_never_sends_since():
+    """2026-09 QAYTA TUZATISH (foydalanuvchi: "latest fixdan keyin ham
+    'reduce the amount of data' chiqmoqda"): so'rov endi FAQAT
+    `id,updated_time` (participants YO'Q), standart `limit=5`, va `since`
+    parametri UMUMAN yo'q -- filtrlash endi faqat lokal (`ig_dm_sync.py`)."""
+    calls = []
 
     def fake_get(path, params, token=None):
-        limits_tried.append(params["limit"])
-        raise _timeout_error()
+        calls.append((path, dict(params), token))
+        return {"data": [{"id": "c1", "updated_time": "2026-09-11T10:00:00+0000"}], "paging": {}}
+
+    with mock.patch.object(meta_api, "_get", side_effect=fake_get), \
+         mock.patch.object(meta_api, "_get_page_access_token", return_value=_SECRET_TOKEN):
+        items, next_cursor = meta_api.get_instagram_conversations(page_id="page_1")
+
+    assert len(calls) == 1, f"aynan bitta so'rov bo'lishi kerak, olindi {len(calls)}"
+    path, params, token = calls[0]
+    assert path == "page_1/conversations"
+    assert params.get("fields") == "id,updated_time", f"faqat id,updated_time kutilgan edi, olindi {params.get('fields')!r}"
+    assert "participants" not in str(params.get("fields", "")), "conversation list ichida participants SO'RALMASLIGI kerak"
+    assert "since" not in params, "`since` Meta so'roviga UMUMAN yuborilmasligi kerak"
+    assert params.get("limit") == 5, f"standart limit=5 kutilgan edi, olindi {params.get('limit')}"
+    assert items == [{"id": "c1", "updated_time": "2026-09-11T10:00:00+0000"}]
+    assert next_cursor is None
+    print("OK: get_instagram_conversations() standart holatda faqat id,updated_time + limit=5 so'raydi, `since` hech qachon yuborilmaydi")
+
+
+def test_conversations_reduce_data_error_falls_back_to_single_minimal_attempt():
+    """Agar birinchi (yengil) so'rov ham 'reduce the amount of data' yoki
+    'Timeout' bilan rad etilsa -- ESKI repeated-halving (10->5->3) ZANJIRI
+    ENDI YO'Q. Buning o'rniga BITTA diagnostik zaxira urinish qilinadi:
+    `fields=id` (updated_time'siz ham), `limit=1`."""
+    calls = []
+
+    def fake_get(path, params, token=None):
+        calls.append(dict(params))
+        if len(calls) == 1:
+            raise _reduce_data_error()
+        return {"data": [{"id": "c1"}]}
+
+    with mock.patch.object(meta_api, "_get", side_effect=fake_get), \
+         mock.patch.object(meta_api, "_get_page_access_token", return_value=_SECRET_TOKEN):
+        items, _cursor = meta_api.get_instagram_conversations(page_id="page_1")
+
+    assert len(calls) == 2, f"aynan ikkita urinish (asosiy + bitta diagnostik) kutilgan edi, olindi {len(calls)}"
+    assert calls[0]["fields"] == "id,updated_time" and calls[0]["limit"] == 5
+    assert calls[1] == {"platform": "instagram", "fields": "id", "limit": 1}, (
+        f"diagnostik urinish eng kichik so'rov (fields=id, limit=1) bo'lishi kerak, olindi {calls[1]}"
+    )
+    assert items == [{"id": "c1"}]
+    print("OK: birinchi so'rov rad etilsa, BITTA diagnostik (fields=id, limit=1) urinish qilinadi -- eski repeated-halving zanjiri YO'Q")
+
+
+def test_conversations_minimal_fallback_also_fails_sets_stage():
+    """Agar ENG KICHIK diagnostik so'rov HAM rad etilsa -- demak muammo
+    endi `limit`/`fields` hajmida emas -- xato `e.stage=
+    'conversations_list_minimal'` bilan belgilanib ko'tariladi
+    (`ig_dm_sync.sync_once()` buni o'qib `error_stage`ga yozadi)."""
+    def fake_get(path, params, token=None):
+        raise _reduce_data_error()
 
     with mock.patch.object(meta_api, "_get", side_effect=fake_get), \
          mock.patch.object(meta_api, "_get_page_access_token", return_value=_SECRET_TOKEN):
         try:
-            meta_api.get_instagram_conversations(limit=10)
+            meta_api.get_instagram_conversations(page_id="page_1")
             assert False, "MetaAPIError ko'tarilishi kerak edi"
-        except meta_api.MetaAPIError:
-            pass
+        except meta_api.MetaAPIError as e:
+            assert getattr(e, "stage", None) == "conversations_list_minimal", (
+                f"e.stage='conversations_list_minimal' kutilgan edi, olindi {getattr(e, 'stage', None)!r}"
+            )
+    print("OK: eng kichik diagnostik so'rov ham rad etilsa, xato stage='conversations_list_minimal' bilan belgilanadi")
 
-    assert limits_tried == [10, 5, 3], f"kutilgan [10, 5, 3], olindi {limits_tried}"
-    print("OK: get_instagram_conversations() ham 'Timeout' xatosida limitni pasaytirib qayta uriniladi")
+
+def test_conversations_returns_next_cursor_for_pagination():
+    def fake_get(path, params, token=None):
+        return {"data": [{"id": "c1"}], "paging": {"cursors": {"after": "CURSOR123"}}}
+
+    with mock.patch.object(meta_api, "_get", side_effect=fake_get), \
+         mock.patch.object(meta_api, "_get_page_access_token", return_value=_SECRET_TOKEN):
+        items, next_cursor = meta_api.get_instagram_conversations(page_id="page_1")
+
+    assert next_cursor == "CURSOR123"
+    print("OK: get_instagram_conversations() paging.cursors.after'ni next_cursor sifatida qaytaradi")
+
+
+def test_conversation_participants_fetched_separately():
+    calls = []
+
+    def fake_get(path, params, token=None):
+        calls.append((path, dict(params)))
+        return {"participants": {"data": [{"id": "CUST1", "username": "mijoz1"}]}, "updated_time": "2026-09-11T10:00:00+0000"}
+
+    with mock.patch.object(meta_api, "_get", side_effect=fake_get), \
+         mock.patch.object(meta_api, "_get_page_access_token", return_value=_SECRET_TOKEN):
+        result = meta_api.get_instagram_conversation_participants("conv_abc")
+
+    assert len(calls) == 1
+    path, params = calls[0]
+    assert path == "conv_abc"
+    assert params == {"fields": "participants,updated_time"}
+    assert result["participants"]["data"][0]["id"] == "CUST1"
+    print("OK: get_instagram_conversation_participants() har bir suhbat uchun ALOHIDA, eng yengil so'rov bilan ishlaydi")
 
 
 def test_diagnostics_logged_without_leaking_access_token():

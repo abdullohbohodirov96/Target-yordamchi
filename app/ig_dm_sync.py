@@ -191,63 +191,20 @@ def refresh_conversation(company, conversation) -> dict:
         session.close()
 
 
-def _upsert_conversation_and_messages(
-    session, conv: dict, ig_business_id: "str | None", *,
-    company_id: int, page_id: "str | None" = None, access_token: "str | None" = None,
-) -> dict:
-    """Bitta suhbatni sinxronlaydi. Qaytaradi:
-    {"new_messages": N, "became_overdue": bool, "row": IgDmConversation|None}."""
-    external_id = conv.get("id")
-    if not external_id:
-        return {"new_messages": 0, "became_overdue": False, "row": None}
+def _recompute_conversation_state(session, row: IgDmConversation) -> bool:
+    """Suhbatning HISOBLANGAN holatini (`message_count`, `last_message_*`,
+    `is_unanswered`, `unanswered_since`/`unanswered_alert_sent_at`) shu
+    suhbatga tegishli xabarlar asosida qayta hisoblaydi va commit qiladi.
 
-    # MUHIM (2026-09, multi-tenant): `company_id` bo'yicha HAM qidiramiz --
-    # aks holda boshqa kompaniyaning (bir xil external_id bilan -- amalda
-    # bo'lmaydi, lekin himoya sifatida) yozuvi noto'g'ri yangilanib qolishi
-    # mumkin edi.
-    row = session.query(IgDmConversation).filter_by(external_id=external_id).first()
-    if row is None:
-        row = IgDmConversation(external_id=external_id, company_id=company_id)
-        session.add(row)
-        session.flush()  # id kerak (IgDmMessage.conversation_id uchun)
-    else:
-        row.company_id = company_id
+    2026-09, item 9 (webhook arxitekturasi): bu mantiq ilgari FAQAT
+    `_upsert_conversation_and_messages()` (polling yo'li) ichida yozilgan
+    edi -- endi alohida funksiyaga chiqarildi, chunki YANGI
+    `ingest_webhook_message()` (real-time webhook yo'li) HAM aynan shu
+    "menejer javob berdimi yo'qmi" mantiqini ishlatishi kerak -- ikki
+    joyda ikki xil (potentsial ORQADA qolib ketadigan) nusxa emas.
 
-    participants = ((conv.get("participants") or {}).get("data")) or []
-    customer_participant = next(
-        (p for p in participants if p.get("id") != ig_business_id), None,
-    )
-    if customer_participant:
-        row.customer_ig_id = customer_participant.get("id")
-        row.customer_username = customer_participant.get("username") or row.customer_username
-
-    try:
-        # 2026-09, foydalanuvchi so'rovi: standart limit (10) `meta_api.
-        # get_instagram_conversation_messages()`ning o'zidan olinadi --
-        # bu yerda qayta belgilanmaydi (avval limit=40 qattiq yozilgan edi).
-        raw_messages = meta_api.get_instagram_conversation_messages(external_id, page_id=page_id, access_token=access_token)
-    except meta_api.MetaAPIError as e:
-        raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
-
-    new_messages = 0
-    for m in raw_messages:
-        ext_msg_id = m.get("id")
-        if ext_msg_id:
-            exists = session.query(IgDmMessage).filter_by(external_id=ext_msg_id).first()
-            if exists:
-                continue
-        msg_row = IgDmMessage(
-            conversation_id=row.id,
-            external_id=ext_msg_id,
-            sender=_message_sender(m, ig_business_id),
-            text=m.get("message"),
-            sent_at=_parse_dt(m.get("created_time")),
-            company_id=row.company_id,
-        )
-        session.add(msg_row)
-        new_messages += 1
-
-    session.flush()
+    Qaytaradi: `became_overdue` -- shu chaqiriqda suhbat AYNAN HOZIR
+    (avval bo'lmagan holda) javobsiz holatga o'tdimi."""
     row.message_count = session.query(IgDmMessage).filter_by(conversation_id=row.id).count()
 
     all_msgs = (
@@ -287,7 +244,134 @@ def _upsert_conversation_and_messages(
             row.unanswered_alert_sent_at = None
     session.commit()
 
-    became_overdue = row.is_unanswered and not was_unanswered
+    return row.is_unanswered and not was_unanswered
+
+
+def _merge_conversation_into(session, *, keep: IgDmConversation, duplicate: IgDmConversation) -> None:
+    """`keep` va `duplicate` AYNAN BIR mijozga (`customer_ig_id`) tegishli
+    ikkita suhbat qatori bo'lganda (masalan: `duplicate` ILGARI webhook
+    orqali, haqiqiy Meta suhbat ID'i hali noma'lum bo'lgan paytda,
+    sintetik `external_id` -- `f"webhook:{company_id}:{customer_igsid}"`
+    -- bilan yaratilgan; keyinroq polling shu mijozning HAQIQIY suhbatini
+    topadi va `keep` sifatida keladi) -- ikkalasi BITTA suhbat sifatida
+    ko'rsatilishi kerak, ikki xil qator emas (item 9: "polling/Yangilash
+    faqat fallback va initial sync", webhook esa asosiy -- ikkisi bir xil
+    mijoz uchun MOS kelishi kerak).
+
+    `duplicate`ning barcha xabarlari `keep`ga ko'chiriladi, so'ng
+    `duplicate` o'chiriladi. Chaqiruvchi keyin `keep` uchun
+    `_recompute_conversation_state()`ni chaqiradi -- bu funksiya buni
+    o'zi qilmaydi (chaqiruvchida odatda YANA yangi xabarlar qo'shiladi,
+    hisoblashni bir marta oxirida qilish kifoya)."""
+    session.query(IgDmMessage).filter_by(conversation_id=duplicate.id).update(
+        {"conversation_id": keep.id}
+    )
+    session.flush()
+    session.delete(duplicate)
+    session.flush()
+
+
+def _upsert_conversation_and_messages(
+    session, conv: dict, ig_business_id: "str | None", *,
+    company_id: int, page_id: "str | None" = None, access_token: "str | None" = None,
+) -> dict:
+    """Bitta suhbatni sinxronlaydi. Qaytaradi:
+    {"new_messages": N, "became_overdue": bool, "row": IgDmConversation|None}.
+
+    2026-09 TUZATISH (foydalanuvchi so'rovi, item 3): `conv` (suhbatlar
+    RO'YXATI so'rovidan kelgan) endi `participants`ni O'Z ICHIGA OLMAYDI
+    -- `meta_api.get_instagram_conversations()`ga qarang. Shu sabab:
+      - Agar `conv`da `"participants"` kaliti BOR bo'lsa (masalan
+        `refresh_conversation()` sintetik `{"participants": {"data":
+        []}}` uzatadi) -- ESKI kabi to'g'ridan-to'g'ri ISHLATILADI.
+      - Aks holda, FAQAT mijozning IG ID'i hali bazada NOMA'LUM bo'lsa
+        (`row.customer_ig_id is None`) -- `meta_api.
+        get_instagram_conversation_participants()` orqali ALOHIDA
+        so'raladi. Mijoz ALLAQACHON ma'lum bo'lgan suhbatlar uchun bu
+        so'rov UMUMAN qilinmaydi (keraksiz Meta API chaqiruvlarini
+        kamaytirish uchun).
+      - Bu qo'shimcha so'rov xato bersa (`MetaAPIError`) -- JIM
+        yutiladi (butun sinxronizatsiyani to'xtatmaydi), mijoz shunchaki
+        hali noma'lum qolib, keyingi sinxronizatsiyada qayta uriniladi.
+    """
+    external_id = conv.get("id")
+    if not external_id:
+        return {"new_messages": 0, "became_overdue": False, "row": None}
+
+    # MUHIM (2026-09, multi-tenant): `company_id` bo'yicha HAM qidiramiz --
+    # aks holda boshqa kompaniyaning (bir xil external_id bilan -- amalda
+    # bo'lmaydi, lekin himoya sifatida) yozuvi noto'g'ri yangilanib qolishi
+    # mumkin edi.
+    row = session.query(IgDmConversation).filter_by(external_id=external_id).first()
+    if row is None:
+        row = IgDmConversation(external_id=external_id, company_id=company_id)
+        session.add(row)
+        session.flush()  # id kerak (IgDmMessage.conversation_id uchun)
+    else:
+        row.company_id = company_id
+
+    if "participants" in conv:
+        participants = ((conv.get("participants") or {}).get("data")) or []
+    elif row.customer_ig_id is None:
+        try:
+            participants_data = meta_api.get_instagram_conversation_participants(
+                external_id, page_id=page_id, access_token=access_token,
+            )
+        except meta_api.MetaAPIError:
+            participants = []
+        else:
+            participants = ((participants_data.get("participants") or {}).get("data")) or []
+    else:
+        participants = []
+
+    customer_participant = next(
+        (p for p in participants if p.get("id") != ig_business_id), None,
+    )
+    if customer_participant:
+        customer_ig_id = customer_participant.get("id")
+        if row.customer_ig_id is None and customer_ig_id:
+            # item 9: webhook/poll BIRLASHTIRISH -- shu mijoz bilan
+            # ALLAQACHON (masalan webhook orqali, sintetik external_id
+            # bilan) boshqa qator bo'lsa, ikkisini bittaga birlashtiramiz.
+            duplicate = (
+                session.query(IgDmConversation)
+                .filter_by(company_id=company_id, customer_ig_id=customer_ig_id)
+                .filter(IgDmConversation.id != row.id)
+                .first()
+            )
+            if duplicate is not None:
+                _merge_conversation_into(session, keep=row, duplicate=duplicate)
+        row.customer_ig_id = customer_ig_id
+        row.customer_username = customer_participant.get("username") or row.customer_username
+
+    try:
+        # 2026-09, foydalanuvchi so'rovi: standart limit (10) `meta_api.
+        # get_instagram_conversation_messages()`ning o'zidan olinadi --
+        # bu yerda qayta belgilanmaydi (avval limit=40 qattiq yozilgan edi).
+        raw_messages = meta_api.get_instagram_conversation_messages(external_id, page_id=page_id, access_token=access_token)
+    except meta_api.MetaAPIError as e:
+        raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
+
+    new_messages = 0
+    for m in raw_messages:
+        ext_msg_id = m.get("id")
+        if ext_msg_id:
+            exists = session.query(IgDmMessage).filter_by(external_id=ext_msg_id).first()
+            if exists:
+                continue
+        msg_row = IgDmMessage(
+            conversation_id=row.id,
+            external_id=ext_msg_id,
+            sender=_message_sender(m, ig_business_id),
+            text=m.get("message"),
+            sent_at=_parse_dt(m.get("created_time")),
+            company_id=row.company_id,
+        )
+        session.add(msg_row)
+        new_messages += 1
+
+    session.flush()
+    became_overdue = _recompute_conversation_state(session, row)
     return {"new_messages": new_messages, "became_overdue": became_overdue, "row": row}
 
 
@@ -312,10 +396,21 @@ def sync_once(company=None) -> dict:
     2026-09, foydalanuvchi so'rovi ("sync_once natijasida qaysi bosqich
     xato berganini ko'rsat"): `error_stage` -- xato bo'lsa, ANIQ qaysi
     Graph API bosqichida ("conversations_list" -- suhbatlar ro'yxatini
-    olishda, yoki "conversation_messages" -- BITTA suhbatning xabarlarini
-    olishda) yuz bergani. Bir nechta suhbat xabar-bosqichida xato bersa,
-    shu maydon BIRINCHI xato bergan bosqichni saqlaydi (batafsili --
-    `errors` ro'yxatida, har biri alohida)."""
+    olishda, "conversations_list_minimal" -- ENG KICHIK diagnostik
+    so'rov ham rad etilganda, yoki "conversation_messages" -- BITTA
+    suhbatning xabarlarini olishda) yuz bergani. Bir nechta suhbat
+    xabar-bosqichida xato bersa, shu maydon BIRINCHI xato bergan
+    bosqichni saqlaydi (batafsili -- `errors` ro'yxatida, har biri
+    alohida, UI'da ko'rsatish uchun `[stage]` prefiksi bilan -- item 8).
+
+    2026-09 QAYTA TUZATISH (foydalanuvchi: "latest fixdan keyin ham
+    'reduce the amount of data' chiqmoqda"): `since` ENDI Meta so'roviga
+    UMUMAN YUBORILMAYDI (`meta_api.get_instagram_conversations()`dan
+    olib tashlandi) -- `company.ig_dm_sync_since` bu yerda FAQAT LOKAL
+    filtr sifatida ishlatiladi: Meta'dan qaytgan har bir suhbatning
+    `updated_time`si solishtirilib, ulanishdan OLDINGI (eski)
+    suhbatlar DBga import qilinmaydi, lekin bu Meta'ga yuborilgan
+    so'rovning O'ZINI OG'IRLASHTIRMAYDI."""
     result = {"configured": True, "conversations_checked": 0, "new_messages": 0, "overdue": [], "errors": [], "error_stage": None}
     company_id = company.id if company else db.get_default_company_id()
     if not is_configured(company):
@@ -341,24 +436,31 @@ def sync_once(company=None) -> dict:
     session = get_session()
     try:
         try:
-            # 2026-09, foydalanuvchi so'rovi: standart limit 50 -> 10.
-            # `since` filtri (yuqorida) allaqachon so'rovni asosan
-            # kamaytiradi -- bu QO'SHIMCHA ehtiyot chorasi, `_MIN_LIMIT`
-            # gacha avtomatik pasayadigan qayta-urinish zanjiri (pastda)
-            # ENDI yuqoriroq nuqtadan (10) emas, kichikroq nuqtadan (10)
-            # boshlanadi, shu bilan "reduce the amount of data" xatosiga
-            # duch kelish ehtimoli yanada kamayadi.
-            conversations = meta_api.get_instagram_conversations(
-                limit=10, page_id=page_id, access_token=access_token, since=sync_since,
+            # 2026-09 QAYTA TUZATISH: `since` YO'Q, `limit` 5 (item 2 --
+            # "Birinchi requestni maksimal yengil qil"), va FAQAT BITTA
+            # sahifa so'raladi (item 6 -- manual refreshda eski tarixni
+            # avtomatik pagination bilan tortmaslik uchun `next_cursor`
+            # bu yerda ISHLATILMAYDI, faqat kelajakda chuqur sinxronizatsiya
+            # kerak bo'lsa foydalanish uchun qaytariladi).
+            conversations, _next_cursor = meta_api.get_instagram_conversations(
+                limit=5, page_id=page_id, access_token=access_token,
             )
         except meta_api.MetaAPIError as e:
-            result["errors"].append(_friendly_meta_error(e))
-            result["error_stage"] = "conversations_list"
+            stage = getattr(e, "stage", "conversations_list")
+            result["errors"].append(f"[{stage}] {_friendly_meta_error(e)}")
+            result["error_stage"] = stage
             _save_status(result, company_id=company.id if company else None)
             return result
 
         now = dt.datetime.utcnow()
         for conv in conversations:
+            # item 5: LOCAL filtering -- `since` Meta so'roviga yuborilmadi,
+            # shuning uchun bu yerda, olingan `updated_time` asosida,
+            # kompaniya ulanishidan OLDINGI suhbatlarni O'ZIMIZ chetlab
+            # o'tamiz (DBga import qilinmaydi).
+            updated_time = _parse_dt(conv.get("updated_time"))
+            if sync_since and updated_time and updated_time < sync_since:
+                continue
             result["conversations_checked"] += 1
             try:
                 outcome = _upsert_conversation_and_messages(
@@ -366,9 +468,10 @@ def sync_once(company=None) -> dict:
                     company_id=company_id, page_id=page_id, access_token=access_token,
                 )
             except meta_api.MetaAPIError as e:
-                result["errors"].append(_friendly_meta_error(e))
+                stage = getattr(e, "stage", "conversation_messages")
+                result["errors"].append(f"[{stage}] {_friendly_meta_error(e)}")
                 if result["error_stage"] is None:
-                    result["error_stage"] = "conversation_messages"
+                    result["error_stage"] = stage
                 continue
             result["new_messages"] += outcome["new_messages"]
             row = outcome["row"]
@@ -454,6 +557,87 @@ class _CompanyCreds:
         self.meta_page_id = meta_page_id
         self.meta_access_token = meta_access_token
         self.ig_dm_sync_since = ig_dm_sync_since
+
+
+def ingest_webhook_message(
+    company, *, sender_id: "str | None", recipient_id: "str | None",
+    message_id: "str | None", text: "str | None", timestamp_ms: "int | None",
+    is_echo: bool = False,
+) -> "dict | None":
+    """2026-09, foydalanuvchi so'rovi (item 9): "yangi Instagram DM
+    kelganda Meta webhook orqali DBga yozilsin. Polling/Yangilash faqat
+    fallback va initial sync bo'lsin." Bu funksiya Meta'ning Instagram
+    messaging webhook payload'idagi (`app.py`dagi `/webhooks/instagram`
+    POST route'i chaqiradi) BITTA `messaging` elementini qabul qilib,
+    darhol (Graph API'ga QAYTA MUROJAAT QILMASDAN -- webhook payload'ining
+    o'zida yetarli ma'lumot bor) bazaga yozadi.
+
+    `is_echo` -- Meta'ning O'ZI shuni bildiradi: `True` bo'lsa, xabarni
+    BIZNES (Page) tomoni yuborgan (masalan boshqa qurilma/menejer orqali
+    to'g'ridan-to'g'ri Instagram ilovasidan) -- bu holda mijozning IGSID'i
+    `recipient_id`da (xabarni OLGAN tomon), aks holda `sender_id`da
+    (xabarni YUBORGAN tomon). Shu tufayli yo'nalishni aniqlash uchun
+    ALOHIDA IG Business ID so'rovi SHART EMAS.
+
+    Suhbat qatori mijozning `customer_ig_id`i bo'yicha qidiriladi/
+    yaratiladi (agar hali umuman mavjud bo'lmasa -- sintetik
+    `external_id=f"webhook:{company.id}:{customer_igsid}"` bilan;
+    haqiqiy Meta suhbat ID'i keyinroq polling orqali kelsa,
+    `_upsert_conversation_and_messages()`dagi birlashtirish mantiqi
+    (`_merge_conversation_into`) ikkalasini bittaga qo'shadi).
+
+    Xabar `message_id` bo'yicha DEDUP qilinadi -- xuddi shu xabar
+    keyinroq (masalan fallback polling orqali) yana kelsa, IKKINCHI
+    marta yozilmaydi.
+
+    Qaytaradi: `{"new_message": bool, "became_overdue": bool,
+    "conversation_id": int}` yoki `None` (kompaniya sozlanmagan yoki
+    mijoz IGSID'i aniqlanmasa)."""
+    if not is_configured(company):
+        return None
+
+    customer_igsid = recipient_id if is_echo else sender_id
+    if not customer_igsid:
+        return None
+
+    session = get_session()
+    try:
+        if message_id:
+            exists = session.query(IgDmMessage).filter_by(external_id=message_id).first()
+            if exists is not None:
+                return {"new_message": False, "became_overdue": False, "conversation_id": exists.conversation_id}
+
+        row = (
+            session.query(IgDmConversation)
+            .filter_by(company_id=company.id, customer_ig_id=customer_igsid)
+            .first()
+        )
+        if row is None:
+            row = IgDmConversation(
+                external_id=f"webhook:{company.id}:{customer_igsid}",
+                company_id=company.id,
+                customer_ig_id=customer_igsid,
+            )
+            session.add(row)
+            session.flush()
+
+        sent_at = (
+            dt.datetime.utcfromtimestamp(timestamp_ms / 1000.0) if timestamp_ms else dt.datetime.utcnow()
+        )
+        msg_row = IgDmMessage(
+            conversation_id=row.id,
+            external_id=message_id,
+            sender="business" if is_echo else "customer",
+            text=text,
+            sent_at=sent_at,
+            company_id=company.id,
+        )
+        session.add(msg_row)
+        session.flush()
+        became_overdue = _recompute_conversation_state(session, row)
+        return {"new_message": True, "became_overdue": became_overdue, "conversation_id": row.id}
+    finally:
+        session.close()
 
 
 def mark_alert_sent(conversation_id: int) -> None:

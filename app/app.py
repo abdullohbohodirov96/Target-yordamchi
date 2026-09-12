@@ -960,6 +960,92 @@ def webhook():
 
 
 # ---------------------------------------------------------------------------
+# Instagram Direct webhook (real-time) -- 2026-09, foydalanuvchi so'rovi
+# (item 9): "yangi Instagram DM kelganda Meta webhook orqali DBga yozilsin.
+# Polling/Yangilash faqat fallback va initial sync bo'lsin." QO'LDA QADAM
+# (BU KOD AVTOMATLASHTIRA OLMAYDI): Meta App Dashboard -> Webhooks ->
+# Instagram bo'limida Callback URL (`https://<domen>/webhooks/instagram`)
+# va Verify Token (`META_WEBHOOK_VERIFY_TOKEN` ENV bilan BIR XIL qiymat)
+# kiritilib, "messages" maydoniga obuna bo'lish kerak. Boshqa webhook
+# route'lar (`/api/webhook`, `/api/webhook/leads/<token>`) bilan bir xil
+# konvensiya: login/CSRF SHART EMAS, har doim tezkor 200 qaytariladi.
+# ---------------------------------------------------------------------------
+
+@app.route("/webhooks/instagram", methods=["GET"])
+def instagram_webhook_verify():
+    """Meta'ning webhook VERIFIKATSIYA handshake'i -- Callback URL Meta App
+    Dashboard'da saqlanganda Meta shu GET so'rovni yuboradi:
+    `?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...`.
+    `hub.verify_token` bizning `META_WEBHOOK_VERIFY_TOKEN`imizga TENG
+    bo'lsa -- `hub.challenge`ning O'ZINI (oddiy matn, JSON EMAS)
+    qaytaramiz, Meta shu bilan Callback URL'ni tasdiqlaydi; aks holda 403."""
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge", "")
+    if (
+        mode == "subscribe" and token
+        and meta_api.META_WEBHOOK_VERIFY_TOKEN
+        and token == meta_api.META_WEBHOOK_VERIFY_TOKEN
+    ):
+        return Response(challenge, mimetype="text/plain")
+    return Response("Verification token mismatch", status=403)
+
+
+@app.route("/webhooks/instagram", methods=["POST"])
+def instagram_webhook_receive():
+    """Meta'dan REAL-TIME kelgan Instagram DM hodisalari. AVVAL
+    `X-Hub-Signature-256` imzosini (`meta_api.verify_webhook_signature`)
+    tekshiradi -- SOXTA so'rovlar (imzosiz/noto'g'ri imzo bilan) 401 bilan
+    rad etiladi, aks holda ISTALGAN kishi bazaga yolg'on "yangi xabar"
+    yozdira olardi. So'ng har bir `entry[].messaging[]` elementini
+    `entry[].id` (=Page ID) bo'yicha topilgan kompaniyaga
+    `ig_dm_sync.ingest_webhook_message()` orqali yozadi. BITTA elementdagi
+    kutilmagan xato butun so'rovni to'xtatmaydi (logga yozilib, keyingi
+    elementga o'tiladi) -- Meta HAR DOIM tezkor 200 kutadi."""
+    raw_body = request.get_data()
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not meta_api.verify_webhook_signature(raw_body, signature):
+        return jsonify({"ok": False, "error": "invalid signature"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    if payload.get("object") != "instagram":
+        return jsonify({"ok": True})
+
+    session = get_session()
+    try:
+        with db.unscoped():
+            for entry in payload.get("entry", []):
+                page_id = entry.get("id")
+                if not page_id:
+                    continue
+                company = session.query(Company).filter_by(meta_page_id=page_id).first()
+                if company is None or not company.is_active:
+                    continue
+                for m in entry.get("messaging", []):
+                    try:
+                        message = m.get("message") or {}
+                        ig_dm_sync.ingest_webhook_message(
+                            company,
+                            sender_id=(m.get("sender") or {}).get("id"),
+                            recipient_id=(m.get("recipient") or {}).get("id"),
+                            message_id=message.get("mid"),
+                            text=message.get("text"),
+                            timestamp_ms=m.get("timestamp"),
+                            is_echo=bool(message.get("is_echo")),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Instagram webhook: bitta xabarni yozishda xato (page_id=%s)", page_id,
+                        )
+    except Exception:
+        logger.exception("Instagram webhook: kutilmagan xato")
+    finally:
+        session.close()
+
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 
@@ -1371,6 +1457,20 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
         # KEYINGI so'rov YANGI tokendan yangi Page Access Token oladi.
         meta_api.invalidate_page_token_cache(page["id"])
         ig_dm_sync.invalidate_ig_business_id_cache(page["id"])
+        # 2026-09, foydalanuvchi so'rovi (item 9 -- webhook arxitekturasi):
+        # Page'ni ilovaning webhook'iga "messages" hodisalari uchun obuna
+        # qilamiz -- BEST-EFFORT: agar App-darajasidagi Callback URL/Verify
+        # Token Meta Dashboard'da hali QO'LDA sozlanmagan bo'lsa, Meta bu
+        # so'rovni rad etadi, LEKIN bu asosiy Facebook ulanishini
+        # TO'XTATMASLIGI kerak (shuning uchun xato jim yutiladi).
+        try:
+            meta_api.subscribe_page_to_messaging_webhook(page["id"], token)
+        except Exception:
+            logger.exception(
+                "Instagram webhook: Page'ni obuna qilishda xato (page_id=%s) -- "
+                "Meta App Dashboard'da Callback URL/Verify Token sozlanganini tekshiring.",
+                page["id"],
+            )
         if account:
             c.meta_ad_account_id = account["id"]
             c.meta_ad_account_name = account.get("name")
