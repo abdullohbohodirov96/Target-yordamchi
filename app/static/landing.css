@@ -57,7 +57,23 @@
   -webkit-mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
   mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
 }
-.lp-hero > div:not(.lp-hero-bg):not(.lp-hero-glow), .lp-hero .lp-mock-wrap { position: relative; z-index: 1; }
+/* 2026-09, foydalanuvchi shikoyati: "webda bosh joy baribir yo'q bo'lmadi,
+   chetlari kesilib ketvoti" -- bu XUDDI SHU bug UCHINCHI marta qaytmasligi
+   uchun yondashuv o'zgartirildi. ILGARI bu qoida "HAMMA narsa, FAQAT
+   ro'yxatdagilardan tashqari" (`:not(.lp-hero-bg):not(.lp-hero-glow)`)
+   deb yozilgan edi -- shu sabab `.lp-hero-bg` (67b9f99) va keyin
+   `.lp-hero-glow` (8d3b6a3) alohida-alohida, IKKI MARTA "esdan chiqib",
+   `position:absolute`lari yuqori specificity bilan qayta `relative`ga
+   almashtirilib, CSS Grid'ning avtomatik joylashtirish tizimiga "chinakam"
+   grid-elementi sifatida qo'shilib ketgan -- natijada matn USTUN 2ga
+   (o'ng), mokap esa 2-QATORGA (matn ostiga, "kesilgan" holda) surilib
+   ketgan, 1-ustun/1-qator esa BO'SH ko'ringan. Endi bu qoida "FAQAT
+   ro'yxatdagilar" (include-list, `.lp-hero-content` -- pastdagi matn
+   konteyneri) shaklida -- KELAJAKDA hero ichiga yangi bezak/orqa fon
+   qatlami (`position:absolute`) qo'shilsa, uni bu ro'yxatga qo'shish
+   SHART EMAS (aksincha, ATAYLAB HECH QACHON qo'shilmasligi kerak) --
+   xatoning o'zi endi arxitektura jihatidan mumkin emas. */
+.lp-hero-content, .lp-hero .lp-mock-wrap { position: relative; z-index: 1; }
 
 /* Mokap kartasi atrofidagi "suzuvchi" mini-kartalar (bo'sh joyni to'ldirish
    uchun) -- mokapning o'ziga nisbatan joylashtiriladi, shunga ko'ra u
