@@ -281,7 +281,21 @@
   <div class="nav-tooltip" id="navTooltip" hidden></div>
   {% endif %}
 
-  <main class="container{{ ' with-sidebar' if (current_user.is_authenticated and not _hide_chrome) }}" id="mainContent">
+  {# 2026-09, "CEO dashboard + impersonatsiya" ishi: platforma egasi
+     boshqa kompaniya nomidan ko'rayotganda BUTUN ilova bo'ylab doimiy,
+     ko'zga tashlanadigan ogohlantirish -- xato holda o'zganing ma'lumotini
+     o'zgartirib qo'ymaslik uchun. Har doim eng tepada, sidebar bo'lsa ham
+     bo'lmasa ham (`_hide_chrome` sahifalarida ham) ko'rinadi. #}
+  {% if impersonation_active %}
+  <div class="impersonation-banner">
+    <span>Siz hozir <b>&laquo;{{ impersonation_company_name }}&raquo;</b> nomidan ko'ryapsiz.</span>
+    <form method="post" action="{{ url_for('impersonate_exit') }}" style="display:inline">
+      <button type="submit" class="impersonation-banner-exit">Chiqish</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <main class="container{{ ' with-sidebar' if (current_user.is_authenticated and not _hide_chrome) }}{{ ' with-impersonation-banner' if impersonation_active }}" id="mainContent">
     {% block flash %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}

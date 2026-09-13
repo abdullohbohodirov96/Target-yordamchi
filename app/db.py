@@ -722,6 +722,27 @@ class AssistantUnanswered(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
 
+class ImpersonationLog(Base):
+    """2026-09, foydalanuvchi so'rovi (item C -- "CEO dashboard +
+    impersonatsiya"): platforma egasi biror mijoz-kompaniya nomidan
+    kirgan (impersonatsiya) HAR bir seansning audit-izi -- kim (qaysi
+    o'z hisobi), qaysi kompaniya nomidan, qachon boshlangan/tugagan.
+    Bu jadval `company_id` bo'yicha tenant-filtrga TUSHMAYDI (ataylab
+    `_COMPANY_SCOPED_MODELS`ga qo'shilmagan) -- faqat platforma egasi
+    o'zi ko'radigan, butun tizim bo'yicha GLOBAL audit-jurnal."""
+    __tablename__ = "impersonation_logs"
+
+    id = Column(Integer, primary_key=True)
+    owner_manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    owner_username = Column(String(64), nullable=False)
+    target_company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    target_company_name = Column(String(255), nullable=False)
+    target_manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
+    started_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+    ended_at = Column(DateTime, nullable=True)
+    ended_reason = Column(String(32), nullable=True)  # "exit" | "logout" | None (hali tugamagan)
+
+
 class MetaEventLog(Base):
     """2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
     har bir Meta Conversions API'ga yuborilgan (yoki yuborishga urinilgan)

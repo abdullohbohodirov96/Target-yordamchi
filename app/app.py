@@ -36,7 +36,7 @@ import permissions
 import plans
 import lang as lang_module
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company, IgDmConversation, IgDmMessage, CannedReply
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_sync
 import call_sync
@@ -1422,6 +1422,7 @@ def login():
 @app.route("/logout")
 @login_required
 def logout():
+    _end_impersonation_if_any("logout")
     logout_user()
     return redirect(url_for("login"))
 
@@ -4282,6 +4283,21 @@ def _inject_plan_upsell():
     return result
 
 
+@app.context_processor
+def _inject_impersonation_banner():
+    """`base.html`ga platforma egasi HOZIR biror mijoz-kompaniya nomidan
+    ko'ryaptimi (impersonatsiya) degan ma'lumotni beradi -- doimiy banner
+    va "chiqish" tugmasi shu orqali chiziladi (2026-09, "CEO dashboard +
+    impersonatsiya" ishi)."""
+    if not (current_user.is_authenticated and flask_session.get("impersonator_manager_id")):
+        return {}
+    company = _current_company()
+    return {
+        "impersonation_active": True,
+        "impersonation_company_name": company.name if company is not None else "?",
+    }
+
+
 @app.route("/qayta-aloqa")
 @login_required
 @module_required("leads")
@@ -4672,6 +4688,128 @@ def companies():
     finally:
         session.close()
     return render_template("companies.html", companies=rows, show_new_company_modal=show_new_company_modal)
+
+
+# ---------------------------------------------------------------------------
+# Impersonatsiya (item C, foydalanuvchi so'rovi: "CEO dashboard +
+# impersonatsiya" -- to'liq kirish tanlandi): platforma egasi biror
+# mijoz-kompaniyaning DASHBOARD'ini xuddi o'sha kompaniyaning admini kabi
+# ko'rishi/boshqarishi kerak (qo'llab-quvvatlash uchun). Eng ishonchli
+# yo'l -- `current_user`ning O'ZINI vaqtincha o'sha kompaniyaning admin
+# `Manager`iga almashtirish (`login_user`): shunda kod bazasidagi BARCHA
+# joy (`current_user.company_id`ga tayanadigan `_current_company()`,
+# tenant-scope, modul/tarif tekshiruvlari, KPI/CRM sahifalari) HECH
+# QANDAY maxsus holatga muhtoj bo'lmasdan, allaqachon TO'G'RI ishlaydi.
+# Asl (platforma egasi) identifikatorini yo'qotib qo'ymaslik uchun uning
+# `manager_id`si Flask sessiyasida (`impersonator_manager_id`) saqlanadi
+# -- shundan "chiqish" tugmasi qaytib chiqadi, va HAR bir seans
+# `ImpersonationLog`ga (audit) yoziladi.
+# ---------------------------------------------------------------------------
+
+def _end_impersonation_if_any(reason: str) -> None:
+    """Impersonatsiya tugaganda (chiqish tugmasi yoki oddiy `/logout`)
+    audit-yozuvni yopadi va sessiya bayroqlarini tozalaydi. Bayroq yo'q
+    bo'lsa (impersonatsiya qilinmagan) -- jim o'tkaziladi."""
+    log_id = flask_session.pop("impersonation_log_id", None)
+    flask_session.pop("impersonator_manager_id", None)
+    if log_id is None:
+        return
+    session = get_session()
+    try:
+        with db.unscoped():
+            log_row = session.get(ImpersonationLog, log_id)
+            if log_row is not None and log_row.ended_at is None:
+                log_row.ended_at = dt.datetime.utcnow()
+                log_row.ended_reason = reason
+                session.commit()
+    except Exception:
+        logger.exception("Impersonatsiya audit-yozuvini yopishda xatolik (log_id=%s)", log_id)
+    finally:
+        session.close()
+
+
+@app.route("/companies/<int:company_id>/impersonate", methods=["POST"])
+@login_required
+@platform_owner_required
+def company_impersonate(company_id):
+    if flask_session.get("impersonator_manager_id"):
+        flash("Avval joriy impersonatsiyadan chiqing.", "error")
+        return redirect(url_for("companies"))
+    if company_id == getattr(current_user, "company_id", None):
+        flash("O'z kompaniyangiz nomidan impersonatsiya qilib bo'lmaydi.", "error")
+        return redirect(url_for("companies"))
+
+    owner_manager_id = int(current_user.id)
+    owner_username = current_user.username
+
+    session = get_session()
+    try:
+        with db.unscoped():
+            company = session.get(Company, company_id)
+        if company is None:
+            flash("Kompaniya topilmadi.", "error")
+            return redirect(url_for("companies"))
+        company_name = company.name
+
+        with db.scoped_as(company_id):
+            target = (
+                session.query(Manager)
+                .filter_by(role="admin", is_active=True)
+                .order_by(Manager.created_at.asc())
+                .first()
+            )
+        if target is None:
+            flash(f"\"{company_name}\" kompaniyasida faol admin hisob topilmadi -- impersonatsiya qilib bo'lmaydi.", "error")
+            return redirect(url_for("companies"))
+        target_id = target.id
+        target_user = ManagerUser(target)
+
+        log_row = ImpersonationLog(
+            owner_manager_id=owner_manager_id, owner_username=owner_username,
+            target_company_id=company_id, target_company_name=company_name,
+            target_manager_id=target_id,
+        )
+        session.add(log_row)
+        session.commit()
+        log_id = log_row.id
+    finally:
+        session.close()
+
+    logger.warning(
+        "IMPERSONATSIYA BOSHLANDI: %s (manager_id=%s) -> \"%s\" (company_id=%s, target_manager_id=%s)",
+        owner_username, owner_manager_id, company_name, company_id, target_id,
+    )
+    login_user(target_user)
+    flask_session["impersonator_manager_id"] = owner_manager_id
+    flask_session["impersonation_log_id"] = log_id
+    flash(f"Endi \"{company_name}\" nomidan ko'ryapsiz.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/impersonate/exit", methods=["POST"])
+@login_required
+def impersonate_exit():
+    owner_manager_id = flask_session.get("impersonator_manager_id")
+    if not owner_manager_id:
+        flash("Impersonatsiya seansi topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+
+    session = get_session()
+    try:
+        with db.unscoped():
+            owner = session.get(Manager, int(owner_manager_id))
+        if owner is None or not owner.is_active:
+            _end_impersonation_if_any("exit")
+            flash("Asl hisobingiz topilmadi -- qaytadan kiring.", "error")
+            return redirect(url_for("logout"))
+        owner_user = ManagerUser(owner)
+    finally:
+        session.close()
+
+    _end_impersonation_if_any("exit")
+    login_user(owner_user)
+    flash("Impersonatsiyadan chiqdingiz.", "success")
+    return redirect(url_for("companies"))
 
 
 @app.route("/companies/murojaatlar")
