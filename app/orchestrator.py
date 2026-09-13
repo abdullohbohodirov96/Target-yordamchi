@@ -354,22 +354,32 @@ _ACTION_FRIENDLY_VERB = {
     "replace_creative": "reklama matnini yangiladim",
 }
 
+def _execute_conclude_ab_test(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
+    losing_id = (action.get("params") or {}).get("losing_adset_id")
+    if not losing_id:
+        return {"status": "no_loser_specified"}
+    return meta_api.pause_object(losing_id, access_token=access_token)
+
+
+# 2026-09, "job_watch_cycle ko'p-kompaniyaga kengaytirish" ishi: HAR BIR
+# executor endi `(action, *, access_token, ad_account_id, page_id)` xuddi
+# shu KENGROQ imzoga ega -- shu orqali `_finish_pipeline` istalgan
+# kompaniyaning O'Z Meta hisob ma'lumotlari bilan chaqira oladi (avval
+# barchasi qat'iy ravishda GLOBAL ENV token/hisobga bog'langan edi -- ya'ni
+# boshqa kompaniya uchun ishga tushirilsa ham, AMALDA platforma
+# egasining hisobiga ta'sir qilardi -- JIDDIY xavfsizlik xatosi bo'lardi).
 ACTION_EXECUTORS = {
-    "pause_ad": lambda a: _execute_and_verify_status(a["object_id"], "PAUSED"),
-    "resume_ad": lambda a: _execute_and_verify_status(a["object_id"], "ACTIVE"),
-    "archive_campaign": lambda a: _execute_and_verify_status(a["object_id"], "ARCHIVED"),
-    "increase_budget": lambda a: _execute_adjust_budget(a, "increase"),
-    "decrease_budget": lambda a: _execute_adjust_budget(a, "decrease"),
-    "fix_region_targeting": lambda a: _execute_fix_region(a),
-    "adjust_audience": lambda a: _execute_adjust_audience(a),
-    "launch_campaign": lambda a: _execute_launch_campaign(a),
-    "start_ab_test": lambda a: _execute_ab_test(a),
-    "conclude_ab_test": lambda a: (
-        meta_api.pause_object(a["params"]["losing_adset_id"])
-        if a.get("params", {}).get("losing_adset_id")
-        else {"status": "no_loser_specified"}
-    ),
-    "replace_creative": lambda a: _execute_replace_creative(a),
+    "pause_ad": lambda a, **creds: _execute_and_verify_status(a["object_id"], "PAUSED", access_token=creds.get("access_token")),
+    "resume_ad": lambda a, **creds: _execute_and_verify_status(a["object_id"], "ACTIVE", access_token=creds.get("access_token")),
+    "archive_campaign": lambda a, **creds: _execute_and_verify_status(a["object_id"], "ARCHIVED", access_token=creds.get("access_token")),
+    "increase_budget": lambda a, **creds: _execute_adjust_budget(a, "increase", **creds),
+    "decrease_budget": lambda a, **creds: _execute_adjust_budget(a, "decrease", **creds),
+    "fix_region_targeting": lambda a, **creds: _execute_fix_region(a, **creds),
+    "adjust_audience": lambda a, **creds: _execute_adjust_audience(a, **creds),
+    "launch_campaign": lambda a, **creds: _execute_launch_campaign(a, **creds),
+    "start_ab_test": lambda a, **creds: _execute_ab_test(a, **creds),
+    "conclude_ab_test": lambda a, **creds: _execute_conclude_ab_test(a, **creds),
+    "replace_creative": lambda a, **creds: _execute_replace_creative(a, **creds),
     # create_instant_form MVP bosqichida avtomatik ijro etilmaydi -- forma
     # yaratish odatda bir martalik/kamdan-kam va tasdiqlash talab qiladigan
     # qadam, shuning uchun faqat taklif sifatida odamga (Telegram orqali)
@@ -477,7 +487,7 @@ def _require_any(action: dict, *paths: tuple) -> object:
     })
 
 
-def _execute_fix_region(action: dict) -> dict:
+def _execute_fix_region(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """4.11-bo'lim: 'faqat joriy shahar' sozlamasini qo'llaydi va qayta o'qib
     tasdiqlaydi."""
     adset_id = _require(action, "object_id")
@@ -486,8 +496,8 @@ def _execute_fix_region(action: dict) -> dict:
         ("params", "audience_change", "city_key"),
         ("params", "city_key"),
     )
-    meta_api.set_location_current_city_only(adset_id, city_key)
-    verified = meta_api.get_adset_details(adset_id)
+    meta_api.set_location_current_city_only(adset_id, city_key, access_token=access_token)
+    verified = meta_api.get_adset_details(adset_id, access_token=access_token)
     return {"verified": True, "current_targeting": verified.get("targeting", {})}
 
 
@@ -503,7 +513,7 @@ _TARGETING_LIKE_KEYS = {
 }
 
 
-def _execute_adjust_audience(action: dict) -> dict:
+def _execute_adjust_audience(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """`adjust_audience` (masalan hudud exclude qilish): targeting'ni yangilaydi,
     KEYIN adset'ni qayta o'qib, so'ralgan o'zgarish (masalan excluded_geo_locations)
     haqiqatan saqlanganini tasdiqlaydi. Tasdiqlanmasa — bajarilgan deb ko'rsatilmaydi,
@@ -535,9 +545,9 @@ def _execute_adjust_audience(action: dict) -> dict:
             ("params", "audience_change", "targeting"),
             ("params", "targeting"),
         )
-    meta_api.update_targeting(adset_id, new_targeting)
+    meta_api.update_targeting(adset_id, new_targeting, access_token=access_token)
 
-    verified = meta_api.get_adset_details(adset_id)
+    verified = meta_api.get_adset_details(adset_id, access_token=access_token)
     actual_targeting = verified.get("targeting", {})
 
     expected_excluded = new_targeting.get("excluded_geo_locations")
@@ -556,7 +566,7 @@ def _execute_adjust_audience(action: dict) -> dict:
     return {"verified": True, "current_targeting": actual_targeting}
 
 
-def _execute_adjust_budget(action: dict, direction: str) -> dict:
+def _execute_adjust_budget(action: dict, direction: str, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """`increase_budget`/`decrease_budget` uchun.
 
     MUHIM (2026-08, foydalanuvchi Telegram loglarida ko'rgan xato --
@@ -593,7 +603,7 @@ def _execute_adjust_budget(action: dict, direction: str) -> dict:
     if direction == "decrease":
         percent = -percent
 
-    current = meta_api.get_adset_details(adset_id)
+    current = meta_api.get_adset_details(adset_id, access_token=access_token)
     current_budget = current.get("daily_budget")
     if not current_budget:
         raise meta_api.MetaAPIError({
@@ -608,9 +618,9 @@ def _execute_adjust_budget(action: dict, direction: str) -> dict:
         })
     current_budget = int(current_budget)
 
-    meta_api.adjust_budget_by_percent(adset_id, current_budget, percent)
+    meta_api.adjust_budget_by_percent(adset_id, current_budget, percent, access_token=access_token)
 
-    verified = meta_api.get_adset_details(adset_id)
+    verified = meta_api.get_adset_details(adset_id, access_token=access_token)
     new_budget = verified.get("daily_budget")
     expected_budget = int(current_budget * (1 + percent / 100))
     # Meta ba'zan kichik yaxlitlash farqi bilan qaytarishi mumkin -- shuning
@@ -631,15 +641,15 @@ def _execute_adjust_budget(action: dict, direction: str) -> dict:
     return {"verified": True, "old_budget_cents": current_budget, "new_budget_cents": int(new_budget)}
 
 
-def _execute_launch_campaign(action: dict) -> dict:
+def _execute_launch_campaign(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """8-band (targetolog prompt): to'liq yangi campaign -> adset -> (ad) yaratadi."""
     params = action["params"]
-    campaign = meta_api.create_campaign(**params["campaign"])
+    campaign = meta_api.create_campaign(**params["campaign"], access_token=access_token, ad_account_id=ad_account_id)
     campaign_id = campaign["id"]
 
     adset_params = dict(params["adset"])
     adset_params["campaign_id"] = campaign_id
-    adset = meta_api.create_adset(**adset_params)
+    adset = meta_api.create_adset(**adset_params, access_token=access_token, ad_account_id=ad_account_id)
 
     result = {"campaign": campaign, "adset": adset}
 
@@ -650,6 +660,7 @@ def _execute_launch_campaign(action: dict) -> dict:
             name=ad_spec.get("name", action.get("object_name", "Target Master ad")),
             creative_id=ad_spec["creative_id"],
             status=ad_spec.get("status", "PAUSED"),
+            access_token=access_token, ad_account_id=ad_account_id,
         )
         result["ad"] = ad
     else:
@@ -657,28 +668,29 @@ def _execute_launch_campaign(action: dict) -> dict:
     return result
 
 
-def _execute_ab_test(action: dict) -> dict:
+def _execute_ab_test(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """9-band (targetolog prompt): mavjud adset'ni nusxalab, B variantni yaratadi,
     faqat bitta o'zgaruvchini (auditoriya YOKI kreativ) farqlantiradi."""
     params = action["params"]
     copy_result = meta_api.copy_adset(
-        action["object_id"], rename_suffix=params.get("rename_suffix", " - B variant")
+        action["object_id"], rename_suffix=params.get("rename_suffix", " - B variant"), access_token=access_token,
     )
     b_adset_id = copy_result.get("adset_id") or copy_result.get("id")
 
     variant_b = params.get("variant_b", {})
     if variant_b.get("targeting"):
-        meta_api.update_targeting(b_adset_id, variant_b["targeting"])
+        meta_api.update_targeting(b_adset_id, variant_b["targeting"], access_token=access_token)
     if variant_b.get("creative_id"):
         meta_api.create_ad(
             adset_id=b_adset_id,
             name=f"{action.get('object_name', 'Test')} - B",
             creative_id=variant_b["creative_id"],
             status="ACTIVE",
+            access_token=access_token, ad_account_id=ad_account_id,
         )
 
-    meta_api.activate_object(action["object_id"])
-    meta_api.activate_object(b_adset_id)
+    meta_api.activate_object(action["object_id"], access_token=access_token)
+    meta_api.activate_object(b_adset_id, access_token=access_token)
     return {
         "variant_a_adset_id": action["object_id"],
         "variant_b_adset_id": b_adset_id,
@@ -687,14 +699,17 @@ def _execute_ab_test(action: dict) -> dict:
     }
 
 
-def _execute_replace_creative(action: dict) -> dict:
+def _execute_replace_creative(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """4-band (targetolog prompt), 2026-08 matn-avtonom variant: mavjud
     rasm/video'ni SAQLAB, faqat reklama matnini (`final_primary_text`/
     `final_headline`) yangilab, yangi creative'ni reklamaga biriktiradi va
     qayta o'qib tasdiqlaydi. AI hali rasm/video generatsiya qila olmaydi --
     shuning uchun Targetolog butunlay YANGI vizual kerak deb hisoblasa, bu
     action turini UMUMAN chiqarmasligi, o'rniga `summary`da odam dizaynerga
-    TZ yozishi kerak (bu funksiya faqat matn-almashtirish yo'lini bajaradi)."""
+    TZ yozishi kerak (bu funksiya faqat matn-almashtirish yo'lini bajaradi).
+
+    2026-09 multi-tenant: `page_id` berilmasa, eski global `meta_api.PAGE_ID`ga
+    tushadi (orqaga moslik, owner uchun)."""
     ad_id = _require(action, "object_id")
     final_primary_text = _require_any(
         action,
@@ -705,7 +720,7 @@ def _execute_replace_creative(action: dict) -> dict:
     brief = params.get("creative_brief") or {}
     final_headline = brief.get("final_headline") or params.get("final_headline")
 
-    current = meta_api.get_ad_creative_details(ad_id)
+    current = meta_api.get_ad_creative_details(ad_id, access_token=access_token)
     if not current.get("object_story_spec"):
         raise meta_api.MetaAPIError({
             "message": (
@@ -717,11 +732,12 @@ def _execute_replace_creative(action: dict) -> dict:
         })
 
     new_creative = meta_api.create_ad_creative_with_new_copy(
-        page_id=meta_api.PAGE_ID,
+        page_id=page_id or meta_api.PAGE_ID,
         base_story_spec=current["object_story_spec"],
         primary_text=final_primary_text,
         headline=final_headline,
         name=action.get("object_name"),
+        access_token=access_token, ad_account_id=ad_account_id,
     )
     new_creative_id = new_creative.get("id")
     if not new_creative_id:
@@ -730,9 +746,9 @@ def _execute_replace_creative(action: dict) -> dict:
             "response": new_creative,
         })
 
-    meta_api.update_ad_creative(ad_id, new_creative_id)
+    meta_api.update_ad_creative(ad_id, new_creative_id, access_token=access_token)
 
-    verified = meta_api.get_ad_creative_details(ad_id)
+    verified = meta_api.get_ad_creative_details(ad_id, access_token=access_token)
     if verified.get("creative_id") != new_creative_id:
         raise meta_api.MetaAPIError({
             "message": (
@@ -1584,7 +1600,7 @@ def enforce_cpl_hard_kill_all_companies() -> dict:
             per_company[c["id"]] = enforce_cpl_hard_kill(company=fake_company)
         except Exception as e:
             logger.exception("CPL hard-kill: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
-            per_company[c["id"]] = {"checked": 0, "paused": [], "errors": [f"Kutilmagan xato: {e}"]}
+            per_company[c["id"]] = {"checked": 0, "paused": [], "errors": [f"Kutilmagan xato: {meta_api.safe_error_message(e)}"]}
     return {"companies_checked": len(companies), "per_company": per_company}
 
 
@@ -1700,7 +1716,10 @@ def _format_json_error(e: "TargetologFormatError", stage: str = "Targetolog") ->
 _EMPTY_STATS = {"succeeded": 0, "failed": 0, "skipped": 0, "manual_suggestions": 0}
 
 
-def _run_pipeline(targetolog_user_message: str, dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
+def _run_pipeline(
+    targetolog_user_message: str, dry_run: bool = False, chat_id: int | None = None,
+    *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None,
+) -> tuple[str, dict]:
     """Targetolog -> Marketolog -> ijro zanjirining umumiy o'zagi. Buni ham
     to'liq hisob tahlili (`run_analysis_cycle`), ham Telegram'dagi erkin
     buyruqlar (`handle_chat_command`) chaqiradi — ikkalasi ham xuddi shu
@@ -1709,16 +1728,27 @@ def _run_pipeline(targetolog_user_message: str, dry_run: bool = False, chat_id: 
     matnni regex bilan tahlil qilmasdan, to'g'ridan-to'g'ri aniqlash uchun.
     `chat_id` -- faqat `schedule_on_off`/`schedule_report`/`cancel_standing_task`
     action'lari uchun kerak (qaysi Telegram chatdan buyruq kelgani), boshqa
-    action turlariga ta'sir qilmaydi."""
+    action turlariga ta'sir qilmaydi.
+
+    2026-09, `job_watch_cycle` ko'p-kompaniyaga kengaytirildi: `access_token`/
+    `ad_account_id`/`page_id` berilsa, IJRO shu kompaniyaning O'Z Meta hisobi
+    bilan bajariladi (berilmasa -- eski global ENV, platforma egasi uchun
+    orqaga moslik)."""
     logger.info("Targetolog agentga so'rov yuborilmoqda...")
     try:
         targetolog_plan = _call_agent(TARGETOLOG_SYSTEM, targetolog_user_message)
     except TargetologFormatError as e:
         return _format_json_error(e, "Targetolog"), dict(_EMPTY_STATS)
-    return _finish_pipeline(targetolog_plan, dry_run, chat_id)
+    return _finish_pipeline(
+        targetolog_plan, dry_run, chat_id,
+        access_token=access_token, ad_account_id=ad_account_id, page_id=page_id,
+    )
 
 
-def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
+def _finish_pipeline(
+    targetolog_plan: dict, dry_run: bool = False, chat_id: int | None = None,
+    *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None,
+) -> tuple[str, dict]:
     """Targetolog allaqachon tuzgan action_plan'ni Marketolog'ga tekshirtiradi
     va tasdiqlangan action'larni ijro etadi. `_run_pipeline` va geo-lookup
     ikki bosqichli oqimi (`_run_pipeline_command`) ikkalasi ham shu yerga kelib
@@ -1810,7 +1840,9 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
         )
         if needs_structure_check:
             try:
-                fresh_structure = meta_api.get_account_structure(active_only=False)
+                fresh_structure = meta_api.get_account_structure(
+                    active_only=False, access_token=access_token, ad_account_id=ad_account_id,
+                )
                 known_object_ids, campaign_of_object = _account_structure_id_maps(fresh_structure)
             except meta_api.MetaAPIError as e:
                 structure_fetch_error = str(e)
@@ -1879,7 +1911,9 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
                 elif action_type == "cancel_standing_task":
                     result = _execute_cancel_standing_task(final_action, chat_id)
                 else:
-                    result = ACTION_EXECUTORS[action_type](final_action)
+                    result = ACTION_EXECUTORS[action_type](
+                        final_action, access_token=access_token, ad_account_id=ad_account_id, page_id=page_id,
+                    )
                 succeeded.append({"action": final_action, "result": result})
             except meta_api.MetaAPIError as e:
                 logger.exception("Action bajarishda Meta API xatoligi: %s", action_type)
@@ -1977,34 +2011,44 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
     return text, stats
 
 
-def run_analysis_cycle_with_stats(dry_run: bool = False, chat_id: int | None = None) -> tuple[str, dict]:
+def run_analysis_cycle_with_stats(dry_run: bool = False, chat_id: int | None = None, company=None) -> tuple[str, dict]:
     """`run_analysis_cycle()` bilan bir xil, lekin matn bilan birga aniq
     statistikani (`{"succeeded", "failed", "skipped", "manual_suggestions"}`)
-    ham qaytaradi — matnni regex bilan "tahlil qilish" shart emas."""
-    data = gather_data()
+    ham qaytaradi — matnni regex bilan "tahlil qilish" shart emas.
+
+    `company` berilsa (2026-09, `job_watch_cycle` ko'p-kompaniyaga
+    kengaytirildi) — ma'lumot yig'ish (`gather_data`) VA ijro (`_run_pipeline`)
+    ikkalasi ham O'SHA kompaniyaning O'Z Meta hisobi bilan bajariladi.
+    Berilmasa — eski global (ENV, platforma egasi) xatti-harakat, orqaga
+    moslik uchun o'zgarmagan."""
+    data = gather_data(company=company)
     data_json = json.dumps(data, ensure_ascii=False, indent=2)
+    access_token = company.get_meta_access_token() if company else None
+    ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
+    page_id = getattr(company, "meta_page_id", None) if company else None
     return _run_pipeline(
         f"Quyidagi ma'lumotlar asosida to'liq hisobni tahlil qilib action_plan tuzing:\n\n{data_json}",
         dry_run=dry_run,
         chat_id=chat_id,
+        access_token=access_token, ad_account_id=ad_account_id, page_id=page_id,
     )
 
 
-def run_analysis_cycle(dry_run: bool = False, chat_id: int | None = None) -> str:
+def run_analysis_cycle(dry_run: bool = False, chat_id: int | None = None, company=None) -> str:
     """To'liq hisobni tahlil qiladi (barcha kampaniya/adset/ad + region breakdown).
     Telegram bot `/analyze` buyrug'i shu funksiyani chaqiradi."""
-    text, _stats = run_analysis_cycle_with_stats(dry_run=dry_run, chat_id=chat_id)
+    text, _stats = run_analysis_cycle_with_stats(dry_run=dry_run, chat_id=chat_id, company=company)
     return text
 
 
-def run_daily_cron_report(dry_run: bool = False) -> str | None:
+def run_daily_cron_report(dry_run: bool = False, company=None) -> str | None:
     """VERCEL CRON UCHUN: `run_analysis_cycle()` bilan bir xil to'liq tahlilni
     ishga tushiradi, lekin foydalanuvchiga faqat DIQQATGA LOYIQ narsa bo'lsa
     (biror action bajarildi/xato berdi/qo'lda ko'rib chiqish kerak bo'lsa)
     xabar qaytaradi. Agar hisobda hech narsa o'zgarmagan va hammasi joyida
     bo'lsa — `None` qaytaradi, ya'ni kunlik "hammasi joyida" degan bo'sh
     xabar bilan bezovta qilinmaydi."""
-    text, stats = run_analysis_cycle_with_stats(dry_run=dry_run)
+    text, stats = run_analysis_cycle_with_stats(dry_run=dry_run, company=company)
 
     if not any(stats.values()):
         return None

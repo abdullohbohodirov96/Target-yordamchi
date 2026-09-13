@@ -454,21 +454,123 @@ def job_payme_autopay() -> dict:
     return results
 
 
-def job_watch_cycle() -> str:
-    targets = _full_activity_targets()
+class _WatchCycleCompanyCreds:
+    """`orchestrator.run_daily_cron_report(company=...)`ga uzatish uchun
+    yengil obyekt -- boshqa job_*'lardagi (`_AdminReportCompanyCreds`,
+    `orchestrator._CplCompanyCreds`) bilan bir xil naqsh."""
+    def __init__(self, id, name, meta_access_token, meta_ad_account_id, meta_page_id):
+        self.id = id
+        self.name = name
+        self._meta_access_token_plain = meta_access_token
+        self.meta_ad_account_id = meta_ad_account_id
+        self.meta_page_id = meta_page_id
+
+    def get_meta_access_token(self) -> "str | None":
+        return self._meta_access_token_plain
+
+
+def job_watch_cycle() -> dict:
+    """Har soatning 5-daqiqasida -- to'liq AI audit + avtomatik tuzatish
+    (Targetolog: byudjet oshirish/kamaytirish, pause/resume va h.k.).
+
+    2026-09, multi-tenant + opt-in (foydalanuvchi so'rovi: "barchada bu
+    narsa bo'lsin, lekin ulanayotganda, ya'ni dostuplar olinsin, yoqsin
+    o'zi odam. agar yoqsa, o'zi o'chirib pauzalarni berib yursin. agar
+    yoqilmasa, yoqmasin o'zi"): ILGARI bu funksiya FAQAT platforma egasi
+    (Company #1) uchun, global ENV o'zgaruvchilaridan ishlardi -- qolgan
+    HAMMA kompaniya bu avtomatik audit/tuzatishdan UMUMAN foydalana olmasdi.
+    Endi:
+      1. Platforma egasi uchun -- ESKI xatti-harakat, O'ZGARISHSIZ (orqaga
+         moslik uchun) -- `_full_activity_targets()`ga.
+      2. Meta ulagan (`meta_ad_account_id`+`meta_access_token`), o'z
+         Telegram guruhini sozlagan (`telegram_group_id`) VA bu funksiyani
+         ANIQ o'zi YOQQAN (`Company.is_auto_watch_enabled()` -- standart
+         holati O'CHIQ, admin Sozlamalar sahifasidan o'zi yoqishi kerak)
+         har bir boshqa faol kompaniya uchun -- ALOHIDA, O'Z Meta hisobidan
+         audit, FAQAT O'ZINING guruhiga (boshqa kompaniyaning ma'lumoti
+         begona guruhga sizib chiqmasligi uchun -- xuddi
+         `enforce_cpl_hard_kill_all_companies()`/`job_admin_report()`dagi
+         bir xil xavfsizlik naqshi).
+
+    Qaytaradi: {"owner": <matn>, <company_id>: <matn>, ...}."""
+    results: dict = {}
+
+    # 1) Platforma egasi -- eski, global xatti-harakat.
+    owner_targets = _full_activity_targets()
     try:
         report = orchestrator.run_daily_cron_report(dry_run=False)
     except Exception as e:
-        logger.exception("Kuzatuv tsikli xatosi")
+        logger.exception("Kuzatuv tsikli xatosi (platforma egasi)")
         safe_msg = meta_api.safe_error_message(e)
-        for cid in targets:
+        for cid in owner_targets:
             _tg_send(cid, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
-        return f"xato: {safe_msg}"
-    if report is None:
-        return "diqqatga loyiq narsa yo'q"
-    for cid in targets:
-        _tg_send(cid, "\U0001F440 Avtomatik audit natijasi:\n\n" + report)
-    return f"yuborildi -> {targets}"
+        results["owner"] = f"xato: {safe_msg}"
+    else:
+        if report is None:
+            results["owner"] = "diqqatga loyiq narsa yo'q"
+        else:
+            for cid in owner_targets:
+                _tg_send(cid, "\U0001F440 Avtomatik audit natijasi:\n\n" + report)
+            results["owner"] = f"yuborildi -> {owner_targets}"
+
+    # 2) Boshqa har bir Meta ulagan, guruhini sozlagan VA bu funksiyani
+    #    o'zi yoqqan kompaniya.
+    default_company_id = db.get_default_company_id()
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            rows = (
+                session.query(db.Company)
+                .filter(
+                    db.Company.meta_ad_account_id.isnot(None),
+                    db.Company.meta_access_token.isnot(None),
+                    db.Company.telegram_group_id.isnot(None),
+                    db.Company.is_active.is_(True),
+                    db.Company.id != default_company_id,
+                )
+                .all()
+            )
+            companies = [
+                {
+                    "id": c.id, "name": c.name, "meta_access_token": c.get_meta_access_token(),
+                    "meta_ad_account_id": c.meta_ad_account_id, "meta_page_id": c.meta_page_id,
+                    "telegram_group_id": c.telegram_group_id,
+                    "auto_watch_enabled": c.is_auto_watch_enabled(),
+                }
+                for c in rows
+            ]
+    finally:
+        session.close()
+
+    for c in companies:
+        if not c["auto_watch_enabled"]:
+            continue
+        try:
+            chat_id = int(c["telegram_group_id"])
+        except (TypeError, ValueError):
+            results[c["id"]] = "telegram_group_id noto'g'ri formatda -- o'tkazib yuborildi"
+            continue
+
+        fake_company = _WatchCycleCompanyCreds(
+            id=c["id"], name=c["name"], meta_access_token=c["meta_access_token"],
+            meta_ad_account_id=c["meta_ad_account_id"], meta_page_id=c["meta_page_id"],
+        )
+        try:
+            report = orchestrator.run_daily_cron_report(dry_run=False, company=fake_company)
+        except Exception as e:
+            logger.exception("Kuzatuv tsikli xatosi (kompaniya '%s', id=%s)", c["name"], c["id"])
+            safe_msg = meta_api.safe_error_message(e)
+            _tg_send(chat_id, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
+            results[c["id"]] = f"xato: {safe_msg}"
+            continue
+
+        if report is None:
+            results[c["id"]] = "diqqatga loyiq narsa yo'q"
+        else:
+            send_result = _tg_send(chat_id, "\U0001F440 Avtomatik audit natijasi:\n\n" + report)
+            results[c["id"]] = "yuborildi" if send_result["ok"] else f"URINISH QILINDI, lekin rad etildi: {send_result}"
+
+    return results
 
 
 def job_budget_check() -> str:
@@ -962,12 +1064,30 @@ def job_standing_tasks() -> str:
     errors_by_chat: dict = {}
     try:
         tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
+        # 2026-09, xavfsizlik/ishonchlilik tuzatishi ("bir ikkita xatolar
+        # chiqyapti, o'chirmayapti vaqtida"): ILGARI bu yer HAR BIR vazifani
+        # (qaysi kompaniyaga tegishli bo'lishidan qat'iy nazar) doim GLOBAL
+        # (ENV) token bilan bajarardi -- ya'ni boshqa kompaniyaning
+        # `schedule_on_off` vazifasi ATAYLAB ulangan O'Z Meta hisobi emas,
+        # PLATFORMA EGASINING hisobiga (yoki, ehtimolroq, mavjud bo'lmagan
+        # `object_id`ga -- shu sabab "xato chiqib, o'chirmayapti" belgisi)
+        # yuborilardi. Endi har bir vazifaning O'Z kompaniyasining Meta
+        # token'i bilan bajariladi (bitta so'rovda oldindan xaritaga
+        # yig'ilgan -- har bir vazifa uchun alohida DB so'rov shart emas).
+        company_ids = {t.company_id for t in tasks if t.company_id is not None}
+        creds_by_company: dict = {}
+        if company_ids:
+            with db.unscoped():
+                for c in session.query(db.Company).filter(db.Company.id.in_(company_ids)).all():
+                    creds_by_company[c.id] = c.get_meta_access_token()
+
         for t in tasks:
             desired = _desired_state(now_hhmm, t.on_time, t.off_time)
             if desired == t.last_desired_state:
                 continue
+            access_token = creds_by_company.get(t.company_id)
             try:
-                (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id)
+                (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
                 t.last_desired_state = desired
                 t.last_checked_at = now
                 t.last_error = None
@@ -975,7 +1095,7 @@ def job_standing_tasks() -> str:
             except Exception as e:
                 safe_msg = meta_api.safe_error_message(e)
                 t.last_error = safe_msg
-                logger.exception("Standing task xatosi (object_id=%s)", t.object_id)
+                logger.exception("Standing task xatosi (object_id=%s, company_id=%s)", t.object_id, t.company_id)
                 errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
         session.commit()
     finally:

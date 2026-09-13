@@ -5418,6 +5418,27 @@ def _handle_settings_post(session, action):
         else:
             flash("Kompaniya topilmadi.", "error")
 
+    elif action == "toggle_auto_watch":
+        # 2026-09, foydalanuvchi so'rovi ("barchada bu narsa bo'lsin, lekin
+        # ulanayotganda, ya'ni dostuplar olinsin, yoqsin o'zi odam"):
+        # soatlik AI audit/harakat tsikli (`scheduler.job_watch_cycle`) endi
+        # HAR BIR kompaniyaga ochiq, lekin admin O'ZI shu yerdan yoqishi
+        # kerak (standart holati o'chiq -- qarang db.py: Company.auto_watch_enabled).
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is not None:
+            company_row.auto_watch_enabled = request.form.get("auto_watch_enabled") == "1"
+            session.commit()
+            g.pop("_company_cache", None)
+            flash(
+                "Soatlik avtomatik AI audit/tuzatish yoqildi -- Telegram guruhingiz "
+                "sozlangan bo'lishi kerak (Sozlamalar → Telegram)."
+                if company_row.auto_watch_enabled else
+                "Soatlik avtomatik AI audit/tuzatish o'chirildi.",
+                "success",
+            )
+        else:
+            flash("Kompaniya topilmadi.", "error")
+
 
 @app.route("/sozlamalar")
 @login_required
@@ -5500,7 +5521,13 @@ def settings_cpl():
                 company_id=current_user.company_id,
             ),
         }
-        return render_template("settings_cpl.html", cpl_rules=cpl_rules)
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        auto_watch_enabled = bool(company_row and company_row.is_auto_watch_enabled())
+        has_telegram_group = bool(company_row and company_row.telegram_group_id)
+        return render_template(
+            "settings_cpl.html", cpl_rules=cpl_rules,
+            auto_watch_enabled=auto_watch_enabled, has_telegram_group=has_telegram_group,
+        )
     finally:
         session.close()
 

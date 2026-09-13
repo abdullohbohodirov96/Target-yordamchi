@@ -815,12 +815,15 @@ def get_object_status(object_id: str, *, access_token: str | None = None) -> dic
     return _get(object_id, {"fields": "id,name,status,effective_status"}, access_token)
 
 
-def get_adset_details(adset_id: str) -> dict:
+def get_adset_details(adset_id: str, *, access_token: str | None = None) -> dict:
     """Bitta adset'ning to'liq sozlamalarini (targeting, byudjet va h.k.) qaytaradi.
     Targetolog `account_structure`dan kerakli adset'ni nom bo'yicha topgach, aynan
     o'sha bitta adset uchun bu funksiya chaqiriladi — barcha adsetlarning
-    targeting'ini birdaniga yubormaslik uchun (token limitidan oshib ketmasligi uchun)."""
-    return _get(adset_id, {"fields": "id,name,status,campaign_id,daily_budget,targeting,optimization_goal"})
+    targeting'ini birdaniga yubormaslik uchun (token limitidan oshib ketmasligi uchun).
+
+    2026-09 multi-tenant (job_watch_cycle ko'p-kompaniyaga kengaytirildi):
+    `access_token` berilsa, O'SHA kompaniyaning o'z token'i bilan so'raladi."""
+    return _get(adset_id, {"fields": "id,name,status,campaign_id,daily_budget,targeting,optimization_goal"}, access_token)
 
 
 # ---------------------------------------------------------------------------
@@ -855,17 +858,17 @@ def archive_object(object_id: str, *, access_token: str | None = None) -> dict:
     return set_status(object_id, "ARCHIVED", access_token=access_token)
 
 
-def update_daily_budget(adset_id: str, new_daily_budget_cents: int) -> dict:
+def update_daily_budget(adset_id: str, new_daily_budget_cents: int, *, access_token: str | None = None) -> dict:
     """Byudjet Meta API'da eng kichik valyuta birligida (masalan tiyin/cent)
     beriladi. Masalan $10.00 -> 1000."""
-    return _post(adset_id, {"daily_budget": new_daily_budget_cents})
+    return _post(adset_id, {"daily_budget": new_daily_budget_cents}, access_token)
 
 
-def adjust_budget_by_percent(adset_id: str, current_daily_budget_cents: int, percent: float) -> dict:
+def adjust_budget_by_percent(adset_id: str, current_daily_budget_cents: int, percent: float, *, access_token: str | None = None) -> dict:
     """4.4-bo'lim qoidasiga ko'ra: bir martada 10-20% oralig'ida o'zgartirish
     tavsiya etiladi. `percent` musbat (oshirish) yoki manfiy (kamaytirish)."""
     new_budget = int(current_daily_budget_cents * (1 + percent / 100))
-    return update_daily_budget(adset_id, new_budget)
+    return update_daily_budget(adset_id, new_budget, access_token=access_token)
 
 
 # ---------------------------------------------------------------------------
@@ -900,7 +903,7 @@ def _sanitize_targeting_for_write(targeting: dict) -> dict:
     return targeting
 
 
-def set_location_current_city_only(adset_id: str, city_key: str) -> dict:
+def set_location_current_city_only(adset_id: str, city_key: str, *, access_token: str | None = None) -> dict:
     """Ad Set targeting'ini faqat joriy shaharga cheklaydi va avtokengaytirishni
     o'chiradi ("Reach more people likely to respond" -> off)."""
     targeting = {
@@ -910,13 +913,13 @@ def set_location_current_city_only(adset_id: str, city_key: str) -> dict:
         },
         "targeting_automation": {"advantage_audience": 0},  # auto-expansion off
     }
-    return _post(adset_id, {"targeting": _sanitize_targeting_for_write(targeting)})
+    return _post(adset_id, {"targeting": _sanitize_targeting_for_write(targeting)}, access_token)
 
 
-def update_targeting(adset_id: str, targeting: dict) -> dict:
+def update_targeting(adset_id: str, targeting: dict, *, access_token: str | None = None) -> dict:
     """Ad Set auditoriyasini to'liq yangi targeting spec bilan almashtiradi.
     Yozishdan oldin avtomatik ravishda xavfsizlashtiriladi (`_sanitize_targeting_for_write`)."""
-    return _post(adset_id, {"targeting": _sanitize_targeting_for_write(targeting)})
+    return _post(adset_id, {"targeting": _sanitize_targeting_for_write(targeting)}, access_token)
 
 
 def search_geo_location(query: str, location_types: list[str] | None = None) -> list[dict]:
@@ -943,13 +946,16 @@ def create_campaign(
     objective: str = "OUTCOME_LEADS",   # OUTCOME_LEADS | OUTCOME_SALES | OUTCOME_ENGAGEMENT | OUTCOME_TRAFFIC
     status: str = "PAUSED",
     special_ad_categories: list | None = None,
+    *,
+    access_token: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
-    return _post(f"{AD_ACCOUNT_ID}/campaigns", {
+    return _post(f"{ad_account_id or AD_ACCOUNT_ID}/campaigns", {
         "name": name,
         "objective": objective,
         "status": status,
         "special_ad_categories": special_ad_categories or [],
-    })
+    }, access_token)
 
 
 def create_adset(
@@ -962,6 +968,9 @@ def create_adset(
     bid_strategy: str = "LOWEST_COST_WITHOUT_CAP",
     status: str = "PAUSED",
     promoted_object: dict | None = None,
+    *,
+    access_token: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
     """Bo'lim 4.2-4.3 qoidalariga mos targeting spec bilan yangi Ad Set yaratadi.
 
@@ -984,25 +993,31 @@ def create_adset(
     }
     if promoted_object:
         payload["promoted_object"] = promoted_object
-    return _post(f"{AD_ACCOUNT_ID}/adsets", payload)
+    return _post(f"{ad_account_id or AD_ACCOUNT_ID}/adsets", payload, access_token)
 
 
-def create_ad(adset_id: str, name: str, creative_id: str, status: str = "PAUSED") -> dict:
+def create_ad(
+    adset_id: str, name: str, creative_id: str, status: str = "PAUSED",
+    *, access_token: str | None = None, ad_account_id: str | None = None,
+) -> dict:
     """Mavjud creative_id'dan foydalanib reklama yaratadi. AI video/rasm generatsiya
     qila olmaydi — creative_id avvaldan Ads Manager'da yuklangan bo'lishi kerak."""
-    return _post(f"{AD_ACCOUNT_ID}/ads", {
+    return _post(f"{ad_account_id or AD_ACCOUNT_ID}/ads", {
         "name": name,
         "adset_id": adset_id,
         "creative": {"creative_id": creative_id},
         "status": status,
-    })
+    }, access_token)
 
 
 # ---------------------------------------------------------------------------
 # A/B TEST (Meta'ning native "copies" funksiyasi orqali)
 # ---------------------------------------------------------------------------
 
-def copy_adset(adset_id: str, rename_suffix: str = " - B variant", status_option: str = "PAUSED") -> dict:
+def copy_adset(
+    adset_id: str, rename_suffix: str = " - B variant", status_option: str = "PAUSED",
+    *, access_token: str | None = None,
+) -> dict:
     """Ad Set'ni nusxalaydi — A/B test uchun B variantini yaratish uchun ishlatiladi.
     Nusxalangach, `update_targeting()` yoki yangi creative bilan `create_ad()`
     orqali B variantda faqat BITTA o'zgaruvchini (masalan auditoriya turi yoki
@@ -1013,7 +1028,7 @@ def copy_adset(adset_id: str, rename_suffix: str = " - B variant", status_option
             "rename_strategy": "ONLY_TOP_LEVEL_RENAME",
         },
         "status_option": status_option,
-    })
+    }, access_token)
 
 
 # ---------------------------------------------------------------------------
@@ -1029,13 +1044,13 @@ def copy_adset(adset_id: str, rename_suffix: str = " - B variant", status_option
 # yetarli.
 # ---------------------------------------------------------------------------
 
-def get_ad_creative_details(ad_id: str) -> dict:
+def get_ad_creative_details(ad_id: str, *, access_token: str | None = None) -> dict:
     """Reklamaning joriy kreativini (matn + rasm/video) qaytaradi.
     `replace_creative` uchun MUHIM: yangi creative yaratishdan oldin joriy
     `object_story_spec`ning AYNAN NUSXASIDAN boshlash kerak (noldan qurish
     EMAS) -- aks holda rasm/video yo'qolib ketishi yoki Meta "invalid
     creative" xatosi berishi mumkin."""
-    data = _get(ad_id, {"fields": "id,name,adset_id,creative{id,object_story_spec,image_hash,video_id}"})
+    data = _get(ad_id, {"fields": "id,name,adset_id,creative{id,object_story_spec,image_hash,video_id}"}, access_token)
     creative = data.get("creative", {}) or {}
     return {
         "ad_id": data.get("id"),
@@ -1054,6 +1069,9 @@ def create_ad_creative_with_new_copy(
     primary_text: str,
     headline: str | None = None,
     name: str | None = None,
+    *,
+    access_token: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
     """Mavjud kreativning `object_story_spec`idan (rasm/video O'ZGARMAYDI)
     chuqur nusxa olib, FAQAT matn maydonlarini (`link_data.message`/`name`
@@ -1078,14 +1096,14 @@ def create_ad_creative_with_new_copy(
         "name": name or "Target Master — yangilangan matn",
         "object_story_spec": story_spec,
     }
-    return _post(f"{AD_ACCOUNT_ID}/adcreatives", payload)
+    return _post(f"{ad_account_id or AD_ACCOUNT_ID}/adcreatives", payload, access_token)
 
 
-def update_ad_creative(ad_id: str, creative_id: str) -> dict:
+def update_ad_creative(ad_id: str, creative_id: str, *, access_token: str | None = None) -> dict:
     """Mavjud reklamaga YANGI creative'ni biriktiradi (eskisi endi
     ko'rsatilmaydi, lekin arxivda saqlanib qoladi). Reklamaning o'zi (ad_id,
     demak statistika tarixi) o'zgarmaydi."""
-    return _post(ad_id, {"creative": {"creative_id": creative_id}})
+    return _post(ad_id, {"creative": {"creative_id": creative_id}}, access_token)
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,21 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <h3 style="margin-top:0">Soatlik avtomatik AI audit (Targetolog)</h3>
+  <p class="text-faint" style="font-size:13px">Yoqilsa, Targetolog agenti HAR SOATDA butun hisobingizni AI bilan tahlil qiladi va zarur bo'lsa o'zi byudjet o'zgartiradi, reklamalarni pauza/qayta yoqadi -- natija Telegram guruhingizga yuboriladi (faqat diqqatga loyiq narsa bo'lsa). O'chirilgan bo'lsa -- bu tsikl kompaniyangiz uchun umuman ishlamaydi (yuqoridagi CPL chegaralari bundan mustaqil, alohida ishlaydi).</p>
+  {% if not has_telegram_group %}
+  <div class="text-faint" style="font-size:13px; color:var(--warn, #b45309)">⚠️ Hali Telegram guruhingiz sozlanmagan -- audit natijalari qayerga yuborilishini <a href="{{ url_for('settings_telegram') }}">shu yerdan</a> belgilang.</div>
+  {% endif %}
+  <form method="post" style="margin-top:10px">
+    <input type="hidden" name="action" value="toggle_auto_watch">
+    <input type="hidden" name="auto_watch_enabled" value="{{ '0' if auto_watch_enabled else '1' }}">
+    <button type="submit" class="btn{{ '' if auto_watch_enabled else ' toggle-all-btn-outline' }}">
+      {{ 'Yoqilgan -- o\'chirish' if auto_watch_enabled else "O'chirilgan -- yoqish" }}
+    </button>
+  </form>
+</div>
+
 <div class="card">
   <form method="post" style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
     <input type="hidden" name="action" value="set_cpl_rules">

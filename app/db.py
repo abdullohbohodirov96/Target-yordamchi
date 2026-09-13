@@ -175,6 +175,26 @@ class Company(Base):
     ai_features_disabled = Column(Boolean, nullable=False, default=False)
 
     # ---------------------------------------------------------------------
+    # 2026-09, foydalanuvchi so'rovi ("barchada bu narsa bo'lsin, lekin
+    # ulanayotganda ... yoqsin o'zi odam. agar yoqsa, o'zi o'chirib
+    # pauzalarni berib yursin. agar yoqilmasa, yoqmasin o'zi"): soatlik
+    # avtomatik AI audit/harakat sikli (`scheduler.job_watch_cycle`) ilgari
+    # FAQAT platforma egasi (company_id=1) uchun ishlardi. Endi bu HAR BIR
+    # kompaniyaga ochiq, lekin OPT-IN -- kompaniya admin o'zi sozlamalardan
+    # yoqadi (`app.py: _handle_settings_post`, action="toggle_auto_watch").
+    #
+    # MUHIM (`_migrate_add_missing_columns()` xususiyati): eski bazaga
+    # ALTER TABLE orqali qo'shilgan ustun har doim NULL bo'lib qo'shiladi,
+    # pastdagi `default=False` FAQAT yangi qatorlarga (ORM orqali yaratilsa)
+    # taalluqli -- MAVJUD qatorlarda bu ustun NULL bo'lib qoladi. Shuning
+    # uchun buni to'g'ridan-to'g'ri o'qimang -- pastdagi
+    # `is_auto_watch_enabled()` orqali murojaat qiling: u NULL'ni "platforma
+    # egasi (id=1) uchun True, boshqa hamma uchun False" deb talqin qiladi
+    # (orqaga moslik -- egangiz ilgari doim yoqiq bo'lgan, boshqalar esa
+    # bu funksiyani hali bilmaydi, shuning uchun standart o'chiq/opt-in).
+    auto_watch_enabled = Column(Boolean, nullable=True, default=False)
+
+    # ---------------------------------------------------------------------
     # 2026-09, foydalanuvchi so'rovi ("Marketplace" -- "hamma crmlarni ulash
     # mumkin bolsin, kop integratsiyalarni qilish mumkin bolsin"): har bir
     # tashqi CRM (amoCRM, Bitrix24, Zapier/Make va h.k.) uchun ALOHIDA
@@ -258,6 +278,15 @@ class Company(Base):
 
     def set_meta_access_token(self, raw: "str | None") -> None:
         self.meta_access_token = crypto_util.encrypt_token(raw)
+
+    def is_auto_watch_enabled(self) -> bool:
+        """`auto_watch_enabled` ustunidagi NULL'ni to'g'ri talqin qiladi --
+        qarang: yuqoridagi ustun izohi. Eski migratsiya qilingan qatorlarda
+        NULL bo'ladi; egangiz kompaniyasi (id=1) uchun bu True (orqaga
+        moslik), boshqa barcha kompaniyalar uchun False (opt-in)."""
+        if self.auto_watch_enabled is None:
+            return self.id == 1
+        return bool(self.auto_watch_enabled)
 
     def get_meta_capi_token(self) -> "str | None":
         return crypto_util.decrypt_token(self.meta_capi_access_token)
