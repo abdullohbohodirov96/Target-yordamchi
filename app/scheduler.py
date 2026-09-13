@@ -10,6 +10,11 @@ Jadval (standart, ENV orqali sozlanadi):
     foydalanuvchi so'rovi: "tolov avtomatik otishi" -- `payme_subscribe.py`
     va `job_payme_autopay()`ga qarang). Kunlik 09:00 admin hisobotidan
     OLDIN ishga tushadi.
+  - 08:00 Toshkent -- SINOV (trial) muddati tugashiga 3 kun (yoki kamroq)
+    qolgan kompaniyalarga oldindan Telegram ogohlantirishi (2026-09,
+    foydalanuvchi so'rovi:
+    "to'lov jarayonini yaxshilash" -> "Trial tugashi haqida oldindan
+    ogohlantirish" -- `job_trial_expiry_warning()`ga qarang).
   - 09:00 Toshkent -- ADMIN TARGET HISOBOTI (har doim yuboriladi, faqat OpenAI,
     hech qanday action bajarmaydi) -- foydalanuvchi so'ragan "har kuni 9:00"
     talabi aynan shu. **2026-08dan: KECHAGI (o'tgan to'liq kun) natijasi
@@ -443,13 +448,134 @@ def job_payme_autopay() -> dict:
                         f"muvaffaqiyatli o'tdi -- hisobingiz yana 30 kunga uzaytirildi.",
                     )
                 else:
-                    _tg_send(
-                        chat_id,
-                        f"⚠️ \"{plan_def.name}\" tarifi uchun avtomatik to'lov AMALGA OSHMADI"
-                        f"{f': {error_text}' if error_text else ''}.\n\n"
-                        f"Iltimos, /tolov sahifasida kartangizni tekshiring yoki yangilang.",
-                    )
+                    # 2026-09, foydalanuvchi so'rovi ("to'lov jarayonini
+                    # yaxshilash" -- muvaffaqiyatsiz to'lovda aniqroq/
+                    # kuchliroq eslatma): ILGARI har bir muvaffaqiyatsiz
+                    # urinishda BIR XIL, "yumshoq" ogohlantirish ketardi, va
+                    # GRACE muddati (3 kun) tugab, kompaniya bu funktsiya
+                    # ro'yxatidan tushib qolganda (keyingi bo'limga qarang)
+                    # HECH QANDAY yakuniy xabar yuborilmasdi -- mijoz nega
+                    # to'satdan saytga kira olmay qolganini bilmasdi. Endi
+                    # GRACE davrining SO'NGGI kunida alohida, aniqroq
+                    # "obuna to'xtatiladi" xabari yuboriladi.
+                    is_final_attempt = t["paid_until"] <= now - dt.timedelta(days=_PAYME_AUTOPAY_RETRY_GRACE_DAYS - 1)
+                    if is_final_attempt:
+                        _tg_send(
+                            chat_id,
+                            f"🛑 \"{plan_def.name}\" tarifi uchun avtomatik to'lov {_PAYME_AUTOPAY_RETRY_GRACE_DAYS} "
+                            f"kun ketma-ket AMALGA OSHMADI{f' (sabab: {error_text})' if error_text else ''}. "
+                            f"Bu SO'NGGI urinish edi -- obunangiz TO'XTATILADI va saytga kirish yopiladi.\n\n"
+                            f"Iltimos, https://replix.uz/tolov sahifasida kartangizni yangilang yoki "
+                            f"boshqa usulda to'lang -- to'lov tushishi bilan kirish darhol tiklanadi.",
+                        )
+                    else:
+                        _tg_send(
+                            chat_id,
+                            f"⚠️ \"{plan_def.name}\" tarifi uchun avtomatik to'lov AMALGA OSHMADI"
+                            f"{f': {error_text}' if error_text else ''}.\n\n"
+                            f"Iltimos, /tolov sahifasida kartangizni tekshiring yoki yangilang.",
+                        )
         results[t["id"]] = "to'landi" if charge_ok else f"to'lanmadi: {error_text}"
+
+    return results
+
+
+_TRIAL_WARNING_DAYS_BEFORE = 3  # sinov muddati tugashiga necha kun qolganda ogohlantiriladi
+
+
+def job_trial_expiry_warning() -> dict:
+    """Har kuni -- sinov (`trial`) muddati tugashiga
+    `_TRIAL_WARNING_DAYS_BEFORE` kun (yoki kamroq) qolgan HAR BIR faol
+    kompaniyaga BIR MARTA (har bir aniq `paid_until` qiymati uchun) Telegram
+    orqali ogohlantirish yuboradi.
+
+    2026-09, foydalanuvchi so'rovi ("to'lov jarayonini yaxshilash" ->
+    "Trial tugashi haqida oldindan ogohlantirish"): ILGARI sinov muddati
+    tugashi haqida HECH QANDAY oldindan xabar yo'q edi -- mijoz buni FAQAT
+    muddat tugab, saytga kira olmay qolgandan keyin (`_enforce_subscription`
+    orqali) bilardi. Endi muddat tugashidan oldin ogohlantiriladi, to'lov
+    sahifasiga havola bilan.
+
+    Kimga yuboriladi: birinchi navbatda O'SHA kompaniyaning admin(lar)i
+    (`Manager.telegram_user_id`, ular botga shaxsiy `/start` bosgan bo'lsa)
+    -- bu ogohlantirish shaxsiy, guruh emas. Hech qaysi admin botga
+    ulanmagan bo'lsa, kompaniyaning umumiy Telegram guruhiga (bo'lsa)
+    tushadi. Ikkalasi ham yo'q bo'lsa -- yuborilmaydi (xato emas, natijada
+    qayd etiladi), chunki hozircha email yuborish infratuzilmasi yo'q.
+
+    Idempotentlik: `kv_store`da `trial_warn_sent:<company_id>:<paid_until>`
+    kaliti bilan -- xuddi shu muddat uchun ikkinchi marta yuborilmaydi (agar
+    admin keyinroq to'lov qilib `paid_until`ni uzaytirsa/yangilasa, YANGI
+    qiymat uchun ogohlantirish yana ishlaydi -- masalan tarifni o'zgartirib,
+    keyin yana sinovga qaytarilsa)."""
+    now = dt.datetime.utcnow()
+    warn_before = now + dt.timedelta(days=_TRIAL_WARNING_DAYS_BEFORE)
+    default_company_id = db.get_default_company_id()
+    results: dict = {}
+
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            rows = (
+                session.query(db.Company)
+                .filter(
+                    db.Company.plan == "trial",
+                    db.Company.is_active.is_(True),
+                    db.Company.id != default_company_id,
+                    db.Company.paid_until.isnot(None),
+                    db.Company.paid_until <= warn_before,
+                    db.Company.paid_until >= now,
+                )
+                .all()
+            )
+            targets = []
+            for c in rows:
+                admin_chat_id = None
+                admin = (
+                    session.query(db.Manager)
+                    .filter_by(company_id=c.id, role="admin", is_active=True)
+                    .filter(db.Manager.telegram_user_id.isnot(None))
+                    .first()
+                )
+                if admin and admin.telegram_user_id:
+                    admin_chat_id = admin.telegram_user_id
+                targets.append({
+                    "id": c.id, "name": c.name, "paid_until": c.paid_until,
+                    "admin_chat_id": admin_chat_id, "telegram_group_id": c.telegram_group_id,
+                })
+    finally:
+        session.close()
+
+    for t in targets:
+        guard_key = f"trial_warn_sent:{t['id']}:{t['paid_until'].isoformat()}"
+        if kv_store.get_json(guard_key):
+            results[t["id"]] = "bu muddat uchun allaqachon ogohlantirilgan"
+            continue
+
+        days_left = max(0, (t["paid_until"] - now).days)
+        chat_id_raw = t["admin_chat_id"] or t["telegram_group_id"]
+        if not chat_id_raw:
+            results[t["id"]] = "Telegram bog'lanmagan -- ogohlantirish yuborilmadi"
+            continue
+        try:
+            chat_id = int(chat_id_raw)
+        except (TypeError, ValueError):
+            results[t["id"]] = "Telegram ID noto'g'ri formatda"
+            continue
+
+        message = (
+            f"⏳ \"{t['name']}\" kompaniyasining bepul sinov muddati "
+            f"{days_left} kundan keyin ({t['paid_until'].strftime('%d.%m.%Y')}) tugaydi.\n\n"
+            f"Ishlashda davom etish uchun https://replix.uz/tariflar sahifasidan "
+            f"tarif tanlab, to'lovni oldindan amalga oshiring -- aks holda muddat "
+            f"tugagach saytga kirish vaqtincha yopiladi."
+        )
+        send_result = _tg_send(chat_id, message)
+        if send_result["ok"]:
+            kv_store.set_json(guard_key, {"sent_at": now.isoformat()})
+            results[t["id"]] = f"yuborildi -> {chat_id}"
+        else:
+            results[t["id"]] = f"URINISH QILINDI, lekin rad etildi: {send_result}"
 
     return results
 
@@ -1203,6 +1329,7 @@ def job_standing_reports() -> str:
 JOBS = {
     "admin-report": job_admin_report,
     "payme-autopay": job_payme_autopay,
+    "trial-expiry-warning": job_trial_expiry_warning,
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
@@ -1244,6 +1371,7 @@ def start_scheduler(app) -> None:
     # (masalan platforma darajasidagi TZ o'zgaruvchisi/muhit) yo'qotish uchun).
     scheduler.add_job(job_admin_report, CronTrigger(hour=9, minute=0, timezone=TIMEZONE), id="admin-report")
     scheduler.add_job(job_payme_autopay, CronTrigger(hour=7, minute=0, timezone=TIMEZONE), id="payme-autopay")  # 2026-09, kunlik hisobotdan OLDIN -- muddati tugagan/tugayotgan kompaniyalar avtomatik to'lansin
+    scheduler.add_job(job_trial_expiry_warning, CronTrigger(hour=8, minute=0, timezone=TIMEZONE), id="trial-expiry-warning")  # 2026-09, payme-autopay'dan keyin, kunlik hisobotdan oldin
     scheduler.add_job(job_watch_cycle, CronTrigger(minute=5, timezone=TIMEZONE), id="watch")  # har soatning 5-daqiqasida
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
     scheduler.add_job(job_cpl_hard_kill, CronTrigger(minute="*/15", timezone=TIMEZONE), id="cpl-hard-kill")  # LLM'siz, tez CPL xavfsizlik qatlami

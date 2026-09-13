@@ -1440,7 +1440,8 @@ def logout():
 # kompaniya va o'ziga admin hisob ochishi mumkin.
 #
 # Tanlangan tarifga qarab (`plans.py`):
-#   - "sinov" -- darhol 14 kunlik BEPUL sinov bilan faollashadi.
+#   - "sinov" -- darhol BEPUL sinov bilan faollashadi, muddati `plans.py`
+#     (`PLANS["trial"].period_days`, 2026-09dan -- 7 kun) belgilaydi.
 #   - pullik tarif (start/business/unlimited) -- darhol faollashadi, LEKIN
 #     to'lov hali kelmagani uchun atigi 3 kunlik "muhlat" (grace) beriladi
 #     -- shu muddat ichida admin `/tolov` sahifasidan to'lovni amalga
@@ -1530,7 +1531,7 @@ def signup():
                 )
                 login_user(ManagerUser(admin))
                 if requested_plan == "trial":
-                    flash(f"Xush kelibsiz, {company_name}! 14 kunlik bepul sinov muddatingiz boshlandi.", "success")
+                    flash(f"Xush kelibsiz, {company_name}! {plan_def.period_days} kunlik bepul sinov muddatingiz boshlandi.", "success")
                 else:
                     flash(
                         f"Xush kelibsiz, {company_name}! \"{plan_def.name}\" tarifi tanlandi -- "
@@ -4631,10 +4632,16 @@ def companies():
                 show_new_company_modal = True
             else:
                 c = Company(name=name, email=email, plan=plan, is_active=True)
-                # Yangi mijoz-kompaniya standart holatda 14 kunlik bepul
-                # sinov muddati bilan boshlaydi -- to'lov kelgach, admin
-                # buni pastdagi tahrirlash sahifasida uzaytiradi.
-                c.paid_until = dt.datetime.utcnow() + dt.timedelta(days=14)
+                # 2026-09 TUZATISH: ilgari bu yer TANLANGAN tarifdan qat'iy
+                # nazar HAR DOIM 14 kunga qattiq yozilgan edi (hatto pullik
+                # tarif tanlansa ham) -- endi xuddi ochiq ro'yxatdan o'tish
+                # (`/signup`) bilan BIR XIL qoida: "sinov" tanlansa
+                # `plans.py`dagi muddat (2026-09dan -- 7 kun), pullik tarif
+                # tanlansa qisqa to'lov-muhlati (`_SIGNUP_GRACE_DAYS`).
+                plan_def_new = plans.get_plan(plan)
+                c.paid_until = dt.datetime.utcnow() + dt.timedelta(
+                    days=plan_def_new.period_days if plan_def_new.period_days else _SIGNUP_GRACE_DAYS
+                )
                 session.add(c)
                 session.commit()
 
@@ -4655,8 +4662,11 @@ def companies():
                 session.commit()
                 db.seed_default_funnel_stages_for_company(c.id)
 
+                _new_company_period_days = plan_def_new.period_days if plan_def_new.period_days else _SIGNUP_GRACE_DAYS
+                _new_company_period_label = "sinov" if plan_def_new.period_days else "to'lov muhlati"
                 flash(
-                    f"'{name}' kompaniyasi qo'shildi (14 kunlik sinov muddati bilan). "
+                    f"'{name}' kompaniyasi qo'shildi ({_new_company_period_days} "
+                    f"kunlik {_new_company_period_label} bilan). "
                     f"Uning admin kirish ma'lumotlari -- login: \"{admin_username}\", "
                     f"parol: \"{admin_password}\". Buni albatta mijozga yetkazing -- "
                     f"parol qayta ko'rsatilmaydi!",

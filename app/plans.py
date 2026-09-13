@@ -51,12 +51,17 @@ class Plan:
 
 PLANS = {
     "trial": Plan(
-        key="trial", name="Sinov", price_usd=None, period_days=14,
-        tagline="14 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring",
+        # 2026-09, foydalanuvchi so'rovi ("Trial muddati/limitlarini
+        # o'zgartirish"): 14 kundan 7 kunga qisqartirildi. Bu YAGONA joy --
+        # `paid_until` shu qiymatdan hisoblanadi (app.py, ro'yxatdan
+        # o'tishda), boshqa hech qayerda muddat qattiq yozilmagan (faqat
+        # ko'rsatiladigan matnlar, ular ham shu songa moslab yangilandi).
+        key="trial", name="Sinov", price_usd=None, period_days=7,
+        tagline="7 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring",
         modules=frozenset({"dashboard", "leads", "target", "analytics"}),
         manager_limit=1, leads_limit=100, ai_enabled=False, can_connect_meta_ads=False, highlight=False,
         features=(
-            "14 kun bepul, karta shart emas",
+            "7 kun bepul, karta shart emas",
             "Faqat Instagram akkauntini ulash",
             "Target (Meta Ads) bo'yicha XOM natijalar: xarajat, lead, CPL",
             "Lidlar bazasi va asosiy CRM voronkasi (100 tagacha lid)",
