@@ -127,8 +127,9 @@ def _web_assistant_system_prompt() -> str:
 def _log_unanswered_question(session, manager_name: str | None, question: str) -> None:
     try:
         manager_row = session.query(Manager).filter_by(username=current_user.username).first() if current_user.is_authenticated else None
+        company_id = getattr(current_user, "company_id", None) if current_user.is_authenticated else None
         session.add(AssistantUnanswered(
-            company_id=getattr(current_user, "company_id", None) if current_user.is_authenticated else None,
+            company_id=company_id,
             manager_id=manager_row.id if manager_row else None,
             manager_name=manager_name,
             question=question[:2000],
@@ -136,6 +137,30 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
         session.commit()
     except Exception:
         logger.exception("Javobsiz savolni saqlashda xatolik")
+        return
+
+    # 2026-09, foydalanuvchi so'rovi ("AI ga savol bersayam javob beromasa
+    # ai manga habar bersin"): AI-yordamchi javob TOPA OLMAGAN har bir
+    # savol haqida platforma egasiga (`_daily_report_targets()` -- xuddi
+    # kunlik hisobot/CPL hard-kill ogohlantirishi ketadigan guruh) DARHOL
+    # Telegram xabari yuboriladi -- oldin bu faqat "Sozlamalar" sahifasidagi
+    # ro'yxatda (aktiv tekshirib turishni talab qiladi) ko'rinardi.
+    try:
+        company_name = None
+        if company_id:
+            company_row = session.get(Company, company_id)
+            company_name = company_row.name if company_row else None
+        who_asked = manager_name or "noma'lum"
+        text = (
+            "\U0001F914 AI-yordamchi javob topolmadi\n"
+            + (f"Kompaniya: {company_name}\n" if company_name else "")
+            + f"Kim so'radi: {who_asked}\n"
+            f"Savol: {question[:500]}"
+        )
+        for chat_id in _daily_report_targets():
+            tg_send(chat_id, text)
+    except Exception:
+        logger.exception("Javobsiz savol haqida Telegram xabarini yuborishda xatolik")
 
 
 # ---------------------------------------------------------------------------
@@ -2560,17 +2585,25 @@ def landing_contact_submit():
     except Exception:
         logger.exception("Landing 'Biz bilan bog'laning' murojaatini kv_store'ga yozishda xatolik")
 
-    if LANDING_CONTACT_TELEGRAM_CHAT_ID:
-        try:
-            from scheduler import _tg_send
-            text = (
-                "\U0001F4E9 Yangi murojaat (replix.uz)\n"
-                f"Ism: {name}\nTelefon: {phone}\n"
-                + (f"Xabar: {message}\n" if message else "")
-            )
-            _tg_send(int(LANDING_CONTACT_TELEGRAM_CHAT_ID), text)
-        except Exception:
-            logger.exception("Landing murojaatini Telegram'ga yuborishda xatolik")
+    # 2026-09, foydalanuvchi so'rovi ("kimdur toldirsa uni manga habar
+    # bersin admin akkga"): ILGARI faqat alohida `LANDING_CONTACT_
+    # TELEGRAM_CHAT_ID` ENV sozlangandagina xabar borardi -- u hech qachon
+    # Render'da sozlanmagan edi, shuning uchun bu xabarnoma AMALDA HECH
+    # QACHON ishlamagan. Endi ENV bo'lmasa ham, platforma egasining
+    # standart xabar nishonlariga (`_daily_report_targets()` -- kunlik
+    # hisobot/CPL ogohlantirishi ketadigan O'SHA guruh(lar)) DARHOL boradi
+    # -- qo'shimcha sozlash SHART emas.
+    try:
+        targets = [int(LANDING_CONTACT_TELEGRAM_CHAT_ID)] if LANDING_CONTACT_TELEGRAM_CHAT_ID else _daily_report_targets()
+        text = (
+            "\U0001F4E9 Yangi murojaat (replix.uz)\n"
+            f"Ism: {name}\nTelefon: {phone}\n"
+            + (f"Xabar: {message}\n" if message else "")
+        )
+        for chat_id in targets:
+            tg_send(chat_id, text)
+    except Exception:
+        logger.exception("Landing murojaatini Telegram'ga yuborishda xatolik")
 
     flash("Rahmat! Murojaatingiz qabul qilindi -- tez orada bog'lanamiz.", "success")
     return redirect(url_for("dashboard") + "#aloqa")
@@ -4491,6 +4524,31 @@ def companies():
     finally:
         session.close()
     return render_template("companies.html", companies=rows, show_new_company_modal=show_new_company_modal)
+
+
+@app.route("/companies/murojaatlar")
+@login_required
+@platform_owner_required
+def landing_contact_submissions_view():
+    """2026-09, foydalanuvchi so'rovi ("hamasini odmalar nimani
+    soravtkaniyam korinsin" -- landing (replix.uz) "Biz bilan bog'laning"
+    formasi orqali kelgan murojaatlar): ILGARI bu murojaatlar FAQAT
+    `kv_store`da (yoki ENV sozlangan bo'lsagina Telegram'da) ko'rinardi --
+    admin uchun HECH QANDAY sahifa yo'q edi. Bu FAQAT platforma egasiga
+    tegishli (Replix'ning O'ZINI sotib olmoqchi bo'lgan odamlarning
+    murojaati -- biror mijoz-kompaniyaning CRM lidi EMAS), shuning uchun
+    `@platform_owner_required` bilan qattiq cheklangan."""
+    submissions = kv_store.get_json("landing_contact_submissions", default=[])
+    if not isinstance(submissions, list):
+        submissions = []
+    rows = list(reversed(submissions[-200:]))
+    for row in rows:
+        row["created_dt"] = None
+        try:
+            row["created_dt"] = dt.datetime.fromisoformat(row.get("created_at", ""))
+        except (TypeError, ValueError):
+            pass
+    return render_template("landing_contact_submissions.html", submissions=rows)
 
 
 @app.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])

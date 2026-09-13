@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sayt murojaatlari — Replix{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Sayt murojaatlari</h1>
+    <p class="page-subtitle" style="margin-bottom:0">replix.uz bosh sahifasidagi "Biz bilan bog'laning" formasi orqali kelgan murojaatlar (so'nggi 200 tasi, yangisi yuqorida). Faqat platforma egasi ko'radi.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('companies') }}" class="btn toggle-all-btn-outline">← Kompaniyalar</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Ism</th><th>Telefon</th><th>Xabar</th><th>Qachon</th></tr></thead>
+    <tbody>
+      {% for s in submissions %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td><a href="tel:{{ s.phone }}" class="text-blue">{{ s.phone }}</a></td>
+        <td class="text-dim">{{ s.message or '—' }}</td>
+        <td class="text-dim">{{ s.created_dt.strftime('%Y-%m-%d %H:%M') if s.created_dt else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="4">Hozircha murojaat yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
