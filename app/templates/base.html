@@ -13,6 +13,7 @@
        ko'rinadi -- hech narsa yashirin qolmaydi. -->
   <script>document.documentElement.classList.add('js');</script>
 
+  {% if not current_user.is_authenticated %}
   <!-- Meta Pixel Code -- 2026-09, foydalanuvchi so'rovi: "meta pixel
        ulimiz ... tog'rilavor" (Meta Events Manager -> "Set up Meta
        Pixel" -> "Install Meta Pixel on your website" bo'limidan olingan
@@ -20,10 +21,20 @@
        marketing saytini (replix.uz) kuzatuvchi brauzer-tomon Pixel'i;
        kompaniyalarning o'z mijozlari uchun ishlaydigan server-tomon CAPI
        (`meta_api.py`, har bir Company'ning o'z Pixel'i) bilan ARALASHTIR
-       ILMASLIGI kerak -- ular ikkita mustaqil narsa. Meta'ning o'zi
-       tavsiya qilganidek ("Install the base code on every page of your
-       website"), shu sabab bu BUTUN sayt (landing + CRM) uchun umumiy
-       `base.html`ga qo'yildi -- har bir sahifada ishga tushadi. -->
+       ILMASLIGI kerak -- ular ikkita mustaqil narsa.
+
+       2026-09, foydalanuvchi so'rovi ("sahifalar orasida o'tayotganda
+       qotib/uzilib qolyapti, tezroq o'tsin"): bu skript ilgari BUTUN sayt
+       (landing + ICHKI CRM sahifalari, jami 33 ta shablon) uchun umumiy
+       `base.html`da, ya'ni HAR BIR ichki navigatsiyada (Lidlar->Target->
+       Sozlamalar va h.k.) qayta yuklanib, tashqi tarmoqqa yangi so'rov
+       (fbevents.js + PageView "beacon") yuborardi -- bu foydasiz
+       xarajat, chunki Pixel faqat REKLAMA SAYTI (tashqi, tizimga
+       kirmagan tashrif buyuruvchilar) uchun kerak. Endi FAQAT tizimga
+       KIRMAGAN (`current_user.is_authenticated` False) sahifalarda --
+       ya'ni haqiqiy landing/marketing tashrif buyuruvchilar uchun --
+       ishga tushadi; tizimga kirgan foydalanuvchi CRM ichida sahifadan
+       sahifaga o'tganda endi bu qo'shimcha skript umuman yuklanmaydi. -->
   <script>
   !function(f,b,e,v,n,t,s)
   {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -40,6 +51,7 @@
   src="https://www.facebook.com/tr?id=2060099542047401&ev=PageView&noscript=1"
   /></noscript>
   <!-- End Meta Pixel Code -->
+  {% endif %}
 
   <title>{% block title %}Replix{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 14 kun bepul sinov.{% endblock %}">
@@ -137,7 +149,7 @@
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
-      {% set _boshqaruv_eps = ['settings_hub', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
+      {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {# 2026-09, foydalanuvchi so'rovi ("habarlani alohida panelga chiqaz
          side barga"): ilgari "Instagram xabarlar" Marketing guruhi ichida,
          page-subnav'dagi bir tab sifatida ko'rinardi -- endi u sidebar'da
@@ -287,7 +299,8 @@
       {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
-      {% set _boshqaruv_eps = ['settings_hub', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
+      {% set _settings_section_eps = ['settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered'] %}
+      {% set _boshqaruv_eps = ['settings_hub'] + _settings_section_eps + ['managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {% if request.endpoint in _crm_eps and has_module(current_user, 'leads') %}
       <nav class="page-subnav">
         <a href="{{ url_for('leads_list') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('leads_list', 'lead_detail') }}">{{ navicon('leads') }}<span>Lidlar</span></a>
@@ -315,6 +328,18 @@
         <a href="{{ url_for('companies') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('companies', 'company_edit') }}">{{ navicon('companies') }}<span>Kompaniyalar</span></a>
         {% endif %}
       </nav>
+      {% if request.endpoint in _settings_section_eps and has_module(current_user, 'settings') %}
+      <nav class="page-subnav page-subnav-secondary">
+        <a href="{{ url_for('settings_general') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_general' }}"><span>Umumiy</span></a>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('settings_cpl') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_cpl' }}"><span>CPL chegaralari</span></a>
+        <a href="{{ url_for('settings_telegram') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_telegram' }}"><span>Telegram</span></a>
+        <a href="{{ url_for('settings_modules') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_modules' }}"><span>Funksiyalar</span></a>
+        <a href="{{ url_for('settings_ai') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_ai' }}"><span>AI</span></a>
+        <a href="{{ url_for('settings_unanswered') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_unanswered' }}"><span>Javobsiz savollar</span></a>
+        {% endif %}
+      </nav>
+      {% endif %}
       {% endif %}
     {% endif %}
     {% block content %}{% endblock %}

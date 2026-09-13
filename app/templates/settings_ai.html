@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}AI funksiyalari — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>AI funksiyalari</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Qo'ng'iroq tahlili (Audio bo'limi) va ichki AI-yordamchi vidjeti.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+  </div>
+</div>
+
+<div class="card">
+  {% if ai_plan_supports %}
+  <h2 style="display:flex; align-items:center; gap:10px">
+    Holati
+    {% if ai_features_disabled %}<span class="badge badge-color-bad">o'chirilgan</span>{% else %}<span class="badge badge-color-good">yoqilgan</span>{% endif %}
+  </h2>
+  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:12px">
+    AI qo'ng'iroq tahlili (Audio bo'limi ichidagi tahlil) va ichki AI-yordamchi vidjetini BITTA tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="toggle_ai_features">
+    <input type="hidden" name="ai_features_disabled" value="{{ '0' if ai_features_disabled else '1' }}">
+    <button type="submit" class="btn">{{ "AI funksiyalarini yoqish" if ai_features_disabled else "AI funksiyalarini o'chirish" }}</button>
+  </form>
+  {% else %}
+  <p class="text-faint" style="margin:0">Tarifingizda AI funksiyalari yo'q.</p>
+  {% endif %}
+</div>
+{% endblock %}

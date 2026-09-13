@@ -4,11 +4,21 @@ Meta Events Manager'dan olingan asosiy (base) Pixel kodini (ID:
 2060099542047401) butun sayt uchun umumiy `base.html`ga qo'shdik (Meta
 o'zi tavsiya qilgan "har bir sahifada" qoidasiga muvofiq).
 
+2026-09 YANGILANDI, foydalanuvchi so'rovi ("sahifalar orasida
+o'tayotganda qotib/uzilib qolyapti, tezroq o'tsin"): Pixel skripti endi
+FAQAT tizimga KIRMAGAN (login qilinmagan -- haqiqiy landing/marketing
+tashrif buyuruvchilar uchun) sahifalarda ishga tushadi -- ilgari ICHKI
+(login qilingan) CRM sahifalarida ham har bir navigatsiyada qayta
+yuklanib, foydasiz tashqi tarmoq so'rovi (fbevents.js + PageView
+"beacon") yuborardi, bu esa sahifadan-sahifaga o'tishni sekinlashtirar
+edi. Endi CRM ichida sahifadan-sahifaga o'tishda bu qo'shimcha skript
+umuman yuklanmaydi.
+
 Tekshiradi:
   - Pixel <script> kodi va <noscript> fallback rasmi TO'G'RI Pixel ID
-    bilan bosh sahifada (login qilinmagan holatda ham) mavjudligini.
-  - Xuddi shu kod ichki (login qilingan) sahifalarda ham mavjudligini
-    (Meta'ning "har bir sahifada" tavsiyasiga muvofiq).
+    bilan bosh sahifada (login qilinmagan holatda) mavjudligini.
+  - Ichki (login qilingan) sahifalarda Pixel kodi ENDI YO'Qligini
+    (ishlash tezligi uchun -- yuqoridagi izohga qarang).
   - <script> ichidagi JS sintaksisi to'g'ri ekanini (`node --check`).
 
 Ishga tushirish:
@@ -77,10 +87,13 @@ if pixel_script:
     r = subprocess.run(["node", "--check", "-"], input=js_body, capture_output=True, text=True)
     check("Pixel <script> JS sintaksisi to'g'ri", r.returncode == 0)
 
-# --- 2. Ichki (login qilingan) sahifa -- Meta "har bir sahifada" tavsiyasi ---
+# --- 2. Ichki (login qilingan) sahifa -- Pixel ENDI YO'Q (tezlik uchun) ---
 client.post("/login", data={"username": "pixel_admin", "password": "parol123"})
 html_dashboard = client.get("/").get_data(as_text=True)
-check("Dashboard'da (login qilingan) ham Pixel kodi bor", f"fbq('init', '{_PIXEL_ID}')" in html_dashboard)
+check(
+    "Dashboard'da (login qilingan) Pixel kodi ENDI YO'Q -- ichki navigatsiya tezroq bo'lishi uchun",
+    f"fbq('init', '{_PIXEL_ID}')" not in html_dashboard,
+)
 
 print()
 if failures:

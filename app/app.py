@@ -5282,148 +5282,312 @@ def individual_check_set_threshold():
 
 
 # ---------------------------------------------------------------------------
-# Nastroyka (Sozlamalar) -- barcha kompaniya darajasidagi sozlamalar bitta
-# joyga yig'ilgan bosh sahifa (2026-08, foydalanuvchi so'rovi: "bo'limlar
-# juda ko'p bo'lib ketti" -- Voronka/Savollar/Doimiy vazifalar/Menejerlar
-# endi chap menyuda alohida-alohida emas, shu "Nastroyka" bo'limi ichidan
-# kartochkalar orqali ochiladi). Bu sahifaning o'zi "Umumiy" (minimal sotuv
-# summasi) va "Bildirishnomalar" (menejerlarning Telegram ID'sini bog'lash)
-# bo'limlarini o'z ichiga oladi -- qolganlari (Voronka/Savollar/Doimiy
-# vazifalar/Menejerlar) o'zining eski sahifalariga havola qilinadi.
+# Nastroyka (Sozlamalar) -- 2026-09, foydalanuvchi so'rovi: eski bitta uzun
+# sahifa 7 ta forma/bo'limni bitta joyga siqib qo'ygan edi ("juda g'alati,
+# tushunarsiz bo'lib qolgan"). Endi "/sozlamalar" FAQAT kartochkali bosh
+# sahifa (GET) -- har bir bo'lim (Umumiy/CPL/Telegram/Funksiyalar/AI/
+# Javobsiz savollar) o'zining ALOHIDA sahifasiga ochiladi. Endpoint nomi
+# "settings_hub" va URL "/sozlamalar" ATAYLAB o'zgarmadi -- eski havolalar
+# (sidebar, individual_check.html, testlar) buzilmasin. Barcha bo'lim
+# sahifalarining POST amal-ishlov mantiqi (eski "action" branch'lari) bitta
+# umumiy `_handle_settings_post()` funksiyasiga ko'chirildi -- 6 marta
+# takrorlanmasin.
 # ---------------------------------------------------------------------------
 
-@app.route("/sozlamalar", methods=["GET", "POST"])
+def _handle_settings_post(session, action):
+    """Sozlamalar bo'limlarining barcha POST amallari. Oldin `settings_hub()`
+    ichida 7 ta "action" branch sifatida edi -- endi har bir bo'lim sahifasi
+    (settings_general/cpl/telegram/modules/ai/unanswered) shu bitta
+    funksiyani chaqiradi (flash orqali natija bildiriladi, hech narsa
+    qaytarilmaydi -- chaqiruvchi o'zi kerakli sahifaga redirect qiladi)."""
+    if current_user.role != "admin":
+        flash("Bu sozlamani faqat admin o'zgartira oladi.", "error")
+        return
+
+    if action == "set_min_sale":
+        raw = request.form.get("min_sale_amount", "").strip()
+        try:
+            value = float(raw)
+            if value < 0:
+                raise ValueError
+            kpi_bonus.set_min_sale_amount(value, company_id=current_user.company_id)
+            flash(f"Minimal sotuv summasi {value:,.0f} so'mga o'rnatildi (bu chegaradan kichik sotuvlar KPI/bonusga kirmaydi).".replace(",", " "), "success")
+        except (TypeError, ValueError):
+            flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
+
+    elif action == "set_usd_rate":
+        raw = request.form.get("usd_to_uzs_rate", "").strip()
+        try:
+            value = float(raw)
+            if value <= 0:
+                raise ValueError
+            kpi_bonus.set_usd_to_uzs_rate(value, company_id=current_user.company_id)
+            flash(f"Dollar/so'm kursi 1$ = {value:,.0f} so'mga o'rnatildi (ROI hisobida ishlatiladi).".replace(",", " "), "success")
+        except (TypeError, ValueError):
+            flash("Noto'g'ri qiymat -- kursni raqam ko'rinishida kiriting.", "error")
+
+    elif action == "set_telegram":
+        manager_id = request.form.get("manager_id", "")
+        m = session.get(Manager, int(manager_id)) if manager_id.isdigit() else None
+        if m:
+            new_value = request.form.get("telegram_user_id", "").strip() or None
+            m.telegram_user_id = new_value
+            session.commit()
+            flash(f"{m.full_name or m.username} uchun Telegram ID {'yangilandi' if new_value else 'o‘chirildi'}.", "success")
+        else:
+            flash("Menejer topilmadi.", "error")
+
+    elif action == "resolve_unanswered":
+        q_id = request.form.get("question_id", "")
+        q = session.get(AssistantUnanswered, int(q_id)) if q_id.isdigit() else None
+        if q:
+            q.is_resolved = True
+            session.commit()
+            flash("Savol hal qilingan deb belgilandi.", "success")
+
+    elif action == "set_disabled_modules":
+        # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib
+        # turish mumkin bolsin"): checkbox qilib belgilangan
+        # bo'limlar YOQIQ qoladi, belgilanmaganlari O'CHADI --
+        # lekin FAQAT tarif ruxsat bergan bo'limlar orasida
+        # (`plans.modules_for_plan`), aks holda tarifda umuman
+        # yo'q bo'lim "yoqilgan" bo'lib ko'rinib qolishi mumkin.
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is not None:
+            allowed_by_plan = set(plans.modules_for_plan(company_row.plan)) & set(permissions.TOGGLEABLE_MODULE_KEYS)
+            checked = set(request.form.getlist("enabled_modules"))
+            newly_disabled = [key for key in allowed_by_plan if key not in checked]
+            company_row.disabled_modules = permissions.serialize_disabled_modules(newly_disabled)
+            session.commit()
+            g.pop("_company_cache", None)
+            flash("Bo'limlar sozlamasi saqlandi.", "success")
+        else:
+            flash("Kompaniya topilmadi.", "error")
+
+    elif action == "set_cpl_rules":
+        # 2026-09, foydalanuvchi so'rovi ("bulani webda nastruykidan
+        # belgilidigan qil"): target avtomatik o'chirish chegaralari
+        # endi shu yerdan o'zgartiriladi (avval faqat
+        # business_rules.json faylida, deploy talab qilardi).
+        fields = {
+            "target_cpa_usd": "Maqsad/ideal CPL",
+            "cpl_hard_kill_usd": "CPL o'chirish chegarasi",
+            "cpl_hard_kill_min_spend_usd": "Minimal sinov xarajati",
+            "cpl_hard_kill_zero_lead_usd": "Lead yo'q holatda o'chirish chegarasi",
+        }
+        errors = []
+        parsed = {}
+        for key, label in fields.items():
+            raw = request.form.get(key, "").strip()
+            try:
+                value = float(raw)
+                if value < 0:
+                    raise ValueError
+                parsed[key] = value
+            except (TypeError, ValueError):
+                errors.append(f"“{label}” -- noto'g'ri qiymat, musbat raqam kiriting.")
+        if errors:
+            for e in errors:
+                flash(e, "error")
+        else:
+            for key, value in parsed.items():
+                orchestrator.set_business_rule(key, value, company_id=current_user.company_id)
+            flash(
+                "CPL/target chegaralari saqlandi -- keyingi tekshiruv "
+                "(har 15 daqiqada, CPL hard-kill) yangi qiymatlarni ishlatadi.",
+                "success",
+            )
+
+    elif action == "toggle_ai_features":
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is not None:
+            company_row.ai_features_disabled = request.form.get("ai_features_disabled") == "1"
+            session.commit()
+            g.pop("_company_cache", None)
+            flash(
+                "AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi) o'chirildi."
+                if company_row.ai_features_disabled else
+                "AI funksiyalari yoqildi.",
+                "success",
+            )
+        else:
+            flash("Kompaniya topilmadi.", "error")
+
+
+@app.route("/sozlamalar")
 @login_required
 @module_required("settings")
 def settings_hub():
+    # 2026-09, foydalanuvchi so'rovi ("capi ni ... hammasini avtomatik qil"):
+    # CAPI holati HAR BIR kompaniya uchun O'ZINING reklama hisobi ulanganda
+    # avtomatik topilgan `meta_pixel_id`ga qarab hisoblanadi (eski global
+    # ENV'ga emas).
+    company = _current_company()
+    capi_configured = bool(company and meta_events.capi_credentials_configured(company))
+    capi_has_ad_account = bool(company and company.meta_ad_account_id)
+
+    # Kartochkalardagi qisqa raqamlar (badge) -- faqat admin ko'radi,
+    # chunki quyidagi bo'limlarning bari admin-only.
+    summary = None
+    if current_user.role == "admin":
+        session = get_session()
+        try:
+            unresolved_count = session.query(AssistantUnanswered).filter_by(is_resolved=False).count()
+        finally:
+            session.close()
+        module_toggle_count = 0
+        if company is not None:
+            allowed_by_plan = set(plans.modules_for_plan(company.plan))
+            module_toggle_count = len([
+                key for key, _ in permissions.MODULES
+                if key in allowed_by_plan and key in permissions.TOGGLEABLE_MODULE_KEYS
+            ])
+        summary = {
+            "unresolved_count": unresolved_count,
+            "module_toggle_count": module_toggle_count,
+            "ai_plan_supports": bool(company and plans.get_plan(company.plan).ai_enabled),
+            "ai_features_disabled": bool(company and company.ai_features_disabled),
+        }
+
+    return render_template(
+        "settings_hub.html",
+        capi_configured=capi_configured,
+        capi_has_ad_account=capi_has_ad_account,
+        summary=summary,
+    )
+
+
+@app.route("/sozlamalar/umumiy", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+def settings_general():
     session = get_session()
     try:
         if request.method == "POST":
-            action = request.form.get("action")
-            if current_user.role != "admin":
-                flash("Bu sozlamani faqat admin o'zgartira oladi.", "error")
-                return redirect(url_for("settings_hub"))
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_general"))
+        return render_template(
+            "settings_general.html",
+            min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
+            min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
+            usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
+        )
+    finally:
+        session.close()
 
-            if action == "set_min_sale":
-                raw = request.form.get("min_sale_amount", "").strip()
-                try:
-                    value = float(raw)
-                    if value < 0:
-                        raise ValueError
-                    kpi_bonus.set_min_sale_amount(value, company_id=current_user.company_id)
-                    flash(f"Minimal sotuv summasi {value:,.0f} so'mga o'rnatildi (bu chegaradan kichik sotuvlar KPI/bonusga kirmaydi).".replace(",", " "), "success")
-                except (TypeError, ValueError):
-                    flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
 
-            elif action == "set_usd_rate":
-                raw = request.form.get("usd_to_uzs_rate", "").strip()
-                try:
-                    value = float(raw)
-                    if value <= 0:
-                        raise ValueError
-                    kpi_bonus.set_usd_to_uzs_rate(value, company_id=current_user.company_id)
-                    flash(f"Dollar/so'm kursi 1$ = {value:,.0f} so'mga o'rnatildi (ROI hisobida ishlatiladi).".replace(",", " "), "success")
-                except (TypeError, ValueError):
-                    flash("Noto'g'ri qiymat -- kursni raqam ko'rinishida kiriting.", "error")
+@app.route("/sozlamalar/cpl", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+@admin_required
+def settings_cpl():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_cpl"))
+        cpl_rules = {
+            "target_cpa_usd": orchestrator.get_business_rule("target_cpa_usd", company_id=current_user.company_id),
+            "cpl_hard_kill_usd": orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
+            "cpl_hard_kill_min_spend_usd": orchestrator.get_business_rule("cpl_hard_kill_min_spend_usd", company_id=current_user.company_id),
+            "cpl_hard_kill_zero_lead_usd": orchestrator.get_zero_lead_kill_usd(
+                orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
+                company_id=current_user.company_id,
+            ),
+        }
+        return render_template("settings_cpl.html", cpl_rules=cpl_rules)
+    finally:
+        session.close()
 
-            elif action == "set_telegram":
-                manager_id = request.form.get("manager_id", "")
-                m = session.get(Manager, int(manager_id)) if manager_id.isdigit() else None
-                if m:
-                    new_value = request.form.get("telegram_user_id", "").strip() or None
-                    m.telegram_user_id = new_value
-                    session.commit()
-                    flash(f"{m.full_name or m.username} uchun Telegram ID {'yangilandi' if new_value else 'o‘chirildi'}.", "success")
-                else:
-                    flash("Menejer topilmadi.", "error")
 
-            elif action == "resolve_unanswered":
-                q_id = request.form.get("question_id", "")
-                q = session.get(AssistantUnanswered, int(q_id)) if q_id.isdigit() else None
-                if q:
-                    q.is_resolved = True
-                    session.commit()
-                    flash("Savol hal qilingan deb belgilandi.", "success")
-
-            elif action == "set_disabled_modules":
-                # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib
-                # turish mumkin bolsin"): checkbox qilib belgilangan
-                # bo'limlar YOQIQ qoladi, belgilanmaganlari O'CHADI --
-                # lekin FAQAT tarif ruxsat bergan bo'limlar orasida
-                # (`plans.modules_for_plan`), aks holda tarifda umuman
-                # yo'q bo'lim "yoqilgan" bo'lib ko'rinib qolishi mumkin.
-                company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
-                if company_row is not None:
-                    allowed_by_plan = set(plans.modules_for_plan(company_row.plan)) & set(permissions.TOGGLEABLE_MODULE_KEYS)
-                    checked = set(request.form.getlist("enabled_modules"))
-                    newly_disabled = [key for key in allowed_by_plan if key not in checked]
-                    company_row.disabled_modules = permissions.serialize_disabled_modules(newly_disabled)
-                    session.commit()
-                    g.pop("_company_cache", None)
-                    flash("Bo'limlar sozlamasi saqlandi.", "success")
-                else:
-                    flash("Kompaniya topilmadi.", "error")
-
-            elif action == "set_cpl_rules":
-                # 2026-09, foydalanuvchi so'rovi ("bulani webda nastruykidan
-                # belgilidigan qil"): target avtomatik o'chirish chegaralari
-                # endi shu yerdan o'zgartiriladi (avval faqat
-                # business_rules.json faylida, deploy talab qilardi).
-                fields = {
-                    "target_cpa_usd": "Maqsad/ideal CPL",
-                    "cpl_hard_kill_usd": "CPL o'chirish chegarasi",
-                    "cpl_hard_kill_min_spend_usd": "Minimal sinov xarajati",
-                    "cpl_hard_kill_zero_lead_usd": "Lead yo'q holatda o'chirish chegarasi",
-                }
-                errors = []
-                parsed = {}
-                for key, label in fields.items():
-                    raw = request.form.get(key, "").strip()
-                    try:
-                        value = float(raw)
-                        if value < 0:
-                            raise ValueError
-                        parsed[key] = value
-                    except (TypeError, ValueError):
-                        errors.append(f"“{label}” -- noto'g'ri qiymat, musbat raqam kiriting.")
-                if errors:
-                    for e in errors:
-                        flash(e, "error")
-                else:
-                    for key, value in parsed.items():
-                        orchestrator.set_business_rule(key, value, company_id=current_user.company_id)
-                    flash(
-                        "CPL/target chegaralari saqlandi -- keyingi tekshiruv "
-                        "(har 15 daqiqada, CPL hard-kill) yangi qiymatlarni ishlatadi.",
-                        "success",
-                    )
-
-            elif action == "toggle_ai_features":
-                company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
-                if company_row is not None:
-                    company_row.ai_features_disabled = request.form.get("ai_features_disabled") == "1"
-                    session.commit()
-                    g.pop("_company_cache", None)
-                    flash(
-                        "AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi) o'chirildi."
-                        if company_row.ai_features_disabled else
-                        "AI funksiyalari yoqildi.",
-                        "success",
-                    )
-                else:
-                    flash("Kompaniya topilmadi.", "error")
-
-            return redirect(url_for("settings_hub"))
-
+@app.route("/sozlamalar/telegram", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+@admin_required
+def settings_telegram():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_telegram"))
         managers_all = session.query(Manager).filter_by(is_active=True).order_by(Manager.full_name).all()
         manager_rows = [
             {"id": m.id, "name": m.full_name or m.username, "telegram_user_id": m.telegram_user_id}
             for m in managers_all
         ]
+        return render_template("settings_telegram.html", managers=manager_rows)
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/funksiyalar", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+@admin_required
+def settings_modules():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_modules"))
+        # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish
+        # mumkin bolsin misol audio tahlilini ochirib turish mumkin
+        # bolsin"): admin o'zining tarifiga kirgan bo'limlarni bu yerdan
+        # yoqib/o'chira oladi (permissions.py: has_module shu
+        # Company.disabled_modules'ni o'qiydi).
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        module_toggle_rows = []
+        if company_row is not None:
+            allowed_by_plan = set(plans.modules_for_plan(company_row.plan))
+            disabled_now = set(permissions.parse_disabled_modules(company_row.disabled_modules))
+            module_toggle_rows = [
+                {"key": key, "label": label, "enabled": key not in disabled_now}
+                for key, label in permissions.MODULES
+                if key in allowed_by_plan and key in permissions.TOGGLEABLE_MODULE_KEYS
+            ]
+        return render_template("settings_modules.html", module_toggle_rows=module_toggle_rows)
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/ai", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+@admin_required
+def settings_ai():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_ai"))
+        # AI funksiyalarini (qo'ng'iroq tahlili + AI-yordamchi) BITTA tugma
+        # bilan to'liq o'chirish -- xarajatni nazorat qilish uchun.
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        ai_plan_supports = bool(company_row and plans.get_plan(company_row.plan).ai_enabled)
+        ai_features_disabled = bool(company_row and company_row.ai_features_disabled)
+        return render_template(
+            "settings_ai.html",
+            ai_plan_supports=ai_plan_supports,
+            ai_features_disabled=ai_features_disabled,
+        )
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/savollar", methods=["GET", "POST"])
+@login_required
+@module_required("settings")
+@admin_required
+def settings_unanswered():
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, request.form.get("action"))
+            return redirect(url_for("settings_unanswered"))
         unanswered_rows = (
             session.query(AssistantUnanswered)
             .order_by(AssistantUnanswered.is_resolved.asc(), AssistantUnanswered.created_at.desc())
-            .limit(20)
+            .limit(50)
             .all()
         )
         unanswered = [
@@ -5434,61 +5598,9 @@ def settings_hub():
             }
             for u in unanswered_rows
         ]
+        return render_template("settings_unanswered.html", unanswered=unanswered)
     finally:
         session.close()
-
-    # 2026-09, foydalanuvchi so'rovi ("capi ni ... hammasini avtomatik qil"):
-    # CAPI holati endi HAR BIR kompaniya uchun O'ZINING reklama hisobi
-    # ulanganda avtomatik topilgan `meta_pixel_id`ga qarab hisoblanadi (eski
-    # global ENV'ga emas) -- pastga, `_current_company()` orqali.
-    company = _current_company()
-    capi_configured = bool(company and meta_events.capi_credentials_configured(company))
-    capi_has_ad_account = bool(company and company.meta_ad_account_id)
-
-    # 2026-09, foydalanuvchi so'rovi ("funksionalni ochirib turish mumkin
-    # bolsin misol audio tahlilini ochirib turish mumkin bolsin"): admin
-    # o'zining tarifiga kirgan bo'limlarni bu yerdan yoqib/o'chira oladi
-    # (permissions.py: has_module shu Company.disabled_modules'ni o'qiydi),
-    # va AI funksiyalarini (qo'ng'iroq tahlili + AI-yordamchi) BITTA
-    # tugma bilan to'liq o'chira oladi (xarajatni nazorat qilish uchun).
-    module_toggle_rows = []
-    ai_plan_supports = False
-    ai_features_disabled = False
-    if company is not None and current_user.role == "admin":
-        allowed_by_plan = set(plans.modules_for_plan(company.plan))
-        disabled_now = set(permissions.parse_disabled_modules(company.disabled_modules))
-        module_toggle_rows = [
-            {"key": key, "label": label, "enabled": key not in disabled_now}
-            for key, label in permissions.MODULES
-            if key in allowed_by_plan and key in permissions.TOGGLEABLE_MODULE_KEYS
-        ]
-        ai_plan_supports = plans.get_plan(company.plan).ai_enabled
-        ai_features_disabled = bool(company.ai_features_disabled)
-
-    cpl_rules = {
-        "target_cpa_usd": orchestrator.get_business_rule("target_cpa_usd", company_id=current_user.company_id),
-        "cpl_hard_kill_usd": orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
-        "cpl_hard_kill_min_spend_usd": orchestrator.get_business_rule("cpl_hard_kill_min_spend_usd", company_id=current_user.company_id),
-        "cpl_hard_kill_zero_lead_usd": orchestrator.get_zero_lead_kill_usd(
-            orchestrator.get_business_rule("cpl_hard_kill_usd", company_id=current_user.company_id),
-            company_id=current_user.company_id,
-        ),
-    }
-
-    return render_template(
-        "settings_hub.html",
-        min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
-        min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
-        usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
-        cpl_rules=cpl_rules,
-        managers=manager_rows,
-        unanswered=unanswered,
-        capi_configured=capi_configured,
-        capi_has_ad_account=capi_has_ad_account,
-        module_toggle_rows=module_toggle_rows,
-        ai_plan_supports=ai_plan_supports,
-        ai_features_disabled=ai_features_disabled,
-    )
 
 
 # ---------------------------------------------------------------------------

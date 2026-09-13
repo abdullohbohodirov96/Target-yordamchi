@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Funksiyalarni yoqish/o'chirish — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Funksiyalarni yoqish/o'chirish</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Tarifingizga kirgan bo'limlardan kerak bo'lmaganlarini vaqtincha o'chirib qo'yishingiz mumkin -- bu barcha (admin va menejer) foydalanuvchilar uchun amal qiladi.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+  </div>
+</div>
+
+<div class="card">
+  {% if module_toggle_rows %}
+  <form method="post">
+    <input type="hidden" name="action" value="set_disabled_modules">
+    {% for row in module_toggle_rows %}
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+      <input type="checkbox" name="enabled_modules" value="{{ row.key }}" id="modtoggle_{{ row.key }}" style="width:auto" {{ 'checked' if row.enabled }}>
+      <label for="modtoggle_{{ row.key }}" style="margin:0; font-weight:400">{{ row.label }}</label>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn" style="margin-top:6px">Saqlash</button>
+  </form>
+  {% else %}
+  <p class="text-faint" style="margin:0">Tarifingizda vaqtincha o'chirib bo'ladigan bo'lim yo'q.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -5,112 +5,98 @@
 <div class="page-head">
   <div>
     <h1>Sozlamalar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Kompaniya darajasidagi umumiy sozlamalar, bildirishnomalar va boshqa bo'limlarga havolalar -- hammasi shu yerda.</p>
+    <p class="page-subtitle" style="margin-bottom:0">Har bir bo'lim endi o'zining alohida sahifasida -- kerakli kartochkaga bosing.</p>
   </div>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-  <h2>Umumiy</h2>
-  <p class="page-subtitle" style="margin-top:-6px">KPI/bonus va sifat nazorati hisob-kitoblarida ishlatiladigan chegaralar.</p>
+<div class="settings-section-grid" style="margin-bottom:20px">
+  <a href="{{ url_for('settings_general') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title">Umumiy</span>
+      <span class="settings-section-desc">Minimal sotuv summasi, dollar/so'm kursi, qo'ng'iroq "shubhali" chegarasi.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
 
-  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:18px">
-    <input type="hidden" name="action" value="set_min_sale">
-    <div class="field" style="margin:0; min-width:220px">
-      <label>Minimal sotuv summasi (so'm)</label>
-      <input type="number" step="1" min="0" name="min_sale_amount" value="{{ min_sale_amount|int }}">
-    </div>
-    <button type="submit" class="btn">Saqlash</button>
-    <span class="text-faint" style="font-size:12.5px">Bu summadan KICHIK "sotuv" KPI/bonus va rejaga umuman kirmaydi.</span>
-  </form>
+  {% if current_user.role == 'admin' %}
+  <a href="{{ url_for('settings_cpl') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title">Target avtomatik o'chirish (CPL)</span>
+      <span class="settings-section-desc">Targetolog agenti har 15 daqiqada shu chegaralar bo'yicha reklamalarni tekshirib, oshib ketganini avtomatik pauza qiladi.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
 
-  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:0; border-top:1px solid var(--border-light); padding-top:14px">
-    <input type="hidden" name="action" value="set_usd_rate">
-    <div class="field" style="margin:0; min-width:220px">
-      <label>Dollar/so'm kursi (1$ = ? so'm)</label>
-      <input type="number" step="1" min="1" name="usd_to_uzs_rate" value="{{ usd_to_uzs_rate|int }}">
-    </div>
-    <button type="submit" class="btn">Saqlash</button>
-    <span class="text-faint" style="font-size:12.5px">Target sahifasidagi ROI (%) shu kursga qarab hisoblanadi (sotuv summasi so'mda, reklama xarajati dollarda bo'lgani uchun) -- kurs o'zgarganda vaqti-vaqti bilan yangilab turing.</span>
-  </form>
+  <a href="{{ url_for('settings_telegram') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title">Bildirishnomalar (Telegram)</span>
+      <span class="settings-section-desc">Menejerlarning shaxsiy Telegram ID'sini bog'lash -- ularga shaxsiy eslatmalar boradi.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
 
-  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--border-light); padding-top:14px">
-    <div>
-      <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
-      <div class="text-faint" style="font-size:12.5px">Hozirgi qiymat: {{ min_real_talk_seconds }} soniya</div>
-    </div>
-    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Audio bo'limida sozlash &rarr;</a>
-  </div>
+  {% if summary and summary.module_toggle_count %}
+  <a href="{{ url_for('settings_modules') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title">Funksiyalarni yoqish/o'chirish</span>
+      <span class="settings-section-desc">Tarifingizga kirgan bo'limlardan kerak bo'lmaganlarini vaqtincha o'chirib qo'yish.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
+  {% endif %}
+
+  {% if summary and summary.ai_plan_supports %}
+  <a href="{{ url_for('settings_ai') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 21V7a3 3 0 0 1 6 0v14M8 12h.01M16 12h.01"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title" style="justify-content:space-between; width:100%">
+        <span>AI funksiyalari
+        {% if summary.ai_features_disabled %}<span class="badge badge-color-bad" style="margin-left:6px">o'chirilgan</span>{% else %}<span class="badge badge-color-good" style="margin-left:6px">yoqilgan</span>{% endif %}</span>
+      </span>
+      <span class="settings-section-desc">Qo'ng'iroq tahlili + AI-yordamchi -- BITTA tugma bilan to'liq yoqish/o'chirish (xarajatni nazorat qilish uchun).</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
+  {% endif %}
+
+  <a href="{{ url_for('settings_unanswered') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title">
+        AI-yordamchi: javobsiz savollar
+        {% if summary and summary.unresolved_count %}<span class="badge badge-color-bad" style="margin-left:6px">{{ summary.unresolved_count }}</span>{% endif %}
+      </span>
+      <span class="settings-section-desc">Web AI-yordamchisi javob topa olmagan savollarni ko'rib chiqish.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
+  {% endif %}
 </div>
 
 {% if current_user.role == 'admin' %}
-<div class="card" style="margin-bottom:20px">
-  <h2>Target avtomatik o'chirish chegaralari (CPL)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Targetolog agenti har 15 daqiqada barcha faol reklamalarni shu chegaralar bo'yicha tekshiradi (LLM'siz, to'g'ridan-to'g'ri kod bilan -- tezkor va ishonchli) va chegaradan oshganini avtomatik pauza qiladi. Bugungi ko'rsatkich yaxshi bo'lsa ham, oxirgi 3 kunlik tendensiya yomon bo'lsa, baribir pauza qilinadi.</p>
-
-  <form method="post" style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
-    <input type="hidden" name="action" value="set_cpl_rules">
-    <div class="field" style="margin:0; min-width:200px">
-      <label>Maqsad/ideal CPL ($)</label>
-      <input type="number" step="0.1" min="0" name="target_cpa_usd" value="{{ '%.2f'|format(cpl_rules.target_cpa_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Faqat ma'lumot/tahlil uchun -- o'zi hech narsani o'chirmaydi.</div>
-    </div>
-    <div class="field" style="margin:0; min-width:200px">
-      <label>Bitta lead qancha $dan qimmat bo'lsa -- o'chirilsin</label>
-      <input type="number" step="0.1" min="0" name="cpl_hard_kill_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Masalan lead $17 bo'lsa, buni $10 qilib qo'ysangiz -- avtomatik o'chiriladi.</div>
-    </div>
-    <div class="field" style="margin:0; min-width:200px">
-      <label>Minimal sinov xarajati ($)</label>
-      <input type="number" step="0.1" min="0" name="cpl_hard_kill_min_spend_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_min_spend_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Shu summagacha reklama "hali sinov bosqichida" hisoblanadi -- bitta erta qimmat lead uchun asossiz o'chirilmaydi.</div>
-    </div>
-    <div class="field" style="margin:0; min-width:200px">
-      <label>Lead yo'q holatda qancha $dan keyin o'chirilsin</label>
-      <input type="number" step="0.1" min="0" name="cpl_hard_kill_zero_lead_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_zero_lead_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Hali birorta lead kelmagan reklama shu summani sarflasa -- o'chiriladi.</div>
-    </div>
-    <button type="submit" class="btn">Saqlash</button>
-  </form>
-</div>
-
-<div class="card" style="margin-bottom:20px">
-  <h2>Bildirishnomalar (Telegram)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer o'zining shaxsiy Telegram ID'sini bog'lasa, unga tegishli eslatmalar (masalan "qayta aloqa" muddati) shaxsiy xabar sifatida yuboriladi. ID'ni topish uchun menejer Telegramda <strong>@userinfobot</strong> ga yozib, o'zining raqamli ID'sini oladi va sizga aytadi.</p>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Menejer</th><th>Telegram ID</th><th>Holat</th><th></th></tr></thead>
-    <tbody>
-      {% for m in managers %}
-      <tr>
-        <td>{{ m.name }}</td>
-        <td class="text-dim">{{ m.telegram_user_id or '—' }}</td>
-        <td>
-          {% if m.telegram_user_id %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
-        </td>
-        <td>
-          <form method="post" style="display:flex; gap:6px; align-items:center; margin:0">
-            <input type="hidden" name="action" value="set_telegram">
-            <input type="hidden" name="manager_id" value="{{ m.id }}">
-            <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789" style="width:150px; padding:6px 8px">
-            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Saqlash</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="4">Faol menejer topilmadi.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
 <div class="card" style="margin-bottom:20px">
   <h2 style="display:flex; align-items:center; gap:10px">
     Meta Conversions API (CAPI)
     {% if capi_configured %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
   </h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Lead "Sifatli" yoki "Sotildi" bosqichiga o'tganda, CRM bu haqidagi signalni avtomatik ravishda Meta'ga qaytarib yuboradi -- algoritm shunga o'xshagan odamlarni auksionda qidirishni o'rganadi (kampaniya maqsadi "Maximize number of qualified leads" bilan birga ishlaydi).
+    Lead "Sifatli" yoki "Sotildi" bosqichiga o'tganda, CRM bu haqidagi signalni avtomatik ravishda Meta'ga qaytarib yuboradi -- algoritm shunga o'xshagan odamlarni auksionda qidirishni o'rganadi.
     {% if not capi_configured %}
       {% if capi_has_ad_account %}
       Reklama hisobingiz ulangan, lekin unga biriktirilgan Meta Pixel topilmadi -- avval Meta Events Manager'da (Data Sources → Pixel) shu reklama hisobi uchun Pixel yarating, so'ng <a href="{{ url_for('connect_accounts') }}" class="text-blue">Akkauntlarni ulash</a> sahifasida "Boshqa sahifa/hisobga almashtirish" orqali qayta ulang -- Pixel avtomatik topib olinadi.
@@ -119,77 +105,6 @@
       {% endif %}
     {% endif %}
   </p>
-</div>
-{% endif %}
-
-{% if current_user.role == 'admin' and module_toggle_rows %}
-<div class="card" style="margin-bottom:20px">
-  <h2>Funksiyalarni yoqish/o'chirish</h2>
-  <p class="page-subtitle" style="margin-top:-6px">
-    Tarifingizga kirgan bo'limlardan kerak bo'lmaganlarini vaqtincha o'chirib qo'yishingiz mumkin -- bu barcha (admin va menejer) foydalanuvchilar uchun amal qiladi.
-  </p>
-  <form method="post">
-    <input type="hidden" name="action" value="set_disabled_modules">
-    {% for row in module_toggle_rows %}
-    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
-      <input type="checkbox" name="enabled_modules" value="{{ row.key }}" id="modtoggle_{{ row.key }}" style="width:auto" {{ 'checked' if row.enabled }}>
-      <label for="modtoggle_{{ row.key }}" style="margin:0; font-weight:400">{{ row.label }}</label>
-    </div>
-    {% endfor %}
-    <button type="submit" class="btn" style="margin-top:6px">Saqlash</button>
-  </form>
-</div>
-{% endif %}
-
-{% if current_user.role == 'admin' and ai_plan_supports %}
-<div class="card" style="margin-bottom:20px">
-  <h2 style="display:flex; align-items:center; gap:10px">
-    AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi)
-    {% if ai_features_disabled %}<span class="badge badge-color-bad">o'chirilgan</span>{% else %}<span class="badge badge-color-good">yoqilgan</span>{% endif %}
-  </h2>
-  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:12px">
-    AI qo'ng'iroq tahlili (Audio bo'limi ichidagi tahlil) va ichki AI-yordamchi vidjetini BITTA tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
-  </p>
-  <form method="post">
-    <input type="hidden" name="action" value="toggle_ai_features">
-    <input type="hidden" name="ai_features_disabled" value="{{ '0' if ai_features_disabled else '1' }}">
-    <button type="submit" class="btn">{{ "AI funksiyalarini yoqish" if ai_features_disabled else "AI funksiyalarini o'chirish" }}</button>
-  </form>
-</div>
-{% endif %}
-
-{% if current_user.role == 'admin' %}
-<div class="card" style="margin-bottom:20px">
-  <h2>AI-yordamchi: javobsiz savollar</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Web AI-yordamchisi bilim bazasidan aniq javob topa olmagan savollar shu yerga tushadi -- ko'rib chiqib, kerak bo'lsa bilim bazasiga (target_master_agent.md) qo'shimcha qiling.</p>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Savol</th><th>Kim so'radi</th><th>Qachon</th><th>Holat</th><th></th></tr></thead>
-    <tbody>
-      {% for q in unanswered %}
-      <tr>
-        <td>{{ q.question }}</td>
-        <td class="text-dim">{{ q.manager_name }}</td>
-        <td class="text-dim">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '—' }}</td>
-        <td>
-          {% if q.is_resolved %}<span class="badge badge-color-good">hal qilindi</span>{% else %}<span class="badge badge-color-bad">javobsiz</span>{% endif %}
-        </td>
-        <td>
-          {% if not q.is_resolved %}
-          <form method="post" style="margin:0">
-            <input type="hidden" name="action" value="resolve_unanswered">
-            <input type="hidden" name="question_id" value="{{ q.id }}">
-            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Hal qilindi deb belgilash</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="5">Hozircha javobsiz savol yo'q.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
 </div>
 {% endif %}
 

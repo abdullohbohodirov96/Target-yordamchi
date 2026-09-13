@@ -96,7 +96,7 @@ check("boshida /target ochiladi (302 emas, redirect yo'q)", html_target_page == 
 
 # --- 2. Admin "target"ni o'chiradi (boshqa hamma modulni yoqiq qoldirib) ---
 remaining = [k for k in permissions.TOGGLEABLE_MODULE_KEYS if k != "target"]
-resp = client.post("/sozlamalar", data={"action": "set_disabled_modules", "enabled_modules": remaining}, follow_redirects=True)
+resp = client.post("/sozlamalar/funksiyalar", data={"action": "set_disabled_modules", "enabled_modules": remaining}, follow_redirects=True)
 check("set_disabled_modules so'rovi muvaffaqiyatli", resp.status_code == 200)
 
 sidebar_html = client.get("/").get_data(as_text=True)
@@ -106,12 +106,12 @@ target_resp = client.get("/target", follow_redirects=False)
 check("Target o'chirilgach /target endi ochilmaydi (redirect)", target_resp.status_code in (302, 303))
 
 # --- 3. "settings" hech qachon o'chmaydi (tampered so'rov bilan ham) ---
-tamper_resp = client.post("/sozlamalar", data={"action": "set_disabled_modules", "enabled_modules": []}, follow_redirects=True)
+tamper_resp = client.post("/sozlamalar/funksiyalar", data={"action": "set_disabled_modules", "enabled_modules": []}, follow_redirects=True)
 settings_still_ok = client.get("/sozlamalar", follow_redirects=False).status_code == 200
 check("'settings' tampered so'rov bilan ham o'chmaydi (o'zini qulflab qo'yish oldi olingan)", settings_still_ok)
 
 # --- 4. Qayta yoqish ---
-client.post("/sozlamalar", data={"action": "set_disabled_modules", "enabled_modules": permissions.TOGGLEABLE_MODULE_KEYS}, follow_redirects=True)
+client.post("/sozlamalar/funksiyalar", data={"action": "set_disabled_modules", "enabled_modules": permissions.TOGGLEABLE_MODULE_KEYS}, follow_redirects=True)
 target_resp2 = client.get("/target", follow_redirects=False)
 check("Target qayta yoqilgach /target ochiladi", target_resp2.status_code == 200)
 
@@ -150,7 +150,7 @@ finally:
 dash_before = client.get("/").get_data(as_text=True)
 check("AI o'chirilmaguncha AI-yordamchi vidjeti sahifada bor", 'id="ai-assistant-root"' in dash_before)
 
-client.post("/sozlamalar", data={"action": "toggle_ai_features", "ai_features_disabled": "1"}, follow_redirects=True)
+client.post("/sozlamalar/ai", data={"action": "toggle_ai_features", "ai_features_disabled": "1"}, follow_redirects=True)
 
 dash_disabled = client.get("/").get_data(as_text=True)
 check("AI o'chirilgach AI-yordamchi vidjeti sahifadan yo'qoladi", 'id="ai-assistant-root"' not in dash_disabled)
@@ -159,7 +159,7 @@ ic_html = client.get("/individual-tekshirish?tab=ai", follow_redirects=True).get
 check("AI o'chirilgach ?tab=ai so'ralsa ham 'calls' tab'iga qaytariladi (redirect yo'q, ichkarida)", "o'chirilgan" in ic_html)
 
 # --- 7. AI qayta yoqilgach vidjet qaytadi ---
-client.post("/sozlamalar", data={"action": "toggle_ai_features", "ai_features_disabled": "0"}, follow_redirects=True)
+client.post("/sozlamalar/ai", data={"action": "toggle_ai_features", "ai_features_disabled": "0"}, follow_redirects=True)
 dash_after = client.get("/").get_data(as_text=True)
 check("AI qayta yoqilgach AI-yordamchi vidjeti qaytadi", 'id="ai-assistant-root"' in dash_after)
 

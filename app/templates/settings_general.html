@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Umumiy sozlamalar — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Umumiy</h1>
+    <p class="page-subtitle" style="margin-bottom:0">KPI/bonus va sifat nazorati hisob-kitoblarida ishlatiladigan chegaralar.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:18px">
+    <input type="hidden" name="action" value="set_min_sale">
+    <div class="field" style="margin:0; min-width:220px">
+      <label>Minimal sotuv summasi (so'm)</label>
+      <input type="number" step="1" min="0" name="min_sale_amount" value="{{ min_sale_amount|int }}">
+    </div>
+    <button type="submit" class="btn">Saqlash</button>
+    <span class="text-faint" style="font-size:12.5px">Bu summadan KICHIK "sotuv" KPI/bonus va rejaga umuman kirmaydi.</span>
+  </form>
+
+  <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:0; border-top:1px solid var(--border-light); padding-top:14px">
+    <input type="hidden" name="action" value="set_usd_rate">
+    <div class="field" style="margin:0; min-width:220px">
+      <label>Dollar/so'm kursi (1$ = ? so'm)</label>
+      <input type="number" step="1" min="1" name="usd_to_uzs_rate" value="{{ usd_to_uzs_rate|int }}">
+    </div>
+    <button type="submit" class="btn">Saqlash</button>
+    <span class="text-faint" style="font-size:12.5px">Target sahifasidagi ROI (%) shu kursga qarab hisoblanadi (sotuv summasi so'mda, reklama xarajati dollarda bo'lgani uchun) -- kurs o'zgarganda vaqti-vaqti bilan yangilab turing.</span>
+  </form>
+
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--border-light); padding-top:14px; margin-top:18px">
+    <div>
+      <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
+      <div class="text-faint" style="font-size:12.5px">Hozirgi qiymat: {{ min_real_talk_seconds }} soniya</div>
+    </div>
+    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Audio bo'limida sozlash &rarr;</a>
+  </div>
+</div>
+{% endblock %}
