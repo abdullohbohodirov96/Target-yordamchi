@@ -454,7 +454,12 @@ def tg_send_checked(chat_id: int, text: str) -> dict:
         return {"ok": False, "error": body.get("description", str(body))}
     except Exception as e:
         logger.exception("Telegram guruhini tekshirishda xatolik")
-        return {"ok": False, "error": str(e)}
+        # XAVFSIZLIK (2026-09 audit, item 11): xom `requests` xatosi (masalan
+        # tarmoq/proxy) matnida to'liq so'ralgan URL -- shu bilan birga
+        # `TELEGRAM_API`dagi bot TOKEN ham -- bo'lishi mumkin. `safe_error_message`
+        # Meta'ga xos bo'lmasa ham, HAR QANDAY xato uchun xavfsiz umumiy xabar
+        # qaytaradi (faqat haqiqiy `MetaAPIError`da tozalangan xabarni ochadi).
+        return {"ok": False, "error": meta_api.safe_error_message(e)}
 
 
 _OWNER_ONLY_COMMANDS = {"/status", "/analyze", "/pause", "/resume"}
@@ -6081,6 +6086,17 @@ def standing_tasks_settings():
 
 @app.route("/api/health", methods=["GET"])
 def health():
+    # 2026-09, xavfsizlik auditi (item 12): ilgari bu endpoint HECH qanday
+    # autentifikatsiyasiz, qaysi maxfiy o'zgaruvchilar (Telegram/Anthropic/
+    # OpenAI/Meta token, DB, CRON_SECRET) sozlanganini (qiymatisiz, faqat
+    # true/false) HAR KIMGA ko'rsatardi -- bu keraksiz infratuzilma
+    # ma'lumoti sizib chiqishi (masalan qaysi integratsiyalar aktiv ekanini
+    # tashqi kuzatuvchiga oshkor qiladi). Render/monitoring uptime-tekshiruvi
+    # buzilmasligi uchun `{"ok": true}` HAMON autentifikatsiyasiz qaytadi --
+    # faqat BATAFSIL diagnostika endi `CRON_SECRET` bilan himoyalangan
+    # (xuddi `/api/trigger/<job>` kabi).
+    if not CRON_SECRET or request.args.get("secret") != CRON_SECRET:
+        return jsonify({"ok": True})
     return jsonify({
         "ok": True,
         "telegram_token_set": bool(TELEGRAM_TOKEN),

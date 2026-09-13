@@ -391,7 +391,10 @@ def sync_all_companies() -> dict:
             per_company[c["id"]] = sync_once(company=fake_company)
         except Exception as e:
             logger.exception("SMM sync: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
-            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {e}"]}
+            # XAVFSIZLIK (2026-09 audit, item 11): `lead_sync.py`dagi bilan
+            # bir xil tuzatish -- `safe_error_message()` xom (masalan tarmoq/
+            # proxy) xato matnidagi token-tashuvchi URL'ni chiqarmaydi.
+            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {meta_api.safe_error_message(e)}"]}
     return {"companies_synced": len(companies), "per_company": per_company}
 
 

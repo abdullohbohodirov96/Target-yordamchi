@@ -324,7 +324,7 @@ def sync_once(company=None) -> dict:
     try:
         forms = meta_api.get_lead_forms(page_id, access_token=access_token)
     except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Formalarni olishda xatolik: {e}")
+        result["errors"].append(f"Formalarni olishda xatolik: {meta_api.safe_error_message(e)}")
         _save_status(result, company_id=company_id)
         return result
 
@@ -363,7 +363,7 @@ def sync_once(company=None) -> dict:
             for a in structure.get("ads", []):
                 ad_name_by_id[a["id"]] = a.get("name", "")
         except meta_api.MetaAPIError as e:
-            result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {e}")
+            result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {meta_api.safe_error_message(e)}")
 
     session = get_session()
     try:
@@ -373,11 +373,12 @@ def sync_once(company=None) -> dict:
             try:
                 leads = meta_api.get_leads(form_id, since=since_unix, access_token=access_token, page_id=page_id)
             except meta_api.MetaAPIError as e:
-                result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {e}")
+                safe_msg = meta_api.safe_error_message(e)
+                result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {safe_msg}")
                 result["form_diagnostics"].append({
                     "form_id": form_id, "form_name": form.get("name"),
                     "meta_leads_count": form.get("leads_count"), "db_leads_count": None,
-                    "error": str(e),
+                    "error": safe_msg,
                 })
                 continue
 
@@ -546,7 +547,13 @@ def sync_all_companies() -> dict:
             per_company[c["id"]] = sync_once(company=fake_company)
         except Exception as e:
             logger.exception("Lead sync: '%s' (id=%s) kompaniyasi uchun xato", c["name"], c["id"])
-            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {e}"]}
+            # XAVFSIZLIK (2026-09 audit, item 11): `meta_api.safe_error_message()`
+            # ishlatiladi -- bu yerga MetaAPIError'dan tashqari HAR QANDAY
+            # xato (masalan `requests`ning o'zi ko'targan tarmoq/proxy xatosi,
+            # matnida to'liq so'ralgan URL -- shu bilan birga `access_token`
+            # ham -- ko'rsatiladigan) tushishi mumkin, va bu xabar
+            # `analytics.html`da to'g'ridan-to'g'ri ko'rsatiladi.
+            per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {meta_api.safe_error_message(e)}"]}
     return {"companies_synced": len(companies), "per_company": per_company}
 
 

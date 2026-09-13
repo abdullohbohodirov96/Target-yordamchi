@@ -570,6 +570,26 @@ def _execute_adjust_budget(action: dict, direction: str) -> dict:
     tasdiqlanadi (boshqa executor'lardagi kabi verify-after-write)."""
     adset_id = _require(action, "object_id")
     percent = abs(float(_require(action, "params", "percent")))
+    # 2026-09, xavfsizlik auditi (KRITIK item 3): `business_rules.json`dagi
+    # `max_daily_budget_change_percent` ilgari FAQAT hujjat sifatida bor edi
+    # -- kodning hech qayerida o'qilmas/qo'llanilmas edi, ya'ni Targetolog
+    # (yoki Marketolog, u ham ko'pincha `skip_marketolog=true` bilan
+    # o'tkazib yuborilgan) istalgan foizni taklif qilsa, shuncha qo'llanardi.
+    # Endi bu -- LLM natijasiga BOG'LIQ BO'LMAGAN, serverda majburiy
+    # qo'llaniladigan qattiq shift (LLM tavsiya qilgan foiz undan katta
+    # bo'lsa, jimgina shu chegaraga qisqartiriladi -- butunlay rad etish
+    # o'rniga, chunki kichikroq o'zgarish hali ham foydali va xavfsiz).
+    max_percent = BUSINESS_RULES.get("max_daily_budget_change_percent")
+    try:
+        max_percent = float(max_percent) if max_percent else 20.0
+    except (TypeError, ValueError):
+        max_percent = 20.0
+    if percent > max_percent:
+        logger.warning(
+            "Byudjet o'zgarishi serverda cheklandi: so'ralgan %.1f%% -> max %.1f%% (adset_id=%s)",
+            percent, max_percent, adset_id,
+        )
+        percent = max_percent
     if direction == "decrease":
         percent = -percent
 
@@ -732,6 +752,65 @@ AUTO_EXECUTABLE_TYPES = set(ACTION_EXECUTORS.keys())
 # ichida emas) -- faqat bazada "vazifa" yozadi/bekor qiladi va `chat_id` talab qiladi
 # (qaysi Telegram guruh so'ragani). `_finish_pipeline` bularni alohida ishlaydi.
 SCHEDULING_ACTION_TYPES = {"schedule_on_off", "schedule_report", "cancel_standing_task"}
+
+# 2026-09, xavfsizlik auditi (KRITIK item 2 va 4): ijro etishdan oldin
+# object_id haqiqatan mavjudligini VA himoyalangan kampaniyaga tegmasligini
+# tekshirish -- `launch_campaign` bundan mustasno (u YANGI obyekt yaratadi,
+# mavjud object_id'ga tegishli emas).
+_OBJECT_ID_CHECKED_TYPES = set(ACTION_EXECUTORS.keys()) - {"launch_campaign"}
+
+
+def _account_structure_id_maps(structure: dict) -> "tuple[set, dict]":
+    """`meta_api.get_account_structure()`ning yassi (`campaigns`/`adsets`/`ads`,
+    har biri `id` bilan) natijasidan ikkita narsa hisoblaydi:
+    1) `known_ids` -- hisobda HAQIQATAN mavjud bo'lgan barcha campaign/adset/ad
+       ID'lari (LLM halyutsinatsiya qilgan yoki eskirgan ID'ni aniqlash uchun).
+    2) `campaign_of` -- har bir ID -> o'zining campaign_id'siga xarita
+       (`protected_campaign_ids`ni campaign/adset/ad -- qaysi darajada
+       so'ralgan bo'lishidan qat'iy nazar tekshirish uchun)."""
+    known_ids: set = set()
+    campaign_of: dict = {}
+    for c in (structure or {}).get("campaigns") or []:
+        cid = c.get("id")
+        if cid is not None:
+            known_ids.add(str(cid))
+            campaign_of[str(cid)] = str(cid)
+    for a in (structure or {}).get("adsets") or []:
+        aid = a.get("id")
+        cid = a.get("campaign_id")
+        if aid is not None:
+            known_ids.add(str(aid))
+            if cid is not None:
+                campaign_of[str(aid)] = str(cid)
+    for ad in (structure or {}).get("ads") or []:
+        adid = ad.get("id")
+        cid = ad.get("campaign_id")
+        if adid is not None:
+            known_ids.add(str(adid))
+            if cid is not None:
+                campaign_of[str(adid)] = str(cid)
+    return known_ids, campaign_of
+
+
+def _check_object_id_safety(object_id, known_ids: set, campaign_of: dict, protected_campaign_ids: set) -> "str | None":
+    """`object_id`ni ijro etishdan oldin tekshiradi -- xavfsiz bo'lsa `None`,
+    aks holda bloklash sababini (odamga tushunarli matn) qaytaradi."""
+    if object_id is None:
+        return None
+    object_id = str(object_id)
+    if object_id not in known_ids:
+        return (
+            f"Xavfsizlik tekshiruvi: object_id '{object_id}' joriy hisob "
+            "strukturasida topilmadi (o'chirilgan, noto'g'ri yoki model xato "
+            "aniqlagan bo'lishi mumkin) -- bajarilmadi."
+        )
+    if campaign_of.get(object_id, object_id) in protected_campaign_ids:
+        return (
+            f"'{object_id}' himoyalangan kampaniyaga tegishli "
+            "(`business_rules.json` -> `protected_campaign_ids`) -- avtomatik "
+            "o'zgartirib bo'lmaydi."
+        )
+    return None
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -1709,6 +1788,37 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
 
     succeeded, failed, skipped = [], [], []
     if not dry_run:
+        # 2026-09, xavfsizlik auditi (KRITIK item 2 va 4): ijro etishdan
+        # AYNAN oldin, ANIQ shu daqiqadagi hisob strukturasini qayta o'qib
+        # olamiz -- pastda har bir action'ning `object_id`si HAQIQATAN
+        # mavjudligini (LLM halyutsinatsiya/eskirgan ID emasligini) va
+        # himoyalangan kampaniyaga tegmasligini shunga nisbatan tekshiramiz.
+        # Bu tekshiruv Marketolog bosqichiga BOG'LIQ EMAS -- `skip_marketolog`
+        # yoqilgan bo'lsa ham (hozir ishlab chiqarishda shunday) doim ishlaydi.
+        # Tekshirish uchun kerakli ma'lumotning o'zi olinmasa (masalan
+        # tarmoq xatosi) -- xavfsizlik "fail closed": ijro emas, bu safar
+        # HAMMA pul-harakatli action aniq xatolik bilan to'xtatiladi (keyingi
+        # tsiklda qayta urinib ko'riladi).
+        known_object_ids: set = set()
+        campaign_of_object: dict = {}
+        structure_fetch_error: "str | None" = None
+        protected_campaign_ids = {str(x) for x in (BUSINESS_RULES.get("protected_campaign_ids") or [])}
+        needs_structure_check = any(
+            targetolog_plan["actions"][decision["action_index"]].get("type") in _OBJECT_ID_CHECKED_TYPES
+            for decision in marketolog_review.get("decisions", [])
+            if isinstance(decision.get("action_index"), int) and 0 <= decision["action_index"] < len(targetolog_plan.get("actions") or [])
+        )
+        if needs_structure_check:
+            try:
+                fresh_structure = meta_api.get_account_structure(active_only=False)
+                known_object_ids, campaign_of_object = _account_structure_id_maps(fresh_structure)
+            except meta_api.MetaAPIError as e:
+                structure_fetch_error = str(e)
+                logger.exception(
+                    "Ijro oldidan xavfsizlik tekshiruvi uchun account_structure "
+                    "olinmadi -- shu safar pul-harakatli action'lar bloklanadi."
+                )
+
         for decision in marketolog_review.get("decisions", []):
             idx = decision["action_index"]
             action = targetolog_plan["actions"][idx]
@@ -1735,6 +1845,31 @@ def _finish_pipeline(targetolog_plan: dict, dry_run: bool = False, chat_id: int 
             final_action = dict(action)
             if decision.get("final_params"):
                 final_action["params"] = {**final_action.get("params", {}), **decision["final_params"]}
+
+            if action_type in _OBJECT_ID_CHECKED_TYPES:
+                if structure_fetch_error:
+                    failed.append({
+                        "action": final_action,
+                        "error": f"Xavfsizlik tekshiruvi uchun hisob strukturasi olinmadi: {structure_fetch_error}",
+                    })
+                    continue
+                block_reason = _check_object_id_safety(
+                    final_action.get("object_id"), known_object_ids, campaign_of_object, protected_campaign_ids
+                )
+                if block_reason is None and action_type == "conclude_ab_test":
+                    # conclude_ab_test'ning haqiqiy nishoni object_id'da emas,
+                    # params.losing_adset_id'da (yuqoridagi ACTION_EXECUTORS
+                    # ta'rifiga qarang).
+                    losing_id = (final_action.get("params") or {}).get("losing_adset_id")
+                    block_reason = _check_object_id_safety(
+                        losing_id, known_object_ids, campaign_of_object, protected_campaign_ids
+                    )
+                if block_reason is not None:
+                    if "himoyalangan kampaniyaga" in block_reason:
+                        skipped.append({"action": final_action, "decision": decision, "reason": "protected_campaign_id"})
+                    else:
+                        failed.append({"action": final_action, "error": block_reason})
+                    continue
 
             try:
                 if action_type == "schedule_on_off":

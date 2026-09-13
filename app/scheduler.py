@@ -229,9 +229,13 @@ def job_admin_report() -> dict:
             )
         except Exception as e:
             logger.exception("Admin hisobot xatosi (platforma egasi)")
+            # XAVFSIZLIK (2026-09 audit, item 11): xabar TELEGRAM guruhiga
+            # to'g'ridan-to'g'ri ketadi -- `safe_error_message()` xom (masalan
+            # tarmoq/proxy) xato matnidagi token-tashuvchi URL'ni chiqarmaydi.
+            safe_msg = meta_api.safe_error_message(e)
             for cid in owner_targets:
-                _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
-            results["owner"] = f"xato: {e}"
+                _tg_send(cid, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {safe_msg}")
+            results["owner"] = f"xato: {safe_msg}"
         else:
             send_results = {cid: _tg_send(cid, report) for cid in owner_targets}
             kv_store.set_json(_ADMIN_REPORT_GUARD_KEY, today_str)
@@ -290,8 +294,9 @@ def job_admin_report() -> dict:
             )
         except Exception as e:
             logger.exception("Admin hisobot xatosi (kompaniya '%s', id=%s)", c["name"], c["id"])
-            _tg_send(chat_id, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {e}")
-            results[c["id"]] = f"xato: {e}"
+            safe_msg = meta_api.safe_error_message(e)
+            _tg_send(chat_id, f"⚠️ Kunlik hisobotni tayyorlashda xatolik: {safe_msg}")
+            results[c["id"]] = f"xato: {safe_msg}"
             continue
 
         send_result = _tg_send(chat_id, report)
@@ -455,9 +460,10 @@ def job_watch_cycle() -> str:
         report = orchestrator.run_daily_cron_report(dry_run=False)
     except Exception as e:
         logger.exception("Kuzatuv tsikli xatosi")
+        safe_msg = meta_api.safe_error_message(e)
         for cid in targets:
-            _tg_send(cid, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {e}")
-        return f"xato: {e}"
+            _tg_send(cid, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
+        return f"xato: {safe_msg}"
     if report is None:
         return "diqqatga loyiq narsa yo'q"
     for cid in targets:
@@ -788,9 +794,10 @@ def job_competitor_analysis() -> dict:
                 report = competitor_analytics.build_daily_report()
         except Exception as e:
             logger.exception("Raqobatchilar tahlilida xatolik (kompaniya #%s)", company_id)
+            safe_msg = meta_api.safe_error_message(e)
             for cid in targets:
-                _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {e}")
-            results[company_id] = f"xato: {e}"
+                _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {safe_msg}")
+            results[company_id] = f"xato: {safe_msg}"
             continue
         if not report:
             results[company_id] = "raqobatchi qo'shilmagan"
@@ -966,9 +973,10 @@ def job_standing_tasks() -> str:
                 t.last_error = None
                 changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
             except Exception as e:
-                t.last_error = str(e)
+                safe_msg = meta_api.safe_error_message(e)
+                t.last_error = safe_msg
                 logger.exception("Standing task xatosi (object_id=%s)", t.object_id)
-                errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, str(e)))
+                errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
         session.commit()
     finally:
         session.close()
@@ -1062,7 +1070,7 @@ def job_standing_reports() -> str:
                 )
             except Exception as e:
                 logger.exception("Qo'shimcha (standing) hisobot xatosi (company_id=%s)", company_id)
-                report_cache[company_id] = f"⚠️ Qo'shimcha hisobotni tayyorlashda xatolik: {e}"
+                report_cache[company_id] = f"⚠️ Qo'shimcha hisobotni tayyorlashda xatolik: {meta_api.safe_error_message(e)}"
 
         try:
             _tg_send(int(chat_id), report_cache[company_id])
