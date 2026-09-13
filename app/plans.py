@@ -42,7 +42,8 @@ class Plan:
     tagline: str
     modules: frozenset            # permissions.MODULE_KEYS'dan qaysi biri ochiq
     manager_limit: "int | None"   # None = cheksiz
-    ai_enabled: bool              # AI qo'ng'iroq tahlili + ichki AI-yordamchi
+    leads_limit: "int | None"     # CRM'dagi jami lidlar soni chegarasi; None = cheksiz
+    ai_enabled: bool              # Ichki AI-yordamchi (real vaqtda savol-javob)
     can_connect_meta_ads: bool    # False bo'lsa -- connect-accounts sahifasida faqat Instagram maydoni ko'rinadi
     highlight: bool               # narxlar sahifasida "Eng ommabop" belgisi
     features: tuple                # marketing/taqqoslash jadvali uchun aniq bandlar
@@ -53,27 +54,29 @@ PLANS = {
         key="trial", name="Sinov", price_usd=None, period_days=14,
         tagline="14 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring",
         modules=frozenset({"dashboard", "leads", "target", "analytics"}),
-        manager_limit=1, ai_enabled=False, can_connect_meta_ads=False, highlight=False,
+        manager_limit=1, leads_limit=100, ai_enabled=False, can_connect_meta_ads=False, highlight=False,
         features=(
             "14 kun bepul, karta shart emas",
             "Faqat Instagram akkauntini ulash",
             "Target (Meta Ads) bo'yicha XOM natijalar: xarajat, lead, CPL",
-            "Lidlar bazasi va asosiy CRM voronkasi",
+            "Lidlar bazasi va asosiy CRM voronkasi (100 tagacha lid)",
             "1 ta admin hisob",
-            "AI tahlil va qo'ng'iroq nazorati kiritilmagan",
+            "Ichki AI-yordamchi kiritilmagan",
         ),
     ),
     "start": Plan(
         key="start", name="Boshlang'ich", price_usd=20, period_days=None,
         tagline="Kichik jamoalar uchun to'liq CRM + target monitoring",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings"}),
-        manager_limit=3, ai_enabled=False, can_connect_meta_ads=True, highlight=False,
+        manager_limit=2, leads_limit=1000, ai_enabled=False, can_connect_meta_ads=True, highlight=False,
         features=(
             "Sinovdagi hammasi",
             "To'liq Meta Ads hisoblar (bir nechta kampaniya) ulash",
+            "Meta Conversions API (CAPI) -- konversiya signalini qaytarish",
             "SMM hisobot va Instagram xabarlar",
             "Voronka, majburiy vazifalar, qo'shimcha maydonlar sozlamalari",
-            "3 tagacha menejer/admin hisob",
+            "1 000 tagacha lid (CRM)",
+            "2 tagacha menejer/admin hisob",
             "Email orqali qo'llab-quvvatlash",
         ),
     ),
@@ -81,12 +84,13 @@ PLANS = {
         key="business", name="Biznes", price_usd=60, period_days=None,
         tagline="O'sayotgan sotuv jamoalari uchun — AI bilan kuchaytirilgan",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
-        manager_limit=8, ai_enabled=True, can_connect_meta_ads=True, highlight=True,
+        manager_limit=4, leads_limit=5000, ai_enabled=True, can_connect_meta_ads=True, highlight=True,
         features=(
             "Boshlang'ichdagi hammasi",
-            "AI qo'ng'iroq tahlili (Individual tekshirish)",
+            "Qo'ng'iroq audio nazorati (Individual tekshirish)",
             "Ichki AI-yordamchi (real vaqtda savol-javob va hisobot)",
-            "8 tagacha menejer/admin hisob",
+            "5 000 tagacha lid (CRM)",
+            "4 tagacha menejer/admin hisob",
             "Ustuvor (tezkor) qo'llab-quvvatlash",
         ),
     ),
@@ -94,11 +98,12 @@ PLANS = {
         key="unlimited", name="Ekspert", price_usd=150, period_days=None,
         tagline="Yirik jamoalar va ko'p filiallar uchun — cheksiz",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
-        manager_limit=None, ai_enabled=True, can_connect_meta_ads=True, highlight=False,
+        manager_limit=None, leads_limit=None, ai_enabled=True, can_connect_meta_ads=True, highlight=False,
         features=(
             "Biznesdagi hammasi",
+            "Cheksiz lidlar (CRM)",
             "Cheksiz menejer/admin hisoblar",
-            "Cheksiz AI qo'ng'iroq tahlili",
+            "Cheksiz qo'ng'iroq audio arxivi",
             "Shaxsiy onboarding va maslahat",
             "24/7 ustuvor qo'llab-quvvatlash",
         ),
@@ -121,32 +126,37 @@ PAID_PLAN_LIST = [PLANS[k] for k in PLAN_ORDER if k != "trial"]
 # kabi "ha/yo'q" bo'lmagan qatorlar uchun).
 #
 # Qiymatlar YUQORIDAGI `PLANS` lug'atining o'zidan (modules/ai_enabled/
-# can_connect_meta_ads/manager_limit) olinadi -- shu sabab bu ikkalasi hech
-# qachon bir-biridan uzilib qolmaydi.
+# can_connect_meta_ads/manager_limit/leads_limit) olinadi -- shu sabab bu
+# ikkalasi hech qachon bir-biridan uzilib qolmaydi.
 #
-# ESLATMA (item E, hali bajarilmagan): "AI qo'ng'iroq tahlili" qatori --
-# foydalanuvchi qo'ng'iroqlarning AI orqali avtomatik tahlilini BUTUNLAY
-# o'chirishni so'ragan (faqat xom audio/qo'ng'iroqlar ro'yxati qoladi).
-# O'sha ish tugagach bu qator olib tashlanishi yoki nomi o'zgartirilishi
-# kerak -- hozircha ilova haligacha shu funksiyani taqdim etgani uchun
-# jadvalda qoldirilgan.
+# CAPI (Meta Conversions API) alohida modul emas -- u `can_connect_meta_ads`
+# yoqilgan har qanday tarifda ishlaydi (reklama hisobi ulanishi bilan Pixel
+# avtomatik topiladi, ko'proq narsa talab qilinmaydi), shuning uchun bu
+# qatorning qiymati ham o'sha bayroqdan olinadi.
 # ---------------------------------------------------------------------------
 def _has(module_key):
     return {p.key: module_key in p.modules for p in PLAN_LIST}
 
 
+def _count_or_unlimited(value, unit):
+    return "Cheksiz" if value is None else f"{value} tagacha {unit}"
+
+
 FEATURE_MATRIX = [
-    {"label": "CRM va lidlar bazasi", "values": _has("leads")},
+    {"label": "CRM va lidlar bazasi",
+     "values": {p.key: _count_or_unlimited(p.leads_limit, "lid") for p in PLAN_LIST}},
     {"label": "Instagram akkauntini ulash", "values": {p.key: True for p in PLAN_LIST}},
     {"label": "To'liq Meta Ads (Instagram + Facebook reklama) ulash",
+     "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
+    {"label": "Meta Conversions API (CAPI)",
      "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
     {"label": "SMM hisobot (obunachi, qamrov, postlar statistikasi)", "values": _has("target")},
     {"label": "Analitika va hisobotlar", "values": _has("analytics")},
     {"label": "Sozlamalar (voronka, vazifalar, qo'shimcha maydonlar)", "values": _has("settings")},
-    {"label": "AI qo'ng'iroq tahlili (Individual tekshirish)", "values": _has("individual_check")},
+    {"label": "Qo'ng'iroq audio nazorati (Individual tekshirish)", "values": _has("individual_check")},
     {"label": "Ichki AI-yordamchi", "values": {p.key: p.ai_enabled for p in PLAN_LIST}},
     {"label": "Menejer/admin hisoblar soni",
-     "values": {p.key: ("Cheksiz" if p.manager_limit is None else f"{p.manager_limit} tagacha") for p in PLAN_LIST}},
+     "values": {p.key: _count_or_unlimited(p.manager_limit, "hisob") for p in PLAN_LIST}},
     {"label": "Qo'llab-quvvatlash",
      "values": {
          "trial": "—", "start": "Email",
@@ -165,6 +175,10 @@ def modules_for_plan(key: "str | None") -> frozenset:
 
 def manager_limit_for_plan(key: "str | None") -> "int | None":
     return get_plan(key).manager_limit
+
+
+def leads_limit_for_plan(key: "str | None") -> "int | None":
+    return get_plan(key).leads_limit
 
 
 def ai_enabled_for_plan(key: "str | None") -> bool:
