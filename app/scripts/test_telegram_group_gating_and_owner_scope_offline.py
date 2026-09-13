@@ -56,6 +56,7 @@ def _fresh_app(db_path, *, owner_group_env=None):
     db_module.init_db()
     import app as app_module
     app_module.app.config["TESTING"] = True
+    app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
     # Har bir test botning o'z `getMe` keshini nol boshidan sinasin.
     app_module._BOT_IDENTITY_CACHE.clear()
     return db_module, app_module

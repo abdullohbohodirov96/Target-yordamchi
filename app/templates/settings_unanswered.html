@@ -28,6 +28,7 @@
         <td>
           {% if not q.is_resolved %}
           <form method="post" style="margin:0">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="resolve_unanswered">
             <input type="hidden" name="question_id" value="{{ q.id }}">
             <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Hal qilindi deb belgilash</button>

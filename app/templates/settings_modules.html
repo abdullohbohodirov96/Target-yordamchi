@@ -15,6 +15,7 @@
 <div class="card">
   {% if module_toggle_rows %}
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_disabled_modules">
     {% for row in module_toggle_rows %}
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">

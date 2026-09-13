@@ -30,6 +30,7 @@
     </div>
     <div class="modal-body">
       <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field"><label>Username</label><input type="text" name="username" required autofocus></div>
         <div class="field"><label>To'liq ism</label><input type="text" name="full_name"></div>
         <div class="field"><label>Parol</label><input type="password" name="password" required></div>

@@ -11,6 +11,7 @@
 
 <div class="card" style="max-width:480px">
   <form method="post" enctype="multipart/form-data">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <label>Audio fayl</label>
       <input type="file" name="audio_file" accept="audio/*,.mp3,.wav,.ogg,.oga,.m4a,.mp4,.webm" required autofocus>

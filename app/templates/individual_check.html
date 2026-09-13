@@ -64,6 +64,7 @@
     <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
   </div>
   <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="days" value="{{ days }}">
     <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">Chegara (soniyada):</label>
     <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">

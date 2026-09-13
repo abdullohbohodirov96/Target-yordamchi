@@ -50,6 +50,7 @@ import meta_api  # noqa: E402
 import ig_dm_sync  # noqa: E402
 
 app_module.app.config["TESTING"] = True
+app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
 db_module.init_db()
 
 

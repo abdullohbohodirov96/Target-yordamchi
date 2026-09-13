@@ -20,14 +20,17 @@
   <h2>Tezkor amallar</h2>
   <p class="page-subtitle" style="margin-top:-6px">To'lov Payme/Click orqali qo'lda tekshirilib, shu yerda belgilanadi (avtomatik integratsiya hali yo'q).</p>
   <div style="display:flex; flex-direction:column; gap:8px">
-    <form method="post"><input type="hidden" name="action" value="extend_30">
+    <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="extend_30">
       <button type="submit" class="block">+ 30 kunga uzaytirish (to'lov keldi)</button>
     </form>
     {% if c.id != 1 %}
-    <form method="post"><input type="hidden" name="action" value="remove_limit">
+    <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove_limit">
       <button type="submit" class="block" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">Muddat cheklovini olib tashlash (cheksiz)</button>
     </form>
-    <form method="post" onsubmit="return confirm('Rostdan ham to\'xtatilsinmi? Bu kompaniyaning HAMMA foydalanuvchisi CRM\'ga kira olmay qoladi.')"><input type="hidden" name="action" value="suspend">
+    <form method="post" onsubmit="return confirm('Rostdan ham to\'xtatilsinmi? Bu kompaniyaning HAMMA foydalanuvchisi CRM\'ga kira olmay qoladi.')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="suspend">
       <button type="submit" class="block" style="background:var(--bad, #DC2626)">Hisobni to'xtatish</button>
     </form>
     {% endif %}
@@ -37,6 +40,7 @@
 <div class="card" style="max-width:420px">
   <h2>Tafsilotlar</h2>
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="save">
     <div class="field"><label>Nomi</label><input type="text" name="name" value="{{ c.name }}" required></div>
     <div class="field"><label>Email</label><input type="email" name="email" value="{{ c.email or '' }}"></div>

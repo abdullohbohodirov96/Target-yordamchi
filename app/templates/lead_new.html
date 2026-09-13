@@ -7,6 +7,7 @@
 
 <div class="card" style="max-width:480px">
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label>Ism familiya</label><input type="text" name="full_name" autofocus></div>
     <div class="field"><label>Telefon</label><input type="text" name="phone" placeholder="+998..."></div>
     <div class="field"><label>Qo'shimcha telefon (ixtiyoriy)</label><input type="text" name="phone2" placeholder="+998..."></div>

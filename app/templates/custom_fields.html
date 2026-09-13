@@ -7,6 +7,7 @@
 <div class="card" style="max-width:480px; margin-bottom:24px">
   <h2>Yangi savol qo'shish</h2>
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="add">
     <div class="field"><label>Savol matni</label><input type="text" name="label" placeholder="Masalan: Byudjeti qancha?" required></div>
     <div class="field">
@@ -33,6 +34,7 @@
         <td class="text-dim">{{ {'text':'Matn','number':'Raqam','select':'Tanlov'}.get(f.field_type, f.field_type) }}</td>
         <td>
           <form method="post" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="field_id" value="{{ f.id }}">
             <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if f.is_active else 'O\'chirilgan' }}</button>
@@ -40,6 +42,7 @@
         </td>
         <td>
           <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="field_id" value="{{ f.id }}">
             <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>

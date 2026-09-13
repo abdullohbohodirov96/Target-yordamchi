@@ -29,6 +29,7 @@
 <div class="card" style="max-width:480px; margin-bottom:20px">
   <h2>Tarifni tanlang</h2>
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="choose_plan">
     <div class="field">
       <select name="plan">
@@ -52,15 +53,18 @@
   <p class="page-subtitle" style="margin-top:-6px">Bog'langan karta: <b style="font-family:monospace">{{ payme_card_masked }}</b></p>
   <p class="page-subtitle" style="margin-top:-6px">Har oy muddat tugashidan oldin <b>${{ plan.price_usd }}</b> shu kartadan avtomatik yechiladi{% if not payme_autopay_enabled %} — hozir <b>O'CHIRILGAN</b>{% endif %}.</p>
   <form method="post" action="{{ url_for('payme_autopay_toggle') }}" style="display:inline-block; margin-right:8px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="enabled" value="{{ '0' if payme_autopay_enabled else '1' }}">
     <button type="submit" class="block">{{ "Avtomatik to'lovni o'chirish" if payme_autopay_enabled else "Avtomatik to'lovni yoqish" }}</button>
   </form>
   <form method="post" action="{{ url_for('payme_card_remove') }}" style="display:inline-block; margin-top:8px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="block" style="background:transparent; color:var(--danger, #d33)">Kartani o'chirish</button>
   </form>
   {% elif payme_card_pending %}
   <p class="page-subtitle" style="margin-top:-6px">Kartangizga yuborilgan SMS kodni kiriting:</p>
   <form method="post" action="{{ url_for('payme_card_verify') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <input type="text" name="code" placeholder="SMS kod" inputmode="numeric" required>
     </div>
@@ -69,6 +73,7 @@
   {% else %}
   <p class="page-subtitle" style="margin-top:-6px">Kartangizni bir marta bog'lang — shundan keyin har oy qo'lda to'lashingiz shart emas.</p>
   <form method="post" action="{{ url_for('payme_card_bind') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <input type="text" name="card_number" placeholder="8600 0000 0000 0000" inputmode="numeric" maxlength="19" required>
     </div>
@@ -97,6 +102,7 @@
     <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
     {% endif %}
     <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="mark_paid">
       <button type="submit" class="block">To'lov qildim</button>
     </form>
@@ -118,6 +124,7 @@
   {% endif %}
   <p class="page-subtitle" style="margin-top:8px">To'lovni amalga oshirgach, quyidagi tugmani bosing — biz darhol xabardor bo'lamiz va tekshirib, hisobingizni uzaytiramiz (odatda bir necha soat ichida).</p>
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="mark_paid">
     <button type="submit" class="block">To'lov qildim</button>
   </form>

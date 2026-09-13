@@ -25,6 +25,7 @@ from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
 )
+from flask_wtf.csrf import CSRFProtect, CSRFError
 import meta_api
 import meta_events
 import payme_subscribe
@@ -61,6 +62,37 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 # ishlaydi). 7 kun -- deploy qilinganda fayl nomi o'zgarmasa ham brauzer
 # keshi juda uzoq "eskirib" qolmasligi uchun yetarlicha qisqa muddat.
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 7
+
+# 2026-09, Item J xavfsizlik auditi (5-band, 🔴 KRITIK): CSRF himoyasi.
+# ILGARI butun ilovada (sessiyaga asoslangan HAR bir <form method="post">)
+# hech qanday CSRF token yo'q edi -- ya'ni boshqa saytdagi zararli forma
+# yoki havola, admin login qilgan holda ochilsa, uning nomidan (brauzer
+# sessiyasi orqali) amal bajarishi mumkin edi (masalan reklama byudjetini
+# o'zgartirish, menejerni o'chirish, kompaniyani faolsizlantirish).
+#
+# Endi HAR bir POST/PUT/PATCH/DELETE so'rov sessiyaga bog'langan tokenni
+# talab qiladi -- `templates/*.html`dagi har bir <form method="post">
+# `csrf_token()` yashirin maydonini oldi, yagona AJAX (fetch) so'rov esa
+# `X-CSRFToken` sarlavhasini yuboradi (`base.html`dagi <meta name="csrf-
+# token">ga qarang).
+#
+# ISTISNO -- pastda `@csrf.exempt` bilan belgilangan 3 ta webhook route
+# (`/api/webhook`, `/webhooks/instagram`, `/api/webhook/leads/<token>`):
+# bular Telegram/Meta/tashqi CRM tomonidan SERVER-SERVERGA chaqiriladi,
+# brauzer sessiyasi umuman yo'q, shuning uchun CSRF tokeni BO'LISHI HAM
+# MUMKIN EMAS -- ularning o'z autentifikatsiyasi bor (URL'dagi maxfiy
+# token yoki Meta'ning `X-Hub-Signature-256` imzosi).
+csrf = CSRFProtect(app)
+
+
+@app.errorhandler(CSRFError)
+def _handle_csrf_error(e):
+    flash("Sahifa muddati eskirdi -- iltimos, formani qayta to'ldirib yuboring.", "error")
+    referrer = request.referrer
+    if referrer and referrer.startswith(request.host_url):
+        return redirect(referrer)
+    return redirect(url_for("dashboard"))
+
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -1288,6 +1320,7 @@ def api_assistant():
 
 
 @app.route("/api/webhook", methods=["POST"])
+@csrf.exempt  # Telegram server-serverga chaqiradi -- brauzer sessiyasi/CSRF tokeni yo'q
 def webhook():
     update = request.get_json(silent=True) or {}
     message = update.get("message") or update.get("edited_message")
@@ -1350,6 +1383,7 @@ def instagram_webhook_verify():
 
 
 @app.route("/webhooks/instagram", methods=["POST"])
+@csrf.exempt  # Meta server-serverga chaqiradi (imzo bilan tekshiriladi) -- CSRF tokeni yo'q
 def instagram_webhook_receive():
     """Meta'dan REAL-TIME kelgan Instagram DM hodisalari. AVVAL
     `X-Hub-Signature-256` imzosini (`meta_api.verify_webhook_signature`)
@@ -1713,6 +1747,7 @@ def marketplace():
 
 
 @app.route("/api/webhook/leads/<token>", methods=["POST"])
+@csrf.exempt  # tashqi CRM/Zapier o'z (URL'dagi) tokeni bilan chaqiradi -- CSRF tokeni yo'q
 def webhook_leads_intake(token):
     """2026-09, "Marketplace" KIRUVCHI tomoni -- HAR BIR kompaniyaning
     o'z shaxsiy (taxmin qilib bo'lmaydigan) `token`i orqali autentifikatsiya

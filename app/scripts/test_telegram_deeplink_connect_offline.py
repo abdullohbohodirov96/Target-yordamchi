@@ -43,6 +43,7 @@ def _fresh_modules(db_path):
     db_module.init_db()
     import app as app_module
     app_module.app.config["TESTING"] = True
+    app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
     app_module._BOT_IDENTITY_CACHE.clear()
     app_module._BOT_IDENTITY_CACHE["id"] = 999
     app_module._BOT_IDENTITY_CACHE["username"] = "targetolog_bot"

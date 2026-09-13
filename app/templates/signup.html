@@ -23,6 +23,7 @@
     {% endwith %}
 
     <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label style="font-size:12.5px; font-weight:600; color:var(--text-dim); display:block; margin-bottom:8px">{{ t('signup.choose_plan') }}</label>
       <div class="plan-picker">
         {% for plan in plans %}

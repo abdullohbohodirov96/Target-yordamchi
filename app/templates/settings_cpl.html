@@ -19,6 +19,7 @@
   <div class="text-faint" style="font-size:13px; color:var(--warn, #b45309)">⚠️ Hali Telegram guruhingiz sozlanmagan -- audit natijalari qayerga yuborilishini <a href="{{ url_for('settings_telegram') }}">shu yerdan</a> belgilang.</div>
   {% endif %}
   <form method="post" style="margin-top:10px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="toggle_auto_watch">
     <input type="hidden" name="auto_watch_enabled" value="{{ '0' if auto_watch_enabled else '1' }}">
     <button type="submit" class="btn{{ '' if auto_watch_enabled else ' toggle-all-btn-outline' }}">
@@ -29,6 +30,7 @@
 
 <div class="card">
   <form method="post" style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_cpl_rules">
     <div class="field" style="margin:0; min-width:200px">
       <label>Maqsad/ideal CPL ($)</label>

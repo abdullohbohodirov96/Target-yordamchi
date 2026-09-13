@@ -36,6 +36,7 @@ def _fresh_modules(db_path):
     db_module.init_db()
     import app as app_module
     app_module.app.config["TESTING"] = True
+    app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
     return db_module, app_module
 
 

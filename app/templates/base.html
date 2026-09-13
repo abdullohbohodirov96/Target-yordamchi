@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{ csrf_meta_tag() }}
   <!-- 2026-09: pastdagi skript ATAYLAB shu yerda -- "progressive
        enhancement": [data-reveal] scroll-animatsiyasi (landing.css) FAQAT
        `.js` klassi mavjud bo'lganda ishlaydi. JS o'chirilgan brauzerda YOKI
@@ -290,6 +291,7 @@
   <div class="impersonation-banner">
     <span>Siz hozir <b>&laquo;{{ impersonation_company_name }}&raquo;</b> nomidan ko'ryapsiz.</span>
     <form method="post" action="{{ url_for('impersonate_exit') }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="impersonation-banner-exit">Chiqish</button>
     </form>
   </div>
@@ -649,7 +651,10 @@
 
       fetch("{{ url_for('api_assistant') }}", {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
+        },
         body: JSON.stringify({ message: text }),
       })
         .then(function (r) { return r.json(); })

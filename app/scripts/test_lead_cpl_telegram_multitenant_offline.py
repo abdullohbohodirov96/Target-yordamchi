@@ -254,6 +254,7 @@ def test_groupid_command_echoes_group_chat_id():
         sys.modules.pop("app", None)
         import app as app_module
         app_module.app.config["TESTING"] = True
+        app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
         db_module.init_db()
 
         sent = []
@@ -275,6 +276,7 @@ def test_connect_accounts_saves_telegram_group_id_and_test_endpoint_reports_resu
         sys.modules.pop("app", None)
         import app as app_module
         app_module.app.config["TESTING"] = True
+        app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
         db_module.init_db()
 
         client = app_module.app.test_client()

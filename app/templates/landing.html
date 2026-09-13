@@ -332,6 +332,7 @@
       {% endwith %}
 
       <form method="post" action="{{ url_for('landing_contact_submit') }}" class="lp-contact-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('contact.name') }}</label>
           <input type="text" name="name" required maxlength="200">

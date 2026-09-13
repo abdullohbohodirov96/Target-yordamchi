@@ -7,6 +7,7 @@
 
 <div class="card" style="max-width:420px">
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <label>Username</label>
       <input type="text" name="username" value="{{ m.username }}" required>

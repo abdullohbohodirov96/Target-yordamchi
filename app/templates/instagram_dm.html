@@ -143,6 +143,7 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('instagram_dm_reply') }}" class="dm-composer">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="conversation_id" value="{{ selected.id }}">
       <textarea name="text" id="dmReplyText" placeholder="Xabar yozing..." rows="2" required></textarea>
       <button type="submit" class="btn">Yuborish</button>
@@ -179,6 +180,7 @@
             <div class="text-dim" style="font-size:13px; margin-top:2px">{{ t.text }}</div>
           </div>
           <form method="post" action="{{ url_for('instagram_dm_templates') }}" style="flex-shrink:0" onsubmit="return confirm('&#39;{{ t.title }}&#39; shabloni o\'chirilsinmi?')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="template_id" value="{{ t.id }}">
             <input type="hidden" name="c" value="{{ selected_id or '' }}">
@@ -190,6 +192,7 @@
       {% endif %}
 
       <form method="post" action="{{ url_for('instagram_dm_templates') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
         <input type="hidden" name="c" value="{{ selected_id or '' }}">
         <div class="field"><label>Shablon nomi</label><input type="text" name="title" placeholder="Masalan: Narx so'ralganda" required maxlength="64"></div>

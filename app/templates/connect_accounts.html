@@ -46,10 +46,12 @@
     {% endif %}
     {% if capi_configured %}
     <form method="post" action="{{ url_for('connect_meta_test') }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Test connection</button>
     </form>
     {% endif %}
     <form method="post" action="{{ url_for('connect_meta_disconnect') }}" style="display:inline" onsubmit="return confirm('Meta ulanishini uzishga ishonchingiz komilmi? Bu bilan barcha saqlangan Meta ma\'lumotlari (token, Pixel, Business) tozalanadi.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline" style="color:var(--bad, #DC2626)">Disconnect</button>
     </form>
   </div>
@@ -80,6 +82,7 @@
   <p class="page-subtitle" style="margin-top:-6px">Akkauntlaringiz ulangach, Target sahifasida reklama xarajati/lead natijalari, Instagram xabarlar va SMM hisobot avtomatik ko'rina boshlaydi. Hoziroq ulamasangiz ham bo'ladi — keyinroq shu sahifaga qaytib ulashingiz mumkin.</p>
 
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <label>Instagram Business ID</label>
       <input type="text" name="ig_business_id" value="{{ company.ig_business_id or '' }}" placeholder="masalan: 17841400000000000">
@@ -123,11 +126,13 @@
   {% if telegram_bot_username %}
   <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
     <form method="post" action="{{ url_for('connect_telegram_personal_link') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
         📱 Telegramda shaxsan ulash (bir tugma)
       </button>
     </form>
     <form method="post" action="{{ url_for('connect_telegram_group_link') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
         👥 Guruhga qo'shish (bir tugma)
       </button>
@@ -140,6 +145,7 @@
 
   {% if company.telegram_group_id %}
   <form method="post" action="{{ url_for('connect_telegram_test') }}" style="margin-top:10px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Telegram guruhni tekshirish</button>
   </form>
   {% endif %}
@@ -157,6 +163,7 @@
       <p style="margin-bottom:12px"><span class="badge badge-color-good">ulangan</span> &middot; Dataset ID: {{ company.meta_capi_dataset_id }} &middot; CAPI Token: •••••••••••••• (saqlangan)</p>
       {% endif %}
       <form method="post" action="{{ url_for('connect_meta_manual') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>Dataset ID (Pixel ID)</label>
           <input type="text" name="dataset_id" value="{{ company.meta_capi_dataset_id or '' }}" placeholder="masalan: 123456789012345">

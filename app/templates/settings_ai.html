@@ -22,6 +22,7 @@
     Ichki AI-yordamchi vidjetini bitta tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
   </p>
   <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="toggle_ai_features">
     <input type="hidden" name="ai_features_disabled" value="{{ '0' if ai_features_disabled else '1' }}">
     <button type="submit" class="btn">{{ "AI funksiyalarini yoqish" if ai_features_disabled else "AI funksiyalarini o'chirish" }}</button>

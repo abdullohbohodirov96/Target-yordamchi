@@ -28,6 +28,7 @@
     <div class="modal-body">
       <p class="page-subtitle" style="margin-top:-6px">Mijozlar endi <a href="{{ url_for('signup') }}" class="text-blue" target="_blank">/signup</a> orqali o'zlari ham ro'yxatdan o'ta oladi -- bu forma faqat SIZ qo'lda (masalan telefon/uchrashuvda kelishilgan mijoz uchun) kompaniya ochib berish uchun. Yangi kompaniya 7 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi.</p>
       <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" required autofocus></div>
         <div class="field"><label>Email (ixtiyoriy)</label><input type="email" name="email" placeholder="mijoz@misol.uz"></div>
         <div class="field">
@@ -78,11 +79,13 @@
              route'ida ham serverda tekshiriladi). #}
           {% if not impersonation_active %}
           <form method="post" action="{{ url_for('company_impersonate', company_id=c.id) }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">Ko'rish</button>
           </form>
           {% endif %}
           <form method="post" action="{{ url_for('company_toggle_active', company_id=c.id) }}" style="display:inline"
                 {% if c.is_active %}onsubmit="return confirm('Rostdan ham &#39;{{ c.name }}&#39; to\'xtatilsinmi? Bu kompaniyaning hamma foydalanuvchisi tizimga kira olmay qoladi.')"{% endif %}>
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">
               {{ "To'xtatish" if c.is_active else "Yoqish" }}
             </button>
@@ -120,6 +123,7 @@
         Faqat kirishni to'xtatmoqchi bo'lsangiz, buning o'rniga "To'xtatish"ni ishlating.
       </p>
       <form method="post" id="companyDeleteForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>Tasdiqlash uchun kompaniya nomini aynan shunday yozing: <strong id="companyDeleteNameHint"></strong></label>
           <input type="text" id="companyDeleteInput" name="confirm_name" autocomplete="off" autofocus>

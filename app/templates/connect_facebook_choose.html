@@ -21,6 +21,7 @@
     {% endwith %}
 
     <form method="post" id="meta-choose-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="wizard-step">
         <div class="wizard-step-num">1</div>
         <div class="wizard-step-body">

@@ -25,6 +25,7 @@
     {% endwith %}
 
     <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field"><label>{{ t('login.username') }}</label><input type="text" name="username" value="{{ request.form.get('username', '') }}" autofocus required></div>
       <div class="field"><label>{{ t('login.password') }}</label><input type="password" name="password" required></div>
       <button type="submit" class="block">{{ t('login.submit') }}</button>

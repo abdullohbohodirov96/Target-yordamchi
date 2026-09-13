@@ -62,6 +62,7 @@ def _fresh_modules(db_path, *, payme_merchant_id="", payme_test_key="", usd_to_u
     import payme_subscribe as payme_module
     import app as app_module
     app_module.app.config["TESTING"] = True
+    app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
     import scheduler as scheduler_module
     return db_module, payme_module, app_module, scheduler_module
 

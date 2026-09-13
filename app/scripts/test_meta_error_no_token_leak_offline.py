@@ -48,6 +48,7 @@ import db as db_module  # noqa: E402
 import meta_api  # noqa: E402
 
 app_module.app.config["TESTING"] = True
+app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy -- testlarda so'rovlar session-tashqarisida yasaladi
 db_module.init_db()
 
 _SECRET_TOKEN = "EAABsbCS1SUPER-SECRET-REAL-LOOKING-TOKEN-abc123"

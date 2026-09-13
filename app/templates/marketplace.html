@@ -154,6 +154,7 @@
     {% endif %}
 
     <form method="post" style="display:flex; flex-direction:column; gap:10px; max-width:620px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="set_outgoing">
       <input type="hidden" name="crm_name" id="crm-name-input" value="{{ view.webhook_out_crm_name or '' }}">
       <div class="field" style="margin:0">
@@ -192,6 +193,7 @@
     </p>
 
     <form method="post" onsubmit="return confirm('Manzilni yangilashga ishonchingiz komilmi? Eski manzil ENDI ishlamay qoladi.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="regenerate_inbound">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Manzilni yangilash</button>
     </form>

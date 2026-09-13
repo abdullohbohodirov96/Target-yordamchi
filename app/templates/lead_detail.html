@@ -8,6 +8,7 @@
     <p class="page-subtitle">{{ lead.created_at.strftime('%d.%m.%Y %H:%M') if lead.created_at else '' }} &middot; manba: {{ {'meta':'Meta (avtomatik)','manual':'Qo\'lda qo\'shilgan','import':'Excel import'}.get(lead.source, lead.source) }}</p>
   </div>
   <form method="post" action="{{ url_for('lead_delete', lead_id=lead.id) }}" onsubmit="return confirm('Bu leadni o\'chirishni tasdiqlaysizmi?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" style="background:var(--bad)">O'chirish</button>
   </form>
 </div>
@@ -81,12 +82,14 @@
         <div style="display:flex; gap:6px; flex-shrink:0">
           {% if not s.is_returned %}
           <form method="post" onsubmit="return confirm('Bu sotuvni QAYTARILGAN deb belgilaysizmi? KPI/bonus hisobidan chiqarib tashlanadi, lekin yozuv tarixda saqlanadi.');" style="margin:0">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="mark_returned">
             <input type="hidden" name="sale_id" value="{{ s.id }}">
             <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px; font-size:12px">Qaytarilgan deb belgilash</button>
           </form>
           {% endif %}
           <form method="post" onsubmit="return confirm('Bu sotuvni BEKOR QILASIZMI? Yozuv bazadan BUTUNLAY o\'chib ketadi, tarixda ham qolmaydi -- bu qaytarib bo\'lmaydigan amal (faqat xato kiritilgan sotuvlar uchun ishlating).');" style="margin:0">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="delete_sale">
             <input type="hidden" name="sale_id" value="{{ s.id }}">
             <button type="submit" style="background:none; color:var(--bad); border:1px solid var(--bad); padding:4px 10px; font-size:12px">Bekor qilish</button>
@@ -99,6 +102,7 @@
       {% endfor %}
 
       <form method="post" style="display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border-light); padding-top:14px; flex-wrap:wrap">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="form_action" value="add_sale">
         <div class="field" style="flex:1; min-width:180px; margin-bottom:0">
           <label>Yangi sotuv summasi (so'm)</label>
@@ -128,6 +132,7 @@
   <div class="card">
     <h2>Ma'lumot va holatni tahrirlash</h2>
     <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if custom_fields %}
       <div style="margin:0 0 18px; padding-bottom:16px; border-bottom:1px solid var(--border-light)">
         <h2 style="margin-bottom:2px">Kvalifikatsiya</h2>

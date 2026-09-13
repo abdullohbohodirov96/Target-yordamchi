@@ -26,6 +26,7 @@
         </td>
         <td>
           <form method="post" style="display:flex; gap:6px; align-items:center; margin:0">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="set_telegram">
             <input type="hidden" name="manager_id" value="{{ m.id }}">
             <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789" style="width:150px; padding:6px 8px">

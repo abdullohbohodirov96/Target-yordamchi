@@ -28,6 +28,7 @@
         </td>
         <td>
           <form method="post" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="kind" value="task">
             <input type="hidden" name="item_id" value="{{ t.id }}">
@@ -36,6 +37,7 @@
         </td>
         <td>
           <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="kind" value="task">
             <input type="hidden" name="item_id" value="{{ t.id }}">
@@ -65,6 +67,7 @@
         <td class="text-dim">{{ r.last_sent_date or '—' }}</td>
         <td>
           <form method="post" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="kind" value="report">
             <input type="hidden" name="item_id" value="{{ r.id }}">
@@ -73,6 +76,7 @@
         </td>
         <td>
           <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="kind" value="report">
             <input type="hidden" name="item_id" value="{{ r.id }}">
