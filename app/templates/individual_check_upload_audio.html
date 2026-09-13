@@ -2,12 +2,11 @@
 {% block title %}Audio yuklash — Replix{% endblock %}
 {% block content %}
 
-<a href="{{ url_for('individual_check', tab='ai') }}" class="back-link">&larr; AI analiz ro'yxatiga qaytish</a>
+<a href="{{ url_for('individual_check') }}" class="back-link">&larr; Audio ro'yxatiga qaytish</a>
 <h1>Bitta audio qo'shish</h1>
 <p class="page-subtitle">
   Moi Zvonki sinxronizatsiyasidan TASHQARI, bitta audio faylni qo'lda yuklab, yangi qo'ng'iroq
-  yozuvi sifatida DARHOL (fon jarayonida) tahlil qilish -- masalan muammoli/shubhali haqiqiy
-  qo'ng'iroq namunasini sinash uchun.
+  yozuvi sifatida ro'yxatga qo'shish.
 </p>
 
 <div class="card" style="max-width:480px">
@@ -37,7 +36,7 @@
         <option value="outgoing">Chiquvchi</option>
       </select>
     </div>
-    <button type="submit" class="block">Yuklash va darhol tahlil qilish</button>
+    <button type="submit" class="block">Yuklash</button>
   </form>
 </div>
 

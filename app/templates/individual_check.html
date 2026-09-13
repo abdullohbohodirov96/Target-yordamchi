@@ -10,26 +10,6 @@
   {% include "_date_picker.html" %}
 </div>
 
-<div class="tabs" style="margin-bottom:18px">
-  <a href="{{ url_for('individual_check', days=days, tab='calls') }}" class="{{ 'active' if tab=='calls' }}">Audio</a>
-  {% if ai_features_disabled %}
-  <a href="{{ url_for('settings_ai') }}" class="text-dim" title="AI funksiyalari Sozlamalardan o'chirilgan -- yoqish uchun bosing" style="opacity:0.6">AI analiz (o'chirilgan)</a>
-  {% else %}
-  <a href="{{ url_for('individual_check', days=days, tab='ai') }}" class="{{ 'active' if tab=='ai' }}">AI analiz{% if ai.pending_count %} <span class="badge badge-color-warn" style="margin-left:4px">{{ ai.pending_count }}</span>{% endif %}</a>
-  {% endif %}
-</div>
-
-{% if ai_features_disabled and tab == 'calls' %}
-<div class="card" style="margin-bottom:20px; border-color:#FDE68A; background:#FFFBEB">
-  <p class="page-subtitle" style="margin:0">
-    AI qo'ng'iroq tahlili hozir <strong>o'chirilgan</strong> (xarajatni nazorat qilish uchun admin tomonidan).
-    Qayta yoqish uchun <a href="{{ url_for('settings_ai') }}">Sozlamalar -- AI funksiyalari</a> sahifasiga o'ting.
-  </p>
-</div>
-{% endif %}
-
-{% if tab == 'calls' %}
-
 {% if not configured %}
 <div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
   <h2 class="text-bad">Moi Zvonki hali ulanmagan</h2>
@@ -76,9 +56,14 @@
 </div>
 
 <div class="panel">
-  <h2 style="padding:16px 16px 0">Qo'ng'iroq sessiyalari</h2>
-  <p class="page-subtitle" style="padding:0 16px; margin-bottom:8px">Sessiya umumiy davomiyligi <strong>{{ min_real_talk_seconds }} soniya</strong>dan kam bo'lsa — "shubhali" deb belgilanadi.</p>
-  <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 16px 0">
+    <div>
+      <h2 style="margin:0">Qo'ng'iroq sessiyalari</h2>
+      <p class="page-subtitle" style="margin:4px 0 0">Sessiya umumiy davomiyligi <strong>{{ min_real_talk_seconds }} soniya</strong>dan kam bo'lsa — "shubhali" deb belgilanadi.</p>
+    </div>
+    <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
+  </div>
+  <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px">
     <input type="hidden" name="days" value="{{ days }}">
     <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">Chegara (soniyada):</label>
     <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">
@@ -120,191 +105,4 @@
   </div>
 </div>
 
-{% else %}
-
-{% if not ai.openai_configured %}
-<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
-  <h2 class="text-bad">AI tahlil hali ulanmagan</h2>
-  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu bo'lim ishlashi uchun Render'dagi environment variable'larga <code>OPENAI_API_KEY</code> qo'shilishi kerak
-    (audio tahlili faqat OpenAI'ning audio modeli orqali ishlaydi).
-  </p>
-</div>
-{% elif ai.credit_exhausted_count %}
-<!-- 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
-     ishlamayapti" -- ILDIZ SABAB avval ham (V6) OpenAI balansi tugashi
-     bo'lgan, lekin bu oddiy "sifat past" xatosi bilan aralashib ketib,
-     Uzbek transkripsiya buzilgandek ko'ringan edi. Endi bu holat aniq
-     ajratilib, o'z-o'zidan tushunarli xabar bilan ko'rsatiladi. -->
-<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
-  <h2 class="text-bad">OpenAI balansi/krediti tugagan</h2>
-  <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu Uzbek transkripsiyaning o'zi buzilgani EMAS -- OpenAI hisobida kredit qolmagani uchun so'nggi
-    {{ ai.credit_exhausted_count }} ta qo'ng'iroqda audio tahlili to'xtab qoldi. Administrator OpenAI
-    hisobini to'ldirsin -- kredit tiklangach, qolgan qo'ng'iroqlar navbat bo'yicha avtomatik qayta tahlil qilinadi
-    (qo'lda hech narsa qilish shart emas).
-  </p>
-</div>
-{% endif %}
-
-<div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:20px">
-  <div class="kpi-card"><div class="kpi-label">Tahlil qilingan</div><div class="kpi-value good">{{ ai.analyzed_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Navbatda (hali tahlil qilinmagan)</div><div class="kpi-value {{ 'warn' if ai.pending_count }}">{{ ai.pending_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Xatolik bilan tugagan</div><div class="kpi-value {{ 'bad' if ai.error_count }}">{{ ai.error_count }}</div></div>
-</div>
-
-<div class="panel">
-  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 16px 0">
-    <div>
-      <h2 style="margin:0">AI tahlil qilingan qo'ng'iroqlar</h2>
-      <p class="page-subtitle" style="margin:4px 0 0">Har bir "haqiqiy" (shubhali bo'lmagan) qo'ng'iroq yozuvi avtomatik navbat bo'yicha, soatiga bir necha marta (soat :10, :30, :50 da) tahlil qilinadi -- transkripsiya, qisqa xulosa va 1-10 baho bilan.</p>
-    </div>
-    {% if ai.openai_configured %}
-    <div style="display:flex; gap:8px; flex-wrap:wrap">
-      <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
-      <form method="post" action="{{ url_for('individual_check_run_ai_analysis') }}" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.dataset.origText=b.innerHTML; b.innerHTML='<span class=\'btn-spinner\'></span> Boshlandi...'; return true;">
-        <input type="hidden" name="days" value="{{ days }}">
-        <button type="submit" class="btn">Hoziroq tahlil qilish{% if ai.pending_count %} ({{ ai.pending_count }} navbatda){% endif %}</button>
-      </form>
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="table-scroll" style="margin-top:14px">
-  <table>
-    <thead><tr><th>Sana</th><th>Mijoz</th><th>Menejer</th><th>Baho</th><th>Xulosa</th><th></th></tr></thead>
-    <tbody>
-      {% for c in ai.rows %}
-      <tr>
-        <td class="text-dim">
-          {{ c.started_at.strftime('%Y-%m-%d %H:%M') if c.started_at else '—' }}
-          {% if c.is_new %}<span class="badge badge-color-good" style="margin-left:4px" title="Oxirgi 1 soat ichida tahlil qilingan">Yangi</span>{% endif %}
-          {% if c.is_manual_upload %}<span class="text-faint" style="font-size:10px; display:block; margin-top:2px">qo'lda yuklangan</span>{% endif %}
-        </td>
-        <td>
-          {% if c.lead_id %}<a href="{{ url_for('lead_detail', lead_id=c.lead_id) }}" class="text-blue">{{ c.lead_name or c.phone_number or '—' }}</a>
-          {% else %}{{ c.lead_name or c.phone_number or '—' }}{% endif %}
-        </td>
-        <td class="text-dim">{{ c.manager_name }}</td>
-        <td>
-          {% if c.transcription_failed %}
-          <span class="badge badge-color-warn" title="Transkripsiya sifati yetarli emas">sifat past</span>
-          {% elif c.stage == 'credit_exhausted' %}
-          <span class="badge badge-color-bad" title="OpenAI balansi tugagan">kredit tugagan</span>
-          {% elif c.error %}
-          <span class="badge badge-color-bad">xatolik</span>
-          {% elif c.score %}
-          <span class="badge badge-color-{{ 'bad' if c.color=='red' else ('warn' if c.color=='yellow' else 'good') }}">{{ c.score }}/10</span>
-          {% else %}
-          <span class="text-faint">—</span>
-          {% endif %}
-          {% if not c.transcription_failed and c.analysis_confidence is not none and c.analysis_confidence < 0.5 %}
-          <div class="text-faint" style="font-size:10.5px; margin-top:2px">ishonch past ({{ (c.analysis_confidence * 100) | round | int }}%)</div>
-          {% endif %}
-        </td>
-        <td style="max-width:360px; font-size:13px">
-          {% if c.transcription_failed %}
-          <span class="text-bad" style="font-size:12px">Transkripsiya sifati yetarli emas. Qayta transkripsiya qilish kerak.</span>
-          {% elif c.error %}
-          <span class="text-bad" style="font-size:12px">{{ c.error }}</span>
-          {% else %}
-          {{ c.overview or '—' }}
-          {% endif %}
-        </td>
-        <td>
-          {% if c.transcription or c.error %}
-          <details>
-            <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">Batafsil</summary>
-            <div style="margin-top:10px; max-width:560px">
-              {% if c.recording_url or c.is_manual_upload %}<audio controls preload="none" style="height:30px; width:100%; margin-bottom:10px" src="{{ url_for('individual_check_audio_proxy', call_id=c.id) }}"></audio>{% endif %}
-
-              {% if c.transcription_failed %}
-              <div class="card" style="border-color:#FCA5A5; padding:10px; margin-bottom:10px">
-                <p class="text-bad" style="margin:0; font-size:13px"><strong>Transkripsiya sifati yetarli emas.</strong> Qayta transkripsiya qilish kerak.</p>
-                {% if c.transcription_quality_reasons %}
-                <ul style="margin:6px 0 0; padding-left:18px; font-size:12px" class="text-dim">
-                  {% for r in c.transcription_quality_reasons %}<li>{{ r }}</li>{% endfor %}
-                </ul>
-                {% endif %}
-              </div>
-              {% endif %}
-
-              {% if c.transcription_confidence is not none and c.transcription_confidence < 0.7 %}
-              <p class="page-subtitle" style="margin:0 0 8px; font-size:11.5px">⚠ Transkripsiya ishonchi past ({{ (c.transcription_confidence * 100) | round | int }}%) -- natijalarni ehtiyot bilan baholang.</p>
-              {% endif %}
-              {% if c.analysis_confidence is not none and c.analysis_confidence < 0.5 %}
-              <p class="page-subtitle" style="margin:0 0 8px; font-size:11.5px">⚠ AI tahlil ishonchi past ({{ (c.analysis_confidence * 100) | round | int }}%) -- transkript noaniq/uzuq-yuluq bo'lishi mumkin.</p>
-              {% endif %}
-
-              {% if c.customer_request and (c.customer_request.product or c.customer_request.brand or c.customer_request.quantity or c.customer_request.measurement or c.customer_request.parameters) %}
-              <div style="margin-bottom:10px">
-                <p class="page-subtitle" style="margin:0 0 4px"><strong>Mijoz so'rovi:</strong></p>
-                <ul style="margin:0; padding-left:18px; font-size:13px">
-                  {% if c.customer_request.product %}<li>Mahsulot: {{ c.customer_request.product }}</li>{% endif %}
-                  {% if c.customer_request.brand %}<li>Brend: {{ c.customer_request.brand }}</li>{% endif %}
-                  {% if c.customer_request.quantity %}<li>Miqdor: {{ c.customer_request.quantity }}</li>{% endif %}
-                  {% if c.customer_request.measurement %}<li>O'lcham: {{ c.customer_request.measurement }}</li>{% endif %}
-                  {% if c.customer_request.parameters %}<li>Parametrlar: {{ c.customer_request.parameters }}</li>{% endif %}
-                </ul>
-              </div>
-              {% endif %}
-
-              {% if c.result %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Natija:</strong> {{ c.result }}</p>{% endif %}
-              {% if c.callback_reason %}<p class="page-subtitle" style="margin:0 0 8px"><strong>Qayta bog'lanish sababi:</strong> {{ c.callback_reason }}</p>{% endif %}
-
-              {% if c.operator_mistakes %}
-              <div style="margin-bottom:10px">
-                <p class="page-subtitle" style="margin:0 0 4px"><strong>Menejer xatolari:</strong></p>
-                <ul style="margin:0; padding-left:18px; font-size:13px" class="text-bad">
-                  {% for m in c.operator_mistakes %}<li>{{ m.text }}{% if m.evidenceTurnIds %} <span class="text-faint" style="font-size:10.5px">(dalil: #{{ m.evidenceTurnIds|join(', #') }})</span>{% endif %}</li>{% endfor %}
-                </ul>
-              </div>
-              {% endif %}
-
-              {% if c.positive_points %}
-              <div style="margin-bottom:10px">
-                <p class="page-subtitle" style="margin:0 0 4px"><strong>Ijobiy tomonlar:</strong></p>
-                <ul style="margin:0; padding-left:18px; font-size:13px" class="text-good">
-                  {% for p in c.positive_points %}<li>{{ p.text }}{% if p.evidenceTurnIds %} <span class="text-faint" style="font-size:10.5px">(dalil: #{{ p.evidenceTurnIds|join(', #') }})</span>{% endif %}</li>{% endfor %}
-                </ul>
-              </div>
-              {% endif %}
-
-              {% if c.recommended_response %}
-              <p class="page-subtitle" style="margin:0 0 10px"><strong>Tavsiya etilgan harakat:</strong> {{ c.recommended_response }}</p>
-              {% endif %}
-
-              {% if c.transcription %}
-              <details>
-                <summary class="text-blue" style="cursor:pointer; font-size:12.5px; list-style:none">To'liq transkripsiya</summary>
-                <div class="chat-transcript" style="margin-top:8px">
-                  {% for t in c.turns %}
-                  <div class="chat-bubble {{ t.speaker }}">
-                    <div class="chat-bubble-label">
-                      {% if t.speaker == 'manager' %}{{ c.manager_name or 'Manager' }}
-                      {% elif t.speaker == 'mijoz' %}{{ c.lead_name or c.phone_number or 'Mijoz' }}
-                      {% else %}{{ t.raw_label or "Noma'lum" }}{% endif %}
-                    </div>
-                    <div class="chat-bubble-text">{{ t.text }}</div>
-                  </div>
-                  {% endfor %}
-                </div>
-              </details>
-              {% endif %}
-
-              <p style="margin:10px 0 0"><a href="{{ url_for('individual_check_ai_debug', call_id=c.id) }}" class="text-faint" style="font-size:11.5px">Debug ko'rinish (xom transkripsiya, model, audio metadata) →</a></p>
-            </div>
-          </details>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="6">Hali AI tahlil qilingan qo'ng'iroq yo'q.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
-{% endif %}
 {% endblock %}

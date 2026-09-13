@@ -45,10 +45,9 @@ Jadval (standart, ENV orqali sozlanadi):
   - 10:00 Toshkent -- Raqobatchilar tahlili: `Competitor` jadvaliga qo'shilgan
     har bir raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi
     va qisqa amaliy hisobot tayyorlanadi (2026-08, foydalanuvchi so'rovi).
-  - Har soatda (:10, :30, :50) -- qo'ng'iroq yozuvlarining AI tahlili
-    (transkripsiya + 1-10 baho) -- "Individual tekshirish" sahifasidagi
-    "AI analiz" bo'limi uchun (2026-08, foydalanuvchi bergan audio-tahlil
-    prompti asosida, `call_analysis.py`).
+  - Har 20 daqiqada -- qo'ng'iroq yozuvlarini (Moi Zvonki) sinxronlash,
+    "Audio" sahifasi uchun (2026-09: AI tahlil BUTUNLAY olib tashlangan --
+    faqat yozuvlarning o'zi/ro'yxati sinxronlanadi, qarang `job_call_sync`).
 
 Telegram guruh xabarlari IKKI turga bo'lingan (2026-08, foydalanuvchi
 so'rovi -- "bittasiga to'liq harakatini, bittasiga faqat kunlik hisobotni"):
@@ -72,7 +71,6 @@ import orchestrator
 import budget_tracker
 import lead_sync
 import call_sync
-import call_analysis
 import smm_sync
 import ig_dm_sync
 import ig_dm_analysis
@@ -587,20 +585,13 @@ def job_call_sync() -> dict:
     o'zgartirilsa/to'ldirilsa ham, bazadagi ESKI yozuvlar avtomatik
     to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas).
 
-    2026-09, foydalanuvchi ANIQ so'rovi ("audio tahlil keremas, manga
-    faqat moi zvonkidan ulangan audiolar chiqib kelib tursin"): bu job
-    ENDI faqat qo'ng'iroq yozuvlarini (audio bilan) tortib olib, Individual
-    tekshirish sahifasida ko'rinadigan qiladi -- HECH QANDAY AI
-    tahlil/transkripsiya avtomatik ishga TUSHMAYDI (bu xarajat qiladi,
-    foydalanuvchi buni ANIQ istamadi). Ilgari bu yerda "yangi yozuv kelsa
-    darhol AI tahlil qilinsin" degan qo'shimcha qadam bor edi -- o'sha olib
-    tashlandi. `job_call_analysis` cron'i ham ataylab o'chiq qoldirilgan
-    (pastga, `start_scheduler()`ga qarang). Agar kelajakda foydalanuvchi AI
-    tahlilni QAYTA yoqishni so'rasa -- Sozlamalar sahifasidagi "AI
-    funksiyalarini o'chirish" tugmasi (`Company.ai_features_disabled`)
-    yordamida HAR BIR kompaniya o'zi alohida yoqib/o'chira oladi, YOKI shu
-    yerga qaytadan immediate-analysis qadamini (yoki pastdagi
-    `job_call_analysis` cron'ini) qo'shish kerak."""
+    2026-09, foydalanuvchi ANIQ so'rovi ("audio tahlil qilishni o'chirib
+    tashla to'liq va audiolar kelishi lekin bo'laversin"): bu job faqat
+    qo'ng'iroq yozuvlarini (audio bilan) tortib olib, Audio sahifasida
+    ko'rinadigan qiladi -- AI tahlil/transkripsiya BUTUNLAY OLIB TASHLANDI
+    (avval ham xarajat sababli o'chiq qoldirilgan edi, endi kod darajasida
+    ham yo'q -- `call_analysis.py`dagi tegishli qism va shu yerdagi
+    `job_call_analysis()` o'chirildi)."""
     try:
         result = call_sync.sync_once()
         if not result.get("configured"):
@@ -613,24 +604,6 @@ def job_call_sync() -> dict:
     except Exception as e:
         logger.exception("Qo'ng'iroq sync xatosi")
         return {"error": str(e)}
-
-
-def job_call_analysis() -> dict:
-    """Qo'ng'iroq yozuvlarini AI yordamida tahlil qiladi (2026-08,
-    foydalanuvchi bergan audio-tahlil prompti asosida, `call_analysis.py`) --
-    AVTOMATIK: har ishga tushishda hali tahlil qilinmagan, "haqiqiy"
-    (shubhali emas) qo'ng'iroqlardan bir nechtasini (limit bilan, API
-    xarajatini nazoratda ushlab turish uchun) tahlil qiladi. `job_call_sync`
-    dan keyin ishga tushishi uchun soatning boshqa daqiqasida rejalashtirilgan
-    (avval yangi qo'ng'iroqlar sinxronlansin, keyin ular tahlil qilinsin)."""
-    session = db.get_session()
-    try:
-        return call_analysis.run_pending_analysis(session, limit=8)
-    except Exception as e:
-        logger.exception("Qo'ng'iroq AI tahlilida xatolik")
-        return {"error": str(e)}
-    finally:
-        session.close()
 
 
 def job_lead_cleanup() -> dict:
@@ -1150,17 +1123,12 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_deliver_webhooks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="crm-webhook-out")  # 2026-09, "Marketplace" -- AI xarajatisiz, tez-tez xavfsiz
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")
-    # 2026-09: avval foydalanuvchi so'rovi bilan ikkalasi HAM vaqtincha
-    # o'chirilgan edi ("qo'ng'iroqlarni tahlil qilishni hozircha olib
-    # tashi... buni to'liq yopvor hozircha"). Endi foydalanuvchi ANIQ
-    # aytdi: "audio tahlil keremas, manga faqat moi zvonkidan ulangan
-    # audiolar chiqib kelib tursin" -- ya'ni FAQAT qo'ng'iroq
-    # sinxronizatsiyasi (audiolarning o'zi) kerak, AI tahlil (OpenAI
-    # xarajati) EMAS. Shu sabab `call-sync` QAYTA YOQILDI, `call-analysis`
-    # esa ATAYLAB o'chiq qoldirildi (`job_call_sync` o'zi ham endi AI
-    # tahlilni avtomatik ishga tushirmaydi -- yuqoridagi izohga qarang).
+    # 2026-09, foydalanuvchi ANIQ so'rovi ("audio tahlil qilishni o'chirib
+    # tashla to'liq, audiolar kelishi lekin bo'laversin"): FAQAT qo'ng'iroq
+    # sinxronizatsiyasi (audiolarning o'zi, Moi Zvonki'dan) ishlaydi -- AI
+    # tahlil butunlay olib tashlandi (`job_call_analysis` va uning cron'i
+    # ham endi kodda yo'q).
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
-    # scheduler.add_job(job_call_analysis, CronTrigger(minute="10,30,50", timezone=TIMEZONE), id="call-analysis")  # ATAYLAB o'chiq -- AI tahlil kerak emas
     scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.add_job(job_ig_dm_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="ig-dm-sync")  # AI'siz, tez -- yangi xabar/javobsizlik tekshiruvi

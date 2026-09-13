@@ -25,8 +25,6 @@ from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required,
     current_user,
 )
-from sqlalchemy import or_
-
 import meta_api
 import meta_events
 import payme_subscribe
@@ -4728,219 +4726,33 @@ def company_managers(company_id):
 @login_required
 @module_required("individual_check")
 def individual_check():
+    """2026-09, foydalanuvchi ANIQ so'rovi bilan AI qo'ng'iroq-tahlili
+    ("AI analiz" tab, transkripsiya + rubrika bahosi) BUTUNLAY OLIB
+    TASHLANDI -- xom qo'ng'iroq/audio ro'yxati (Moi Zvonki sinxronizatsiyasi,
+    pleer, "shubhali qo'ng'iroq" chegarasi) TO'LIQ ISHLAYDI, tegilmagan.
+    Ilgari bu sahifada ikkita tab bor edi ("Audio" / "AI analiz") --
+    ikkinchisi yo'qolgani uchun endi tab tuzilishining o'zi kerak emas."""
     days = request.args.get("days", "30")
     try:
         days = max(1, min(90, int(days)))
     except (TypeError, ValueError):
         days = 30
-    tab = request.args.get("tab", "calls")
-    if tab not in ("calls", "ai"):
-        tab = "calls"
-
-    # 2026-09, foydalanuvchi so'rovi ("audio tahlilini ochirib turish mumkin
-    # bolsin"): admin Sozlamalar sahifasidan AI funksiyalarini o'chirgan
-    # bo'lsa, "AI analiz" tab'i endi "Individual tekshiruv" (xom qo'ng'iroq
-    # ro'yxati)ga qaytariladi -- og'ir DB so'rovlarini ham bekor qilib.
-    company = _current_company()
-    ai_features_disabled = bool(company and company.ai_features_disabled)
-    if ai_features_disabled and tab == "ai":
-        tab = "calls"
 
     since = dt.datetime.utcnow() - dt.timedelta(days=days)
 
     session = get_session()
     try:
         check = call_analytics.build_individual_check(session, since)
-        if ai_features_disabled:
-            ai = {
-                "disabled": True, "openai_configured": False, "pending_count": 0,
-                "analyzed_count": 0, "error_count": 0, "credit_exhausted_count": 0, "rows": [],
-            }
-        else:
-            ai = _build_ai_analysis_view(session, since)
     finally:
         session.close()
 
     return render_template(
         "individual_check.html",
-        days=days, tab=tab,
+        days=days,
         configured=call_sync.is_configured(),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
-        ai=ai,
-        ai_features_disabled=ai_features_disabled,
         **check,
     )
-
-
-def _build_ai_analysis_view(session, since) -> dict:
-    """"AI analiz" tab uchun (2026-08, foydalanuvchi so'rovi -- audio-tahlil
-    promptini avtomatik ishlatib, "Individual tekshirish"ning ICHIDA emas,
-    alohida tab sifatida ko'rsatish kerak): tahlil qilingan qo'ng'iroqlar
-    ro'yxati + hozircha navbatda turganlar soni ("hozir nima qilinayotgani"
-    ko'rinishi uchun)."""
-    from db import CallRecord, Lead, Manager
-
-    min_seconds = call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id)
-    analyzed = (
-        session.query(CallRecord)
-        .filter(CallRecord.ai_analyzed_at.isnot(None), CallRecord.started_at >= since)
-        .order_by(CallRecord.ai_analyzed_at.desc())
-        .limit(200)
-        .all()
-    )
-    pending_count = (
-        session.query(CallRecord)
-        .filter(
-            # 2026-08 V6.1: qo'lda yuklangan (Moi Zvonki'siz, `recording_url`
-            # yo'q) yozuvlar ham "navbatda" hisobiga kirishi kerak.
-            or_(CallRecord.recording_url.isnot(None), CallRecord.uploaded_audio_format.isnot(None)),
-            CallRecord.ai_analyzed_at.is_(None),
-            CallRecord.duration_seconds >= min_seconds,
-            CallRecord.started_at >= since,
-        )
-        .count()
-    )
-    lead_ids = {c.lead_id for c in analyzed if c.lead_id}
-    leads_by_id = {l.id: l for l in session.query(Lead).filter(Lead.id.in_(lead_ids)).all()} if lead_ids else {}
-    managers_by_id = {m.id: m for m in session.query(Manager).all()}
-
-    rows = []
-    error_count = 0
-    for c in analyzed:
-        lead = leads_by_id.get(c.lead_id) if c.lead_id else None
-        manager = managers_by_id.get(c.manager_id) if c.manager_id else None
-        if c.ai_error:
-            error_count += 1
-
-        def _load_json(raw):
-            try:
-                return json.loads(raw) if raw else None
-            except (TypeError, ValueError):
-                return None
-
-        # 2026-08 V5, foydalanuvchi ANIQ so'ragan: operatorMistakes/
-        # positivePoints endi `{"text","evidenceTurnIds"}` obyektlari --
-        # lekin ESKI (V4'da tahlil qilingan) yozuvlarda hali oddiy string
-        # bo'lishi mumkin, shuning uchun shablon HAR DOIM `.text` bilan
-        # ishlay olishi uchun bu yerda ODDIY STRINGLAR ham obyektga
-        # aylantiriladi (backward-compat).
-        def _normalize_evidence_list(raw):
-            items = _load_json(raw) or []
-            out = []
-            for item in items:
-                if isinstance(item, dict):
-                    out.append({"text": item.get("text", ""), "evidenceTurnIds": item.get("evidenceTurnIds") or []})
-                elif isinstance(item, str):
-                    out.append({"text": item, "evidenceTurnIds": []})
-            return out
-
-        rows.append({
-            "id": c.id,
-            "started_at": (c.started_at + dt.timedelta(hours=5)) if c.started_at else None,
-            # 2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("tahlil qilingan
-            # yangiligini bilish osonroq bo'lsin"): oxirgi 1 soat ichida
-            # tahlil qilingan yozuvlar ro'yxatda "Yangi" nishonchasi bilan
-            # ajratib ko'rsatiladi.
-            "is_new": bool(c.ai_analyzed_at and (dt.datetime.utcnow() - c.ai_analyzed_at) <= dt.timedelta(hours=1)),
-            # `uploaded_audio_format` (engil ustun) orqali tekshiramiz,
-            # OG'IR `uploaded_audio_data` (deferred) ustunini EMAS -- aks
-            # holda ro'yxatdagi HAR BIR qator uchun alohida (N+1) so'rov
-            # kerak bo'lardi.
-            "is_manual_upload": c.recording_url is None and bool(c.uploaded_audio_format),
-            "phone_number": c.phone_number,
-            "lead_name": lead.full_name if lead else None,
-            "lead_id": lead.id if lead else None,
-            "manager_name": (manager.full_name or manager.username) if manager else "Noma'lum",
-            "recording_url": c.recording_url,
-            "score": c.ai_score, "status": c.ai_status, "color": c.ai_color,
-            "overview": c.ai_overview, "result": c.ai_result,
-            "transcription": c.ai_transcription, "error": c.ai_error,
-            "stage": c.ai_stage,
-            # 2026-08 V5 -- sifat darvozasi ma'lumotlari: qo'ng'iroq
-            # `transcription_failed` bo'lsa, UI aynan NEGA tahlil
-            # qilinmaganini ko'rsatishi kerak (foydalanuvchi ANIQ so'ragan:
-            # yolg'on ishonchli xulosa o'rniga aniq holat).
-            "transcription_failed": c.ai_stage == "transcription_failed",
-            "transcription_quality": c.ai_transcription_quality,
-            "transcription_confidence": c.ai_transcription_confidence,
-            "transcription_quality_reasons": _load_json(c.ai_transcription_quality_reasons) or [],
-            "analysis_confidence": c.ai_analysis_confidence,
-            # 2026-08, foydalanuvchi so'rovi -- transkripsiyani "SMS suhbat"
-            # ko'rinishida (Manager/Mijoz alohida tomonlarda, gap-bo'lib-gap)
-            # ko'rsatish uchun, xom matn oldindan {"speaker","text"} bo'laklarga
-            # ajratib beriladi (shablon o'zi regex bilan ishlamasin uchun).
-            "turns": call_analysis.parse_transcript_turns(c.ai_transcription) if c.ai_transcription else [],
-            # 2026-08 V4/V5 -- kengaytirilgan tahlil maydonlari (mijoz so'rovi,
-            # menejer xatolari (endi evidenceTurnIds bilan), ijobiy tomonlar,
-            # savdo natijasi, qayta bog'lanish sababi, tavsiya).
-            "customer_request": _load_json(c.ai_customer_request),
-            "operator_mistakes": _normalize_evidence_list(c.ai_operator_mistakes),
-            "positive_points": _normalize_evidence_list(c.ai_positive_points),
-            "sale_result": c.ai_sale_result,
-            "callback_required": c.ai_callback_required,
-            "callback_reason": c.ai_callback_reason,
-            "recommended_response": c.ai_recommended_response,
-        })
-    # 2026-08, foydalanuvchi so'rovi: "individual tekshiruv hech narsa
-    # ishlamayapti" -- V6'da bir marta ko'rilgan holat (OpenAI balansi
-    # tugashi HTTP 429 sifatida qaytib, oddiy "Sifat past" xatosi bilan
-    # aralashib ketgani) qayta yuz berdi. Endi bu holat ALOHIDA
-    # `ai_stage == "credit_exhausted"` bilan belgilanadi -- shablon buni
-    # ko'rib, "Uzbek transkripsiya buzilgan" degan noaniq taassurot
-    # o'rniga aynan "balans tugagan" xabarini aniq ko'rsata oladi.
-    credit_exhausted_count = sum(1 for r in rows if r["stage"] == "credit_exhausted")
-    return {
-        "rows": rows,
-        "analyzed_count": len(rows),
-        "error_count": error_count,
-        "pending_count": pending_count,
-        "openai_configured": call_analysis.is_configured(),
-        "credit_exhausted_count": credit_exhausted_count,
-    }
-
-
-def _run_ai_analysis_in_background(limit: int) -> None:
-    """`individual_check_run_ai_analysis()` uchun fon ishchisi. 2026-08:
-    avval bu ISH TO'G'RIDAN-TO'G'RI so'rov ichida (sinxron) bajarilardi --
-    har bir qo'ng'iroq audio yuklab olish + transkripsiya (diarizatsiya
-    urinishi bilan birga bir necha marta OpenAI'ga so'rov, har biri 90-180s
-    timeout) + matn tahlili (yana bir so'rov) talab qiladi, ya'ni BITTA
-    qo'ng'iroq o'zi 2-3 daqiqagacha cho'zilishi mumkin. `render.yaml`dagi
-    gunicorn `--timeout 120` shundan tezroq ishchi jarayonni majburan
-    o'ldirib qo'yardi -- brauzerda "ERR_CONNECTION_CLOSED" sifatida
-    ko'rinardi (foydalanuvchi screenshot bilan ko'rsatdi). Endi Telegram
-    botdagi bilan bir xil naqsh: HTTP so'rov DARHOL qaytadi, haqiqiy ish esa
-    fon oqimida (thread) davom etadi -- xuddi `job_call_analysis()`
-    (scheduler.py) allaqachon qanday ishlab turgan bo'lsa, shunday."""
-    session = get_session()
-    try:
-        call_analysis.run_pending_analysis(session, limit=limit)
-    except Exception:
-        logger.exception("Fon jarayonida AI tahlili xatosi")
-    finally:
-        session.close()
-
-
-def _analyze_single_call_in_background(call_id: int) -> None:
-    """2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan audio qo'shsam,
-    darhol tahlil qilinsin"): `individual_check_upload_audio()` orqali
-    QO'LDA yuklangan BITTA yozuvni DARHOL, fon oqimida tahlil qiladi --
-    `run_pending_analysis()`dagi kabi "haqiqiy suhbat" davomiylik chegarasi
-    (`min_real_talk_seconds`) BILAN CHEKLANMAYDI, chunki admin buni ANIQ,
-    ATAYLAB yuklagan (masalan muammoli qo'ng'iroqni qo'lda sinash uchun)."""
-    from db import CallRecord
-
-    session = get_session()
-    try:
-        call = session.get(CallRecord, call_id)
-        if not call:
-            logger.warning("Qo'lda yuklangan qo'ng'iroq #%s topilmadi (fon tahlili bekor qilindi).", call_id)
-            return
-        call_analysis.analyze_call_record(session, call)
-    except Exception:
-        logger.exception("Qo'lda yuklangan qo'ng'iroq #%s tahlilida xato", call_id)
-    finally:
-        session.close()
 
 
 _MANUAL_UPLOAD_ALLOWED_EXTENSIONS = (".mp3", ".wav", ".ogg", ".oga", ".m4a", ".mp4", ".webm")
@@ -4950,8 +4762,7 @@ _MANUAL_UPLOAD_MAX_BYTES = 30 * 1024 * 1024  # 30 MB -- oddiy qo'ng'iroq yozuvi 
 def _manual_upload_audio_format(filename: str, data: bytes) -> str:
     """Fayl kengaytmasidan ANIQ format nomini oladi; noaniq/yo'q bo'lsa
     magic-byte orqali (`call_analysis._detect_magic_format`) aniqlashga
-    urinadi, u ham ishlamasa "mp3" (eng keng tarqalgan) ga tushadi --
-    `_download_audio()`ning `_sniff_audio_format()` bilan BIR XIL mantiq."""
+    urinadi, u ham ishlamasa "mp3" (eng keng tarqalgan) ga tushadi."""
     ext = os.path.splitext(filename or "")[1].lower().lstrip(".")
     if ext in ("mp3", "wav", "ogg", "oga", "m4a", "mp4", "webm"):
         return "ogg" if ext == "oga" else ext
@@ -4965,10 +4776,11 @@ def individual_check_upload_audio():
     """2026-08 V6.1, foydalanuvchi ANIQ so'ragan ("bittadan ham audio
     qo'shish mumkin bo'lsin"): Moi Zvonki sinxronizatsiyasidan TASHQARI,
     admin panelda BITTA audio faylni qo'lda yuklab, YANGI qo'ng'iroq
-    yozuvi sifatida DARHOL (fon oqimida) tahlil qilish -- masalan
-    muammoli/shubhali haqiqiy qo'ng'iroq namunasini ishlab chiqarish (V6
-    arxitekturasi) bilan sinash uchun, skript ishga tushirish shart
-    bo'lmasin deb."""
+    yozuvi sifatida qo'shish (masalan biror qo'ng'iroq yozuvini alohida
+    ro'yxatga qo'shish uchun). 2026-09: bu yerda ilgari audio DARHOL AI
+    tahlil qilinardi -- foydalanuvchi ANIQ so'rovi bilan ("audio tahlil
+    qilishni o'chirib tashla to'liq") bu qadam olib tashlandi, yozuv
+    baribir saqlanadi va ro'yxatda ko'rinadi."""
     from db import Manager as ManagerModel
 
     if request.method == "GET":
@@ -5042,36 +4854,14 @@ def individual_check_upload_audio():
     finally:
         session.close()
 
-    thread = threading.Thread(target=_analyze_single_call_in_background, args=(call_id,), daemon=True)
-    thread.start()
-    flash(
-        f"Audio yuklandi (#{call_id}) -- tahlil fon jarayonida DARHOL boshlandi. "
-        "Bir necha daqiqadan so'ng natijani AI analiz ro'yxatida ko'rasiz.",
-        "success",
-    )
-    return redirect(url_for("individual_check", tab="ai"))
-
-
-@app.route("/individual-tekshirish/ai-tahlil-boshlash", methods=["POST"])
-@login_required
-@admin_required
-def individual_check_run_ai_analysis():
-    """"Hoziroq tahlil qilish" tugmasi -- admin bosganda, navbatda turgan
-    bir nechta qo'ng'iroqni FON OQIMIDA (thread) tahlil qilishni ishga
-    tushiradi va DARHOL qaytadi (yuqoridagi izohga qarang -- sinxron
-    bajarish gunicorn timeout'iga urilib, ulanish uzilishiga olib kelardi)."""
-    days = request.form.get("days", "30")
-    if not call_analysis.is_configured():
-        flash("OPENAI_API_KEY sozlanmagan -- AI tahlil ishlamaydi.", "error")
-        return redirect(url_for("individual_check", days=days, tab="ai"))
-    thread = threading.Thread(target=_run_ai_analysis_in_background, args=(5,), daemon=True)
-    thread.start()
-    flash(
-        "Tahlil fon jarayonida boshlandi (audio tahlili bir necha daqiqa davom etishi mumkin) -- "
-        "bir necha daqiqadan so'ng natijalarni ko'rish uchun sahifani yangilang.",
-        "success",
-    )
-    return redirect(url_for("individual_check", days=days, tab="ai"))
+    # 2026-09: ilgari shu yerda audio DARHOL fon oqimida AI tahlil
+    # qilinardi (`_analyze_single_call_in_background`) -- foydalanuvchi
+    # ANIQ so'rovi bilan ("audio tahlil qilishni o'chirib tashla to'liq")
+    # bu qadam olib tashlandi. Yozuv baribir saqlanadi -- ro'yxatda
+    # ko'rinadi va pleer orqali tinglash mumkin, shunchaki AI tahlil
+    # qilinmaydi.
+    flash(f"Audio yuklandi (#{call_id}) -- ro'yxatda ko'rinadi.", "success")
+    return redirect(url_for("individual_check"))
 
 
 def _serve_bytes_with_range(data: bytes, content_type: str) -> Response:
@@ -5111,7 +4901,7 @@ def _serve_bytes_with_range(data: bytes, content_type: str) -> Response:
 @module_required("individual_check")  # 2026-09 tuzatish: avval yo'q edi -- modul ruxsati bo'lmagan menejer ham call_id orqali istalgan audio yozuvni eshitib olishi mumkin edi
 def individual_check_audio_proxy(call_id):
     """2026-08 V5, foydalanuvchi ANIQ so'ragan: AI tahlil tab'idagi audio
-    pleer ba'zan "0:00/0:00" ko'rsatib, ishlamay qolgan. ANIQLANMAGAN,
+    pleer (Audio bo'limi) ba'zan "0:00/0:00" ko'rsatib, ishlamay qolgan. ANIQLANMAGAN,
     lekin ENG EHTIMOLIY sabab: brauzer audio DAVOMIYLIGINI aniqlash uchun
     HTTP Range so'rovi yuboradi -- agar Moi Zvonki'ning imzolangan
     (signed) yozuv havolasi Range'ni QO'LLAB-QUVVATLAMASA yoki noto'g'ri/
@@ -5184,84 +4974,6 @@ def individual_check_audio_proxy(call_id):
         status=upstream.status_code,
         headers=resp_headers,
     )
-
-
-def _pretty_json_or_raw(raw: "str | None") -> "str | None":
-    """Debug ko'rinishida JSON matnini o'qish OSON bo'lishi uchun
-    (2026-08 V6, segment-darajasidagi debug JSON odatda katta/chuqur
-    ichma-ich bo'ladi) -- imkon bo'lsa `indent=2` bilan qayta formatlaydi,
-    JSON bo'lmasa yoki xato bo'lsa XOM qiymatni o'zgarishsiz qaytaradi
-    (hech qachon istisno tashlamaydi)."""
-    if not raw:
-        return raw
-    try:
-        return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
-    except (TypeError, ValueError):
-        return raw
-
-
-@app.route("/individual-tekshirish/ai-debug/<int:call_id>")
-@login_required
-@admin_required
-def individual_check_ai_debug(call_id):
-    """2026-08, foydalanuvchi so'rovi -- admin/debug ko'rinish: xom
-    transkripsiya, normallashtirilgan transkripsiya, ishlatilgan modellar,
-    audio metadata va jarayon bosqichini ko'rsatadi. ODDIY operator UI'ga
-    (`individual_check.html`ning AI tab'i) chiqarilmaydi -- faqat admin
-    ANIQ shu URL'ga o'tsa ko'rinadi (masalan tahlil sifatini tekshirish
-    yoki xatoni diagnostika qilish uchun)."""
-    from db import CallRecord, Lead, Manager
-
-    session = get_session()
-    try:
-        call = session.get(CallRecord, call_id)
-        if not call:
-            flash("Qo'ng'iroq topilmadi.", "error")
-            return redirect(url_for("individual_check", tab="ai"))
-        lead = session.get(Lead, call.lead_id) if call.lead_id else None
-        manager = session.get(Manager, call.manager_id) if call.manager_id else None
-        debug = {
-            "id": call.id,
-            "phone_number": call.phone_number,
-            "lead_name": lead.full_name if lead else None,
-            "manager_name": (manager.full_name or manager.username) if manager else "Noma'lum",
-            "recording_url": call.recording_url,
-            "stage": call.ai_stage,
-            "error": call.ai_error,
-            "analyzed_at": call.ai_analyzed_at,
-            "model_transcribe": call.ai_model_transcribe,
-            "model_analysis": call.ai_model_analysis,
-            "audio_channels": call.ai_audio_channels,
-            "audio_codec": call.ai_audio_codec,
-            "audio_duration_sec": call.ai_audio_duration_sec,
-            "operator_channel": call.ai_operator_channel,
-            "transcription_quality": call.ai_transcription_quality,
-            "transcription_confidence": call.ai_transcription_confidence,
-            "transcription_quality_reasons": call.ai_transcription_quality_reasons,
-            "transcription_attempts": call.ai_transcription_attempts,
-            "transcription_attempts_log": call.ai_transcription_attempts_log,
-            "analysis_confidence": call.ai_analysis_confidence,
-            "raw_transcription": call.ai_raw_transcription,
-            "normalized_transcription": call.ai_transcription,
-            "diarized_json": call.ai_diarized_json,
-            # 2026-08 V6 (spec-bo'lim 14, "DEBUG INFORMATION"): o'qish
-            # qulayligi uchun (agar imkoni bo'lsa) chiroyli formatlangan
-            # JSON -- xom qatorni saqlangandek EMAS, indent bilan.
-            "segment_debug_json": _pretty_json_or_raw(call.ai_segment_debug_json),
-            "customer_request": call.ai_customer_request,
-            "operator_mistakes": call.ai_operator_mistakes,
-            "positive_points": call.ai_positive_points,
-            "sale_result": call.ai_sale_result,
-            "callback_required": call.ai_callback_required,
-            "callback_reason": call.ai_callback_reason,
-            "recommended_response": call.ai_recommended_response,
-            "score_reasons": call.ai_score_reasons,
-            "ffmpeg_available": call_analysis.ffmpeg_available(),
-            "ffprobe_available": call_analysis.ffprobe_available(),
-        }
-    finally:
-        session.close()
-    return render_template("individual_check_ai_debug.html", d=debug)
 
 
 @app.route("/individual-tekshirish/chegara", methods=["POST"])
@@ -5408,9 +5120,9 @@ def _handle_settings_post(session, action):
             session.commit()
             g.pop("_company_cache", None)
             flash(
-                "AI funksiyalari (qo'ng'iroq tahlili + AI-yordamchi) o'chirildi."
+                "AI-yordamchi o'chirildi."
                 if company_row.ai_features_disabled else
-                "AI funksiyalari yoqildi.",
+                "AI-yordamchi yoqildi.",
                 "success",
             )
         else:
@@ -5563,8 +5275,10 @@ def settings_ai():
         if request.method == "POST":
             _handle_settings_post(session, request.form.get("action"))
             return redirect(url_for("settings_ai"))
-        # AI funksiyalarini (qo'ng'iroq tahlili + AI-yordamchi) BITTA tugma
-        # bilan to'liq o'chirish -- xarajatni nazorat qilish uchun.
+        # 2026-09: ilgari bu tugma AI qo'ng'iroq-tahlili + AI-yordamchini
+        # BIRGA o'chirar edi -- qo'ng'iroq-tahlili butunlay olib
+        # tashlangani uchun (foydalanuvchi so'rovi) endi FAQAT
+        # AI-yordamchi vidjetini yoqadi/o'chiradi.
         company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
         ai_plan_supports = bool(company_row and plans.get_plan(company_row.plan).ai_enabled)
         ai_features_disabled = bool(company_row and company_row.ai_features_disabled)
@@ -6092,7 +5806,6 @@ def health():
         "database_configured": bool(os.environ.get("DATABASE_URL")),
         "cron_secret_set": bool(CRON_SECRET),
         "moizvonki_configured": call_sync.is_configured(),
-        "call_analysis_configured": call_analysis.is_configured(),
         "ffmpeg_available": call_analysis.ffmpeg_available(),
         "ffprobe_available": call_analysis.ffprobe_available(),
     })

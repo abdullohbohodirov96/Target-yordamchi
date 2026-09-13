@@ -1,9 +1,8 @@
 """test_feature_toggles_offline.py — 2026-09, foydalanuvchi so'rovi:
-"funksionalni ochirib turish mumkin bolsin misol audio tahlilini ochirib
-turish mumkin bolsin" -- kompaniya admini Sozlamalar sahifasidan (1)
-tarifiga kirgan istalgan bo'limni (masalan "Target") butun kompaniya
-uchun o'chirib qo'ya olishi, va (2) AI funksiyalarini (qo'ng'iroq tahlili
-+ AI-yordamchi) BITTA tugma bilan o'chirib qo'ya olishi kerak.
+"funksionalni ochirib turish mumkin bolsin" -- kompaniya admini Sozlamalar
+sahifasidan (1) tarifiga kirgan istalgan bo'limni (masalan "Target") butun
+kompaniya uchun o'chirib qo'ya olishi, va (2) AI-yordamchi vidjetini
+o'chirib qo'ya olishi kerak.
 
 Tekshiradi:
   - Admin /sozlamalar orqali "target" modulini o'chirsa -- has_module
@@ -13,13 +12,11 @@ Tekshiradi:
   - "settings" moduli HECH QACHON o'chirilishi mumkin emas (o'z-o'zini
     qulflab qo'yishning oldini olish) -- tampered so'rov bilan ham.
   - Qayta yoqilgandan keyin "target" yana ko'rinadi.
-  - AI funksiyalarini o'chirish: `company_ai_enabled` (context processor)
-    False bo'lib qoladi, /individual-tekshirish sahifasida "AI analiz"
-    tab'i "o'chirilgan" deb ko'rsatiladi va ?tab=ai so'ralsa ham xom
-    qo'ng'iroqlar tab'iga qaytariladi.
-  - `call_analysis.run_pending_analysis` AI o'chirilgan kompaniyaning
-    qo'ng'iroqlarini o'TKAZIB YUBORADI (fon vazifasida ham xarajat
-    to'xtashi kerak, faqat sahifada yashirilmasin).
+  - AI-yordamchini o'chirish: `company_ai_enabled` (context processor)
+    False bo'lib qoladi (vidjet sahifadan yo'qoladi), /individual-tekshirish
+    (Audio) sahifasi bunga bog'liq bo'lmagan holda ishlashda davom etadi
+    (2026-09: AI qo'ng'iroq-tahlili butunlay olib tashlangan, shu sabab bu
+    sahifa endi ai_features_disabled'ga umuman bog'liq emas).
 
 Ishga tushirish:
     cd app && python3 scripts/test_feature_toggles_offline.py
@@ -27,7 +24,6 @@ Ishga tushirish:
 import os
 import sys
 import tempfile
-import datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -44,7 +40,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import app as app_module  # noqa: E402
 import db as db_module  # noqa: E402
-import call_analysis  # noqa: E402
 import permissions  # noqa: E402
 
 app_module.app.config["TESTING"] = True
@@ -67,23 +62,8 @@ try:
     admin = db_module.Manager(username="toggle_admin", full_name="Admin", role="admin", company_id=company1.id)
     admin.set_password("parol123")
     _session.add(admin)
-
-    company2 = db_module.Company(name="Boshqa kompaniya", plan="unlimited", ai_features_disabled=True)
-    _session.add(company2)
     _session.commit()
-
-    # Company1 (AI yoqiq) va Company2 (AI o'chirilgan)ga bittadan "haqiqiy" qo'ng'iroq
-    call_ok = db_module.CallRecord(
-        company_id=company1.id, recording_url="https://example.com/rec1.mp3",
-        duration_seconds=120, started_at=dt.datetime.utcnow(),
-    )
-    call_disabled_company = db_module.CallRecord(
-        company_id=company2.id, recording_url="https://example.com/rec2.mp3",
-        duration_seconds=120, started_at=dt.datetime.utcnow(),
-    )
-    _session.add_all([call_ok, call_disabled_company])
-    _session.commit()
-    company1_id, call_ok_id, call_disabled_id = company1.id, call_ok.id, call_disabled_company.id
+    company1_id = company1.id
 finally:
     _session.close()
 
@@ -115,38 +95,10 @@ client.post("/sozlamalar/funksiyalar", data={"action": "set_disabled_modules", "
 target_resp2 = client.get("/target", follow_redirects=False)
 check("Target qayta yoqilgach /target ochiladi", target_resp2.status_code == 200)
 
-# --- 5. Fon vazifasi (scheduler) AI O'CHIRILGAN kompaniyani o'tkazib
-# yuboradi -- BU YERDA (company1 hali AI-yoqiq paytida) tekshiriladi,
-# chunki keyingi qadam company1ning o'zining AI'sini o'chiradi. ---
-_orig_analyze = call_analysis.analyze_call_record
-
-
-def _fake_analyze(session, call):
-    call.ai_analyzed_at = dt.datetime.utcnow()
-    call.ai_score = 8
-    session.commit()
-
-
-call_analysis.analyze_call_record = _fake_analyze
-run_session = db_module.get_session()
-try:
-    result = call_analysis.run_pending_analysis(run_session, limit=10)
-finally:
-    call_analysis.analyze_call_record = _orig_analyze
-    run_session.close()
-
-verify_session = db_module.get_session()
-try:
-    refreshed_ok = verify_session.get(db_module.CallRecord, call_ok_id)
-    refreshed_disabled = verify_session.get(db_module.CallRecord, call_disabled_id)
-    check("AI yoqiq kompaniyaning qo'ng'irog'i tahlil qilindi", refreshed_ok.ai_analyzed_at is not None)
-    check("AI o'chirilgan kompaniyaning qo'ng'irog'i O'TKAZIB YUBORILDI (tahlil qilinmadi)", refreshed_disabled.ai_analyzed_at is None)
-finally:
-    verify_session.close()
-
-# --- 6. Endi company1'ning O'ZINING AI funksiyalarini Sozlamalardan
-# o'chirish -- AI-yordamchi vidjeti va "AI analiz" tab'i yashirilishi
-# kerak. ---
+# --- 5. Company1'ning AI funksiyalarini (AI-yordamchi vidjeti)
+# Sozlamalardan o'chirish -- vidjet yashirilishi kerak, lekin Audio
+# sahifasi (2026-09: AI qo'ng'iroq-tahlili butunlay olib tashlangan) bunga
+# bog'liq bo'lmagan holda ishlashda davom etishi kerak. ---
 dash_before = client.get("/").get_data(as_text=True)
 check("AI o'chirilmaguncha AI-yordamchi vidjeti sahifada bor", 'id="ai-assistant-root"' in dash_before)
 
@@ -155,10 +107,10 @@ client.post("/sozlamalar/ai", data={"action": "toggle_ai_features", "ai_features
 dash_disabled = client.get("/").get_data(as_text=True)
 check("AI o'chirilgach AI-yordamchi vidjeti sahifadan yo'qoladi", 'id="ai-assistant-root"' not in dash_disabled)
 
-ic_html = client.get("/individual-tekshirish?tab=ai", follow_redirects=True).get_data(as_text=True)
-check("AI o'chirilgach ?tab=ai so'ralsa ham 'calls' tab'iga qaytariladi (redirect yo'q, ichkarida)", "o'chirilgan" in ic_html)
+ic_resp = client.get("/individual-tekshirish", follow_redirects=True)
+check("AI-yordamchi o'chirilgan holda ham Audio sahifasi ochiladi (AI tahlilga bog'liq emas)", ic_resp.status_code == 200)
 
-# --- 7. AI qayta yoqilgach vidjet qaytadi ---
+# --- 6. AI qayta yoqilgach vidjet qaytadi ---
 client.post("/sozlamalar/ai", data={"action": "toggle_ai_features", "ai_features_disabled": "0"}, follow_redirects=True)
 dash_after = client.get("/").get_data(as_text=True)
 check("AI qayta yoqilgach AI-yordamchi vidjeti qaytadi", 'id="ai-assistant-root"' in dash_after)
