@@ -5,6 +5,11 @@ QOLMAYDI -- bu yerda jarayon o'chmaydi, shuning uchun jadval to'g'ridan-to'g'ri
 shu jarayon ichida ishlaydi.
 
 Jadval (standart, ENV orqali sozlanadi):
+  - 07:00 Toshkent -- Payme SUBSCRIBE API orqali OYLIK obuna to'lovini
+    kartasi bog'langan kompaniyalardan AVTOMATIK yechib olish (2026-09,
+    foydalanuvchi so'rovi: "tolov avtomatik otishi" -- `payme_subscribe.py`
+    va `job_payme_autopay()`ga qarang). Kunlik 09:00 admin hisobotidan
+    OLDIN ishga tushadi.
   - 09:00 Toshkent -- ADMIN TARGET HISOBOTI (har doim yuboriladi, faqat OpenAI,
     hech qanday action bajarmaydi) -- foydalanuvchi so'ragan "har kuni 9:00"
     talabi aynan shu. **2026-08dan: KECHAGI (o'tgan to'liq kun) natijasi
@@ -77,6 +82,8 @@ import meta_api
 import db
 import kv_store
 import integrations
+import plans
+import payme_subscribe
 
 logger = logging.getLogger("scheduler")
 
@@ -292,6 +299,154 @@ def job_admin_report() -> dict:
         send_result = _tg_send(chat_id, report)
         kv_store.set_json(guard_key, today_str)
         results[c["id"]] = "yuborildi" if send_result["ok"] else f"URINISH QILINDI, lekin rad etildi: {send_result}"
+
+    return results
+
+
+_PAYME_AUTOPAY_LOOKAHEAD_DAYS = 1   # muddat tugashidan necha kun OLDIN urinib ko'radi
+_PAYME_AUTOPAY_RETRY_GRACE_DAYS = 3  # muddat o'tgach ham necha kun QAYTA urinadi (kartani darhol bloklamaslik uchun)
+
+
+def job_payme_autopay() -> dict:
+    """Har kuni -- Payme SUBSCRIBE API orqali OYLIK obuna to'lovini
+    AVTOMATIK kartadan yechib oladi (2026-09, foydalanuvchi so'rovi:
+    "tolov avtomatik otishi uchun ... tolov otkanini tekshirib boladigan
+    qilish").
+
+    Kimlar tekshiriladi: kartasi bog'langan (`payme_card_token`), avtoto'lov
+    yoqilgan (`payme_autopay_enabled`), pullik tarifda (trial emas) va
+    muddati (`paid_until`) LOOKAHEAD kun ichida tugaydigan (yoki
+    allaqachon tugagan, lekin RETRY_GRACE kun ichida hali) HAR BIR FAOL
+    kompaniya. Platforma egasining o'z kompaniyasi (`get_default_company_id()`)
+    HAR DOIM chetlab o'tiladi -- u karta orqali emas.
+
+    Idempotentlik: har bir `billing_period_start` (= urinish paytidagi
+    `paid_until`) uchun FAQAT bitta `PaymeReceipt` yaratiladi -- funksiya
+    kuniga bir necha marta ishga tushsa ham (yoki qayta-deploy paytida
+    ikki marta chaqirilsa ham) mijozdan IKKI MARTA pul yechib olinmaydi
+    ("paid"/"pending" holatidagi mavjud receipt bo'lsa o'tkazib yuboriladi;
+    "failed" holat esa GRACE davri ichida QAYTA urinishga ochiq qoladi)."""
+    if not payme_subscribe.is_configured():
+        return {"_": "Payme sozlanmagan (PAYME_MERCHANT_ID/PAYME_KEY yo'q) -- o'tkazib yuborildi"}
+
+    now = dt.datetime.utcnow()
+    window_end = now + dt.timedelta(days=_PAYME_AUTOPAY_LOOKAHEAD_DAYS)
+    grace_start = now - dt.timedelta(days=_PAYME_AUTOPAY_RETRY_GRACE_DAYS)
+    default_company_id = db.get_default_company_id()
+    results: dict = {}
+
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            rows = (
+                session.query(db.Company)
+                .filter(
+                    db.Company.payme_card_token.isnot(None),
+                    db.Company.payme_autopay_enabled.is_(True),
+                    db.Company.plan != "trial",
+                    db.Company.is_active.is_(True),
+                    db.Company.id != default_company_id,
+                    db.Company.paid_until.isnot(None),
+                    db.Company.paid_until <= window_end,
+                    db.Company.paid_until >= grace_start,
+                )
+                .all()
+            )
+            targets = [
+                {
+                    "id": c.id, "name": c.name, "plan": c.plan,
+                    "card_token": c.get_payme_card_token(),
+                    "telegram_group_id": c.telegram_group_id,
+                    "paid_until": c.paid_until,
+                }
+                for c in rows
+            ]
+    finally:
+        session.close()
+
+    for t in targets:
+        plan_def = plans.get_plan(t["plan"])
+        if not plan_def.price_usd:
+            results[t["id"]] = "narxsiz tarif -- o'tkazib yuborildi"
+            continue
+        if not t["card_token"]:
+            results[t["id"]] = "karta tokeni o'qib bo'lmadi -- o'tkazib yuborildi"
+            continue
+        period_start = t["paid_until"]
+
+        session = db.get_session()
+        try:
+            with db.unscoped():
+                already = (
+                    session.query(db.PaymeReceipt)
+                    .filter_by(company_id=t["id"], billing_period_start=period_start)
+                    .filter(db.PaymeReceipt.status.in_(["paid", "pending"]))
+                    .first()
+                )
+                if already:
+                    results[t["id"]] = f"bu davr uchun allaqachon urinilgan (receipt #{already.id}, status={already.status})"
+                    continue
+
+                amount_tiyin = payme_subscribe.usd_to_tiyin(plan_def.price_usd)
+                receipt_row = db.PaymeReceipt(
+                    company_id=t["id"], plan_key=t["plan"], amount_tiyin=amount_tiyin,
+                    billing_period_start=period_start, status="pending",
+                )
+                session.add(receipt_row)
+                session.commit()
+                receipt_row_id = receipt_row.id
+        finally:
+            session.close()
+
+        try:
+            order_id = f"RPX-{t['id']:04d}-{period_start.strftime('%Y%m%d')}"
+            receipt = payme_subscribe.create_receipt(
+                amount_tiyin, order_id, f"Replix -- \"{plan_def.name}\" tarifi (oylik obuna)",
+            )
+            paid = payme_subscribe.pay_receipt(receipt["id"], t["card_token"])
+            charge_ok = bool(paid.get("pay_time"))
+            error_text = None
+        except payme_subscribe.PaymeSubscribeError as e:
+            charge_ok = False
+            error_text = str(e)
+            paid = {"id": None}
+
+        session = db.get_session()
+        try:
+            with db.unscoped():
+                row = session.get(db.PaymeReceipt, receipt_row_id)
+                row.payme_receipt_id = paid.get("id")
+                row.status = "paid" if charge_ok else "failed"
+                row.error_message = error_text
+                if charge_ok:
+                    row.paid_at = dt.datetime.utcnow()
+                    c = session.get(db.Company, t["id"])
+                    base = c.paid_until if (c.paid_until and c.paid_until > now) else now
+                    c.paid_until = base + dt.timedelta(days=30)
+                session.commit()
+        finally:
+            session.close()
+
+        if t["telegram_group_id"]:
+            try:
+                chat_id = int(t["telegram_group_id"])
+            except (TypeError, ValueError):
+                chat_id = None
+            if chat_id:
+                if charge_ok:
+                    _tg_send(
+                        chat_id,
+                        f"✅ \"{plan_def.name}\" tarifi uchun ${plan_def.price_usd} avtomatik to'lov "
+                        f"muvaffaqiyatli o'tdi -- hisobingiz yana 30 kunga uzaytirildi.",
+                    )
+                else:
+                    _tg_send(
+                        chat_id,
+                        f"⚠️ \"{plan_def.name}\" tarifi uchun avtomatik to'lov AMALGA OSHMADI"
+                        f"{f': {error_text}' if error_text else ''}.\n\n"
+                        f"Iltimos, /tolov sahifasida kartangizni tekshiring yoki yangilang.",
+                    )
+        results[t["id"]] = "to'landi" if charge_ok else f"to'lanmadi: {error_text}"
 
     return results
 
@@ -946,6 +1101,7 @@ def job_standing_reports() -> str:
 
 JOBS = {
     "admin-report": job_admin_report,
+    "payme-autopay": job_payme_autopay,
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
@@ -986,6 +1142,7 @@ def start_scheduler(app) -> None:
     # o'zi ham aniq Toshkent vaqtiga bog'lab, mumkin bo'lgan noaniqlikni
     # (masalan platforma darajasidagi TZ o'zgaruvchisi/muhit) yo'qotish uchun).
     scheduler.add_job(job_admin_report, CronTrigger(hour=9, minute=0, timezone=TIMEZONE), id="admin-report")
+    scheduler.add_job(job_payme_autopay, CronTrigger(hour=7, minute=0, timezone=TIMEZONE), id="payme-autopay")  # 2026-09, kunlik hisobotdan OLDIN -- muddati tugagan/tugayotgan kompaniyalar avtomatik to'lansin
     scheduler.add_job(job_watch_cycle, CronTrigger(minute=5, timezone=TIMEZONE), id="watch")  # har soatning 5-daqiqasida
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
     scheduler.add_job(job_cpl_hard_kill, CronTrigger(minute="*/15", timezone=TIMEZONE), id="cpl-hard-kill")  # LLM'siz, tez CPL xavfsizlik qatlami

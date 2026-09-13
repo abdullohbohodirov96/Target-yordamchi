@@ -29,6 +29,7 @@ from sqlalchemy import or_
 
 import meta_api
 import meta_events
+import payme_subscribe
 import orchestrator
 import budget_tracker
 import kv_store
@@ -2068,7 +2069,154 @@ def payment_page():
         "payment.html", company=company, plan=plans.get_plan(company.plan),
         plans=plans.PAID_PLAN_LIST, payme_card=payme_card,
         payme_card_holder=payme_card_holder, payment_ref=payment_ref,
+        payme_subscribe_configured=payme_subscribe.is_configured(),
+        payme_card_masked=company.payme_card_masked,
+        payme_card_pending=bool(company.payme_card_pending_token),
+        payme_autopay_enabled=company.payme_autopay_enabled,
     )
+
+
+# ---------------------------------------------------------------------------
+# Payme SUBSCRIBE API -- 2026-09, foydalanuvchi so'rovi: oylik obuna to'lovini
+# mijoz kartasidan AVTOMATIK yechib olish (`payme_subscribe.py`ga qarang --
+# to'liq oqim tavsifi va PCI-DSS eslatmasi shu yerda). Haqiqiy oylik
+# hisob-kitob `scheduler.job_payme_autopay()`da; bu routelar FAQAT kartani
+# BOG'LASH/TASDIQLASH/O'CHIRISH uchun.
+# ---------------------------------------------------------------------------
+@app.route("/tolov/karta/boglash", methods=["POST"])
+@login_required
+@admin_required
+def payme_card_bind():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("payment_page"))
+
+    if not payme_subscribe.is_configured():
+        flash("Payme hali ulanmagan (platforma egasi ENV sozlamalarini kiritishi kerak).", "error")
+        return redirect(url_for("payment_page"))
+
+    pan = re.sub(r"\D", "", request.form.get("card_number", ""))
+    expire = re.sub(r"\D", "", request.form.get("card_expire", ""))
+    if len(pan) < 16 or len(expire) != 4:
+        flash("Karta raqami yoki amal qilish muddati noto'g'ri kiritildi.", "error")
+        return redirect(url_for("payment_page"))
+
+    try:
+        card = payme_subscribe.create_card(pan, expire)
+    except payme_subscribe.PaymeSubscribeError as e:
+        flash(f"Kartani bog'lashda xato: {e}", "error")
+        return redirect(url_for("payment_page"))
+
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        if card["verify_needed"]:
+            c.set_payme_card_pending_token(card["token"])
+            session.commit()
+            try:
+                payme_subscribe.get_verify_code(card["token"])
+            except payme_subscribe.PaymeSubscribeError as e:
+                c.set_payme_card_pending_token(None)
+                session.commit()
+                flash(f"SMS kod yuborishda xato: {e}", "error")
+                return redirect(url_for("payment_page"))
+            flash("Kartangizga SMS kod yuborildi -- pastdagi maydonga kiriting.", "success")
+        else:
+            c.set_payme_card_token(card["token"])
+            c.payme_card_masked = card["masked"]
+            c.set_payme_card_pending_token(None)
+            session.commit()
+            flash("Karta muvaffaqiyatli bog'landi -- endi oylik to'lov avtomatik yechiladi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("payment_page"))
+
+
+@app.route("/tolov/karta/tasdiqlash", methods=["POST"])
+@login_required
+@admin_required
+def payme_card_verify():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("payment_page"))
+
+    code = request.form.get("code", "").strip()
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        pending_token = c.get_payme_card_pending_token()
+        if not pending_token:
+            flash("Tasdiqlanishi kerak bo'lgan karta topilmadi -- avval kartani qayta bog'lang.", "error")
+            return redirect(url_for("payment_page"))
+        if not code:
+            flash("SMS kodni kiriting.", "error")
+            return redirect(url_for("payment_page"))
+
+        try:
+            verified = payme_subscribe.verify_card(pending_token, code)
+        except payme_subscribe.PaymeSubscribeError as e:
+            flash(f"Kodni tasdiqlashda xato: {e}", "error")
+            return redirect(url_for("payment_page"))
+
+        c.set_payme_card_token(verified["token"])
+        c.payme_card_masked = verified["masked"]
+        c.set_payme_card_pending_token(None)
+        session.commit()
+        flash("Karta tasdiqlandi -- endi oylik to'lov avtomatik yechiladi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("payment_page"))
+
+
+@app.route("/tolov/karta/ochirish", methods=["POST"])
+@login_required
+@admin_required
+def payme_card_remove():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("payment_page"))
+
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        token = c.get_payme_card_token()
+        if token:
+            try:
+                payme_subscribe.remove_card(token)
+            except payme_subscribe.PaymeSubscribeError:
+                logger.exception("Payme kartani o'chirishda xatolik (best-effort, company_id=%s)", company.id)
+        c.set_payme_card_token(None)
+        c.payme_card_masked = None
+        c.set_payme_card_pending_token(None)
+        session.commit()
+        flash("Karta bog'lanishi bekor qilindi -- avtomatik to'lov endi ishlamaydi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("payment_page"))
+
+
+@app.route("/tolov/avtotolov", methods=["POST"])
+@login_required
+@admin_required
+def payme_autopay_toggle():
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("payment_page"))
+
+    enabled = request.form.get("enabled") == "1"
+    session = get_session()
+    try:
+        c = session.get(Company, company.id)
+        c.payme_autopay_enabled = enabled
+        session.commit()
+        flash("Avtomatik to'lov yoqildi." if enabled else "Avtomatik to'lov o'chirildi -- endi qo'lda to'lashingiz kerak bo'ladi.", "success")
+    finally:
+        session.close()
+    return redirect(url_for("payment_page"))
 
 
 # ---------------------------------------------------------------------------
@@ -2091,6 +2239,12 @@ _SUBSCRIPTION_EXEMPT_ENDPOINTS = {
     # aks holda "sinov tugadi" holatiga tushgan mijoz hatto TO'LASH
     # sahifasiga ham kira olmay qolardi.
     "signup", "pricing", "payment_page", "connect_accounts",
+    # 2026-09, Payme Subscribe (avtomatik oylik to'lov): karta bog'lash/
+    # tasdiqlash/o'chirish -- xuddi `payment_page` kabi, muddati tugagan
+    # kompaniya ham AYNAN shu orqali to'lovni tiklashi kerak, shuning uchun
+    # bular ham ochiq turishi SHART (aks holda "obuna tugadi" holatidagi
+    # mijoz karta ham bog'lay olmay, cheksiz tsiklga tushib qolardi).
+    "payme_card_bind", "payme_card_verify", "payme_card_remove", "payme_autopay_toggle",
     # Telegram server-server webhook -- login_required'siz, o'z ichki
     # tekshiruvi (CRON_SECRET yo'q, lekin Telegram tomonidan kelgan update)
     # bilan ishlaydi -- bu web-sessiya orqali kirilmaydigan endpoint.

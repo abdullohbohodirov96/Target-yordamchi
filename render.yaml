@@ -62,6 +62,20 @@ services:
       # qarang, docs/META_INTEGRATION_SETUP.md).
       - key: TOKEN_ENCRYPTION_KEY
         sync: false
+      # 2026-09, Payme SUBSCRIBE API (oylik obuna to'lovini kartadan
+      # AVTOMATIK yechib olish) -- Payme bilan shartnoma tasdiqlangach
+      # beriladigan qiymatlar, docs/PAYME_SETUP.md'ga qarang. Sozlanmagan
+      # bo'lsa, butun oqim jim "sozlanmagan" holatda turadi (buzilmaydi).
+      - key: PAYME_MERCHANT_ID
+        sync: false
+      - key: PAYME_TEST_KEY
+        sync: false
+      - key: PAYME_KEY
+        sync: false
+      - key: PAYME_TEST_MODE
+        value: "true"
+      - key: PAYME_USD_TO_UZS_RATE
+        value: "12700"
       - key: CRON_SECRET
         generateValue: true
       - key: FLASK_SECRET_KEY

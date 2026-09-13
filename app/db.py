@@ -219,8 +219,35 @@ class Company(Base):
     paid_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
+    # ---------------------------------------------------------------------
+    # 2026-09, foydalanuvchi so'rovi ("tolov avtomatik otishi uchun ...
+    # tekshirib boladigan qilish"): Payme SUBSCRIBE API orqali oylik obuna
+    # to'lovini kartadan AVTOMATIK yechib olish. Xom karta raqami HECH
+    # QACHON bu yerga (yoki boshqa hech qayerga) saqlanmaydi -- faqat
+    # Payme'ning o'zi qaytargan TOKEN (meta_access_token kabi shifrlangan
+    # holda, `crypto_util` orqali). Haqiqiy avtomatik hisob-kitob logikasi
+    # `scheduler.job_payme_autopay()`da, past darajadagi Payme so'rovlari
+    # `payme_subscribe.py`da.
+    # ---------------------------------------------------------------------
+    payme_card_token = Column(Text, nullable=True)  # shifrlangan (crypto_util) -- ko'p martalik (recurrent) token
+    payme_card_masked = Column(String(32), nullable=True)  # masalan "860006******6311" (faqat ko'rsatish uchun)
+    payme_card_pending_token = Column(Text, nullable=True)  # shifrlangan -- SMS tasdiqlanishini kutayotgan token
+    payme_autopay_enabled = Column(Boolean, nullable=False, default=True)
+
     def set_password(self, raw: str) -> None:
         self.password_hash = generate_password_hash(raw)
+
+    def get_payme_card_token(self) -> "str | None":
+        return crypto_util.decrypt_token(self.payme_card_token)
+
+    def set_payme_card_token(self, raw: "str | None") -> None:
+        self.payme_card_token = crypto_util.encrypt_token(raw)
+
+    def get_payme_card_pending_token(self) -> "str | None":
+        return crypto_util.decrypt_token(self.payme_card_pending_token)
+
+    def set_payme_card_pending_token(self, raw: "str | None") -> None:
+        self.payme_card_pending_token = crypto_util.encrypt_token(raw)
 
     # -----------------------------------------------------------------
     # 2026-09, Meta CAPI integratsiyasi -- tokenlarni HECH QACHON ochiq
@@ -933,6 +960,34 @@ class StandingReport(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class PaymeReceipt(Base):
+    """Payme SUBSCRIBE API orqali yaratilgan har bir oylik avtomatik to'lov
+    urinishi (2026-09, foydalanuvchi so'rovi -- `scheduler.job_payme_autopay()`
+    shu jadvalni yozadi/o'qiydi).
+
+    MUHIM (idempotentlik): `billing_period_start` -- to'lov QAYSI davr uchun
+    ekanini bildiradi (kompaniyaning o'sha paytdagi `paid_until` qiymati).
+    `(company_id, billing_period_start)` unique -- fon vazifasi bir kunda
+    bir necha marta ishga tushib qolsa ham (yoki qayta-deploy paytida) HECH
+    QACHON bir xil davr uchun ikki marta pul yechib olinmaydi."""
+    __tablename__ = "payme_receipts"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    payme_receipt_id = Column(String(64), nullable=True)  # Payme'ning o'z _id'si (receipts.create javobidan)
+    plan_key = Column(String(32), nullable=False)
+    amount_tiyin = Column(Integer, nullable=False)
+    billing_period_start = Column(DateTime, nullable=False)
+    status = Column(String(16), nullable=False, default="pending")  # pending | paid | failed
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "billing_period_start", name="uq_payme_receipt_company_period"),
+    )
+
+
 class KVEntry(Base):
     """kv_store.py o'rniga -- Vercel KV/Upstash'ni almashtiradi. orchestrator.py
     va budget_tracker.py shu jadval orqali holatni (suhbat tarixi, byudjet
@@ -1069,6 +1124,7 @@ _COMPANY_SCOPED_MODELS = [
     Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost, Competitor,
     CompetitorAd, AssistantUnanswered, CustomField, FunnelStage, StandingTask,
     StandingReport, IgDmConversation, IgDmMessage, MetaEventLog, CannedReply,
+    PaymeReceipt,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"
