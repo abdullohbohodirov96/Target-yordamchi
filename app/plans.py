@@ -110,6 +110,51 @@ PLAN_LIST = [PLANS[k] for k in PLAN_ORDER]
 PAID_PLAN_LIST = [PLANS[k] for k in PLAN_ORDER if k != "trial"]
 
 
+# ---------------------------------------------------------------------------
+# 2026-09, foydalanuvchi so'rovi ("tariflarni ham imenno har bitta obshiy
+# qil, funksiyalarni yozganday, plyus/gollichka -- agar yo'q bo'lsa x, bor
+# bo'lsa gollichka"): tariflar sahifasi (`pricing.html`) va bosh sahifadagi
+# tariflar bo'limi (`landing.html`) uchun TO'LIQ funksiya-taqqoslash jadvali.
+# Har bir qator -- bitta aniq funksiya, har bir ustun -- tarif; qiymat
+# `True`/`False` bo'lsa gollichka/X ikonkasi chiqadi, matn (str) bo'lsa
+# aynan o'sha matn ko'rsatiladi (menejer soni, qo'llab-quvvatlash darajasi
+# kabi "ha/yo'q" bo'lmagan qatorlar uchun).
+#
+# Qiymatlar YUQORIDAGI `PLANS` lug'atining o'zidan (modules/ai_enabled/
+# can_connect_meta_ads/manager_limit) olinadi -- shu sabab bu ikkalasi hech
+# qachon bir-biridan uzilib qolmaydi.
+#
+# ESLATMA (item E, hali bajarilmagan): "AI qo'ng'iroq tahlili" qatori --
+# foydalanuvchi qo'ng'iroqlarning AI orqali avtomatik tahlilini BUTUNLAY
+# o'chirishni so'ragan (faqat xom audio/qo'ng'iroqlar ro'yxati qoladi).
+# O'sha ish tugagach bu qator olib tashlanishi yoki nomi o'zgartirilishi
+# kerak -- hozircha ilova haligacha shu funksiyani taqdim etgani uchun
+# jadvalda qoldirilgan.
+# ---------------------------------------------------------------------------
+def _has(module_key):
+    return {p.key: module_key in p.modules for p in PLAN_LIST}
+
+
+FEATURE_MATRIX = [
+    {"label": "CRM va lidlar bazasi", "values": _has("leads")},
+    {"label": "Instagram akkauntini ulash", "values": {p.key: True for p in PLAN_LIST}},
+    {"label": "To'liq Meta Ads (Instagram + Facebook reklama) ulash",
+     "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
+    {"label": "SMM hisobot (obunachi, qamrov, postlar statistikasi)", "values": _has("target")},
+    {"label": "Analitika va hisobotlar", "values": _has("analytics")},
+    {"label": "Sozlamalar (voronka, vazifalar, qo'shimcha maydonlar)", "values": _has("settings")},
+    {"label": "AI qo'ng'iroq tahlili (Individual tekshirish)", "values": _has("individual_check")},
+    {"label": "Ichki AI-yordamchi", "values": {p.key: p.ai_enabled for p in PLAN_LIST}},
+    {"label": "Menejer/admin hisoblar soni",
+     "values": {p.key: ("Cheksiz" if p.manager_limit is None else f"{p.manager_limit} tagacha") for p in PLAN_LIST}},
+    {"label": "Qo'llab-quvvatlash",
+     "values": {
+         "trial": "—", "start": "Email",
+         "business": "Ustuvor (tezkor)", "unlimited": "24/7 + shaxsiy onboarding",
+     }},
+]
+
+
 def get_plan(key: "str | None") -> Plan:
     return PLANS.get(key) or PLANS["trial"]
 

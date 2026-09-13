@@ -56,6 +56,12 @@
   </div>
 </section>
 
+{% if feature_matrix %}
+<section class="lp-section lp-section-alt">
+  {% include "_pricing_matrix.html" %}
+</section>
+{% endif %}
+
 {% if not current_user.is_authenticated %}
 <footer class="lp-footer">
   © {{ current_year() }} Replix. Barcha huquqlar himoyalangan. &middot; <a href="{{ url_for('login') }}" class="text-blue">Kirish</a>

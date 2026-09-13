@@ -2209,7 +2209,10 @@ def pricing():
     if current_user.is_authenticated:
         company = _current_company()
         current_plan_key = company.plan if company else None
-    return render_template("pricing.html", plans=plans.PLAN_LIST, current_plan_key=current_plan_key)
+    return render_template(
+        "pricing.html", plans=plans.PLAN_LIST, current_plan_key=current_plan_key,
+        feature_matrix=plans.FEATURE_MATRIX,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2521,7 +2524,7 @@ def dashboard():
     # OLDIN qaytarib yuborar edi) -- ularning mantiqi pastda QO'LDA
     # takrorlangan, faqat "aks holda" shoxobchasida landing ko'rsatiladi.
     if not current_user.is_authenticated:
-        return render_template("landing.html", plans=plans.PLAN_LIST)
+        return render_template("landing.html", plans=plans.PLAN_LIST, feature_matrix=plans.FEATURE_MATRIX)
     if not permissions.has_module(current_user, "dashboard"):
         flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
         return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))

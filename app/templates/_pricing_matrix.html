@@ -1,0 +1,53 @@
+{#
+  2026-09, foydalanuvchi so'rovi: to'liq funksiya-taqqoslash jadvali --
+  `pricing.html` va `landing.html`ning tariflar bo'limi ikkalasi ham shu
+  partial'ni ishlatadi (bitta joyda o'zgartirilsa -- ikkalasida ham
+  yangilanadi). `plans.FEATURE_MATRIX`dan keladigan `feature_matrix`
+  o'zgaruvchisi va `plans` (Plan ro'yxati, ustun sarlavhalari uchun) talab
+  qilinadi.
+#}
+<div class="lp-matrix-wrap" data-reveal>
+  <div class="lp-matrix-head">
+    <h3>Barcha funksiyalarni solishtiring</h3>
+    <p>Har bir tarifda aynan nima bor -- bitta jadvalda.</p>
+  </div>
+  <div class="lp-matrix-scroll">
+    <table class="lp-matrix">
+      <thead>
+        <tr>
+          <th class="lp-matrix-feature-col"></th>
+          {% for plan in plans %}
+          <th class="{{ 'lp-matrix-win' if plan.highlight }}">{{ plan.name }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in feature_matrix %}
+        <tr>
+          <td class="lp-matrix-feature-col">{{ row.label }}</td>
+          {% for plan in plans %}
+          {# e'tibor: `row['values']` -- qavs bilan, `row.values` EMAS!
+             `row` oddiy dict bo'lgani uchun `row.values` Jinjada dict'ning
+             o'ZINING `.values()` metodiga tegib ketadi (kalitni emas),
+             shu sabab har doim qavsli yozuv ishlatiladi. #}
+          {% set val = row['values'].get(plan.key) %}
+          <td class="{{ 'lp-matrix-win' if plan.highlight }}">
+            {% if val is sameas true %}
+            <span class="lp-matrix-yes" title="Bor" aria-label="Bor">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            </span>
+            {% elif val is sameas false %}
+            <span class="lp-matrix-no" title="Yo'q" aria-label="Yo'q">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>
+            </span>
+            {% else %}
+            <span class="lp-matrix-text">{{ val }}</span>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

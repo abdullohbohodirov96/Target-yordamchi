@@ -39,7 +39,66 @@
   pointer-events: none; opacity: 0; z-index: 0; will-change: transform, opacity;
   transition: opacity 0.3s ease;
 }
-.lp-hero > div, .lp-hero .lp-mock { position: relative; z-index: 1; }
+/* 2026-09, foydalanuvchi so'rovi ("...oppoq background... elementlar
+   qo'shasanmi, oppoq bo'lib qolmasin"): hero endi tekis oq fon emas --
+   uch rangli (ko'k/binafsha/yashil) xira gradient-"tuman" dog'lari +
+   nozik nuqta-katak naqshi butun hero kengligini qoplaydi. Statik (kursor
+   effektidan mustaqil), shu sababli harakatga sezgir foydalanuvchilarga
+   ham xavfsiz. */
+.lp-hero-bg {
+  position: absolute; inset: -15% -6%; z-index: 0; pointer-events: none;
+  background-image:
+    radial-gradient(520px 440px at 12% 20%, rgba(37,99,235,0.13), transparent 65%),
+    radial-gradient(440px 380px at 90% 6%, rgba(124,58,237,0.10), transparent 62%),
+    radial-gradient(480px 420px at 82% 96%, rgba(5,150,105,0.09), transparent 62%),
+    radial-gradient(rgba(100,116,139,0.16) 1px, transparent 1.4px);
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+  background-size: auto, auto, auto, 26px 26px;
+  -webkit-mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
+}
+.lp-hero > div, .lp-hero .lp-mock-wrap { position: relative; z-index: 1; }
+
+/* Mokap kartasi atrofidagi "suzuvchi" mini-kartalar (bo'sh joyni to'ldirish
+   uchun) -- mokapning o'ziga nisbatan joylashtiriladi, shunga ko'ra u
+   qayerda render bo'lsa ham to'g'ri turadi. Har biri boshqa kechikish/
+   davomiylik bilan yumshoq yuqori-past "suzadi" -- organik, mexanik
+   bo'lmagan taassurot uchun. */
+.lp-mock-wrap { position: relative; }
+.lp-float-badge {
+  position: absolute; z-index: 2; display: flex; align-items: center; gap: 9px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 13px;
+  box-shadow: var(--shadow-md); padding: 9px 14px 9px 9px; font-size: 12.3px;
+  font-weight: 600; color: var(--text); white-space: nowrap;
+  animation: lp-float 4.6s ease-in-out infinite;
+}
+.lp-float-badge b { color: var(--good); }
+.lp-float-badge-icon {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--blue-bg); color: var(--blue);
+}
+.lp-float-badge-icon svg { width: 15px; height: 15px; }
+.lp-float-badge-icon-good { background: var(--good-bg); color: var(--good); }
+.lp-float-badge-icon-blue { background: var(--blue-bg); color: var(--blue); }
+.lp-float-badge-1 { top: -18px; left: -26px; animation-delay: 0s; }
+.lp-float-badge-2 { bottom: 26px; left: -40px; animation-delay: 1.3s; }
+.lp-float-badge-3 { top: 45%; right: -22px; animation-delay: 2.5s; }
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-float-badge { animation: none; }
+}
+@media (max-width: 900px) {
+  .lp-float-badge-3 { display: none; }
+  .lp-float-badge-1 { left: -10px; }
+  .lp-float-badge-2 { left: -14px; }
+}
+@media (max-width: 560px) {
+  .lp-float-badge { display: none; }
+}
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
   color: var(--blue); background: var(--blue-bg); border-radius: 999px; padding: 6px 13px 6px 11px;
@@ -192,6 +251,44 @@
 .lp-plan ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; }
 .lp-plan li { font-size: 12.8px; color: var(--text); display: flex; gap: 8px; line-height: 1.4; }
 .lp-plan li svg { width: 15px; height: 15px; color: var(--good); flex-shrink: 0; margin-top: 1px; }
+
+/* 2026-09, foydalanuvchi so'rovi ("tariflarni ham... har bitta funksiyani
+   yozganday, gollichka/x qilib chiq"): to'liq funksiya-taqqoslash jadvali
+   -- `_pricing_matrix.html` partial, `pricing.html` va `landing.html`ning
+   tariflar bo'limida ishlatiladi. Mobil ekranlarda gorizontal skroll
+   (birinchi -- funksiya nomi -- ustun `sticky` bo'lib qoladi). */
+.lp-matrix-wrap { max-width: 1000px; margin: 44px auto 0; }
+.lp-matrix-head { text-align: center; margin-bottom: 22px; }
+.lp-matrix-head h3 { font-size: 20px; letter-spacing: -0.01em; color: var(--ink); margin: 0 0 6px; }
+.lp-matrix-head p { font-size: 13.8px; color: var(--text-dim); margin: 0; }
+.lp-matrix-scroll {
+  overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--card); box-shadow: var(--shadow-sm);
+}
+.lp-matrix { width: 100%; border-collapse: collapse; min-width: 620px; }
+.lp-matrix th, .lp-matrix td { padding: 13px 16px; text-align: center; font-size: 13px; }
+.lp-matrix thead th {
+  font-size: 12.5px; font-weight: 700; color: var(--ink); border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
+}
+.lp-matrix thead th.lp-matrix-win { color: var(--blue); }
+.lp-matrix tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border-light); }
+.lp-matrix tbody tr:hover td { background: var(--bg); }
+.lp-matrix-feature-col {
+  text-align: left !important; font-weight: 500; color: var(--text); white-space: normal;
+  min-width: 210px; position: sticky; left: 0; background: var(--card);
+}
+.lp-matrix tbody tr:hover .lp-matrix-feature-col { background: var(--bg); }
+.lp-matrix-yes, .lp-matrix-no {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+}
+.lp-matrix-yes { background: var(--good-bg); color: var(--good); }
+.lp-matrix-no { background: var(--border-light); color: var(--text-faint); }
+.lp-matrix-yes svg, .lp-matrix-no svg { width: 13px; height: 13px; }
+.lp-matrix-text { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+.lp-matrix td.lp-matrix-win { background: var(--blue-bg); }
+.lp-matrix tbody tr:hover td.lp-matrix-win { background: var(--blue-bg); }
 
 .lp-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 820px; margin: 0 auto; }
 .lp-compare-col { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; background: var(--card); }
