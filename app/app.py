@@ -4610,7 +4610,7 @@ def company_edit(company_id):
         }
     finally:
         session.close()
-    return render_template("company_edit.html", c=c_view)
+    return render_template("company_edit.html", c=c_view, plan_list=plans.PLAN_LIST)
 
 
 @app.route("/companies/<int:company_id>/toggle-active", methods=["POST"])

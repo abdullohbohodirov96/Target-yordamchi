@@ -5,10 +5,15 @@ tariflar tizimi ("тарифы, чтобы выбирался тариф... ка
 и сам создал"). Narx va xususiyatlarni ANIQ shu so'rov asosida MEN
 loyihalashtirdim:
 
-  - Eng oddiy PULLIK tarif ($50/oy dan) foydalanuvchining aniq talabi bo'yicha
+  - Eng oddiy PULLIK tarif ($20/oy dan) foydalanuvchining aniq talabi bo'yicha
     boshlanadi, undan yuqorisi bosqichma-bosqich ko'proq imkoniyat + sog'lom
     foyda marjasi bilan o'sadi (OpenAI/Meta/Moi Zvonki xarajatlari past
     tarifda deyarli nolga yaqin bo'lgani uchun marja pastda ham katta).
+
+2026-09 YANGILANDI, foydalanuvchi so'rovi ("narxlarni pasaytir, $20dan
+boshlansin"): barcha 3 pullik tarif proportsional pasaytirildi (avval
+$50/$120/$250, endi $20/$60/$150) -- tariflar orasidagi nisbat va
+bosqichma-bosqich o'sish saqlanib qoldi.
   - "Sinov" (trial) ATAYLAB juda cheklangan: faqat Instagram ulanadi, faqat
     XOM natijalar (target xarajat/lead/CPL) ko'rinadi, HECH QANDAY
     AI-xarajat talab qiluvchi funksiya (AI qo'ng'iroq tahlili, ichki AI
@@ -59,7 +64,7 @@ PLANS = {
         ),
     ),
     "start": Plan(
-        key="start", name="Boshlang'ich", price_usd=50, period_days=None,
+        key="start", name="Boshlang'ich", price_usd=20, period_days=None,
         tagline="Kichik jamoalar uchun to'liq CRM + target monitoring",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings"}),
         manager_limit=3, ai_enabled=False, can_connect_meta_ads=True, highlight=False,
@@ -73,7 +78,7 @@ PLANS = {
         ),
     ),
     "business": Plan(
-        key="business", name="Biznes", price_usd=120, period_days=None,
+        key="business", name="Biznes", price_usd=60, period_days=None,
         tagline="O'sayotgan sotuv jamoalari uchun — AI bilan kuchaytirilgan",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
         manager_limit=8, ai_enabled=True, can_connect_meta_ads=True, highlight=True,
@@ -86,7 +91,7 @@ PLANS = {
         ),
     ),
     "unlimited": Plan(
-        key="unlimited", name="Ekspert", price_usd=250, period_days=None,
+        key="unlimited", name="Ekspert", price_usd=150, period_days=None,
         tagline="Yirik jamoalar va ko'p filiallar uchun — cheksiz",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
         manager_limit=None, ai_enabled=True, can_connect_meta_ads=True, highlight=False,

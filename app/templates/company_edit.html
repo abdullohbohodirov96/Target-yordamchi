@@ -43,10 +43,13 @@
     <div class="field">
       <label>Tarif</label>
       <select name="plan">
-        <option value="trial" {{ 'selected' if c.plan == 'trial' }}>Sinov -- bepul</option>
-        <option value="start" {{ 'selected' if c.plan == 'start' }}>Boshlang'ich -- $50/oy</option>
-        <option value="business" {{ 'selected' if c.plan == 'business' }}>Biznes -- $120/oy</option>
-        <option value="unlimited" {{ 'selected' if c.plan == 'unlimited' }}>Ekspert -- $250/oy (cheklovsiz)</option>
+        {% for p in plan_list %}
+        <option value="{{ p.key }}" {{ 'selected' if c.plan == p.key }}>
+          {{ p.name }} --
+          {% if p.price_usd is none %}bepul{% else %}${{ p.price_usd }}/oy{% endif %}
+          {%- if p.manager_limit is none %} (cheklovsiz){% endif %}
+        </option>
+        {% endfor %}
       </select>
     </div>
     <div class="field">
