@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Tariflar — Replix{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}?v={{ asset_v('landing.css') }}">{% endblock %}
 {% block content %}
 
 {% if not current_user.is_authenticated %}

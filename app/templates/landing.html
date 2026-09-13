@@ -5,7 +5,7 @@
   ('faq.q1', 'faq.a1'), ('faq.q2', 'faq.a2'), ('faq.q3', 'faq.a3'),
   ('faq.q4', 'faq.a4'), ('faq.q5', 'faq.a5')
 ] %}
-{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}?v={{ asset_v('landing.css') }}">
 {#
   2026-09, SEO/AEO tuzatish (foydalanuvchi so'rovi: "ai qidirganda ideal
   chiqishi uchun kriteriyalar bo'yicha yoz"). WebSearch orqali aniqlandi:
