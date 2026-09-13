@@ -57,7 +57,7 @@
   -webkit-mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
   mask-image: radial-gradient(75% 75% at 50% 40%, #000 55%, transparent 100%);
 }
-.lp-hero > div:not(.lp-hero-bg), .lp-hero .lp-mock-wrap { position: relative; z-index: 1; }
+.lp-hero > div:not(.lp-hero-bg):not(.lp-hero-glow), .lp-hero .lp-mock-wrap { position: relative; z-index: 1; }
 
 /* Mokap kartasi atrofidagi "suzuvchi" mini-kartalar (bo'sh joyni to'ldirish
    uchun) -- mokapning o'ziga nisbatan joylashtiriladi, shunga ko'ra u
