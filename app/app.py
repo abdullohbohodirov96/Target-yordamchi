@@ -648,6 +648,141 @@ _REGISTERED_MEMBER_WELCOME_TEXT = (
 )
 
 
+def _resolve_telegram_company(chat_id: int) -> "tuple[Company | None, Manager | None]":
+    """2026-09, foydalanuvchi so'rovi ("har company ownerga openai
+    tirkab qoyamiz keyin ... shunda ozini kompaniyasidan royhatdan otgan
+    company yordamchisi kelib turadi"): shu chat ALLAQACHON biror
+    (platforma egasidan BOSHQA) kompaniyaga ulanganmi -- guruh
+    (`Company.telegram_group_id`) yoki shaxsiy (`Manager.telegram_user_id`)
+    orqali. Topilsa o'sha `Company` (va agar shaxsiy chat bo'lsa -- aniq
+    `Manager`) qaytariladi, aks holda `(None, None)`. `handle_free_text`
+    shundan foydalanib, "egasi emas" degan qisqa rad javobi o'rniga
+    O'SHA kompaniyaning O'Z ma'lumotlariga asoslangan AI javobini beradi
+    (pastga, `_handle_company_free_text`ga qarang) -- lekin HECH QACHON
+    reklama boshqaruvi (pauza/resume/target yaratish)ga yo'l ochmaydi,
+    bu FAQAT platforma egasiga tegishli bo'lib qolaveradi."""
+    session = get_session()
+    try:
+        with db.unscoped():
+            company = session.query(Company).filter_by(telegram_group_id=str(chat_id)).first()
+            if company is not None:
+                return company, None
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
+            if manager is not None:
+                company = session.query(Company).filter_by(id=manager.company_id).first()
+                return company, manager
+        return None, None
+    finally:
+        session.close()
+
+
+def _company_ai_snapshot(company_id: int) -> str:
+    """Kompaniyaga xos Telegram AI-yordamchisi uchun "bugungi holat"
+    qisqacha ma'lumoti. Tenant-scope'ni O'ZI (`db.scoped_as`) o'rnatadi --
+    chaqiruvchi tashqarida qayta o'rab qo'yishi SHART EMAS (ataylab shunday:
+    caller buni unutib qo'ysa, boshqa kompaniyaning ma'lumoti sizib chiqishi
+    mumkin edi -- xavfsizroq bo'lishi uchun funksiyaning o'ziga joylashtirildi).
+    Ataylab ODDIY tutilgan (faqat Lead/Sale sanoqlari) --
+    `_build_dashboard_overview()` kabi to'liq dashboard hisob-kitobi
+    `current_user`ga bog'liq (web-so'rov konteksti talab qiladi), Telegram
+    webhook esa login qilingan foydalanuvchisiz ishlaydi, shu sabab bu
+    yerga qo'shilmadi."""
+    session = get_session()
+    try:
+        with db.scoped_as(company_id):
+            now = dt.datetime.utcnow()
+            today_start = dt.datetime(now.year, now.month, now.day)
+            week_start = today_start - dt.timedelta(days=today_start.weekday())
+            month_start = dt.datetime(now.year, now.month, 1)
+
+            leads_today = session.query(Lead).filter(Lead.created_at >= today_start).count()
+            leads_week = session.query(Lead).filter(Lead.created_at >= week_start).count()
+            leads_total = session.query(Lead).count()
+
+            sales_month = (
+                session.query(Sale)
+                .filter(
+                    Sale.is_returned == False,  # noqa: E712
+                    Sale.sold_at >= month_start,
+                    Sale.amount >= kpi_bonus.get_min_sale_amount(company_id=company_id),
+                )
+                .all()
+            )
+            sales_count_month = len(sales_month)
+            turnover_month = sum(s.amount for s in sales_month)
+
+            return (
+                f"- Bugun tushgan yangi lidlar: {leads_today}\n"
+                f"- Shu hafta (dushanbadan) tushgan yangi lidlar: {leads_week}\n"
+                f"- Jami lidlar (CRM'da, barcha vaqt): {leads_total}\n"
+                f"- Shu oy sotuvlar soni: {sales_count_month} ta, oborot: {turnover_month:,.0f} so'm\n"
+            )
+    finally:
+        session.close()
+
+
+def _handle_company_free_text(chat_id: int, company: Company, user_text: str) -> None:
+    """`handle_free_text`dan chaqiriladi -- kompaniyaga (platforma egasi
+    EMAS) tegishli, ALLAQACHON ro'yxatdan o'tgan Telegram chat uchun.
+    Web'dagi "Ichki AI-yordamchi" (`/api/assistant`) bilan bir xil
+    shaxs/bilim bazasi (`_web_assistant_system_prompt()`) ishlatiladi,
+    ustiga O'SHA kompaniyaning jonli qisqacha statistikasi qo'shiladi --
+    shunda AI "bugun necha lead keldi" kabi savollarga ham chin
+    ma'lumot bilan javob beradi, umumiy KNOWLEDGE_BASE'dan taxmin
+    qilmaydi. ACTION/ANALYSIS/BUDGET intentlar (target yaratish/pauza/
+    resume) BU YERDA UMUMAN ishlatilmaydi -- faqat o'qish uchun savol-
+    javob, xuddi web'dagi menejer rejimi kabi."""
+    if not plans.ai_enabled_for_plan(company.plan):
+        tg_send(
+            chat_id,
+            "AI-yordamchi sizning tarifingizda mavjud emas. "
+            "\"Biznes\" yoki \"Ekspert\" tarifiga o'ting -- tafsilotlar uchun "
+            "https://replix.uz/tariflar",
+        )
+        return
+
+    history = get_history(chat_id)
+    history.append({"role": "user", "content": user_text})
+
+    try:
+        snapshot = _company_ai_snapshot(company.id)
+        prompt = (
+            f"{_web_assistant_system_prompt()}\n\n---\n\n"
+            f"# \"{company.name}\" kompaniyasining bugungi qisqacha holati\n\n{snapshot}\n"
+            "Faqat shu kompaniyaga oid savollarga javob ber. Reklama "
+            "hisobini boshqarish (target yoqish/o'chirish/pauza) BU "
+            "YERDAN mumkin emas -- bunday so'rov kelsa, buni saytdagi "
+            "\"Target\" bo'limidan qilish kerakligini ayt."
+        )
+        answer = orchestrator.call_light_chat(prompt, history, max_tokens=800)
+    except Exception as e:
+        logger.exception("Kompaniya AI-yordamchisi xatosi (company_id=%s)", company.id)
+        answer = orchestrator.friendly_error_message(e)
+
+    unanswered = False
+    if answer and "[[UNANSWERED]]" in answer:
+        unanswered = True
+        answer = answer.replace("[[UNANSWERED]]", "").strip()
+
+    history.append({"role": "assistant", "content": answer})
+    save_history(chat_id, history)
+    tg_send(chat_id, answer)
+
+    if unanswered:
+        session = get_session()
+        try:
+            session.add(AssistantUnanswered(
+                company_id=company.id, manager_id=None, manager_name="Telegram",
+                question=user_text[:2000],
+            ))
+            session.commit()
+        except Exception:
+            logger.exception("Telegram AI: javobsiz savolni yozishda xatolik")
+            session.rollback()
+        finally:
+            session.close()
+
+
 def _is_registered_chat(chat_id: int) -> bool:
     """Bu chat/guruh ALLAQACHON biror kompaniyaga (yoki platforma egasiga)
     bog'langanmi: (a) platforma egasining o'z chat/guruhi
@@ -682,12 +817,24 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
     # qilishi mumkin bo'lib qolar edi. Shu uchun bu yerga chiqishdan oldin
     # chat egasi platforma egasi ekanligi tasdiqlanadi.
     if not _is_owner_telegram_chat(chat_id):
-        # 2026-09, foydalanuvchi so'rovi: hali HECH QAYSI kompaniyaga
-        # ulanmagan ("yot") chatga -- shu "erkin suhbat egaga xos" degan
-        # umumiy xabar o'rniga -- ANIQ ro'yxatdan o'tish yo'riqnomasi
-        # (havola bilan) ko'rsatiladi; kompaniyaga ALLAQACHON ulangan
-        # (lekin egasi bo'lmagan) chatga esa avvalgidek qisqa tushuntirish.
-        tg_send(chat_id, _NOT_OWNER_TEXT if _is_registered_chat(chat_id) else _REGISTER_HELP_TEXT)
+        # 2026-09, foydalanuvchi so'rovi ("har kompaniyaga o'z AI-
+        # yordamchisi"): ILGARI bu yerda platforma egasi bo'lmagan HAR
+        # QANDAY chat (hatto to'liq ro'yxatdan o'tgan, AI tarifi bor
+        # kompaniya bo'lsa ham) doim `_NOT_OWNER_TEXT` bilan rad
+        # etilardi. Endi: (a) chat ALLAQACHON biror kompaniyaga ulangan
+        # bo'lsa -- o'sha kompaniyaning O'Z ma'lumotlariga asoslangan AI
+        # javobi beriladi (`_handle_company_free_text`, tarifda AI
+        # yo'q bo'lsa -- ichida upgrade taklifi bilan rad etadi); (b)
+        # hali HECH QAYSI kompaniyaga ulanmagan ("yot") chatga -- avvalgidek
+        # ANIQ ro'yxatdan o'tish yo'riqnomasi (havola bilan) ko'rsatiladi.
+        # Ikkalasida ham reklama boshqaruvi (pauza/resume/target yaratish)
+        # ishlamaydi -- bu FAQAT platforma egasiga tegishli bo'lib qoladi
+        # (yuqoridagi XAVFSIZLIK TUZATISHI izohi).
+        company, _manager = _resolve_telegram_company(chat_id)
+        if company is not None:
+            _handle_company_free_text(chat_id, company, user_text)
+        else:
+            tg_send(chat_id, _REGISTER_HELP_TEXT)
         return
 
     history = get_history(chat_id)

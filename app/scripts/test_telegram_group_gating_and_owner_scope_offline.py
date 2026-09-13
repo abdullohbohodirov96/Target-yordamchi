@@ -277,6 +277,101 @@ def test_owner_chat_also_recognized_via_manager_telegram_user_id():
     print("OK: ENV guruhi sozlanmagan bo'lsa ham, standart kompaniyaning menejeri (telegram_user_id mos) shaxsiy chatidan /status ishlayveradi")
 
 
+# ---------------------------------------------------------------------------
+# 3) 2026-09, foydalanuvchi so'rovi ("har kompaniyaga o'z AI-yordamchisi"):
+#    registratsiyadan o'tgan (lekin platforma egasi bo'lmagan) kompaniya
+#    chati endi RAD ETILMAYDI -- agar tarifida AI bo'lsa, o'sha kompaniyaning
+#    o'z ma'lumotlariga asoslangan javob oladi; bo'lmasa -- upgrade taklifi.
+#    Ikkalasida ham reklama boshqaruvi (classify_intent/execute_intent)
+#    ISHGA TUSHMAYDI -- bu FAQAT platforma egasiga tegishli bo'lib qoladi.
+# ---------------------------------------------------------------------------
+
+def _make_company_with_telegram_group(db_module, *, plan, telegram_group_id, name="Mijoz MChJ"):
+    session = db_module.get_session()
+    try:
+        c = db_module.Company(name=name, is_active=True, plan=plan, telegram_group_id=str(telegram_group_id))
+        session.add(c)
+        session.commit()
+        return c.id
+    finally:
+        session.close()
+
+
+def test_free_text_from_registered_ai_plan_company_gets_scoped_ai_reply():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_app(os.path.join(tmp, "s13.db"), owner_group_env=-300111)
+        _make_company_with_telegram_group(db_module, plan="business", telegram_group_id=-300222)
+
+        with mock.patch.object(app_module.orchestrator, "classify_intent") as mock_classify, \
+             mock.patch.object(app_module.orchestrator, "execute_intent") as mock_execute, \
+             mock.patch.object(app_module.orchestrator, "call_light_chat", return_value="Bugun 3 ta yangi lead keldi.") as mock_chat, \
+             mock.patch.object(app_module, "tg_send") as mock_send:
+            app_module.handle_free_text(-300222, "bugun necha lead keldi?")
+
+        mock_classify.assert_not_called()
+        mock_execute.assert_not_called()
+        mock_chat.assert_called_once()
+        mock_send.assert_called_once_with(-300222, "Bugun 3 ta yangi lead keldi.")
+    print("OK: AI tarifi bor (business) ro'yxatdan o'tgan kompaniya guruhi -- rad etilmaydi, kompaniyaga xos AI javob oladi, reklama-boshqaruv (classify/execute_intent) ishga tushmaydi")
+
+
+def test_free_text_from_registered_non_ai_plan_company_gets_upgrade_message():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_app(os.path.join(tmp, "s14.db"), owner_group_env=-300333)
+        _make_company_with_telegram_group(db_module, plan="start", telegram_group_id=-300444)
+
+        with mock.patch.object(app_module.orchestrator, "call_light_chat") as mock_chat, \
+             mock.patch.object(app_module, "tg_send") as mock_send:
+            app_module.handle_free_text(-300444, "bugun necha lead keldi?")
+
+        mock_chat.assert_not_called()
+        mock_send.assert_called_once()
+        assert "tarifingizda mavjud emas" in mock_send.call_args[0][1]
+    print("OK: AI'siz tarifdagi (start) ro'yxatdan o'tgan kompaniya guruhi -- AI chaqirilmaydi, tarifni oshirish haqida xabar yuboriladi")
+
+
+def test_unregistered_chat_still_gets_register_help_not_company_ai():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_app(os.path.join(tmp, "s15.db"), owner_group_env=-300555)
+        # Boshqa (bog'liq bo'lmagan) kompaniya bazada bor, lekin bu chat
+        # ID'siga UNI HECH NARSASI ulanmagan.
+        _make_company_with_telegram_group(db_module, plan="business", telegram_group_id=-300666)
+
+        with mock.patch.object(app_module.orchestrator, "call_light_chat") as mock_chat, \
+             mock.patch.object(app_module, "tg_send") as mock_send:
+            app_module.handle_free_text(-300999, "salom")
+
+        mock_chat.assert_not_called()
+        mock_send.assert_called_once_with(-300999, app_module._REGISTER_HELP_TEXT)
+    print("OK: hali hech qaysi kompaniyaga ulanmagan 'yot' chat -- boshqa kompaniya bazada bo'lsa ham, ro'yxatdan o'tish yo'riqnomasini oladi (AI ishga tushmaydi)")
+
+
+def test_company_ai_snapshot_is_tenant_scoped():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, app_module = _fresh_app(os.path.join(tmp, "s16.db"), owner_group_env=-300777)
+        company_a_id = _make_company_with_telegram_group(db_module, plan="business", telegram_group_id=-300888, name="A firma")
+        company_b_id = _make_company_with_telegram_group(db_module, plan="business", telegram_group_id=-300999, name="B firma")
+
+        # MUHIM: `scoped_as` faqat SELECT so'rovlarni filtrlaydi
+        # (`_apply_tenant_scope`ga qarang -- `if not execute_state.is_select:
+        # return`) -- yangi qator qo'shilganda `company_id` ANIQ o'zi
+        # ko'rsatilishi kerak, aks holda NULL bo'lib qoladi.
+        session = db_module.get_session()
+        try:
+            session.add(db_module.Lead(company_id=company_a_id, full_name="A mijozi", phone="+998900000001", status="new"))
+            session.add(db_module.Lead(company_id=company_b_id, full_name="B mijozi 1", phone="+998900000002", status="new"))
+            session.add(db_module.Lead(company_id=company_b_id, full_name="B mijozi 2", phone="+998900000003", status="new"))
+            session.commit()
+        finally:
+            session.close()
+
+        snapshot_a = app_module._company_ai_snapshot(company_a_id)
+        snapshot_b = app_module._company_ai_snapshot(company_b_id)
+        assert "Jami lidlar (CRM'da, barcha vaqt): 1" in snapshot_a
+        assert "Jami lidlar (CRM'da, barcha vaqt): 2" in snapshot_b
+    print("OK: kompaniyaga xos AI snapshot faqat O'SHA kompaniyaning lidlarini sanaydi -- boshqa kompaniyaning ma'lumoti sizib chiqmaydi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
