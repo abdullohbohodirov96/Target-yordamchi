@@ -730,7 +730,72 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
     tg_send(chat_id, answer)
 
 
-def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
+def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "str | None":
+    """2026-09, foydalanuvchi so'rovi ("telegram ulashni bosgandan keyin,
+    avtomaticheskiy telegramga kirib, botga kirib startni bossa..."):
+    `/connect-accounts/telegram/personal-link` yoki `.../group-link`
+    tugmasi orqali yaratilgan bir martalik token'ni ishlatadi --
+    shaxsiy (`Manager.telegram_user_id`) yoki guruh (`Company.
+    telegram_group_id`) ulanishini AVTOMATIK bog'laydi, foydalanuvchi
+    hech qanday ID'ni qo'lda ko'chirib-joylashtirmaydi.
+
+    Token `kv_store`da ("tg_link_token:<token>" kaliti bilan) saqlanadi;
+    `kv_store.py`da o'chirish metodi YO'Q, shuning uchun "iste'mol qilish"
+    qiymatni `None` bilan ustidan yozish orqali amalga oshiriladi (keyingi
+    urinishda `get_json` xuddi umuman topilmagandek `None` qaytaradi).
+    Token 24 soatdan keyin ham amal qilmay qoladi. Muvaffaqiyatli bo'lsa
+    foydalanuvchiga yuboriladigan tasdiqlash matnini, aks holda `None`ni
+    (chaqiruvchi tomon oddiy /start oqimiga tushib ketadi) qaytaradi."""
+    key = f"tg_link_token:{token}"
+    data = kv_store.get_json(key, default=None)
+    if not data or not isinstance(data, dict):
+        return None
+    kind = data.get("kind")
+    company_id = data.get("company_id")
+    created_at = data.get("created_at")
+    try:
+        if created_at and (dt.datetime.utcnow() - dt.datetime.fromisoformat(created_at)).total_seconds() > 86400:
+            kv_store.set_json(key, None)
+            return None
+    except Exception:
+        pass
+    kv_store.set_json(key, None)  # bir martalik -- darhol "iste'mol qilinadi" (muvaffaqiyatsiz bo'lsa ham qayta ishlatilmaydi)
+
+    session = get_session()
+    try:
+        with db.unscoped():
+            company = session.get(Company, company_id) if company_id else None
+            if company is None:
+                return None
+            if kind == "personal":
+                manager_id = data.get("manager_id")
+                manager = session.get(Manager, manager_id) if manager_id else None
+                if manager is None or manager.company_id != company_id:
+                    return None
+                if chat_type != "private":
+                    return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
+                manager.telegram_user_id = str(chat_id)
+                session.commit()
+                return (
+                    f"✅ Telegram hisobingiz \"{company.name}\" kompaniyasiga shaxsan ulandi. "
+                    "Endi \"Qayta aloqa\" va boshqa shaxsiy eslatmalar shu yerga keladi."
+                )
+            if kind == "group":
+                if chat_type not in ("group", "supergroup"):
+                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+                c = session.get(Company, company_id)
+                c.telegram_group_id = str(chat_id)
+                session.commit()
+                return (
+                    f"✅ Ushbu guruh \"{company.name}\" kompaniyasiga ulandi. Targeting/xarajat va CPL "
+                    "avtomatik pauza ogohlantirishlari, shuningdek lidlar haqidagi xabarlar endi shu guruhga keladi."
+                )
+            return None
+    finally:
+        session.close()
+
+
+def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "private") -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: /status, /analyze, /pause, /resume
     # to'g'ridan-to'g'ri platforma egasining GLOBAL Meta hisobiga ta'sir
     # qiladi (haqiqiy reklamani to'xtatish/ishga tushirish, uning hisobotini
@@ -741,6 +806,18 @@ def handle_command(chat_id: int, cmd: str, args: list[str]) -> None:
         tg_send(chat_id, _NOT_OWNER_TEXT)
         return
     if cmd == "/start":
+        # 2026-09, foydalanuvchi so'rovi ("bitta tugma bilan telegram
+        # ulash"): `?start=<token>` chuqur havola orqali kelgan bo'lsa
+        # (`/connect-accounts` sahifasidagi "Ulash" tugmalari), token'ni
+        # avtomatik iste'mol qilib, shaxsiy/guruh ulanishini o'zi bog'laydi
+        # -- foydalanuvchi hech qanday ID ko'chirib-joylashtirmaydi. Token
+        # noto'g'ri/eskirgan/yo'q bo'lsa pastdagi ODDIY /start oqimiga
+        # o'tiladi (xatti-harakat o'zgarmaydi).
+        if args:
+            link_reply = _consume_telegram_link_token(args[0].strip(), chat_id, chat_type)
+            if link_reply is not None:
+                tg_send(chat_id, link_reply)
+                return
         kv_store.set_json(_conv_key(chat_id), [])
         # 2026-09, foydalanuvchi so'rovi: "bot boshqala yozsa registratsiya
         # qiling va ozingizni qoshing dib qadamma qadam harbir bosqichni
@@ -1048,7 +1125,7 @@ def webhook():
     try:
         if text.startswith("/"):
             parts = text.split()
-            handle_command(chat_id, parts[0].split("@")[0], parts[1:])
+            handle_command(chat_id, parts[0].split("@")[0], parts[1:], chat_type)
         elif chat_type in ("group", "supergroup") and not _is_bot_addressed(message):
             # 2026-09, XAVFSIZLIK/XARAJAT TUZATISHI: guruh chatida odamlar
             # o'zaro oddiy gaplashganda bot javob QAYTARMASLIGI kerak --
@@ -1346,6 +1423,7 @@ def connect_accounts():
         fb_oauth_configured=meta_api.oauth_configured(),
         capi_configured=meta_events.capi_credentials_configured(company),
         manual_capi_configured=bool(company.meta_capi_dataset_id and company.get_meta_capi_token()),
+        telegram_bot_username=_get_bot_identity().get("username"),
     )
 
 
@@ -1510,6 +1588,21 @@ def _normalize_oauth_account(a: dict) -> dict:
     return {"id": a["id"], "name": a.get("name") or a["id"]}
 
 
+def _run_initial_lead_sync(company_id: int) -> None:
+    """`_save_facebook_connection()` muvaffaqiyatli yakunlangach fon
+    oqimida chaqiriladi -- to'liq izoh chaqiruv joyida."""
+    session = get_session()
+    try:
+        company = session.get(Company, company_id)
+        if not company:
+            return
+        lead_sync.sync_once(company=company)
+    except Exception:
+        logger.exception("Ulanishdan keyingi darhol lead-sinxronizatsiyasida xato (company_id=%s)", company_id)
+    finally:
+        session.close()
+
+
 def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
                                business: dict | None = None, dataset: dict | None = None,
                                expires_in: int | None = None) -> None:
@@ -1592,8 +1685,20 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
         c.meta_integration_status = "connected"
         c.meta_last_verified_at = dt.datetime.utcnow()
         db_session.commit()
+        connected_company_id = c.id
     finally:
         db_session.close()
+
+    # 2026-09, foydalanuvchi so'rovi ("facebook meta ulansa ... yangilarni
+    # tortib olishni boshlasin avtomatik"): lead-sinxronizatsiya kursori
+    # birinchi ishga tushishda "hozir"ga o'rnatiladi (eski tarixni ommaviy
+    # tortib olmaslik uchun, `lead_sync.py`ga qarang) -- shu kursorni
+    # ULANGAN ZAHOTI o'rnatish uchun DARHOL (15 daqiqalik cron navbatini
+    # kutmasdan) fon oqimida bitta sinxronizatsiya ishga tushiriladi. Aks
+    # holda ulanish bilan birinchi cron ishga tushishi orasidagi (eng
+    # ko'pi bilan 15 daqiqalik) oynada kelgan har qanday lead kursor hali
+    # yo'qligi sababli umuman kuzatilmay qolib ketishi mumkin edi.
+    threading.Thread(target=_run_initial_lead_sync, args=(connected_company_id,), daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -1684,17 +1789,37 @@ def connect_facebook_callback():
         flash("Facebook hisobingizda siz administrator bo'lgan sahifa topilmadi -- avval Facebook Page yarating (yoki unga administrator bo'ling).", "error")
         return redirect(url_for("connect_accounts"))
 
-    # 2026-09, "production-ready Meta Ads" so'rovi: reklama scope
-    # so'ralganda (Business/Ad Account/Dataset tanlovi mumkin bo'lsa) --
-    # ENDI HAR DOIM aniq tanlov ekraniga o'tkaziladi (jimgina "birinchisini"
-    # avtomatik saqlab, foydalanuvchiga hech narsa ko'rsatmasdan qo'ymaydi).
-    # Avtomatik-yagona-tanlov FAQAT reklama scope so'ralmagan (faqat
-    # Page/Instagram ulash) holatda qoladi -- u yerda haqiqatan tanlaydigan
-    # narsa yo'q.
-    if not include_ads and len(pages) == 1:
-        _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
-        flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
-        return redirect(url_for("connect_accounts"))
+    # 2026-09, foydalanuvchi so'rovi ("avtomaticheskiy ulanib ketmayapti...
+    # avtomaticheskiy ulanishni to'g'irlagandik-ku, buzilib ketibdi"):
+    # ILGARI reklama scope so'ralganda (`include_ads=True`) tanlov ekrani
+    # HAR DOIM ko'rsatilardi -- hatto atigi BITTA Business/sahifa/reklama
+    # hisobi/Pixel bo'lganda ham (bunday holatda haqiqatan tanlaydigan
+    # HECH NARSA yo'q, tugma ortiqcha bosqich edi). Endi: agar HAR BIR
+    # darajada (sahifa, Business, reklama hisobi, Pixel) AYNAN bitta yoki
+    # nolta nomzod bo'lsa -- BARCHASI (topilgan HAMMASI) avtomatik saqlanadi,
+    # foydalanuvchiga hech narsa ko'rsatilmaydi. Tanlov ekrani FAQAT
+    # haqiqiy noaniqlik bo'lganda (masalan 2+ Business Portfolio yoki 2+
+    # reklama hisobi) ko'rsatiladi -- o'shanda tasodifan noto'g'ri hisobni
+    # "birinchisi" deb avtomatik tanlash xavfli bo'lardi.
+    if len(pages) == 1:
+        if not include_ads:
+            _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
+            flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
+            return redirect(url_for("connect_accounts"))
+
+        single_business = businesses[0] if len(businesses) == 1 else None
+        if len(businesses) <= 1:
+            accounts_pool = business_assets.get(single_business["id"], {}).get("accounts") if single_business else fallback_accounts
+            pixels_pool = business_assets.get(single_business["id"], {}).get("pixels") if single_business else []
+            if len(accounts_pool or []) <= 1:
+                chosen_account = accounts_pool[0] if accounts_pool else None
+                chosen_dataset = pixels_pool[0] if len(pixels_pool or []) == 1 else None
+                _save_facebook_connection(
+                    long_token, pages[0], chosen_account,
+                    business=single_business, dataset=chosen_dataset, expires_in=expires_in,
+                )
+                flash("Facebook/Instagram/reklama hisobingiz to'liq avtomatik ulandi.", "success")
+                return redirect(url_for("connect_accounts"))
 
     # Token/ro'yxatlar vaqtinchalik (tanlov yakunlanguncha) cookie-sessiyada
     # saqlanadi -- admin darhol tanlab yakunlaydi, uzoq turmaydi.
@@ -1920,6 +2045,64 @@ def connect_telegram_test():
             "error",
         )
     return redirect(url_for("connect_accounts"))
+
+
+@app.route("/connect-accounts/telegram/personal-link", methods=["POST"])
+@login_required
+@admin_required
+def connect_telegram_personal_link():
+    """2026-09, foydalanuvchi so'rovi ("telegram ulashni bosgandan keyin,
+    avtomaticheskiy telegramga kirib, botga kirib startni bossa..."):
+    bir martalik token yaratib, adminni to'g'ridan-to'g'ri botning shaxsiy
+    chatiga (`?start=<token>`) yo'naltiradi -- u yerda /start bosilishi
+    bilanoq (`_consume_telegram_link_token`) shu adminning `Manager.
+    telegram_user_id`si AVTOMATIK to'ldiriladi, hech qanday ID qo'lda
+    kiritilmaydi. Bu ESKI (`/id` orqali ID'ni ko'rib, "Menejerlar"
+    bo'limiga qo'lda kiritish) yo'lni ALMASHTIRMAYDI -- shunchaki qo'shimcha,
+    osonroq yo'l."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+    bot_username = _get_bot_identity().get("username")
+    if not bot_username:
+        flash("Telegram bot hozircha sozlanmagan -- administratorga murojaat qiling.", "error")
+        return redirect(url_for("connect_accounts"))
+    token = secrets.token_urlsafe(18)
+    kv_store.set_json(f"tg_link_token:{token}", {
+        "kind": "personal",
+        "company_id": company.id,
+        "manager_id": current_user.id,
+        "created_at": dt.datetime.utcnow().isoformat(),
+    })
+    return redirect(f"https://t.me/{bot_username}?start={token}")
+
+
+@app.route("/connect-accounts/telegram/group-link", methods=["POST"])
+@login_required
+@admin_required
+def connect_telegram_group_link():
+    """`connect_telegram_personal_link`ga o'xshash, lekin `?startgroup=`
+    chuqur havolasi orqali -- Telegram foydalanuvchiga o'zining "guruh
+    tanlash" ekranini ko'rsatadi, guruh tanlanib tasdiqlangach bot o'sha
+    GURUHGA qo'shiladi va `/start <token>` xabarini O'SHA guruhdan oladi
+    -- shuning uchun `Company.telegram_group_id` (eski qo'lda `/groupid`
+    orqali ID ko'chirib-joylashtirish o'rniga) avtomatik to'ldiriladi."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("connect_accounts"))
+    bot_username = _get_bot_identity().get("username")
+    if not bot_username:
+        flash("Telegram bot hozircha sozlanmagan -- administratorga murojaat qiling.", "error")
+        return redirect(url_for("connect_accounts"))
+    token = secrets.token_urlsafe(18)
+    kv_store.set_json(f"tg_link_token:{token}", {
+        "kind": "group",
+        "company_id": company.id,
+        "created_at": dt.datetime.utcnow().isoformat(),
+    })
+    return redirect(f"https://t.me/{bot_username}?startgroup={token}")
 
 
 # ---------------------------------------------------------------------------

@@ -2314,7 +2314,78 @@ def build_admin_report(
     else:
         body_lines.append("(faol kampaniya topilmadi)")
 
+    company_id = getattr(company, "id", None) if company else db.get_default_company_id()
+    body_lines.extend(_leads_summary_lines(company_id))
+
     return header + "\n".join(body_lines)
+
+
+def _leads_summary_lines(company_id: "int | None") -> list:
+    """"Lidlar" bo'limi -- 2026-09, foydalanuvchi so'rovi: kunlik hisobotga
+    (soat 9:00, `job_admin_report`) lidlar statistikasi ham qo'shilsin --
+    "nechta lid keldi, nechtasi ishlangan, sifatli/sifatsiz, nechtasi bilan
+    hali gaplashilmagan". HAR BIR kompaniyaning bosqich nomlari/kategoriyasi
+    o'zgacha bo'lishi mumkinligi uchun (`FunnelStage`, company-scoped)
+    "voronka bo'yicha" qismi HAR BIR kompaniyaning O'Z bosqichlaridan
+    o'qiladi, kodga qattiq yozilgan nom emas.
+
+    "Gaplashilmagan" -- `Lead.status == "new"` (voronkaning boshlang'ich
+    bosqichi, docstring'da yozilgan qat'iy oqim: "new -> contacted ->
+    qualified/unqualified -> sold") -- menejer hali birinchi aloqani ham
+    qilmagan lidlar."""
+    if company_id is None:
+        return []
+
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            leads = session.query(db.Lead).filter(db.Lead.company_id == company_id).all()
+            stages = (
+                session.query(db.FunnelStage)
+                .filter(db.FunnelStage.company_id == company_id, db.FunnelStage.is_active.is_(True))
+                .order_by(db.FunnelStage.sort_order.asc())
+                .all()
+            )
+    finally:
+        session.close()
+
+    if not leads:
+        return []
+
+    stage_by_key = {s.key: s for s in stages}
+    now = datetime.utcnow() + timedelta(hours=5)  # Toshkent
+    today_start_tashkent = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_tashkent - timedelta(hours=5)
+
+    total = len(leads)
+    new_today = 0
+    not_contacted = 0
+    category_counts = {"active": 0, "qualified": 0, "unqualified": 0, "sold": 0}
+    stage_counts: dict = {}
+
+    for lead in leads:
+        effective_created = lead.lead_created_time or lead.created_at
+        if effective_created and effective_created >= today_start_utc:
+            new_today += 1
+        stage = stage_by_key.get(lead.status)
+        category = stage.category if stage else "active"
+        category_counts[category] = category_counts.get(category, 0) + 1
+        label = stage.label if stage else (lead.status or "noma'lum")
+        stage_counts[label] = stage_counts.get(label, 0) + 1
+        if lead.status == "new":
+            not_contacted += 1
+
+    lines = [
+        "",
+        "\U0001F4CB Lidlar (CRM):",
+        f"   Bugun kelgan: {new_today} | Umumiy (hammasi): {total}",
+        f"   Ishlangan: {total - not_contacted} | Hali gaplashilmagan: {not_contacted}",
+        f"   Sifatli: {category_counts.get('qualified', 0)} | Sifatsiz: {category_counts.get('unqualified', 0)} | Sotilgan: {category_counts.get('sold', 0)}",
+    ]
+    if stage_counts:
+        ranked = sorted(stage_counts.items(), key=lambda kv: -kv[1])
+        lines.append("   Voronka bo'yicha: " + ", ".join(f"{label} — {count}" for label, count in ranked))
+    return lines
 
 
 

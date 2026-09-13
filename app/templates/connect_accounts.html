@@ -89,7 +89,11 @@
       <label>Telegram guruh ID</label>
       <input type="text" name="telegram_group_id" value="{{ company.telegram_group_id or '' }}" placeholder="masalan: -1001234567890">
       <p class="text-faint" style="font-size:12px; margin:4px 0 0">
+        {% if telegram_bot_username %}
+        Pastdagi "Guruhga qo'shish" tugmasi bilan avtomatik ulash osonroq -- yoki qo'lda: botni guruhingizga qo'shing, guruh ichida <code>/groupid</code> deb yozing, javobidagi ID'ni shu yerga joylashtiring.
+        {% else %}
         Botni guruhingizga qo'shing, guruh ichida <code>/groupid</code> deb yozing -- botning javobidagi ID'ni shu yerga joylashtiring.
+        {% endif %}
         Targeting/xarajat va CPL avtomatik pauza ogohlantirishlari shu guruhga yuboriladi.
       </p>
     </div>
@@ -115,6 +119,24 @@
 
     <button type="submit" class="block">Saqlash</button>
   </form>
+
+  {% if telegram_bot_username %}
+  <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+    <form method="post" action="{{ url_for('connect_telegram_personal_link') }}">
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
+        📱 Telegramda shaxsan ulash (bir tugma)
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('connect_telegram_group_link') }}">
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
+        👥 Guruhga qo'shish (bir tugma)
+      </button>
+    </form>
+  </div>
+  <p class="text-faint" style="font-size:12px; margin:6px 0 0">
+    Tugmani bosing -- Telegram ochiladi, botga <b>Start</b> bossangiz (yoki guruh tanlab qo'shsangiz) ulanish o'zi avtomatik yakunlanadi.
+  </p>
+  {% endif %}
 
   {% if company.telegram_group_id %}
   <form method="post" action="{{ url_for('connect_telegram_test') }}" style="margin-top:10px">
