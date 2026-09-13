@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block title %}To'lov — Replix{% endblock %}
 {% block content %}
+{#
+  2026-09, foydalanuvchi so'rovi ("to'lov jarayonini yaxshilash" ->
+  "To'lov sahifasini soddalashtirish"): ILGARI sahifa 4 ta bir xil
+  og'irlikdagi, qattiq raqamlangan (1/2/3/4) kartadan iborat edi -- raqamlar
+  Payme sozlangan/sozlanmaganiga qarab suzib yurardi (masalan "2-bosqich"
+  ba'zan Payme, ba'zan qo'lda to'lash bo'lardi), va eng yaxshi yo'l
+  (avtomatik kartadan yechish) qo'lda bank o'tkazmasi bilan BIR XIL
+  ko'rinishda, bir xil e'tiborda ko'rsatilardi.
+
+  Endi: (a) raqamlangan bosqichlar OLIB TASHLANDI -- shift bo'ladigan
+  raqamlar o'rniga aniq sarlavhalar; (b) Payme yoqilgan bo'lsa, avtomatik
+  to'lov "Tavsiya etiladi" belgisi bilan vizual USTUVOR qilib ko'rsatiladi;
+  (c) qo'lda to'lash (bank rekvizitlari) va "To'lov qildim" tasdiqlash
+  ENDI BITTA kartada -- ular aslida bitta harakatning ikki qismi edi;
+  (d) agar Payme allaqachon ULANGAN va YOQILGAN bo'lsa (eng yaxshi holat),
+  qo'lda to'lash bo'limi <details> ichida YASHIRIN turadi -- kerak bo'lsa
+  ochiladi, lekin ekranni band qilmaydi.
+#}
 <div class="page-head">
   <div>
     <h1>To'lov</h1>
@@ -9,7 +27,7 @@
 </div>
 
 <div class="card" style="max-width:480px; margin-bottom:20px">
-  <h2>1. Tarifni tanlang</h2>
+  <h2>Tarifni tanlang</h2>
   <form method="post">
     <input type="hidden" name="action" value="choose_plan">
     <div class="field">
@@ -23,9 +41,13 @@
   </form>
 </div>
 
+{% set autopay_ready = payme_card_masked and payme_autopay_enabled %}
 {% if payme_subscribe_configured %}
-<div class="card" style="max-width:480px; margin-bottom:20px">
-  <h2>2. Avtomatik to'lov (Payme)</h2>
+<div class="card" style="max-width:480px; margin-bottom:20px{% if not autopay_ready %}; border-color:var(--blue){% endif %}">
+  <h2 style="display:flex; align-items:center; gap:8px">
+    Avtomatik to'lov (Payme)
+    {% if not autopay_ready %}<span class="badge badge-color-blue">Tavsiya etiladi</span>{% endif %}
+  </h2>
   {% if payme_card_masked %}
   <p class="page-subtitle" style="margin-top:-6px">Bog'langan karta: <b style="font-family:monospace">{{ payme_card_masked }}</b></p>
   <p class="page-subtitle" style="margin-top:-6px">Har oy muddat tugashidan oldin <b>${{ plan.price_usd }}</b> shu kartadan avtomatik yechiladi{% if not payme_autopay_enabled %} — hozir <b>O'CHIRILGAN</b>{% endif %}.</p>
@@ -59,8 +81,30 @@
 </div>
 {% endif %}
 
-<div class="card" style="max-width:480px; margin-bottom:20px">
-  <h2>{{ "3" if payme_subscribe_configured else "2" }}. Qo'lda to'lash</h2>
+{% if autopay_ready %}
+<details class="card" style="max-width:480px">
+  <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--ink)">Qo'lda to'lash kerakmi? (ixtiyoriy)</summary>
+  <div style="margin-top:14px">
+    {% if payme_card %}
+    <p class="page-subtitle" style="margin-top:-6px">PayMe orqali quyidagi kartaga <b>${{ plan.price_usd }}</b> (yoki so'mdagi ekvivalentini) o'tkazing:</p>
+    <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
+      <div><b>Karta:</b> {{ payme_card }}</div>
+      {% if payme_card_holder %}<div><b>Egasi:</b> {{ payme_card_holder }}</div>{% endif %}
+      <div><b>Izohga yozing:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
+    </div>
+    <p class="page-subtitle" style="margin-top:-6px">Izoh maydoniga aynan <span style="font-family:monospace">{{ payment_ref }}</span> kodini yozishni unutmang.</p>
+    {% else %}
+    <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
+    {% endif %}
+    <form method="post">
+      <input type="hidden" name="action" value="mark_paid">
+      <button type="submit" class="block">To'lov qildim</button>
+    </form>
+  </div>
+</details>
+{% else %}
+<div class="card" style="max-width:480px">
+  <h2>Qo'lda to'lash</h2>
   {% if payme_card %}
   <p class="page-subtitle" style="margin-top:-6px">PayMe orqali quyidagi kartaga <b>${{ plan.price_usd }}</b> (yoki so'mdagi ekvivalentini) o'tkazing:</p>
   <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
@@ -72,14 +116,11 @@
   {% else %}
   <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
   {% endif %}
-</div>
-
-<div class="card" style="max-width:480px">
-  <h2>{{ "4" if payme_subscribe_configured else "3" }}. Tasdiqlash</h2>
-  <p class="page-subtitle" style="margin-top:-6px">To'lovni amalga oshirgach, quyidagi tugmani bosing — biz darhol xabardor bo'lamiz va tekshirib, hisobingizni uzaytiramiz (odatda bir necha soat ichida).</p>
+  <p class="page-subtitle" style="margin-top:8px">To'lovni amalga oshirgach, quyidagi tugmani bosing — biz darhol xabardor bo'lamiz va tekshirib, hisobingizni uzaytiramiz (odatda bir necha soat ichida).</p>
   <form method="post">
     <input type="hidden" name="action" value="mark_paid">
     <button type="submit" class="block">To'lov qildim</button>
   </form>
 </div>
+{% endif %}
 {% endblock %}
