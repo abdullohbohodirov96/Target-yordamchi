@@ -28,6 +28,7 @@
   {% if status_group %}<input type="hidden" name="status_group" value="{{ status_group }}">{% endif %}
   {% if viewing_company %}<input type="hidden" name="company_id" value="{{ viewing_company.id }}">{% endif %}
   {% for f in form_ids %}<input type="hidden" name="form_id" value="{{ f }}">{% endfor %}
+  {% for c in campaign_ids %}<input type="hidden" name="campaign_id" value="{{ c }}">{% endfor %}
   {% for s in source_filters %}<input type="hidden" name="source" value="{{ s }}">{% endfor %}
   {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
   {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
@@ -36,14 +37,14 @@
 {% if status_group %}
 <div class="flash flash-info">
   Faqat <strong>{{ 'yangi (hali bog\'lanilmagan)' if status_group == 'new' else 'ishlangan (bog\'lanilgan/sifatli/sifatsiz/sotilgan)' }}</strong> lidlar ko'rsatilyapti.
-  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="text-blue">Olib tashlash</a>
+  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="text-blue">Olib tashlash</a>
 </div>
 {% endif %}
 
 <div class="filters" style="align-items:center">
-  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter=='' }}">Hammasi</a>
+  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter=='' }}">Hammasi</a>
   {% for s in stages %}
-  <a href="{{ url_for('leads_list', status=s.key, q=search_q, form_id=form_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter==s.key }}">{{ s.label }}</a>
+  <a href="{{ url_for('leads_list', status=s.key, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter==s.key }}">{{ s.label }}</a>
   {% endfor %}
 
   {# ---- "Filtr" tugmasi -- 2026-09, foydalanuvchi so'rovi: "forma bo'yicha,
@@ -51,7 +52,7 @@
   <div class="date-picker" id="leadsFilterDp" style="margin-left:auto">
     <button type="button" class="date-picker-trigger" id="leadsFilterTrigger">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M7 12h10M10 18h4"/></svg>
-      <span>Filtr{% if form_ids or source_filters or date_from %} <span class="badge badge-color-blue" style="margin-left:2px">{{ (form_ids|length) + (source_filters|length) + (1 if date_from else 0) }}</span>{% endif %}</span>
+      <span>Filtr{% if form_ids or campaign_ids or source_filters or date_from %} <span class="badge badge-color-blue" style="margin-left:2px">{{ (form_ids|length) + (campaign_ids|length) + (source_filters|length) + (1 if date_from else 0) }}</span>{% endif %}</span>
     </button>
     <div class="date-picker-menu" id="leadsFilterMenu" style="min-width:260px">
       <form method="get">
@@ -79,6 +80,25 @@
             {% for f in form_options %}
             <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; cursor:pointer">
               <input type="checkbox" name="form_id" value="{{ f.id }}" {{ 'checked' if f.id in form_ids }}> {{ f.name }} <span class="text-faint">({{ f.count }})</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="date-picker-divider"></div>
+        {% endif %}
+
+        {# 2026-09, foydalanuvchi so'rovi ("targetlarni tanlab CRM'ga
+           o'tganda o'sha lidlar filtrlanib chiqsin"): Lead Analytics'dagi
+           "CRM'ga o'tish" tugmasi shu `campaign_id` parametrini oldindan
+           to'ldirib keladi -- lekin bu yerdan ham, oddiy CRM sahifasining
+           o'zidan ham qo'lda tanlash mumkin. #}
+        {% if campaign_options %}
+        <div class="date-picker-custom">
+          <label>Target (kampaniya)</label>
+          <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto">
+            {% for c in campaign_options %}
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; cursor:pointer">
+              <input type="checkbox" name="campaign_id" value="{{ c.id }}" {{ 'checked' if c.id in campaign_ids }}> {{ c.name }} <span class="text-faint">({{ c.count }})</span>
             </label>
             {% endfor %}
           </div>
@@ -135,10 +155,10 @@
     <span>Jami {{ total_count }} ta lead &middot; {{ page }}/{{ total_pages }}-sahifa</span>
     <div style="display:flex; gap:6px">
       {% if page > 1 %}
-      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, source=source_filters, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page-1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">← Oldingi</a>
+      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page-1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">← Oldingi</a>
       {% endif %}
       {% if page < total_pages %}
-      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, source=source_filters, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page+1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">Keyingi →</a>
+      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page+1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">Keyingi →</a>
       {% endif %}
     </div>
   </div>

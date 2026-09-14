@@ -132,10 +132,21 @@
     var rightHtml = '<div class="la-dp-cal-month">' + renderMonth(nextY, nextM, false, true) + '</div>';
     monthsEl.innerHTML = leftHtml + rightHtml;
 
-    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function () { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
-    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function () { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
     monthsEl.querySelectorAll('.la-dp-cal-day[data-date]').forEach(function (cell) {
-      cell.addEventListener('click', function () {
+      cell.addEventListener('click', function (e) {
+        // BUG FIX (2026-09, foydalanuvchi so'rovi: "sanani tanlasam yopilib
+        // qolyapti, ikkinchi sanani ham tanlashim kerak"): `render()` shu
+        // handler ICHIDA `monthsEl.innerHTML`ni butunlay yangilaydi --
+        // bosilgan katakcha (`cell`) DOM'dan uziladi. Agar hodisa (click)
+        // shundan keyin `document`gacha ko'tarilishda davom etsa, tashqi
+        // "click-outside" tinglagichi (yuqorida, `wrap.contains(e.target)`)
+        // uzilgan tugunni "wrap ichida EMAS" deb hisoblab, menyuni YOPIB
+        // QO'YARDI -- foydalanuvchi ikkinchi (oxirgi) sanani tanlashga
+        // ulgurmasdan. `stopPropagation()` hodisani shu yerda to'xtatadi,
+        // `document` tinglagichigacha yetib bormaydi -- menyu ochiq qoladi.
+        e.stopPropagation();
         var d = parseISO(cell.dataset.date);
         if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = d; rangeEnd = null; }
         else if (d < rangeStart) { rangeEnd = rangeStart; rangeStart = d; }

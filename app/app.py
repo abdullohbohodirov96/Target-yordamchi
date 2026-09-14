@@ -37,6 +37,7 @@ import monthly_report
 import permissions
 import plans
 import lang as lang_module
+import tz_utils
 import db
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
@@ -3196,6 +3197,13 @@ def lead_analytics_page():
     level = request.args.get("level", "campaign")
     if level not in ("campaign", "adset", "ad", "crm"):
         level = "campaign"
+    # 2026-09, foydalanuvchi so'rovi ("ro'yxasini yoqilgan/o'chirilgan qilib
+    # ko'rsatish -- Target sahifasidagi kabi"): `get_lead_analytics()` bu
+    # parametrni ALLAQACHON qabul qilardi (`active_only`), lekin bu route
+    # uni hech qachon uzatmasdi -- shuning uchun Target'dagi "Faqat
+    # yoqilganlarni ko'rsatish / Hammasini ko'rsatish" tugmasining ekvivalenti
+    # Lead Analytics'da yo'q edi. Endi bir xil `show_all` query-parametri.
+    show_all = request.args.get("show_all") == "1"
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
     # Faqat "custom" davr ANIQ ikkala sana bilan birga kelganda ishlatiladi --
@@ -3219,7 +3227,7 @@ def lead_analytics_page():
         try:
             data = lead_analytics.get_lead_analytics(
                 level=table_level, date_preset=period, date_from=date_from, date_to=date_to,
-                access_token=meta_token, ad_account_id=meta_account,
+                active_only=not show_all, access_token=meta_token, ad_account_id=meta_account,
             )
         except Exception as e:
             # XAVFSIZLIK: target_page()dagi bilan bir xil qoida -- xom
@@ -3231,10 +3239,26 @@ def lead_analytics_page():
                 "generated_at": dt.datetime.utcnow().isoformat(), "level": table_level,
             }
 
+    # 2026-09, foydalanuvchi so'rovi ("targetlarni tanlab CRM'ga o'tsa, o'sha
+    # payt kelgan lidlar chiqishi kerak"): "CRM'ga o'tish" tugmasi tanlangan
+    # target(lar) BILAN BIRGA joriy davrni ham `/leads`ga uzatishi kerak --
+    # lekin `leads_list()` faqat ANIQ `date_from`/`date_to` (YYYY-MM-DD)
+    # qabul qiladi, tayyor preset nomini emas. Shuning uchun preset bo'lsa
+    # ham (masalan "last_30d"), uning haqiqiy sana chegaralari shu yerda
+    # OLDINDAN hisoblab, mahalliy (Toshkent) YYYY-MM-DD satriga aylantirib
+    # qo'yiladi -- `custom_range_bounds_utc()`ning teskarisi.
+    date_bounds_for_crm = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else _date_preset_bounds_utc(period)
+    if date_bounds_for_crm:
+        _b_start, _b_end = date_bounds_for_crm
+        crm_link_date_from = tz_utils.to_local(_b_start).date().isoformat()
+        crm_link_date_to = (tz_utils.to_local(_b_end) - dt.timedelta(days=1)).date().isoformat()
+    else:
+        crm_link_date_from = crm_link_date_to = ""
+
     crm_leads = []
     stage_color_by_key, stage_label_by_key = {}, {}
     if level == "crm" and not data.get("error") and not data.get("not_connected"):
-        date_bounds = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else _date_preset_bounds_utc(period)
+        date_bounds = date_bounds_for_crm
         session = get_session()
         try:
             stages = _active_funnel_stages(session)
@@ -3254,8 +3278,9 @@ def lead_analytics_page():
             session.close()
 
     return render_template(
-        "lead_analytics.html", data=data, period=period, level=level,
+        "lead_analytics.html", data=data, period=period, level=level, show_all=show_all,
         date_from=date_from or "", date_to=date_to or "",
+        crm_link_date_from=crm_link_date_from, crm_link_date_to=crm_link_date_to,
         crm_leads=crm_leads, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
     )
 
@@ -3555,6 +3580,15 @@ def leads_list():
     # qiymatidan biri), va sana oralig'i.
     form_ids = [f for f in request.args.getlist("form_id") if f]
     source_filters = [s for s in request.args.getlist("source") if s in _LEAD_SOURCE_LABELS]
+    # 2026-09, foydalanuvchi so'rovi ("targetlarni tanlash mumkin bo'lsin va
+    # CRM'ga o'tish tugmasi bo'lsin -- kompaniyalarni [targetlarni] tanlab,
+    # CRM'ga o'tsa, o'sha lidlar chiqib kelsin"): Lead Analytics'dagi
+    # "Kampaniyalar" jadvalidan bir yoki bir nechta target(campaign)
+    # belgilab, "CRM'ga o'tish" bosilganda shu yerga keladi -- `form_id`
+    # bilan bir xil andoza (ko'p qiymatli, checkbox-filtr).
+    campaign_ids = [c for c in request.args.getlist("campaign_id") if c]
+    adset_ids = [c for c in request.args.getlist("adset_id") if c]
+    ad_ids = [c for c in request.args.getlist("ad_id") if c]
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
     # "yangi" (hali bog'lanilmagan) yoki "ishlangan" (bog'lanilgan/sifatli/
@@ -3595,6 +3629,13 @@ def leads_list():
                 .order_by(func.count(Lead.id).desc())
                 .all()
             )
+            available_campaigns = (
+                session.query(Lead.campaign_id, Lead.campaign_name, func.count(Lead.id))
+                .filter(Lead.campaign_id.isnot(None))
+                .group_by(Lead.campaign_id, Lead.campaign_name)
+                .order_by(func.count(Lead.id).desc())
+                .all()
+            )
 
             q = session.query(Lead).order_by(Lead.created_at.desc())
             if status_filter:
@@ -3610,6 +3651,12 @@ def leads_list():
                 )
             if form_ids:
                 q = q.filter(Lead.form_id.in_(form_ids))
+            if campaign_ids:
+                q = q.filter(Lead.campaign_id.in_(campaign_ids))
+            if adset_ids:
+                q = q.filter(Lead.adset_id.in_(adset_ids))
+            if ad_ids:
+                q = q.filter(Lead.ad_id.in_(ad_ids))
             if source_filters:
                 q = q.filter(Lead.source.in_(source_filters))
             date_bounds = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else None
@@ -3634,13 +3681,14 @@ def leads_list():
             stage_color_by_key = {s.key: s.color for s in stages}
             stage_label_by_key = {s.key: s.label for s in stages}
             form_options = [{"id": fid, "name": fname or fid, "count": cnt} for fid, fname, cnt in available_forms]
+            campaign_options = [{"id": cid, "name": cname or cid, "count": cnt} for cid, cname, cnt in available_campaigns]
             viewing_company_row = {"id": viewing_company.id, "name": viewing_company.name} if viewing_company else None
     finally:
         session.close()
     return render_template(
         "leads.html", leads=rows, status_filter=status_filter, search_q=search_q, status_group=status_group,
-        form_ids=form_ids, source_filters=source_filters, date_from=date_from, date_to=date_to,
-        form_options=form_options, source_labels=_LEAD_SOURCE_LABELS,
+        form_ids=form_ids, source_filters=source_filters, campaign_ids=campaign_ids, date_from=date_from, date_to=date_to,
+        form_options=form_options, campaign_options=campaign_options, source_labels=_LEAD_SOURCE_LABELS,
         page=page, total_pages=total_pages, total_count=total_count,
         viewing_company=viewing_company_row,
         stages=stage_rows, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,

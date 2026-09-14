@@ -10,6 +10,32 @@
   {% include "_lead_analytics_date_picker.html" %}
 </div>
 
+{# 2026-09, foydalanuvchi so'rovi ("ro'yxasini yoqilgan/o'chirilgan qilib
+   ko'rsatish -- Target sahifasidagi kabi"): Target sahifasidagi
+   "Faqat yoqilganlarni ko'rsatish / Hammasini ko'rsatish" tugmasining
+   ANIQ o'zi -- backend (`active_only`) allaqachon tayyor edi, faqat bu
+   sahifada ko'rsatilmagan edi. #}
+<div class="page-head" style="margin-top:-14px; align-items:center">
+  <p class="page-subtitle" style="margin:0">
+    {% if show_all %}
+    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
+    {% else %}
+    Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti.
+    {% endif %}
+  </p>
+  {% if show_all %}
+  <a href="?period={{ period }}&level={{ level }}&show_all=0{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
+    Faqat yoqilganlarni ko'rsatish
+  </a>
+  {% else %}
+  <a href="?period={{ period }}&level={{ level }}&show_all=1{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn toggle-all-btn-outline">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    Hammasini ko'rsatish
+  </a>
+  {% endif %}
+</div>
+
 {% if data.not_connected %}
   <div class="card" style="max-width:520px; margin-bottom:20px">
     <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
@@ -25,15 +51,15 @@
   <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
   <div class="kpi-card"><div class="kpi-label">Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
   <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">ACT <span class="text-faint" style="font-weight:400">(bog'lanildi)</span></div><div class="kpi-value text-blue">{{ t.act or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">WON <span class="text-faint" style="font-weight:400">(yutilgan)</span></div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CONV.RATE</div><div class="kpi-value">{{ "%.1f"|format(t.conv_rate or 0) }}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">Bog'lanildi</div><div class="kpi-value text-blue">{{ t.act or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Yutildi</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Konversiya</div><div class="kpi-value">{{ "%.1f"|format(t.conv_rate or 0) }}%</div></div>
 </div>
 
 <div class="panel">
   <div class="tabs">
-    {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads'), ('crm','CRM')] %}
-    <a href="?period={{ period }}&level={{ lvl }}{% if date_from %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="{{ 'active' if level==lvl }}">
+    {% for lvl, label in [('campaign','Kampaniyalar'), ('adset','Reklama guruhlari'), ('ad','Reklamalar'), ('crm','CRM')] %}
+    <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}{% if date_from %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="{{ 'active' if level==lvl }}">
       {{ label }}{% if level==lvl %} <span class="badge badge-color-dim" style="margin-left:4px">{{ crm_leads|length if lvl=='crm' else (data.rows|length) }}</span>{% endif %}
     </a>
     {% endfor %}
@@ -62,36 +88,48 @@
   </table>
   </div>
   {% else %}
-  <div class="searchbar">
+  {# 2026-09, foydalanuvchi so'rovi ("targetlarni tanlash mumkin bo'lsin
+     va CRM'ga o'tish tugmasi bo'lsin -- tanlab CRM'ga o'tsa, o'sha
+     lidlar filtrlanib chiqsin"): har bir qator checkbox bilan tanlanadi,
+     kamida bitta tanlansa pastdagi "CRM'ga o'tish" tugmasi yoqiladi va
+     tanlangan target(lar)ning id'sini + joriy davrni (`date_from`/
+     `date_to`) `/leads`ga uzatadi -- shu tufayli CRM'da FAQAT shu
+     target(lar)dan, shu davrda kelgan lidlar ko'rinadi. #}
+  <div class="searchbar" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
     <div class="search-input-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
       <input id="laSearch" type="text" placeholder="Qidirish...">
     </div>
+    <button type="button" id="laGoCrm" class="btn" style="margin-left:auto; padding:8px 14px; font-size:12.5px" disabled>
+      CRM'ga o'tish <span id="laSelCount"></span>
+    </button>
   </div>
 
   <div class="table-scroll">
   <table id="la-table">
     <thead>
       <tr>
-        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
-        <th class="sortable num" data-key="spend" data-type="num">Spend</th>
-        <th class="sortable num" data-key="crm_leads_total" data-type="num">Leads</th>
+        <th style="width:34px"><input type="checkbox" id="laSelectAll" aria-label="Hammasini tanlash"></th>
+        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Kampaniya','adset':'Reklama guruhi','ad':'Reklama'}[level] }}</th>
+        <th class="sortable num" data-key="spend" data-type="num">Xarajat</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">Lidlar</th>
         <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
-        <th class="sortable num" data-key="act" data-type="num" style="color:var(--blue)">ACT</th>
-        <th class="sortable num" data-key="sold" data-type="num" style="color:var(--good)">WON</th>
-        <th class="sortable num" data-key="unqualified" data-type="num" style="color:var(--bad)">LOSS</th>
-        <th class="sortable num" data-key="cost_per_won" data-type="num">COST/WON</th>
-        <th class="sortable num" data-key="conv_rate" data-type="num">CONV.RATE</th>
-        <th class="sortable num" data-key="deal_time_days" data-type="num">DEAL TIME</th>
+        <th class="sortable num" data-key="act" data-type="num" style="color:var(--blue)">Bog'landi</th>
+        <th class="sortable num" data-key="sold" data-type="num" style="color:var(--good)">Yutildi</th>
+        <th class="sortable num" data-key="unqualified" data-type="num" style="color:var(--bad)">Yo'qotildi</th>
+        <th class="sortable num" data-key="cost_per_won" data-type="num">Yutuv narxi</th>
+        <th class="sortable num" data-key="conv_rate" data-type="num">Konversiya</th>
+        <th class="sortable num" data-key="deal_time_days" data-type="num">Yopilish vaqti</th>
       </tr>
     </thead>
     <tbody>
       {% for r in data.rows %}
-      <tr data-name="{{ r.name|lower }}"
+      <tr data-name="{{ r.name|lower }}" data-id="{{ r.id }}"
           data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}" data-cpl="{{ r.cpl }}"
           data-act="{{ r.act }}" data-sold="{{ r.sold }}" data-unqualified="{{ r.unqualified }}"
           data-cost_per_won="{{ r.cost_per_won }}" data-conv_rate="{{ r.conv_rate }}"
           data-deal_time_days="{{ r.deal_time_days if r.deal_time_days is not none else -1 }}">
+        <td><input type="checkbox" class="laRowSel" value="{{ r.id }}" aria-label="{{ r.name }} tanlash"></td>
         <td><span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}</td>
         <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
         <td class="num">{{ r.crm_leads_total or 0 }}</td>
@@ -104,7 +142,7 @@
         <td class="num">{{ "%.1f"|format(r.deal_time_days)+" kun" if r.deal_time_days is not none else '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="10">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -114,14 +152,14 @@
 
 {% set pt = data.pipeline_totals %}
 <div class="card" style="margin-top:20px">
-  <h2>Won dynamics — kunlar bo'yicha</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Tanlangan davrda kuniga nechta lead sotuvga (WON) aylanganini ko'rsatadi &middot; butun kompaniya bo'yicha.</p>
+  <h2>Yutuvlar dinamikasi — kunlar bo'yicha</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Tanlangan davrda kuniga nechta lead sotuvga (yutuqqa) aylanganini ko'rsatadi &middot; butun kompaniya bo'yicha.</p>
   <div class="kpi-grid" style="margin-bottom:18px">
-    <div class="kpi-card"><div class="kpi-label">WON</div><div class="kpi-value good">{{ pt.won or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">LOSS</div><div class="kpi-value bad">{{ pt.lost or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">IN PIPELINE</div><div class="kpi-value">{{ pt.in_pipeline or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">CONV.RATE</div><div class="kpi-value">{{ "%.1f"|format(pt.conv_rate or 0) }}%</div></div>
-    <div class="kpi-card"><div class="kpi-label">COST/WON</div><div class="kpi-value">${{ "%.2f"|format(pt.cost_per_won or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Yutildi</div><div class="kpi-value good">{{ pt.won or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Yo'qotildi</div><div class="kpi-value bad">{{ pt.lost or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Jarayonda</div><div class="kpi-value">{{ pt.in_pipeline or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Konversiya</div><div class="kpi-value">{{ "%.1f"|format(pt.conv_rate or 0) }}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">Yutuv narxi</div><div class="kpi-value">${{ "%.2f"|format(pt.cost_per_won or 0) }}</div></div>
   </div>
   {% if data.won_dynamics %}
   <div style="height:220px"><canvas id="chart-won-dynamics"></canvas></div>
@@ -138,6 +176,53 @@
   var tbody = table.querySelector('tbody');
   var search = document.getElementById('laSearch');
   var sortState = { key: null, dir: 1 };
+
+  // 2026-09, foydalanuvchi so'rovi ("targetlarni tanlash mumkin bo'lsin va
+  // CRM'ga o'tish tugmasi bo'lsin"): checkbox bilan bir yoki bir nechta
+  // qator (target/adset/ad) tanlanadi, "CRM'ga o'tish" tugmasi shularning
+  // id'sini + joriy davrni (`crm_link_date_from/to`, server tomonida
+  // preset'dan allaqachon hisoblab qo'yilgan) `/leads`ga uzatadi.
+  var LEVEL = {{ level|tojson }};
+  var CRM_ID_PARAM = { campaign: 'campaign_id', adset: 'adset_id', ad: 'ad_id' }[LEVEL] || 'campaign_id';
+  var CRM_DATE_FROM = {{ crm_link_date_from|tojson }};
+  var CRM_DATE_TO = {{ crm_link_date_to|tojson }};
+  var selectAll = document.getElementById('laSelectAll');
+  var goCrmBtn = document.getElementById('laGoCrm');
+  var selCountEl = document.getElementById('laSelCount');
+
+  function selectedCheckboxes() {
+    return Array.prototype.filter.call(tbody.querySelectorAll('.laRowSel'), function (cb) {
+      return cb.closest('tr').style.display !== 'none';
+    });
+  }
+  function refreshGoCrm() {
+    var checked = Array.prototype.filter.call(tbody.querySelectorAll('.laRowSel'), function (cb) { return cb.checked; });
+    goCrmBtn.disabled = checked.length === 0;
+    selCountEl.textContent = checked.length ? '(' + checked.length + ')' : '';
+  }
+  tbody.addEventListener('change', function (e) {
+    if (e.target.classList.contains('laRowSel')) refreshGoCrm();
+  });
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      selectedCheckboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+      refreshGoCrm();
+    });
+  }
+  if (goCrmBtn) {
+    goCrmBtn.addEventListener('click', function () {
+      var ids = Array.prototype.filter.call(tbody.querySelectorAll('.laRowSel'), function (cb) { return cb.checked; })
+        .map(function (cb) { return cb.value; });
+      if (!ids.length) return;
+      var url = new URL('{{ url_for("leads_list") }}', window.location.origin);
+      ids.forEach(function (id) { url.searchParams.append(CRM_ID_PARAM, id); });
+      if (CRM_DATE_FROM && CRM_DATE_TO) {
+        url.searchParams.set('date_from', CRM_DATE_FROM);
+        url.searchParams.set('date_to', CRM_DATE_TO);
+      }
+      window.location.href = url.toString();
+    });
+  }
 
   search.addEventListener('input', function () {
     var q = search.value.trim().toLowerCase();

@@ -118,10 +118,16 @@
     var rightHtml = '<div class="la-dp-cal-month">' + renderMonth(nextY, nextM, false, true) + '</div>';
     monthsEl.innerHTML = leftHtml + rightHtml;
 
-    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function () { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
-    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function () { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
     monthsEl.querySelectorAll('.la-dp-cal-day[data-date]').forEach(function (cell) {
-      cell.addEventListener('click', function () {
+      cell.addEventListener('click', function (e) {
+        // BUG FIX (2026-09, foydalanuvchi so'rovi: "sanani tanlasam yopilib
+        // qolyapti") -- _calendar_date_picker.html'dagi bilan bir xil sabab:
+        // `render()` bosilgan katakchani DOM'dan uzadi, shuning uchun hodisa
+        // `document`gacha ko'tarilsa tashqi "click-outside" tinglagichi
+        // menyuni yopib qo'yardi. `stopPropagation()` buni oldini oladi.
+        e.stopPropagation();
         var d = parseISO(cell.dataset.date);
         if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = d; rangeEnd = null; }
         else if (d < rangeStart) { rangeEnd = rangeStart; rangeStart = d; }
