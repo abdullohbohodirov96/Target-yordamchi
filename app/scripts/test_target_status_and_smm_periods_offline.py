@@ -46,13 +46,18 @@ db_module.init_db()
 _TASHKENT_OFFSET = dt.timedelta(hours=5)
 
 
-def test_effective_status_wins_over_raw_status_for_active_filter():
-    # c1: obyektning o'zi "ACTIVE", lekin ustidagi kampaniya PAUSED bo'lgani
-    # uchun effective_status="CAMPAIGN_PAUSED" -- AMALDA ko'rsatilmayapti,
-    # "faqat yoqilgan" ro'yxatida chiqmasligi kerak.
-    # c2: obyektning o'zi "PAUSED" deb belgilangan bo'lsa-da,
-    # effective_status="ACTIVE" -- bu HAQIQIY yoqilgan, ro'yxatda chiqishi
-    # kerak (chekka holat, lekin effective_status ustunligini isbotlaydi).
+def test_status_dot_uses_effective_status_not_raw_status():
+    # 2026-09 YANGILANISH: "faqat yoqilgan" (active_only) FILTRI endi
+    # effective_status'ga EMAS, tanlangan DAVRDA haqiqiy delivery (Meta
+    # insights'da xarajat/ko'rsatish qatori qaytganligi) bo'lishiga qaraydi
+    # -- pastdagi `test_active_only_filters_by_period_delivery_not_current_status`
+    # shuni tekshiradi. LEKIN `effective_status` hali ham boshqa ikkita
+    # narsa uchun ishlatiladi: (a) har bir qatordagi yashil/kulrang
+    # "status-dot" belgisi (`r.status`, hozirgi HAQIQIY holatni ko'rsatadi,
+    # ota-kampaniyasi pauza bo'lsa ham obyekt "ACTIVE" deb yozilgan
+    # bo'lishi mumkin edi), (b) `active_only=False` (ya'ni "Hammasini
+    # ko'rsatish") holatida ham status-dot to'g'ri chizilishi. Shu ikkalasi
+    # hali effective_status'ga tayanishini tekshiramiz.
     def fake_get_insights(level, date_preset, fields, access_token=None, ad_account_id=None, **kw):
         return [
             {"campaign_id": "c1", "campaign_name": "Chin holda o'chiq", "spend": 50.0, "impressions": 10, "reach": 8, "actions": []},
@@ -74,19 +79,65 @@ def test_effective_status_wins_over_raw_status_for_active_filter():
     meta_api.get_account_structure = fake_get_account_structure
     try:
         result = dashboard_data.get_kpis(
-            level="campaign", date_preset="last_30d", active_only=True,
+            level="campaign", date_preset="last_30d", active_only=False,
             access_token="tok", ad_account_id="act_unique_for_this_test",
         )
-        ids = {r["id"] for r in result["rows"]}
-        assert "c2" in ids, "effective_status=ACTIVE bo'lgan c2 'faqat yoqilgan' ro'yxatida bo'lishi kerak"
-        assert "c1" not in ids, "effective_status=CAMPAIGN_PAUSED bo'lgan c1 (garchi o'z status'i ACTIVE bo'lsa ham) chiqarilib tashlanishi kerak"
-        # Pul sarfi (totals.spend) HAM faqat haqiqatan yoqilgan c2'nikini
-        # o'z ichiga olishi kerak -- c1'ning $50'i qo'shilib ketmasligi kerak.
-        assert result["totals"]["spend"] == 75.0, f"kutilgan $75 (faqat c2), olindi: {result['totals']['spend']}"
+        status_by_id = {r["id"]: r["status"] for r in result["rows"]}
+        assert status_by_id.get("c1") == "CAMPAIGN_PAUSED", "c1 uchun status-dot effective_status'ga (ota-kampaniyasi pauza) asoslanishi kerak, o'zining xom 'ACTIVE' maydoniga emas"
+        assert status_by_id.get("c2") == "ACTIVE", "c2 uchun status-dot effective_status'ga (haqiqatan yoqilgan) asoslanishi kerak, o'zining xom 'PAUSED' maydoniga emas"
     finally:
         meta_api.get_insights = real_get_insights
         meta_api.get_account_structure = real_get_account_structure
-    print("OK: 'faqat yoqilgan' filtri va pul sarfi endi effective_status'ga (haqiqiy ierarxiyaga) qaraydi, obyektning o'z status'iga emas")
+    print("OK: har bir qatorning status-dot/status maydoni hali ham effective_status'ga (haqiqiy ierarxiyaga) qaraydi, obyektning o'z xom status'iga emas")
+
+
+def test_active_only_filters_by_period_delivery_not_current_status():
+    # 2026-09, foydalanuvchi shikoyati (skrinshot bilan): "faqat yoqilgan"
+    # filtri avval OBYEKTNING HOZIRGI (joriy, bugungi) statusiga qarardi --
+    # foydalanuvchi o'tgan oyni (masalan avgustni) tanlasa-yu, o'sha davrdagi
+    # barcha target'lar hozir (sentyabrda) allaqachon pauza/tugatilgan
+    # bo'lsa, ro'yxat BUTUNLAY BO'SH chiqib qolardi, garchi o'sha davrda
+    # real lidlar/xarajat bo'lgan bo'lsa ham. Endi filtr Meta'dan TANLANGAN
+    # DAVR uchun qaytgan insight-qatorlar asosida ishlaydi (`meta_by_id`da
+    # borligi = "shu davrda xarajat/ko'rsatish bo'lgan, demak ishlagan"
+    # degani) -- xuddi Meta Ads Manager'da davr tanlanganda bo'lgani kabi,
+    # joriy effective_status'dan qat'i nazar.
+    def fake_get_insights(level, date_preset, fields, access_token=None, ad_account_id=None, **kw):
+        return [
+            {"campaign_id": "c1", "campaign_name": "Avgustda ishlagan, hozir pauza", "spend": 50.0, "impressions": 10, "reach": 8, "actions": []},
+            {"campaign_id": "c2", "campaign_name": "Hozir ham yoqilgan", "spend": 75.0, "impressions": 20, "reach": 15, "actions": []},
+        ]
+
+    def fake_get_account_structure(*a, **kw):
+        # Ikkalasi ham HOZIR (joriy holatda) pauzada/tugatilgan -- lekin
+        # tanlangan davrda ikkalasi ham real xarajat qilgan (yuqorida).
+        return {
+            "campaigns": [
+                {"id": "c1", "name": "Avgustda ishlagan, hozir pauza", "status": "PAUSED", "effective_status": "PAUSED", "objective": "OUTCOME_LEADS"},
+                {"id": "c2", "name": "Hozir ham yoqilgan", "status": "PAUSED", "effective_status": "PAUSED", "objective": "OUTCOME_LEADS"},
+            ],
+            "adsets": [], "ads": [],
+        }
+
+    real_get_insights = meta_api.get_insights
+    real_get_account_structure = meta_api.get_account_structure
+    meta_api.get_insights = fake_get_insights
+    meta_api.get_account_structure = fake_get_account_structure
+    try:
+        result = dashboard_data.get_kpis(
+            level="campaign", date_preset="custom", date_from="2026-08-01", date_to="2026-08-31",
+            active_only=True, access_token="tok", ad_account_id="act_unique_for_this_test_2",
+        )
+        ids = {r["id"] for r in result["rows"]}
+        assert "c1" in ids, "c1 tanlangan davrda (avgust) real xarajat qilgan -- HOZIRGI statusi pauza bo'lsa ham 'faqat yoqilgan' ro'yxatida chiqishi kerak"
+        assert "c2" in ids, "c2 ham tanlangan davrda real xarajat qilgan -- ro'yxatda chiqishi kerak"
+        # Pul sarfi (totals.spend) ham ikkalasining yig'indisi bo'lishi kerak --
+        # joriy status'ga qarab birortasi ham chiqarib tashlanmasligi kerak.
+        assert result["totals"]["spend"] == 125.0, f"kutilgan $125 (c1+c2), olindi: {result['totals']['spend']}"
+    finally:
+        meta_api.get_insights = real_get_insights
+        meta_api.get_account_structure = real_get_account_structure
+    print("OK: 'faqat yoqilgan' filtri endi TANLANGAN DAVRDA real delivery bo'lganligiga qaraydi, obyektning HOZIRGI statusiga emas")
 
 
 def test_resolve_period_calendar_math_is_internally_consistent():

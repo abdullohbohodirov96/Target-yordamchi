@@ -20,7 +20,7 @@
     {% if show_all %}
     Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
     {% else %}
-    Faqat hozir YOQILGAN (ACTIVE) target'lar ko'rsatilyapti.
+    Faqat tanlangan davrda yoqilgan (faol) bo'lgan target'lar ko'rsatilyapti.
     {% endif %}
   </p>
   {% if show_all %}
@@ -100,7 +100,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
       <input id="laSearch" type="text" placeholder="Qidirish...">
     </div>
-    <button type="button" id="laGoCrm" class="btn" style="margin-left:auto; padding:8px 14px; font-size:12.5px" disabled>
+    {# 2026-09, foydalanuvchi so'rovi ("+ROAS tugmasini qo'shish kerak,
+       ko'rinmayapti, o'chirib-yoqish mumkin bo'lsin"): ROAS (reklama
+       xarajatiga nisbatan daromat) backend'da allaqachon hisoblanadi
+       (`dashboard_data.py`dagi `roas`), lekin jadvalda ustun sifatida
+       ko'rsatilmagan edi. Endi bu tugma bilan ustun yoqilib/o'chirilib
+       turadi -- tanlov brauzerda (localStorage) saqlanadi. #}
+    <button type="button" id="laToggleRoas" class="btn toggle-all-btn-outline" style="margin-left:auto; padding:8px 14px; font-size:12.5px">
+      <span id="laToggleRoasIcon">+</span> ROAS
+    </button>
+    <button type="button" id="laGoCrm" class="btn" style="padding:8px 14px; font-size:12.5px" disabled>
       CRM'ga o'tish <span id="laSelCount"></span>
     </button>
   </div>
@@ -120,6 +129,7 @@
         <th class="sortable num" data-key="cost_per_won" data-type="num">Yutuv narxi</th>
         <th class="sortable num" data-key="conv_rate" data-type="num">Konversiya</th>
         <th class="sortable num" data-key="deal_time_days" data-type="num">Yopilish vaqti</th>
+        <th class="sortable num la-roas-col" data-key="roas" data-type="num" hidden>ROAS</th>
       </tr>
     </thead>
     <tbody>
@@ -128,7 +138,8 @@
           data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}" data-cpl="{{ r.cpl }}"
           data-act="{{ r.act }}" data-sold="{{ r.sold }}" data-unqualified="{{ r.unqualified }}"
           data-cost_per_won="{{ r.cost_per_won }}" data-conv_rate="{{ r.conv_rate }}"
-          data-deal_time_days="{{ r.deal_time_days if r.deal_time_days is not none else -1 }}">
+          data-deal_time_days="{{ r.deal_time_days if r.deal_time_days is not none else -1 }}"
+          data-roas="{{ r.roas or 0 }}">
         <td><input type="checkbox" class="laRowSel" value="{{ r.id }}" aria-label="{{ r.name }} tanlash"></td>
         <td><span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}</td>
         <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
@@ -140,9 +151,10 @@
         <td class="num">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
         <td class="num">{{ "%.1f"|format(r.conv_rate or 0) }}%</td>
         <td class="num">{{ "%.1f"|format(r.deal_time_days)+" kun" if r.deal_time_days is not none else '—' }}</td>
+        <td class="num la-roas-col" hidden>{{ "%.2f"|format(r.roas or 0) }}x</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="12">Ma'lumot yo'q.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -221,6 +233,30 @@
         url.searchParams.set('date_to', CRM_DATE_TO);
       }
       window.location.href = url.toString();
+    });
+  }
+
+  // 2026-09, foydalanuvchi so'rovi ("+ROAS tugmasi -- ko'rinmayapti,
+  // o'chirib-yoqish mumkin bo'lsin"): ROAS ustuni standart holda YASHIRIN
+  // (jadval juda "siqiq" bo'lib ketmasligi uchun), tugma bosilganda
+  // ko'rsatiladi/yashiriladi. Tanlov shu brauzerda (localStorage) eslab
+  // qolinadi -- server holatini o'zgartirmaydi, faqat shu qurilmada.
+  var toggleRoasBtn = document.getElementById('laToggleRoas');
+  var toggleRoasIcon = document.getElementById('laToggleRoasIcon');
+  var ROAS_LS_KEY = 'la_roas_col_visible';
+  function setRoasVisible(visible) {
+    Array.prototype.forEach.call(table.querySelectorAll('.la-roas-col'), function (el) { el.hidden = !visible; });
+    if (toggleRoasIcon) toggleRoasIcon.textContent = visible ? '−' : '+';
+    if (toggleRoasBtn) toggleRoasBtn.classList.toggle('toggle-all-btn-outline', !visible);
+  }
+  if (toggleRoasBtn) {
+    var roasVisible = false;
+    try { roasVisible = window.localStorage.getItem(ROAS_LS_KEY) === '1'; } catch (e) {}
+    setRoasVisible(roasVisible);
+    toggleRoasBtn.addEventListener('click', function () {
+      roasVisible = !roasVisible;
+      setRoasVisible(roasVisible);
+      try { window.localStorage.setItem(ROAS_LS_KEY, roasVisible ? '1' : '0'); } catch (e) {}
     });
   }
 

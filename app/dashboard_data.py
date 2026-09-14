@@ -494,12 +494,24 @@ def _get_kpis_uncached(
 
     all_ids = set(meta_by_id) | set(crm_by_id)
     if active_only:
-        # Faqat hozir yoqilgan (ACTIVE) target'larni ko'rsatish -- pauzadagi/
-        # arxivlangan kampaniyalar va Meta'da umuman topilmagan (masalan qo'lda
-        # qo'shilgan) lead guruhlari ro'yxatdan chiqariladi. Foydalanuvchi
-        # dashboard'da "Hammasini ko'rsatish" havolasi orqali bularni ham
-        # ko'ra oladi (active_only=False holatga qaytadi).
-        all_ids = {oid for oid in all_ids if meta_by_id.get(oid, {}).get("status") == "ACTIVE"}
+        # 2026-09 TUZATISH (foydalanuvchi: "faqat yoqilgan" filtri HOZIRGI
+        # (joriy, bugungi) statusga emas, TANLANGAN DAVRDA yoqilgan/ishlagan
+        # bo'lishiga qarashi kerak -- masalan avgust oyini tanlasa va target
+        # keyinroq, sentyabrda pauza qilingan bo'lsa ham, avgustda ishlagan
+        # bo'lsa baribir ko'rsatilishi kerak (xuddi Meta Ads Manager'da davr
+        # tanlanganda bo'lgani kabi). AVVAL bu yerda `status == "ACTIVE"`
+        # (joriy holat) tekshirilardi -- shu sabab o'tgan oy tanlansa va
+        # o'sha vaqtdagi barcha target'lar hozir allaqachon to'xtatilgan
+        # bo'lsa, ro'yxat butunlay bo'sh chiqib qolardi (48 ta lead bor
+        # bo'lsa ham "Ma'lumot yo'q").
+        #
+        # `insight_rows` (demak `meta_by_id`) Meta'dan FAQAT tanlangan davrda
+        # xarajat/ko'rsatish (delivery) bo'lgan obyektlar uchun qaytadi --
+        # shuning uchun `meta_by_id`da borligi = "shu davrda ishlagan/yoqilgan
+        # bo'lgan" degani, joriy statusidan qat'i nazar. Meta'da umuman
+        # topilmagan (masalan qo'lda qo'shilgan) lead guruhlari esa hamon
+        # chiqarib tashlanadi.
+        all_ids = {oid for oid in all_ids if oid in meta_by_id}
     rows = []
     totals = {
         "spend": 0.0, "impressions": 0, "reach": 0, "meta_leads": 0, "crm_leads_total": 0,
@@ -544,6 +556,13 @@ def _get_kpis_uncached(
         revenue_usd = row["revenue"] / usd_to_uzs_rate
         row["revenue_usd"] = revenue_usd
         row["roi_percent"] = ((revenue_usd - row["spend"]) / row["spend"] * 100.0) if row["spend"] else 0.0
+        # ROAS (Return on Ad Spend) -- 2026-09, foydalanuvchi so'rovi
+        # ("+ROAS tugmasi qo'shish kerak"): ROI% dan farqli, bu daromadning
+        # xarajatga NISBATI (masalan 2.5 = har 1$ xarajatga 2.5$ daromad;
+        # ROI% esa shu nisbatning "foyda" qismi, ya'ni (ROAS-1)*100).
+        # Ikkalasi ham ishlatiladigan standart ko'rsatkich -- shuning uchun
+        # ikkalasi ham hisoblab beriladi, UI qaysi birini ko'rsatishni tanlaydi.
+        row["roas"] = (revenue_usd / row["spend"]) if row["spend"] else 0.0
         row["cost_per_result"] = (row["spend"] / row["meta_result"]) if row["meta_result"] else 0.0
         rows.append(row)
 
@@ -565,6 +584,7 @@ def _get_kpis_uncached(
     totals["avg_check"] = (totals["revenue"] / totals["sold"]) if totals["sold"] else 0.0
     totals["revenue_usd"] = totals["revenue"] / usd_to_uzs_rate
     totals["roi_percent"] = ((totals["revenue_usd"] - totals["spend"]) / totals["spend"] * 100.0) if totals["spend"] else 0.0
+    totals["roas"] = (totals["revenue_usd"] / totals["spend"]) if totals["spend"] else 0.0
     totals["usd_to_uzs_rate"] = usd_to_uzs_rate
 
     goal_breakdown = []

@@ -3589,8 +3589,22 @@ def leads_list():
     campaign_ids = [c for c in request.args.getlist("campaign_id") if c]
     adset_ids = [c for c in request.args.getlist("adset_id") if c]
     ad_ids = [c for c in request.args.getlist("ad_id") if c]
+    # 2026-09, foydalanuvchi so'rovi ("CRM'da ham sanani tanlash kerak bo'lsin,
+    # Lead Analytics'ga o'xshab"): endi shu yerda ham umumiy kalendar-sana
+    # tanlagich (tezkor preset'lar + aniq oraliq) ishlaydi -- Target/Lead
+    # Analytics'dagi bilan bir xil `period`/`date_from`/`date_to` andozasi.
+    # Standart -- "maximum" (hammasi), CRM'ning avvalgi (filtrsiz) xatti-
+    # harakatini saqlab qolish uchun. `period` berilmagan, lekin `date_from`/
+    # `date_to` bergan bo'lsa (masalan Lead Analytics'dagi "CRM'ga o'tish"
+    # tugmasi orqali kelgan eski-uslubdagi havola) -- "custom" deb qabul
+    # qilinadi, orqaga moslik uchun.
+    period = request.args.get("period", "").strip()
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
+    if not period:
+        period = "custom" if (date_from and date_to) else "maximum"
+    if period != "custom" or not (date_from and date_to):
+        date_from = date_to = None
     # "yangi" (hali bog'lanilmagan) yoki "ishlangan" (bog'lanilgan/sifatli/
     # sifatsiz/sotilgan -- barchasi "yangi"dan boshqa) bo'yicha filtr --
     # `/companies`dagi "CRM ko'rish" modalidan keladi (2026-09, foydalanuvchi
@@ -3659,7 +3673,14 @@ def leads_list():
                 q = q.filter(Lead.ad_id.in_(ad_ids))
             if source_filters:
                 q = q.filter(Lead.source.in_(source_filters))
-            date_bounds = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else None
+            if period == "maximum":
+                date_bounds = None
+            elif period == "custom" and date_from and date_to:
+                date_bounds = custom_range_bounds_utc(date_from, date_to)
+            elif period in _PERIOD_PRESET_LABELS:
+                date_bounds = _date_preset_bounds_utc(period)
+            else:
+                date_bounds = None
             if date_bounds:
                 start_utc, end_utc = date_bounds
                 effective_created = func.coalesce(Lead.lead_created_time, Lead.created_at)
@@ -3685,9 +3706,11 @@ def leads_list():
             viewing_company_row = {"id": viewing_company.id, "name": viewing_company.name} if viewing_company else None
     finally:
         session.close()
+    period_label = _period_label(period, date_from, date_to)
     return render_template(
         "leads.html", leads=rows, status_filter=status_filter, search_q=search_q, status_group=status_group,
-        form_ids=form_ids, source_filters=source_filters, campaign_ids=campaign_ids, date_from=date_from, date_to=date_to,
+        form_ids=form_ids, source_filters=source_filters, campaign_ids=campaign_ids,
+        period=period, period_label=period_label, date_from=date_from or "", date_to=date_to or "",
         form_options=form_options, campaign_options=campaign_options, source_labels=_LEAD_SOURCE_LABELS,
         page=page, total_pages=total_pages, total_count=total_count,
         viewing_company=viewing_company_row,
