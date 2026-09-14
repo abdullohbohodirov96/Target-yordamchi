@@ -2,10 +2,61 @@
 {% block title %}Raqobatchilar — Replix{% endblock %}
 {% block content %}
 <h1>Raqobatchilar</h1>
-<p class="page-subtitle">Bu yerga qo'shgan kompaniyalarning Facebook/Instagram'da HOZIR ishlab turgan reklamalari har kuni soat 10:00da Meta Ad Library orqali avtomatik tekshiriladi va Telegram guruhiga qisqa amaliy tahlil (qanday taklif/aksiya berishyapti, yangi mahsulot bormi, bizga qanday tavsiya) yuboriladi.</p>
+<p class="page-subtitle">Kuzatuvga qo'shgan raqobatchilaringizning Facebook/Instagram'da HOZIR ishlab turgan reklamalari har <strong>{{ rotation_days }} kunda BITTA</strong> raqobatchi navbat bilan Meta Ad Library orqali avtomatik tekshiriladi va Telegram guruhiga qisqa amaliy tahlil (qanday taklif/aksiya berishyapti, bizga qanday tavsiya) yuboriladi.</p>
+
+<div class="hint-box">⚠️ Meta Ad Library ommaviy qidiruvi haqiqiy auditoriya/target sozlamalarini (yosh, jins, joylashuv) bermaydi — faqat reklama matnini ko'rsatadi. Shuning uchun "kimga target qilyapti" degan bo'lim har doim reklama matnidan kelib chiqqan <strong>AI taxmini</strong>, Meta'ning haqiqiy sozlamasi emas.</div>
+
+<div class="card" style="margin-bottom:24px">
+  <h2>Ad Library'dan qidirish</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Brend/kompaniya nomini yozing, natijalar orasidan ☆ bosib kuzatuvga qo'shing.</p>
+  <form method="get" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; max-width:520px">
+    <div class="field" style="flex:1; min-width:200px; margin-bottom:0">
+      <label>Qidiruv</label>
+      <input type="text" name="q" value="{{ query_term }}" placeholder="Masalan: Arboss">
+    </div>
+    <button type="submit" style="height:38px">Qidirish</button>
+  </form>
+
+  {% if search_error %}
+  <div class="hint-box" style="margin-top:16px">Qidiruvda xatolik: {{ search_error }}</div>
+  {% elif search_results is not none %}
+    {% if search_results %}
+    <div class="table-scroll" style="margin-top:16px">
+      <table>
+        <thead><tr><th>Sahifa</th><th>Reklama matni (namuna)</th><th></th><th></th></tr></thead>
+        <tbody>
+          {% for r in search_results %}
+          <tr>
+            <td>{{ r.page_name }}</td>
+            <td class="text-dim">{{ r.snippet or '—' }}</td>
+            <td>{% if r.snapshot_url %}<a href="{{ r.snapshot_url }}" target="_blank" rel="noopener">Ko'rish</a>{% endif %}</td>
+            <td>
+              {% if r.already_tracked %}
+              <span class="badge badge-color-dim">★ Kuzatuvda</span>
+              {% else %}
+              <form method="post" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="star_add">
+                <input type="hidden" name="q" value="{{ query_term }}">
+                <input type="hidden" name="name" value="{{ r.page_name }}">
+                <input type="hidden" name="search_term" value="{{ r.page_name }}">
+                <button type="submit" style="background:none; color:var(--blue); border:1px solid var(--blue); padding:4px 10px">☆ Kuzatuvga qo'sh</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="page-subtitle" style="margin-top:16px">"{{ query_term }}" bo'yicha hech narsa topilmadi.</p>
+    {% endif %}
+  {% endif %}
+</div>
 
 <div class="card" style="max-width:480px; margin-bottom:24px">
-  <h2>Yangi raqobatchi qo'shish</h2>
+  <h2>Qo'lda qo'shish</h2>
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="add">
@@ -22,14 +73,14 @@
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Kompaniya</th><th>Sayt</th><th>Qidiruv so'zi</th><th class="num">Faol reklamalar</th><th>Holat</th><th></th></tr></thead>
+    <thead><tr><th>Kompaniya</th><th>Sayt</th><th class="num">Faol reklamalar</th><th>Oxirgi tahlil</th><th>Holat</th><th></th></tr></thead>
     <tbody>
       {% for c in competitors %}
       <tr>
-        <td>{{ c.name }}</td>
+        <td><a href="{{ url_for('competitor_detail', competitor_id=c.id) }}">{{ c.name }}</a></td>
         <td class="text-dim">{{ c.domain or '—' }}</td>
-        <td class="text-dim">{{ c.search_term or c.name }}</td>
         <td class="num">{{ c.active_ads_count }}</td>
+        <td class="text-dim">{{ c.last_analyzed_at or "hali tahlil qilinmagan" }}</td>
         <td>
           <form method="post" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -38,7 +89,8 @@
             <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if c.is_active else "O'chirilgan" }}</button>
           </form>
         </td>
-        <td>
+        <td style="white-space:nowrap">
+          <a href="{{ url_for('competitor_detail', competitor_id=c.id) }}" style="margin-right:10px">Tafsilot</a>
           <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">

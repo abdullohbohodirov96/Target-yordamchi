@@ -725,10 +725,16 @@ class SmmPost(Base):
 
 
 class Competitor(Base):
-    """Admin qo'shgan raqobatchilar ro'yxati -- har kuni soat 10:00da
-    `competitor_sync.py` Meta Ad Library orqali ularning joriy
-    reklamalarini tekshiradi va `competitor_analytics.py` qisqa amaliy
-    hisobot tayyorlaydi (2026-08, foydalanuvchi so'rovi)."""
+    """Admin qo'shgan (yoki jonli Ad Library qidiruvidan "yulduzcha"
+    bosib saqlangan) raqobatchilar ro'yxati -- `competitor_sync.py`
+    Meta Ad Library orqali ularning joriy reklamalarini tekshiradi va
+    `competitor_analytics.py` qisqa amaliy hisobot tayyorlaydi (2026-08,
+    foydalanuvchi so'rovi).
+
+    2026-09 (foydalanuvchi so'rovi -- "har 2 kunda bir raqobatchini
+    analiz qilsin"): ILGARI HAMMASI kuniga BIRGA tahlil qilinardi. Endi
+    `last_analyzed_at` orqali AYLANMA (rotation) navbat yuritiladi --
+    `competitor_analytics.py`dagi tanlash mantig'iga qara."""
     __tablename__ = "competitors"
 
     id = Column(Integer, primary_key=True)
@@ -737,7 +743,31 @@ class Competitor(Base):
     domain = Column(String(255), nullable=True)  # veb-sayt, masalan "arboss.uz"
     search_term = Column(String(255), nullable=True)  # Ad Library'da qidiriladigan kalit so'z -- bo'sh bo'lsa `name` ishlatiladi
     is_active = Column(Boolean, default=True)
+    last_analyzed_at = Column(DateTime, nullable=True, index=True)  # 2026-09, 2 kunlik aylanma tahlil uchun -- oxirgi marta QACHON tahlil qilingani
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+class CompetitorAnalysis(Base):
+    """Bitta raqobatchi uchun BITTA tahlil natijasi (2026-09, foydalanuvchi
+    so'rovi -- "har 2 kunda bir raqobatchilani analiz qilsin va tahlilni
+    bot orqali yuborsin"). Har safar navbati kelgan raqobatchi tahlil
+    qilinganda YANGI qator yoziladi (tarix saqlanadi -- sozlamalar
+    sahifasidagi tafsilot ko'rinishida eng oxirgisi va tarix ko'rsatiladi).
+
+    `summary_text` ICHIDA ikkita qism bor: reklama nimani targ'ib
+    qilyapti (TAKLIF) va -- MUHIM CHEKLOV -- Meta Ad Library ommaviy
+    API'si haqiqiy auditoriya/target sozlamalarini bermaydi, shuning
+    uchun bu yerda faqat reklama matnidan kelib chiqib qilingan AI
+    TAXMINI bor (TAXMINIY AUDITORIYA), haqiqiy Meta sozlamasi emas --
+    bu narsa matnning o'zida ham aniq yozilgan."""
+    __tablename__ = "competitor_analyses"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"), nullable=False, index=True)
+    summary_text = Column(Text, nullable=True)
+    ads_analyzed_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
 
 class CompetitorAd(Base):
@@ -1198,9 +1228,9 @@ def _migrate_widen_columns() -> None:
 # tenant-filtri (`_TENANT_FILTERED_MODELS`, pastga qarang) uchun ham asos.
 _COMPANY_SCOPED_MODELS = [
     Manager, Lead, Sale, LeadNote, CallRecord, SmmSnapshot, SmmPost, Competitor,
-    CompetitorAd, AssistantUnanswered, CustomField, FunnelStage, StandingTask,
-    StandingReport, IgDmConversation, IgDmMessage, MetaEventLog, CannedReply,
-    PaymeReceipt,
+    CompetitorAd, CompetitorAnalysis, AssistantUnanswered, CustomField, FunnelStage,
+    StandingTask, StandingReport, IgDmConversation, IgDmMessage, MetaEventLog,
+    CannedReply, PaymeReceipt,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

@@ -38,7 +38,7 @@ import permissions
 import plans
 import lang as lang_module
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -50,6 +50,8 @@ import smm_sync
 import smm_analytics
 import ig_dm_sync
 import ig_dm_analytics
+import competitor_sync
+import competitor_analytics
 import integrations
 from phone_utils import phone_key9
 
@@ -6380,8 +6382,16 @@ def custom_fields_settings():
 
 # ---------------------------------------------------------------------------
 # Admin: raqobatchilar ro'yxati (2026-08, foydalanuvchi so'rovi -- Meta Ad
-# Library orqali har kuni soat 10:00da avtomatik tahlil qilinadigan
-# ro'yxatni shu yerdan qo'shish/o'chirish/tahrirlash mumkin).
+# Library orqali har 2 kunda AYLANMA (rotation) tartibda BITTA raqobatchi
+# avtomatik tahlil qilinadi va Telegram'ga yuboriladi -- ro'yxatni shu
+# yerdan qo'shish/o'chirish/tahrirlash mumkin).
+#
+# 2026-09, foydalanuvchi so'rovi ("ad library qo'shsak bo'lar ekan ...
+# ad library interfeysini ulab qo'yish kerak ... yulduzcha orqali
+# bizneslani akkauntlani saqlash"): shu sahifaga JONLI Ad Library qidiruvi
+# qo'shildi (`?q=...`) -- topilgan har bir sahifa/biznes natijasining
+# yonidagi "☆ Kuzatuvga qo'sh" tugmasi bosilsa, o'sha `page_name` yangi
+# `Competitor` sifatida saqlanadi (mavjud bo'lsa -- qayta qo'shilmaydi).
 # ---------------------------------------------------------------------------
 
 @app.route("/settings/competitors", methods=["GET", "POST"])
@@ -6392,16 +6402,24 @@ def competitors_settings():
     try:
         if request.method == "POST":
             action = request.form.get("action")
-            if action == "add":
+            if action in ("add", "star_add"):
                 name = request.form.get("name", "").strip()
                 domain = request.form.get("domain", "").strip() or None
                 search_term = request.form.get("search_term", "").strip() or None
-                if name:
-                    session.add(Competitor(name=name, domain=domain, search_term=search_term, company_id=current_user.company_id))
-                    session.commit()
-                    flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
-                else:
+                if not name:
                     flash("Kompaniya nomini kiriting.", "error")
+                else:
+                    existing = (
+                        session.query(Competitor)
+                        .filter(func.lower(Competitor.name) == name.lower())
+                        .first()
+                    )
+                    if existing:
+                        flash(f"\"{name}\" allaqachon kuzatuv ro'yxatida bor.", "error")
+                    else:
+                        session.add(Competitor(name=name, domain=domain, search_term=search_term, company_id=current_user.company_id))
+                        session.commit()
+                        flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
             elif action == "toggle":
                 comp_id = request.form.get("competitor_id", "")
                 c = session.get(Competitor, int(comp_id)) if comp_id.isdigit() else None
@@ -6413,10 +6431,39 @@ def competitors_settings():
                 c = session.get(Competitor, int(comp_id)) if comp_id.isdigit() else None
                 if c:
                     session.query(CompetitorAd).filter_by(competitor_id=c.id).delete()
+                    session.query(CompetitorAnalysis).filter_by(competitor_id=c.id).delete()
                     session.delete(c)
                     session.commit()
                     flash("Raqobatchi o'chirildi.", "success")
-            return redirect(url_for("competitors_settings"))
+            return redirect(url_for("competitors_settings", q=request.form.get("q") or None))
+
+        query_term = (request.args.get("q") or "").strip()
+        search_results = None
+        search_error = None
+        if query_term:
+            try:
+                raw_results = meta_api.search_ad_library(query_term, limit=20)
+            except meta_api.MetaAPIError as e:
+                search_error = meta_api.safe_error_message(e)
+                raw_results = []
+            except Exception as e:
+                search_error = meta_api.safe_error_message(e)
+                raw_results = []
+            tracked_names = {n.lower() for (n,) in session.query(Competitor.name).all()}
+            seen_pages = set()
+            search_results = []
+            for ad in raw_results:
+                page_name = (ad.get("page_name") or "").strip()
+                if not page_name or page_name.lower() in seen_pages:
+                    continue
+                seen_pages.add(page_name.lower())
+                bodies = ad.get("ad_creative_bodies") or []
+                search_results.append({
+                    "page_name": page_name,
+                    "snippet": (bodies[0].strip().replace("\n", " ")[:200] if bodies else ""),
+                    "snapshot_url": ad.get("ad_snapshot_url"),
+                    "already_tracked": page_name.lower() in tracked_names,
+                })
 
         all_competitors = session.query(Competitor).order_by(Competitor.created_at.desc()).all()
         rows = []
@@ -6426,10 +6473,76 @@ def competitors_settings():
                 "id": c.id, "name": c.name, "domain": c.domain,
                 "search_term": c.search_term, "is_active": c.is_active,
                 "active_ads_count": ads_count,
+                "last_analyzed_at": c.last_analyzed_at.strftime("%d.%m.%Y %H:%M") if c.last_analyzed_at else None,
             })
     finally:
         session.close()
-    return render_template("competitors.html", competitors=rows)
+    return render_template(
+        "competitors.html", competitors=rows, query_term=query_term,
+        search_results=search_results, search_error=search_error,
+        rotation_days=competitor_analytics.ROTATION_DAYS,
+    )
+
+
+@app.route("/settings/competitors/<int:competitor_id>")
+@login_required
+@module_required("settings")
+def competitor_detail(competitor_id):
+    session = get_session()
+    try:
+        competitor = session.get(Competitor, competitor_id)
+        if competitor is None:
+            abort(404)
+        ads = (
+            session.query(CompetitorAd)
+            .filter_by(competitor_id=competitor.id, is_active=True)
+            .order_by(CompetitorAd.last_seen_at.desc())
+            .limit(20)
+            .all()
+        )
+        history = (
+            session.query(CompetitorAnalysis)
+            .filter_by(competitor_id=competitor.id)
+            .order_by(CompetitorAnalysis.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        data = {
+            "id": competitor.id, "name": competitor.name, "domain": competitor.domain,
+            "search_term": competitor.search_term, "is_active": competitor.is_active,
+            "last_analyzed_at": competitor.last_analyzed_at.strftime("%d.%m.%Y %H:%M") if competitor.last_analyzed_at else None,
+        }
+        ad_rows = [{
+            "page_name": a.page_name, "body_text": a.body_text,
+            "snapshot_url": a.snapshot_url,
+            "ad_started_at": a.ad_started_at.strftime("%d.%m.%Y") if a.ad_started_at else None,
+        } for a in ads]
+        history_rows = [{
+            "summary_text": h.summary_text, "ads_analyzed_count": h.ads_analyzed_count,
+            "created_at": h.created_at.strftime("%d.%m.%Y %H:%M") if h.created_at else None,
+        } for h in history]
+    finally:
+        session.close()
+    return render_template(
+        "competitor_detail.html", competitor=data, ads=ad_rows, history=history_rows,
+        rotation_days=competitor_analytics.ROTATION_DAYS,
+    )
+
+
+@app.route("/settings/competitors/<int:competitor_id>/analyze-now", methods=["POST"])
+@login_required
+@module_required("settings")
+def competitor_analyze_now(competitor_id):
+    try:
+        result = competitor_analytics.analyze_competitor_now(competitor_id)
+    except Exception as e:
+        flash(f"Tahlil qilishda xatolik: {meta_api.safe_error_message(e)}", "error")
+        return redirect(url_for("competitor_detail", competitor_id=competitor_id))
+    if not result:
+        flash("Raqobatchi topilmadi yoki o'chirilgan.", "error")
+    else:
+        flash("Tahlil yangilandi.", "success")
+    return redirect(url_for("competitor_detail", competitor_id=competitor_id))
 
 
 # ---------------------------------------------------------------------------

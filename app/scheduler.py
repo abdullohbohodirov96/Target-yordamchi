@@ -47,9 +47,12 @@ Jadval (standart, ENV orqali sozlanadi):
   - Har 3 soatda -- Instagram DM suhbatlariga gpt-4o-mini bilan lid-sifat
     bahosi (FAQAT yangi xabar kelgan suhbatlar uchun, xarajatni nazorat
     qilish uchun ATAYLAB davriy -- `ig_dm_analysis.py`).
-  - 10:00 Toshkent -- Raqobatchilar tahlili: `Competitor` jadvaliga qo'shilgan
-    har bir raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi
-    va qisqa amaliy hisobot tayyorlanadi (2026-08, foydalanuvchi so'rovi).
+  - 10:00 Toshkent -- Raqobatchilar tahlili: har bir kompaniya uchun
+    NAVBATI KELGAN (2 kun yoki undan ko'p tahlil qilinmagan) BITTA
+    raqobatchining Meta Ad Library'dagi joriy reklamalari yangilanadi va
+    qisqa amaliy hisobot (taklif + AI-taxminiy auditoriya) tayyorlanadi
+    (2026-08, keyin 2026-09'da 2 kunlik aylanma tartibga o'tkazildi --
+    foydalanuvchi so'rovi).
   - Har 20 daqiqada -- qo'ng'iroq yozuvlarini (Moi Zvonki) sinxronlash,
     "Audio" sahifasi uchun (2026-09: AI tahlil BUTUNLAY olib tashlangan --
     faqat yozuvlarning o'zi/ro'yxati sinxronlanadi, qarang `job_call_sync`).
@@ -81,7 +84,6 @@ import call_sync
 import smm_sync
 import ig_dm_sync
 import ig_dm_analysis
-import competitor_sync
 import competitor_analytics
 import meta_api
 import db
@@ -1045,10 +1047,15 @@ def job_ig_dm_analysis() -> dict:
 
 
 def job_competitor_analysis() -> dict:
-    """Har kuni soat 10:00 -- admin qo'shgan raqobatchilarning Meta Ad
-    Library'dagi joriy reklamalarini yangilaydi va qisqa amaliy hisobot
-    tayyorlab yuboradi (2026-08, foydalanuvchi so'rovi). Raqobatchi
-    qo'shilmagan bo'lsa jim qaytadi.
+    """Har kuni soat 10:00 -- har bir kompaniya uchun NAVBATI KELGAN
+    (2 kun yoki undan ko'p tahlil qilinmagan) BITTA faol raqobatchini
+    Meta Ad Library orqali yangilaydi va ALOHIDA qisqa amaliy hisobot
+    tayyorlab yuboradi (2026-09, foydalanuvchi so'rovi: "har 2 kunda bir
+    raqobatchilani analiz qilsin va tahlilni bot orqali yuborsin" --
+    ILGARI BARCHA raqobatchilar kuniga BITTA umumiy xabarga birlashtirilar
+    edi, `competitor_analytics.analyze_due_competitor()`ga qarang).
+    Raqobatchi qo'shilmagan -- yoki bor-u, birortasining ham navbati
+    kelmagan -- bo'lsa jim qaytadi.
 
     2026-09, multi-tenant xavfsizlik tuzatishi (foydalanuvchi so'rovi:
     "endi bir necha kompaniya bor, malumotla adashib ketmasin ... tg bot
@@ -1091,8 +1098,7 @@ def job_competitor_analysis() -> dict:
             continue
         try:
             with db.scoped_as(company_id):
-                competitor_sync.sync_once()
-                report = competitor_analytics.build_daily_report()
+                analysis = competitor_analytics.analyze_due_competitor()
         except Exception as e:
             logger.exception("Raqobatchilar tahlilida xatolik (kompaniya #%s)", company_id)
             safe_msg = meta_api.safe_error_message(e)
@@ -1100,12 +1106,12 @@ def job_competitor_analysis() -> dict:
                 _tg_send(cid, f"⚠️ Raqobatchilar tahlilida xatolik: {safe_msg}")
             results[company_id] = f"xato: {safe_msg}"
             continue
-        if not report:
-            results[company_id] = "raqobatchi qo'shilmagan"
+        if not analysis:
+            results[company_id] = "raqobatchi yo'q yoki hali navbati kelmagan"
             continue
         for cid in targets:
-            _tg_send(cid, report)
-        results[company_id] = f"yuborildi -> {targets}"
+            _tg_send(cid, analysis["telegram_text"])
+        results[company_id] = f"yuborildi ({analysis['competitor_name']}) -> {targets}"
     return results
 
 
