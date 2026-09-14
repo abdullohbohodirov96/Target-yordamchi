@@ -1,0 +1,62 @@
+Alembic migratsiyalari — Target-yordamchi (Replix)
+====================================================
+
+2026-09, Item J auditi (🟡 O'RTA, 19-band) doirasida qo'shildi.
+
+Nima uchun kerak
+-----------------
+Ilgari yagona sxema-boshqaruv vositasi `db._migrate_add_missing_columns()`
+edi — u ishga tushganda modellardagi HAR BIR ustunni haqiqiy bazadagi
+ustunlar bilan solishtirib, yetishmaganini `ALTER TABLE ... ADD COLUMN`
+bilan o'zi qo'shadi. Bu YANGI USTUN/JADVAL qo'shish uchun ishlaydi, lekin:
+ustun turi o'zgarishini (masalan `VARCHAR(16)` -> `VARCHAR(32)`,
+har birini `_COLUMN_TYPE_WIDENING`ga qo'lda yozish kerak), nomini
+o'zgartirishni, ustunni olib tashlashni yoki murakkab
+data-migratsiyani (mavjud qatorlarni yangi ustunga ko'chirish) UMUMAN
+qo'llab-quvvatlamaydi — va versiyalanmagan (qaysi o'zgarish qachon
+qo'shilganini bilib bo'lmaydi, orqaga qaytarib bo'lmaydi).
+
+Endi nima ishlaydi
+-------------------
+`db._migrate_add_missing_columns()` ATAYLAB O'ZGARTIRILMADI — u hamon
+`init_db()` ichida ishlaydi va xavfsizlik zaxirasi sifatida qoladi
+(masalan Alembic revizyasi yozishni unutib qo'yilgan holatlar uchun).
+Lekin BU KUNDAN BOSHLAB, sxemaga har qanday YANGI o'zgarish (yangi
+ustun, jadval, indeks, ustun turi o'zgarishi va h.k.) uchun ALOHIDA
+Alembic revizyasi ham yozilishi tavsiya etiladi — versiyalangan,
+orqaga qaytarilishi mumkin bo'lgan tarixni saqlash uchun.
+
+Production (Render, mavjud Postgres) uchun BIR MARTALIK qadam
+----------------------------------------------------------------
+Production bazada jadvallar ALLAQACHON mavjud (yuqoridagi eski
+mexanizm orqali qurilgan). Shu sababli birinchi revizyani
+(`versions/..._boshlangich_sxema_...py`) HECH QACHON oddiy
+`alembic upgrade head` bilan qo'llamang — bu jadvalларни qayta
+yaratishga urinadi va xato beradi (yoki, eng yomoni, mavjud
+ma'lumotlarga tegishi mumkin). Buning o'rniga BIR MARTA:
+
+    alembic stamp head
+
+buyrug'ini production muhitida (haqiqiy DATABASE_URL bilan) ishga
+tushiring — bu HECH QANDAY DDL bajarmaydi, faqat Alembic'ning o'ziga
+"biz allaqachon shu revizyadamiz" deb yozib qo'yadi. Shundan KEYIN
+yozilgan barcha YANGI revizyalar odatdagidek `alembic upgrade head`
+bilan qo'llanadi.
+
+Yangi revizya qo'shish (kelajakda)
+------------------------------------
+    cd app/
+    # avval db.py'dagi modelni tahrirlang, keyin:
+    alembic revision --autogenerate -m "qisqa tavsif"
+    # yaratilgan faylni migrations/versions/'da KO'RIB CHIQING
+    # (autogenerate har doim 100% to'g'ri bo'lavermaydi -- ayniqsa
+    # ustun turini o'zgartirish/nomini o'zgartirish/ma'lumot
+    # migratsiyasi kabi holatlarda qo'lda tuzatish kerak bo'lishi
+    # mumkin), so'ngra local/staging'da sinab ko'rgandan keyingina
+    # production'da `alembic upgrade head` bilan qo'llang.
+
+`DATABASE_URL` — ilova o'zi ishlatgan bir xil env o'zgaruvchi
+(`migrations/env.py` `db.py`dan to'g'ridan-to'g'ri import qiladi,
+shu jumladan Render'ning "postgres://" -> "postgresql://" tuzatishi
+bilan birga) — `alembic.ini`dagi `sqlalchemy.url` shunchaki
+zaxira/placeholder, u DATABASE_URL o'rnatilgan bo'lsa ishlatilmaydi.

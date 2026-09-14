@@ -17,3 +17,10 @@ cryptography==43.0.1
 # ushbu sof-Python paketga zaxira sifatida murojaat qiladi (CPython
 # hujjatida rasman tavsiya etilgan naqsh).
 tzdata==2024.2
+# 2026-09, Item J auditi (🟡 O'RTA, 19-band -- migratsiya tizimi yo'q edi):
+# versiyalangan sxema migratsiyalari uchun (qarang app/migrations/).
+# `db._migrate_add_missing_columns()` ham xavfsizlik zaxirasi sifatida
+# saqlanib qolmoqda -- Alembic ATAYLAB avtomatik deploy oqimiga
+# ulanmagan (production'da bir martalik `alembic stamp head` kerak,
+# app/migrations/versions/..._boshlangich_sxema_...py fayliga qarang).
+alembic==1.13.2
