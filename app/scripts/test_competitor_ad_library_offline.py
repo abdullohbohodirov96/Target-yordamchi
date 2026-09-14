@@ -239,7 +239,7 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_MULTI_AD
     r = client_a.get("/settings/competitors?q=Multibrand")
     html = r.get_data(as_text=True)
     check("ko'pi bilan 2 ta namuna reklama ko'rsatiladi (3-si emas)", "Birinchi aksiya" in html and "Ikkinchi aksiya" in html and "Uchinchi, hali faol aksiya" not in html)
-    check("'hozir reklamasi bor' -- ko'rsatilmagan 3-reklama ham hisobga olindi", "Hozir reklamasi bor" in html)
+    check("faol reklama SONI -- ko'rsatilmagan 3-reklama ham hisobga olindi (1 ta faol)", "Hozir 1 ta reklama yoqilgan" in html)
     check("sahifa logotipi (picture_url) <img> sifatida chiqadi", 'src="https://example.com/logo.png"' in html)
     check("obunachilar soni ko'rinadi", "12 400 obunachi" in html)
 
@@ -255,6 +255,31 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_INACTIVE
     check("barcha reklamalar tugagan bo'lsa 'hozir reklamasi yo'q'", "Hozir reklamasi yo'q" in html)
     check("profil olishda xato bo'lsa ham sahifa 200 qaytaradi (butun qidiruv to'xtamaydi)", r.status_code == 200)
     check("profil olinmasa harf-avatar'ga qaytadi (rasm yo'q)", 'cp-result-avatar-img' not in html)
+
+# --- 8. 2026-09, foydalanuvchi so'rovi ("qidirilish -- yozishga qarab
+# brandlar chiqib kelsin, logo/obunachi soni ko'rinib tursin"): yozayotganda
+# ishlaydigan jonli taklif JSON endpointi (`/settings/competitors/live-search`).
+with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_MULTI_AD_RESULTS), \
+     mock.patch.object(meta_api, "get_page_public_profile", return_value={"picture_url": "https://example.com/logo.png", "fan_count": 12400}):
+    r = client_a.get("/settings/competitors/live-search?q=Multibrand")
+    check("live-search 200 qaytaradi", r.status_code == 200)
+    payload = r.get_json()
+    check("live-search JSON tuzilishi to'g'ri (results ro'yxati)", isinstance(payload, dict) and isinstance(payload.get("results"), list))
+    results = payload.get("results") or []
+    check("live-search kamida bitta natija qaytaradi", len(results) >= 1)
+    if results:
+        first = results[0]
+        check("live-search natijasida page_name bor", first.get("page_name") == "Multibrand")
+        check("live-search natijasida active_count to'g'ri hisoblangan (1 ta faol)", first.get("active_count") == 1)
+        check("live-search natijasida obunachilar soni ko'rinadi", first.get("fan_count_display") == "12 400 obunachi")
+        check("live-search natijasida reklama namunalari YO'Q (yengil panel)", "ads" not in first)
+
+r = client_a.get("/settings/competitors/live-search?q=a")
+check("live-search 2 harfdan qisqa so'rovda bo'sh natija qaytaradi (ortiqcha so'rovlarni oldini olish)", r.get_json() == {"results": []})
+
+with mock.patch.object(meta_api, "search_ad_library", return_value=[]):
+    r = client_a.get("/settings/competitors/live-search?q=Hechnarsa")
+    check("live-search natija topilmasa bo'sh ro'yxat qaytaradi, xato emas", r.status_code == 200 and r.get_json() == {"results": []})
 
 print()
 if failures:

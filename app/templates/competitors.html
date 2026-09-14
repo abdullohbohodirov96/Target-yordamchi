@@ -26,10 +26,15 @@
 <div class="card cp-search-card">
   <h2>Ad Library'dan qidirish</h2>
   <p class="page-subtitle" style="margin-top:-6px">Brend/kompaniya nomini yozing, natijalar orasidan ☆ bosib kuzatuvga qo'shing.</p>
-  <form method="get" class="cp-search-form">
-    <div class="field">
+  <form method="get" class="cp-search-form" id="cpSearchForm" autocomplete="off">
+    {# 2026-09, foydalanuvchi so'rovi ("qidirilish -- yozishga qarab
+       brandlar chiqib kelsin, logo/obunachi soni ko'rinib tursin"): input
+       ostida yozayotganda to'ldiriladigan taklif paneli -- Ad Library'ning
+       o'zidagi kabi. #}
+    <div class="field cp-search-field">
       <label>Qidiruv</label>
-      <input type="text" name="q" value="{{ query_term }}" placeholder="Masalan: Arboss">
+      <input type="text" name="q" id="cpSearchInput" value="{{ query_term }}" placeholder="Masalan: Arboss" role="combobox" aria-expanded="false" aria-controls="cpSuggest" aria-autocomplete="list">
+      <div class="cp-suggest" id="cpSuggest" role="listbox" hidden></div>
     </div>
     <button type="submit">Qidirish</button>
   </form>
@@ -62,7 +67,7 @@
                brenddan ajratishga yordam beradigan ikkita signal. #}
             <div class="cp-result-meta">
               {% if r.fan_count_display %}<span class="text-faint">{{ r.fan_count_display }}</span>{% endif %}
-              {% if r.has_active %}<span class="badge badge-color-good">Hozir reklamasi bor</span>{% else %}<span class="badge badge-color-dim">Hozir reklamasi yo'q</span>{% endif %}
+              {% if r.active_count %}<span class="badge badge-color-good">Hozir {{ r.active_count }} ta reklama yoqilgan</span>{% else %}<span class="badge badge-color-dim">Hozir reklamasi yo'q</span>{% endif %}
             </div>
           </div>
           {% if r.already_tracked %}
@@ -179,6 +184,105 @@
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();
+
+(function () {
+  /* 2026-09, foydalanuvchi so'rovi ("qidirilish -- yozishga qarab
+     brandlar chiqib kelsin, logo/obunachi soni ko'rinib tursin"): Ad
+     Library'ning o'zidagi kabi yozayotganda ishlaydigan taklif paneli.
+     Bizning ochiq Ad Library qidiruvimizga asoslangan (Meta'ning ICHKI
+     taklif API'si ochiq emas) -- shuning uchun 350ms kutib (debounce)
+     so'rov yuboradi, bekorchi so'rovlarni oldini oladi. */
+  var form = document.getElementById('cpSearchForm');
+  var input = document.getElementById('cpSearchInput');
+  var panel = document.getElementById('cpSuggest');
+  if (!form || !input || !panel) return;
+
+  var LIVE_SEARCH_URL = '{{ url_for("competitors_live_search") }}';
+  var debounceTimer = null;
+  var activeController = null;
+  var lastQuery = '';
+
+  function closePanel() {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    input.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderResults(results) {
+    panel.innerHTML = '';
+    if (!results.length) { closePanel(); return; }
+    results.forEach(function (r) {
+      var item = document.createElement('div');
+      item.className = 'cp-suggest-item';
+      item.setAttribute('role', 'option');
+      item.tabIndex = -1;
+
+      var avatar;
+      if (r.picture_url) {
+        avatar = document.createElement('img');
+        avatar.className = 'cp-suggest-avatar cp-suggest-avatar-img';
+        avatar.src = r.picture_url;
+        avatar.alt = '';
+      } else {
+        avatar = document.createElement('span');
+        avatar.className = 'cp-suggest-avatar';
+        avatar.textContent = (r.page_name ? r.page_name[0] : '?').toUpperCase();
+      }
+
+      var body = document.createElement('div');
+      body.className = 'cp-suggest-body';
+      var nameEl = document.createElement('div');
+      nameEl.className = 'cp-suggest-name';
+      nameEl.textContent = r.page_name;
+      var metaEl = document.createElement('div');
+      metaEl.className = 'cp-suggest-meta';
+      var metaBits = [];
+      if (r.fan_count_display) metaBits.push(r.fan_count_display);
+      metaBits.push(r.active_count ? ('Hozir ' + r.active_count + ' ta reklama yoqilgan') : 'Hozir reklamasi yo\'q');
+      if (r.already_tracked) metaBits.push('★ Kuzatuvda');
+      metaEl.textContent = metaBits.join(' · ');
+      body.appendChild(nameEl);
+      body.appendChild(metaEl);
+
+      item.appendChild(avatar);
+      item.appendChild(body);
+      item.addEventListener('click', function () {
+        input.value = r.page_name;
+        closePanel();
+        form.submit();
+      });
+      panel.appendChild(item);
+    });
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+
+  input.addEventListener('input', function () {
+    var q = input.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { closePanel(); return; }
+    debounceTimer = setTimeout(function () {
+      if (q === lastQuery) return;
+      lastQuery = q;
+      if (activeController) activeController.abort();
+      activeController = ('AbortController' in window) ? new AbortController() : null;
+      fetch(LIVE_SEARCH_URL + '?q=' + encodeURIComponent(q), {
+        signal: activeController ? activeController.signal : undefined,
+        headers: { 'Accept': 'application/json' },
+      })
+        .then(function (res) { return res.ok ? res.json() : { results: [] }; })
+        .then(function (data) { renderResults(data.results || []); })
+        .catch(function () { /* tarmoq xatosi -- jim tashlab qo'yiladi, forma yuborish baribir ishlayveradi */ });
+    }, 350);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!form.contains(e.target)) closePanel();
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closePanel();
+  });
 })();
 </script>
 {% endblock %}
