@@ -1765,7 +1765,14 @@ def marketplace():
         c = session.get(Company, company.id)
         token = integrations.ensure_inbound_token(c)
         session.commit()  # `ensure_inbound_token` yangi token yaratgan bo'lsa ham, yo'q ham -- xavfsiz no-op
-        inbound_url = url_for("webhook_leads_intake", token=token, _external=True)
+        # 2026-09, "hamma integratsiyalani tekshir" so'rovi bo'yicha topilgan
+        # o'xshash muammo: bu URL admin tashqi CRM/Zapier'ga QO'LDA
+        # ko'chirib qo'yadigan doimiy manzil -- `_external=True` bo'lsa,
+        # admin qaysi domendan (onrender.com yoki replix.uz) ko'rayotganiga
+        # qarab boshqacha URL ko'rar edi. Facebook OAuth redirect_uri bilan
+        # bir xil sababdan (_canonical_external_url(), yuqorida) endi doim
+        # bitta barqaror manzil ko'rsatiladi.
+        inbound_url = _canonical_external_url("webhook_leads_intake", token=token)
         view = {
             "webhook_out_url": c.webhook_out_url,
             "webhook_out_secret": c.webhook_out_secret,
