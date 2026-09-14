@@ -1,0 +1,58 @@
+# tests.yml — 2026-09, Item J auditi (🟡 O'RTA, 17-band: "Avtomatlashtirilgan
+# test yo'q, CI yo'q"). `app/scripts/test_*_offline.py` (44 ta fayl) ILGARI
+# faqat qo'lda, mahalliy (yoki shu Claude sessiyasi ichida) ishga
+# tushirilardi -- har push/PR'da AVTOMATIK tekshirilmasdi, ya'ni
+# regressiya push qilingandan KEYIN aniqlanardi (yoki umuman aniqlanmasdi).
+#
+# Bu workflow har bir `test_*.py` skriptni ALOHIDA qadam sifatida ishga
+# tushiradi (bittasi muvaffaqiyatsiz bo'lsa ham HAMMASI ko'rinishi uchun --
+# bitta `for` sikli ichida birinchi xatoda to'xtash o'rniga). Fayllar
+# to'liq TARMOQSIZ (offline): har biri o'z SQLite bazasini yaratadi va
+# kerakli environment o'zgaruvchilariga (ANTHROPIC_API_KEY va h.k.) fақат
+# soxta/dummy qiymat qo'yadi (`os.environ.setdefault`) -- shuning uchun
+# HECH QANDAY GitHub Secret talab qilinmaydi.
+name: Offline test suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: app/requirements.txt
+
+      - name: Kutubxonalarni o'rnatish
+        run: pip install --no-cache-dir -r app/requirements.txt
+
+      - name: Har bir offline test faylini ishga tushirish
+        working-directory: app
+        run: |
+          set +e
+          failed=0
+          total=0
+          for f in scripts/test_*.py; do
+            total=$((total + 1))
+            echo "::group::$f"
+            python3 "$f"
+            status=$?
+            echo "::endgroup::"
+            if [ "$status" -ne 0 ]; then
+              echo "::error file=app/$f::Test fayli muvaffaqiyatsiz tugadi (exit code $status)"
+              failed=$((failed + 1))
+            fi
+          done
+          echo "Jami: $total ta fayl, muvaffaqiyatsiz: $failed ta"
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
