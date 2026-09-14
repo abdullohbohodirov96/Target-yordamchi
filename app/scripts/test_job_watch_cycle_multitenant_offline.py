@@ -379,6 +379,94 @@ def test_job_standing_tasks_error_is_recorded_and_safe():
     print("OK: job_standing_tasks() -- xato bo'lsa vazifaga yoziladi (keyingi safar ham qayta urinilaveradi), holat noto'g'ri 'muvaffaqiyatli' deb belgilanmaydi")
 
 
+# ---------------------------------------------------------------------------
+# 4) job_watch_cycle() -- token muddati tugagan xato (kod 190) endi ASOSIY
+#    (CAPI'siz) Meta Ads yo'lida ham aniqlanadi -- 2026-09, Item J xavfsizlik
+#    auditi, 🟠 YUQORI 10-band ("Token muddati tugashi faqat CAPI orqali
+#    aniqlanadi"). Ilgari bu yerda MetaAPIError kod=190 bo'lsa ham xuddi
+#    boshqa har qanday xatodek umumiy "⚠️ ... xatolik" xabari yuborilardi,
+#    `meta_integration_status` esa hech qachon "reauth_required"ga
+#    o'zgarmasdi -- foydalanuvchi `/connect-accounts` sahifasidagi "qayta
+#    ulash" bannerini hech qachon ko'rmasdi.
+# ---------------------------------------------------------------------------
+
+def test_job_watch_cycle_marks_company_reauth_required_on_token_expired():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, scheduler_module = _fresh_modules(os.path.join(tmp, "d1.db"))
+        import orchestrator
+        import meta_api
+        company_a = _make_company(
+            db_module, name="Tokeni eskirgan kompaniya", telegram_group_id="-6005",
+            meta_ad_account_id="act_expired", meta_access_token="tok_expired",
+            auto_watch_enabled=True,
+        )
+
+        def fake_run_daily_cron_report(dry_run=False, company=None):
+            if company is None:
+                return None
+            raise meta_api.MetaAPIError({"code": 190, "message": "Error validating access token"})
+
+        sent = []
+
+        def fake_tg_send(chat_id, text):
+            sent.append((chat_id, text))
+            return {"ok": True, "error": None}
+
+        with mock.patch.object(orchestrator, "run_daily_cron_report", side_effect=fake_run_daily_cron_report), \
+             mock.patch.object(scheduler_module, "_tg_send", side_effect=fake_tg_send):
+            results = scheduler_module.job_watch_cycle()
+
+        assert "xato" in results[company_a]
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                c = session.get(db_module.Company, company_a)
+            assert c.meta_integration_status == "reauth_required", (
+                "kod 190 (token eskirgan) MetaAPIError kelganda kompaniya "
+                "'reauth_required' deb belgilanishi kerak edi"
+            )
+        finally:
+            session.close()
+        company_texts = [t for cid, t in sent if cid == -6005]
+        assert company_texts and "qayta ulan" in company_texts[0].lower(), (
+            f"foydalanuvchiga umumiy xato emas, ANIQ 'qayta ulaning' xabari ko'rsatilishi kerak: {company_texts}"
+        )
+    print("OK: job_watch_cycle() -- kompaniya uchun MetaAPIError(kod=190) kelsa, meta_integration_status='reauth_required' bo'ladi va aniq 'qayta ulaning' xabari yuboriladi")
+
+
+def test_job_watch_cycle_does_not_mark_reauth_required_on_other_errors():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_module, scheduler_module = _fresh_modules(os.path.join(tmp, "d2.db"))
+        import orchestrator
+        import meta_api
+        company_a = _make_company(
+            db_module, name="Vaqtinchalik xato kompaniya", telegram_group_id="-6006",
+            meta_ad_account_id="act_x", meta_access_token="tok_x",
+            auto_watch_enabled=True,
+        )
+
+        def fake_run_daily_cron_report(dry_run=False, company=None):
+            if company is None:
+                return None
+            raise meta_api.MetaAPIError({"code": 1, "message": "Unknown error"})
+
+        with mock.patch.object(orchestrator, "run_daily_cron_report", side_effect=fake_run_daily_cron_report), \
+             mock.patch.object(scheduler_module, "_tg_send", return_value={"ok": True, "error": None}):
+            scheduler_module.job_watch_cycle()
+
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                c = session.get(db_module.Company, company_a)
+            assert c.meta_integration_status != "reauth_required", (
+                "token eskirishi bilan bog'liq BO'LMAGAN (kod != 190) MetaAPIError "
+                "kompaniyani noto'g'ri ravishda 'reauth_required' deb belgilamasligi kerak"
+            )
+        finally:
+            session.close()
+    print("OK: job_watch_cycle() -- kod 190 BO'LMAGAN MetaAPIError kompaniyani 'reauth_required' deb noto'g'ri belgilamaydi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

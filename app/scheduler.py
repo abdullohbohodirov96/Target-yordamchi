@@ -167,6 +167,34 @@ def _tg_send(chat_id: int, text: str) -> dict:
     return {"ok": last_error is None, "error": last_error}
 
 
+def _mark_meta_reauth_required(company_id: "int | None") -> None:
+    """2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 10-band: "Token muddati
+    tugashi (kod 190) faqat CAPI orqali aniqlanadi"): ILGARI `is_token_expired_error()`
+    FAQAT CAPI (Conversions API) yo'lida (`meta_events.py`) va qo'lda "Test"
+    tugmasida (`app.py`) tekshirilardi -- ASOSIY Meta Ads o'qish/yozish yo'li
+    (har soatlik AI audit tsikli, `job_watch_cycle` -> `gather_data`) token
+    eskirganini UMUMAN aniqlamas edi: foydalanuvchi shunchaki HAR SOATDA bir
+    xil umumiy "xatolik" xabarini olardi, `/connect-accounts` sahifasidagi
+    "qayta ulash" bannerini esa hech qachon ko'rmasdi.
+
+    Bu yordamchi funksiya `Company.meta_integration_status`ni
+    `"reauth_required"`ga o'rnatadi (best-effort -- bazaga yozishda xato
+    bo'lsa ham, chaqiruvchi tsiklni davom ettiraveradi)."""
+    if company_id is None:
+        return
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            c = session.get(db.Company, company_id)
+            if c is not None and c.meta_integration_status != "reauth_required":
+                c.meta_integration_status = "reauth_required"
+                session.commit()
+    except Exception:
+        logger.exception("meta_integration_status='reauth_required' deb belgilashda xato (company_id=%s)", company_id)
+    finally:
+        session.close()
+
+
 _ADMIN_REPORT_GUARD_KEY = "admin_report_last_sent_date"
 
 
@@ -628,8 +656,17 @@ def job_watch_cycle() -> dict:
     except Exception as e:
         logger.exception("Kuzatuv tsikli xatosi (platforma egasi)")
         safe_msg = meta_api.safe_error_message(e)
+        if meta_api.is_token_expired_error(e):
+            _mark_meta_reauth_required(default_company_id)
+            msg = (
+                "🔑 Meta hisobingizga ulanish muddati tugagan (yoki bekor qilingan) -- "
+                "avtomatik audit/tuzatish TO'XTATILDI. Iltimos, \"Hisoblarni ulash\" "
+                "sahifasidan Facebook orqali QAYTA ULANING."
+            )
+        else:
+            msg = f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}"
         for cid in owner_targets:
-            _tg_send(cid, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
+            _tg_send(cid, msg)
         results["owner"] = f"xato: {safe_msg}"
     else:
         if report is None:
@@ -686,7 +723,16 @@ def job_watch_cycle() -> dict:
         except Exception as e:
             logger.exception("Kuzatuv tsikli xatosi (kompaniya '%s', id=%s)", c["name"], c["id"])
             safe_msg = meta_api.safe_error_message(e)
-            _tg_send(chat_id, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
+            if meta_api.is_token_expired_error(e):
+                _mark_meta_reauth_required(c["id"])
+                _tg_send(
+                    chat_id,
+                    "🔑 Meta hisobingizga ulanish muddati tugagan (yoki bekor qilingan) -- "
+                    "avtomatik audit/tuzatish TO'XTATILDI. Iltimos, \"Hisoblarni ulash\" "
+                    "sahifasidan Facebook orqali QAYTA ULANING.",
+                )
+            else:
+                _tg_send(chat_id, f"⚠️ Avtomatik audit/tuzatish tsiklida xatolik: {safe_msg}")
             results[c["id"]] = f"xato: {safe_msg}"
             continue
 
