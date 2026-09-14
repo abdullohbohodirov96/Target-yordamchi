@@ -120,6 +120,35 @@ check("settings_general POST (set_min_sale) 200 qaytaradi", r.status_code == 200
 # aylanadi -- shu sabab tekshiruv apostrofsiz qism bilan solishtiradi.
 check("settings_general POST muvaffaqiyat xabari", "Minimal sotuv summasi" in r.get_data(as_text=True) and "rnatildi" in r.get_data(as_text=True))
 
+# --- Moi Zvonki ulanish bo'limi (2026-09, Item J auditi 🔴 7-band) ---
+r = admin_client.get("/sozlamalar/umumiy")
+check("settings_general (ulanmagan) 'Ulash' formasini ko'rsatadi", "Mening qo'ng'iroqlarim" in r.get_data(as_text=True) and "Ulanmagan" in r.get_data(as_text=True))
+
+import call_sync as call_sync_module  # noqa: E402
+import unittest.mock as _mock
+
+with _mock.patch.object(call_sync_module, "verify_credentials", return_value=None):
+    r = admin_client.post("/sozlamalar/umumiy", data={
+        "action": "set_moizvonki", "moizvonki_api_address": "https://x.moizvonki.ru",
+        "moizvonki_user_name": "admin@x.uz", "moizvonki_api_key": "sekret-kalit",
+    }, follow_redirects=True)
+check("settings_general POST (set_moizvonki) 200 qaytaradi", r.status_code == 200)
+check("settings_general POST (set_moizvonki) muvaffaqiyat xabari", "saqlandi" in r.get_data(as_text=True))
+
+r = admin_client.get("/sozlamalar/umumiy")
+check("settings_general (ulangan) endi 'Ulangan' holatini ko'rsatadi", "✅ Ulangan" in r.get_data(as_text=True) and "x.moizvonki.ru" in r.get_data(as_text=True))
+
+with _mock.patch.object(call_sync_module, "verify_credentials", side_effect=call_sync_module.MoiZvonkiError("HTTP 401")):
+    r = admin_client.post("/sozlamalar/umumiy", data={
+        "action": "set_moizvonki", "moizvonki_api_address": "https://y.moizvonki.ru",
+        "moizvonki_user_name": "admin@y.uz", "moizvonki_api_key": "boshqa-kalit",
+    }, follow_redirects=True)
+check("settings_general POST (set_moizvonki, tekshiruv rad etsa) noto'g'ri kiritilgan ulanishni SAQLAMAYDI", "x.moizvonki.ru" in r.get_data(as_text=True) and "y.moizvonki.ru" not in r.get_data(as_text=True))
+
+r = admin_client.post("/sozlamalar/umumiy", data={"action": "disconnect_moizvonki"}, follow_redirects=True)
+check("settings_general POST (disconnect_moizvonki) 200 qaytaradi", r.status_code == 200)
+check("settings_general POST (disconnect_moizvonki) endi ulanmagan holatni ko'rsatadi", "Ulanmagan" in r.get_data(as_text=True))
+
 r = admin_client.post("/sozlamalar/cpl", data={
     "action": "set_cpl_rules", "target_cpa_usd": "5", "cpl_hard_kill_usd": "10",
     "cpl_hard_kill_min_spend_usd": "3", "cpl_hard_kill_zero_lead_usd": "8",

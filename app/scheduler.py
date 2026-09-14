@@ -857,13 +857,23 @@ def job_deliver_webhooks() -> dict:
 
 
 def job_call_sync() -> dict:
-    """Mening qo'ng'iroqlarim (Moi Zvonki) integratsiyasi -- MOIZVONKI_API_ADDRESS/
-    MOIZVONKI_API_KEY sozlanmagan bo'lsa hech narsa qilmasdan tinch qaytadi
-    (xato/log emas, chunki bu ixtiyoriy integratsiya). Har safar yangi
-    qo'ng'iroqlarni tortib olgandan keyin `reconcile_existing_records()`
-    ham chaqiriladi -- shu bilan menejer telefon raqami keyinroq
-    o'zgartirilsa/to'ldirilsa ham, bazadagi ESKI yozuvlar avtomatik
-    to'g'irlanadi/tozalanadi (qo'lda "call-cleanup" bosish shart emas).
+    """Mening qo'ng'iroqlarim (Moi Zvonki) integratsiyasi -- na platforma
+    egasi (global ENV), na hech qanday kompaniya o'z hisobini ulamagan
+    bo'lsa, hech narsa qilmasdan tinch qaytadi (xato/log emas, chunki bu
+    ixtiyoriy integratsiya). Har safar yangi qo'ng'iroqlarni tortib
+    olgandan keyin `reconcile_existing_records()` ham chaqiriladi -- shu
+    bilan menejer telefon raqami keyinroq o'zgartirilsa/to'ldirilsa ham,
+    bazadagi ESKI yozuvlar avtomatik to'g'irlanadi/tozalanadi (qo'lda
+    "call-cleanup" bosish shart emas).
+
+    2026-09, Item J auditi (🔴 KRITIK, 7-band -- "Moy Zvonki call-sync
+    hardcoded to one company"): ILGARI bu FAQAT platforma egasining global
+    ENV hisobini (`sync_once()`) sinxronlardi -- endi
+    `call_sync.sync_all_companies()` orqali HAR BIR (o'z Moi Zvonki
+    hisobini ulagan) kompaniya UCHUN ALOHIDA sinxronlanadi (`job_watch_cycle`/
+    `lead_sync.sync_all_companies` bilan bir xil naqsh). `reconcile_existing_records()`
+    ham o'zi multi-tenant (har bir yozuv FAQAT o'z kompaniyasi menejerlariga
+    solishtiriladi) -- shuning uchun bitta umumiy chaqiruv YETARLI.
 
     2026-09, foydalanuvchi ANIQ so'rovi ("audio tahlil qilishni o'chirib
     tashla to'liq va audiolar kelishi lekin bo'laversin"): bu job faqat
@@ -873,9 +883,7 @@ def job_call_sync() -> dict:
     ham yo'q -- `call_analysis.py`dagi tegishli qism va shu yerdagi
     `job_call_analysis()` o'chirildi)."""
     try:
-        result = call_sync.sync_once()
-        if not result.get("configured"):
-            return result  # jim -- sozlanmagan, bu normal holat
+        result = call_sync.sync_all_companies()
         try:
             result["reconcile"] = call_sync.reconcile_existing_records()
         except Exception:

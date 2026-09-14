@@ -254,6 +254,23 @@ class Company(Base):
     payme_card_pending_token = Column(Text, nullable=True)  # shifrlangan -- SMS tasdiqlanishini kutayotgan token
     payme_autopay_enabled = Column(Boolean, nullable=False, default=True)
 
+    # ---------------------------------------------------------------------
+    # 2026-09, Item J xavfsizlik/ishonchlilik auditi (🔴 KRITIK, 7-band:
+    # "Moy Zvonki call-sync hardcoded to one company"): ILGARI qo'ng'iroq
+    # sinxronizatsiyasi (`call_sync.py`) BUTUNLAY GLOBAL environment
+    # o'zgaruvchilari (MOIZVONKI_API_ADDRESS/API_KEY/USER_NAME) orqali
+    # ishlardi -- ya'ni platforma egasidan BOSHQA HECH QANDAY kompaniya o'z
+    # Moi Zvonki hisobini ulay olmasdi, VA ulasa ham (chunki bu maydonlar
+    # umuman yo'q edi) BARCHA qo'ng'iroq yozuvi majburan `company_id=1`ga
+    # (`db.get_default_company_id()`) yozilardi. Endi har bir kompaniya
+    # (admin Sozlamalar -> Umumiy sahifasidan) O'Z Moi Zvonki hisobini ulay
+    # oladi -- xuddi Meta/Telegram kabi (`call_sync.sync_all_companies()`,
+    # `scheduler.job_call_sync`ga qarang). Platforma egasi eski global ENV
+    # yo'lidan foydalanishda DAVOM ETADI (orqaga moslik, `company=None`).
+    moizvonki_api_address = Column(String(255), nullable=True)
+    moizvonki_user_name = Column(String(255), nullable=True)
+    moizvonki_api_key = Column(Text, nullable=True)  # SHIFRLANGAN -- get_moizvonki_api_key()/set_moizvonki_api_key()
+
     def set_password(self, raw: str) -> None:
         self.password_hash = generate_password_hash(raw)
 
@@ -293,6 +310,15 @@ class Company(Base):
 
     def set_meta_capi_token(self, raw: "str | None") -> None:
         self.meta_capi_access_token = crypto_util.encrypt_token(raw)
+
+    def get_moizvonki_api_key(self) -> "str | None":
+        return crypto_util.decrypt_token(self.moizvonki_api_key)
+
+    def set_moizvonki_api_key(self, raw: "str | None") -> None:
+        self.moizvonki_api_key = crypto_util.encrypt_token(raw)
+
+    def is_moizvonki_configured(self) -> bool:
+        return bool(self.moizvonki_api_address and self.moizvonki_user_name and self.get_moizvonki_api_key())
 
     def disconnect_meta(self) -> None:
         """`/connect-accounts/meta/disconnect` uchun -- BARCHA Meta bilan

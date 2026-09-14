@@ -3148,7 +3148,7 @@ def analytics_page():
         # Qo'ng'iroq statistikasi (Moi Zvonki ulangan bo'lsa) -- ulanmagan
         # bo'lsa aniq "hali ulanmagan" holati ko'rsatiladi, "hech kim
         # gaplashmagan" deb noto'g'ri talqin qilinmasligi uchun.
-        call_configured = call_sync.is_configured()
+        call_configured = call_sync.is_configured_for(_current_company())
         call_summary = None
         if call_configured:
             check = call_analytics.build_individual_check(session, since)
@@ -5084,7 +5084,7 @@ def individual_check():
     return render_template(
         "individual_check.html",
         days=days,
-        configured=call_sync.is_configured(),
+        configured=call_sync.is_configured_for(_current_company()),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
         **check,
     )
@@ -5484,6 +5484,57 @@ def _handle_settings_post(session, action):
         else:
             flash("Kompaniya topilmadi.", "error")
 
+    elif action == "set_moizvonki":
+        # 2026-09, Item J auditi (🔴 KRITIK, 7-band -- "Moy Zvonki call-sync
+        # hardcoded to one company"): ILGARI Moi Zvonki FAQAT platforma
+        # egasi uchun, global ENV o'zgaruvchilari orqali (Render dashboard)
+        # sozlanardi -- boshqa HECH QANDAY kompaniya o'z qo'ng'iroq
+        # tizimini ulay olmasdi. Endi har bir kompaniya admin shu yerdan
+        # O'Z hisobini ulaydi.
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is None:
+            flash("Kompaniya topilmadi.", "error")
+        else:
+            address = request.form.get("moizvonki_api_address", "").strip().rstrip("/")
+            user_name = request.form.get("moizvonki_user_name", "").strip()
+            api_key = request.form.get("moizvonki_api_key", "").strip()
+            if not address or not user_name or not api_key:
+                flash("Manzil, ADMIN login(email) va API kalit -- barchasi majburiy.", "error")
+            else:
+                # XAVFSIZLIK (Meta CAPI'dagi `verify_dataset_credentials()`
+                # bilan bir xil naqsh): saqlashdan OLDIN Moi Zvonki'ning
+                # o'ziga haqiqiy so'rov yuborib tekshiramiz -- noto'g'ri
+                # manzil/login/kalit HECH QACHON bazaga yozilmaydi.
+                try:
+                    call_sync.verify_credentials(address, api_key, user_name)
+                except call_sync.MoiZvonkiError as e:
+                    flash(f"Moi Zvonki ulanishi tekshiruvdan o'tmadi: {e}", "error")
+                except Exception:
+                    logger.exception("Moi Zvonki tekshiruvida kutilmagan xatolik (company_id=%s)", company_row.id)
+                    flash("Moi Zvonki bilan bog'lanishda kutilmagan xatolik yuz berdi.", "error")
+                else:
+                    company_row.moizvonki_api_address = address
+                    company_row.moizvonki_user_name = user_name
+                    company_row.set_moizvonki_api_key(api_key)
+                    session.commit()
+                    flash(
+                        "Mening qo'ng'iroqlarim (Moi Zvonki) ulanishi saqlandi -- keyingi "
+                        "sinxronizatsiya tsiklidan (20 daqiqagacha) boshlab qo'ng'iroqlar "
+                        "\"Audio\" bo'limida ko'rina boshlaydi.",
+                        "success",
+                    )
+
+    elif action == "disconnect_moizvonki":
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is not None:
+            company_row.moizvonki_api_address = None
+            company_row.moizvonki_user_name = None
+            company_row.moizvonki_api_key = None
+            session.commit()
+            flash("Moi Zvonki ulanishi uzildi.", "success")
+        else:
+            flash("Kompaniya topilmadi.", "error")
+
 
 @app.route("/sozlamalar")
 @login_required
@@ -5537,11 +5588,15 @@ def settings_general():
         if request.method == "POST":
             _handle_settings_post(session, request.form.get("action"))
             return redirect(url_for("settings_general"))
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
         return render_template(
             "settings_general.html",
             min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
             min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
             usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
+            moizvonki_configured=bool(company_row and company_row.is_moizvonki_configured()),
+            moizvonki_api_address=(company_row.moizvonki_api_address if company_row else None),
+            moizvonki_user_name=(company_row.moizvonki_user_name if company_row else None),
         )
     finally:
         session.close()

@@ -43,4 +43,54 @@
     <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Audio bo'limida sozlash &rarr;</a>
   </div>
 </div>
+
+<div class="card" style="margin-top:18px">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px">
+    <strong>Mening qo'ng'iroqlarim (Moi Zvonki)</strong>
+    {% if moizvonki_configured %}
+      <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">✅ Ulangan</span>
+    {% else %}
+      <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">Ulanmagan</span>
+    {% endif %}
+  </div>
+  <p class="text-faint" style="font-size:12.5px; margin-top:0">
+    Ulansa, xodimlaringizning haqiqiy telefon qo'ng'iroq yozuvlari (davomiylik, vaqt)
+    "Audio" bo'limi va Analitika/Dashboard'dagi kunlik gaplashuv KPI'ga avtomatik tortiladi.
+  </p>
+
+  {% if moizvonki_configured %}
+    <div style="font-size:13px; margin-bottom:14px">
+      Manzil: <strong>{{ moizvonki_api_address }}</strong> &middot; Login: <strong>{{ moizvonki_user_name }}</strong>
+    </div>
+    <form method="post" onsubmit="return confirm('Moi Zvonki ulanishini uzasizmi? Qo\'ng\'iroqlar endi tortilmaydi.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="disconnect_moizvonki">
+      <button type="submit" class="btn toggle-all-btn-outline">Uzish</button>
+    </form>
+  {% else %}
+    <form method="post" style="display:flex; flex-direction:column; gap:10px; max-width:420px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="set_moizvonki">
+      <div class="field" style="margin:0">
+        <label>API manzil</label>
+        <input type="text" name="moizvonki_api_address" placeholder="https://kompaniya.moizvonki.ru" required>
+      </div>
+      <div class="field" style="margin:0">
+        <label>ADMIN login (email)</label>
+        <input type="text" name="moizvonki_user_name" placeholder="admin@kompaniya.uz" required>
+      </div>
+      <div class="field" style="margin:0">
+        <label>API kalit</label>
+        <input type="password" name="moizvonki_api_key" placeholder="Sozlamalar -> Integratsiya" required>
+      </div>
+      <button type="submit" class="btn" style="align-self:flex-start">Ulash</button>
+      <span class="text-faint" style="font-size:12.5px">
+        Manzil/kalitni Mening qo'ng'iroqlarim kabinetidagi Sozlamalar -> Integratsiya bo'limidan oling.
+        Login -- akkauntga ADMIN sifatida kiradigan email bo'lishi SHART (barcha xodimlarning
+        qo'ng'irog'ini ko'rish uchun). Xodimlaringiz uchun Menejerlar sahifasida telefon raqami
+        yoki Moi Zvonki login'ini kiritishni unutmang.
+      </span>
+    </form>
+  {% endif %}
+</div>
 {% endblock %}
