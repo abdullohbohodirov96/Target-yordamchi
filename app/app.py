@@ -1525,7 +1525,7 @@ def logout():
 #
 # Tanlangan tarifga qarab (`plans.py`):
 #   - "sinov" -- darhol BEPUL sinov bilan faollashadi, muddati `plans.py`
-#     (`PLANS["trial"].period_days`, 2026-09dan -- 7 kun) belgilaydi.
+#     (`PLANS["trial"].period_days`, 2026-09dan -- 5 kun) belgilaydi.
 #   - pullik tarif (start/business/unlimited) -- darhol faollashadi, LEKIN
 #     to'lov hali kelmagani uchun atigi 3 kunlik "muhlat" (grace) beriladi
 #     -- shu muddat ichida admin `/tolov` sahifasidan to'lovni amalga

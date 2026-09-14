@@ -1,0 +1,122 @@
+{# Ro'yxatdan o'tmagan mehmonlar uchun "eslatma" popup'i (2026-09,
+   foydalanuvchi so'rovi, rasm bilan: boshqa saytdagi chat-widget uslubidagi
+   bepul-sinov eslatmasiga o'xshash naqsh -- lekin O'ZINING dizayni/matni
+   bilan, rasmdagi begona brend/personajni TAKRORLAMASDAN).
+
+   Xatti-harakat (aynan foydalanuvchi tasvirlab bergandek):
+     - Sahifa ochilgandan 30 soniya o'tgach birinchi marta chiqadi.
+     - Agar shu 30 soniya ichida bosilmasa/yopilmasa -- o'zi yashiradi.
+     - Shundan keyin har 1 daqiqada yana chiqib turadi (xuddi shu 30s
+       "ko'rinish oynasi" bilan) -- toki foydalanuvchi "×" bosib yopmaguncha
+       yoki "bepul boshlash" tugmasini bosmaguncha.
+     - "×" bosilsa -- shu SESSIYA davomida boshqa chiqmaydi (sessionStorage;
+       brauzer yopilib qayta ochilsa yana ko'rinadi -- doimiy taqiqlash
+       emas, faqat shu tashrif uchun).
+
+   Faqat mehmonlar (ro'yxatdan o'tmaganlar) uchun -- `dashboard()`
+   route'ida `landing.html` faqat autentifikatsiya qilinmagan foydalanuvchiga
+   ko'rsatiladi, shuning uchun bu yerda qo'shimcha tekshiruv shart emas. #}
+<style>
+  .tn-bubble{
+    position:fixed; right:20px; bottom:20px; z-index:60;
+    width:56px; height:56px; border-radius:50%; border:none; cursor:pointer;
+    background:var(--brand-gradient); box-shadow:0 8px 24px -8px rgba(11,99,245,.5);
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .tn-bubble img{width:30px; height:30px; object-fit:contain; filter:brightness(0) invert(1)}
+  .tn-bubble .tn-dot{
+    position:absolute; top:-2px; right:-2px; width:16px; height:16px; border-radius:50%;
+    background:#E11D48; color:#fff; font-size:10px; font-weight:700; line-height:16px;
+  }
+  .tn-card{
+    position:fixed; right:20px; bottom:88px; z-index:61; width:290px; max-width:calc(100vw - 40px);
+    background:#fff; border:1px solid #E5E8F5; border-radius:16px;
+    box-shadow:0 20px 48px -16px rgba(18,20,43,.28);
+    padding:16px 16px 14px; opacity:0; transform:translateY(10px) scale(.97);
+    pointer-events:none; transition:opacity .22s ease, transform .22s ease;
+  }
+  .tn-card.tn-open{opacity:1; transform:translateY(0) scale(1); pointer-events:auto}
+  .tn-close{
+    position:absolute; top:8px; right:8px; width:22px; height:22px; border-radius:50%;
+    border:none; background:#F0F2FA; color:#6B7099; font-size:14px; line-height:1; cursor:pointer;
+  }
+  .tn-head{display:flex; align-items:center; gap:9px; margin-bottom:9px}
+  .tn-avatar{width:30px; height:30px; border-radius:9px; background:var(--brand-gradient); display:flex; align-items:center; justify-content:center; flex:0 0 auto}
+  .tn-avatar img{width:17px; height:17px; object-fit:contain; filter:brightness(0) invert(1)}
+  .tn-head-name{font-size:12.5px; font-weight:700; color:#12142B; line-height:1.2}
+  .tn-head-sub{font-size:11px; color:#8286A8}
+  .tn-text{font-size:13px; line-height:1.5; color:#2A2D4A; margin:0 0 12px}
+  .tn-text strong{color:var(--blue)}
+  .tn-cta{
+    display:block; text-align:center; background:var(--brand-gradient); color:#fff !important;
+    font-size:13px; font-weight:700; padding:9px 12px; border-radius:10px; text-decoration:none;
+  }
+  @media (max-width:480px){ .tn-card{right:12px; bottom:80px} .tn-bubble{right:12px; bottom:12px} }
+</style>
+
+<button type="button" class="tn-bubble" id="tnBubble" aria-label="Xabar">
+  <img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="">
+  <span class="tn-dot" id="tnDot" hidden>1</span>
+</button>
+
+<div class="tn-card" id="tnCard" role="dialog" aria-label="Bepul sinov taklifi">
+  <button type="button" class="tn-close" id="tnClose" aria-label="Yopish">&times;</button>
+  <div class="tn-head">
+    <span class="tn-avatar"><img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt=""></span>
+    <div>
+      <div class="tn-head-name">Replix</div>
+      <div class="tn-head-sub">AI yordamchi</div>
+    </div>
+  </div>
+  <p class="tn-text">👋 Hali sinab ko'rmadingizmi? Instagram/Facebook natijalaringizni <strong>5 kun bepul</strong> ko'ring — karta ma'lumoti shart emas.</p>
+  <a href="{{ url_for('signup', plan='trial') }}" class="tn-cta" id="tnCta">5 kun bepul boshlash</a>
+</div>
+
+<script>
+(function () {
+  var card = document.getElementById('tnCard');
+  var bubble = document.getElementById('tnBubble');
+  var dot = document.getElementById('tnDot');
+  var closeBtn = document.getElementById('tnClose');
+  var ctaBtn = document.getElementById('tnCta');
+  if (!card || !bubble) return;
+
+  var DISMISS_KEY = 'replix_trial_nudge_dismissed';
+  var dismissed = false;
+  try { dismissed = sessionStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { /* private rejim va h.k. -- shunchaki hech narsa eslab qolinmaydi */ }
+  if (dismissed) return;
+
+  var FIRST_DELAY_MS = 30000;   // 1) 30 soniyadan keyin birinchi marta chiqadi
+  var VISIBLE_MS = 30000;       // 2) 30 soniya ichida bosilmasa, o'zi yashiradi
+  var REPEAT_MS = 60000;        // 3) shundan keyin har 1 daqiqada qayta chiqadi
+  var hideTimer = null;
+  var repeatTimer = null;
+
+  function show() {
+    card.classList.add('tn-open');
+    dot.hidden = true;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hide, VISIBLE_MS);
+  }
+  function hide() {
+    card.classList.remove('tn-open');
+    dot.hidden = false;
+  }
+  function dismissForSession() {
+    clearTimeout(hideTimer);
+    clearInterval(repeatTimer);
+    hide();
+    dot.hidden = true;
+    try { sessionStorage.setItem(DISMISS_KEY, '1'); } catch (e) {}
+  }
+
+  setTimeout(function () {
+    show();
+    repeatTimer = setInterval(show, REPEAT_MS);
+  }, FIRST_DELAY_MS);
+
+  closeBtn.addEventListener('click', dismissForSession);
+  bubble.addEventListener('click', function () { if (card.classList.contains('tn-open')) hide(); else show(); });
+  ctaBtn.addEventListener('click', dismissForSession);
+})();
+</script>

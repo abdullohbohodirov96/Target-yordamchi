@@ -34,7 +34,7 @@ TRANSLATIONS = {
         "hero.eyebrow": "O'zbekiston bizneslari uchun CRM",
         "hero.h1": "5-6 ta xizmat o'rniga — <span>bitta</span> Replix",
         "hero.sub": "CRM, reklama monitoring, SMM hisobot, qo'ng'iroq nazorati va AI tahlil uchun alohida-alohida xizmatlarga to'lash shart emas. Replix hammasini BITTA obunada, ancha arzon narxda birlashtiradi — Instagram va Facebook reklamalaringizni, sotuv jamoangizni va mijozlar bazangizni bitta joyda kuzating.",
-        "hero.cta_trial": "7 kun bepul sinash",
+        "hero.cta_trial": "5 kun bepul sinash",
         "hero.cta_pricing": "Tariflarni ko'rish",
         "hero.note1": "✓ Karta shart emas",
         "hero.note2": "✓ 5 daqiqada ishga tushiriladi",
@@ -93,7 +93,7 @@ TRANSLATIONS = {
 
         "cta_band.h2": "Reklama byudjetingiz oqilona ishlayaptimi?",
         "cta_band.sub": "Bugun ro'yxatdan o'ting, Instagram akkauntingizni ulang va birinchi natijalarni bugunoq ko'ring.",
-        "cta_band.button": "7 kun bepul boshlash",
+        "cta_band.button": "5 kun bepul boshlash",
 
         "footer.rights": "Barcha huquqlar himoyalangan.",
         "footer.login": "Kirish",
@@ -141,7 +141,7 @@ TRANSLATIONS = {
         "faq.q2": "Replix kimlar uchun mo'ljallangan?",
         "faq.a2": "Instagram va Facebook orqali reklama beradigan O'zbekiston kichik va o'rta bizneslari uchun — sotuv jamoasi, reklama xarajati va mijozlar bazasini bitta joyda ko'rishni istaydiganlar uchun.",
         "faq.q3": "Replix qancha turadi?",
-        "faq.a3": "Narxlar oyiga $50 dan boshlanadi. 7 kunlik bepul sinov mavjud, karta ma'lumoti talab qilinmaydi.",
+        "faq.a3": "Narxlar oyiga $50 dan boshlanadi. 5 kunlik bepul sinov mavjud, karta ma'lumoti talab qilinmaydi.",
         "faq.q4": "Replix.uz \"Replix.ai\" yoki boshqa \"Replix\" nomli xizmatlar bilan bog'liqmi?",
         "faq.a4": "Yo'q. Replix (replix.uz) — O'zbekistonda ishlab chiqilgan, CRM va Meta reklama monitoringga ixtisoslashgan alohida platforma. U matn/kontent yozuvchi AI-yordamchilar yoki boshqa davlatlardagi kurs platformalari bilan hech qanday aloqasi yo'q — bu butunlay boshqa kompaniya va mahsulot.",
         "faq.q5": "Instagram yoki Facebook akkauntimni qanday ulayman?",
@@ -169,7 +169,7 @@ TRANSLATIONS = {
         "hero.eyebrow": "CRM для бизнеса в Узбекистане",
         "hero.h1": "5-6 сервисов — теперь <span>один</span> Replix",
         "hero.sub": "Не нужно платить отдельно за CRM, мониторинг рекламы, SMM-отчёты, контроль звонков и AI-анализ. Replix объединяет всё это в ОДНОЙ подписке по значительно более низкой цене — отслеживайте рекламу в Instagram и Facebook, отдел продаж и базу клиентов в одном месте.",
-        "hero.cta_trial": "7 дней бесплатно",
+        "hero.cta_trial": "5 дней бесплатно",
         "hero.cta_pricing": "Смотреть тарифы",
         "hero.note1": "✓ Карта не нужна",
         "hero.note2": "✓ Запуск за 5 минут",
@@ -228,7 +228,7 @@ TRANSLATIONS = {
 
         "cta_band.h2": "Ваш рекламный бюджет работает разумно?",
         "cta_band.sub": "Зарегистрируйтесь сегодня, подключите Instagram и увидите первые результаты уже сегодня.",
-        "cta_band.button": "Начать бесплатно на 7 дней",
+        "cta_band.button": "Начать бесплатно на 5 дней",
 
         "footer.rights": "Все права защищены.",
         "footer.login": "Войти",
@@ -266,7 +266,7 @@ TRANSLATIONS = {
         "faq.q2": "Для кого предназначен Replix?",
         "faq.a2": "Для малого и среднего бизнеса в Узбекистане, который даёт рекламу в Instagram и Facebook — для тех, кто хочет видеть отдел продаж, расходы на рекламу и базу клиентов в одном месте.",
         "faq.q3": "Сколько стоит Replix?",
-        "faq.a3": "Тарифы начинаются от $50 в месяц. Доступен 7-дневный бесплатный пробный период, банковская карта не требуется.",
+        "faq.a3": "Тарифы начинаются от $50 в месяц. Доступен 5-дневный бесплатный пробный период, банковская карта не требуется.",
         "faq.q4": "Связан ли Replix.uz с «Replix.ai» или другими сервисами с названием «Replix»?",
         "faq.a4": "Нет. Replix (replix.uz) — отдельная платформа, разработанная в Узбекистане и специализирующаяся на CRM и мониторинге рекламы Meta. Она никак не связана с AI-помощниками для написания текстов или курс-платформами с похожим названием в других странах — это совершенно другая компания и продукт.",
         "faq.q5": "Как подключить аккаунт Instagram или Facebook?",
