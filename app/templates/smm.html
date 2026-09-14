@@ -7,7 +7,17 @@
     <h1>SMM hisobot</h1>
     <p class="page-subtitle" style="margin-bottom:0">Instagram va Facebook sahifasi bo'yicha obunachilar o'sishi, postlar statistikasi va umumiy faollik. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
-  {% include "_smm_date_picker.html" %}
+  {% set cdp_id = 'smm' %}
+  {% set cdp_presets = smm_period_presets %}
+  {% set cdp_preset_param = 'preset' %}
+  {% set cdp_current_preset = preset %}
+  {% set cdp_current_label = period_label %}
+  {% set cdp_custom_value = 'custom' %}
+  {% set cdp_date_from_param = 'date_from' %}
+  {% set cdp_date_to_param = 'date_to' %}
+  {% set cdp_date_from = date_from or '' %}
+  {% set cdp_date_to = date_to or '' %}
+  {% include "_calendar_date_picker.html" %}
 </div>
 
 {% if not configured %}

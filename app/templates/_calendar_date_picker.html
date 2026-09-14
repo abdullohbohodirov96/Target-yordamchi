@@ -1,0 +1,155 @@
+{# Umumiy ikki oylik kalendar-sana tanlagichi (2026-09, foydalanuvchi so'rovi:
+   "hamma joyda sana tanlashni shunaqa qilib ber, menga tashlaganimdek qilib" --
+   ya'ni Lead Analytics uchun qurilgan referens-uslubdagi taqvimni BUTUN
+   ilova bo'ylab bir xil qilish). `_lead_analytics_date_picker.html`dagi
+   vizual/JS naqshning umumiy (parametrlashtirilgan) versiyasi -- shu bitta
+   partial endi Target, Dashboard, SMM hisobot va Individual tekshirish
+   sahifalarida ham ishlatiladi.
+
+   Chaqiruvchi shablon INCLUDE'dan OLDIN quyidagilarni `{% set %}` bilan
+   belgilashi kerak:
+     cdp_id             -- sahifa uchun unikal DOM-id qo'shimchasi ("target", "dash", "smm", "ic")
+     cdp_presets        -- [(qiymat, nom), ...] tezkor tanlovlar ro'yxati
+     cdp_preset_param   -- preset uchun query-parametr nomi ("period" yoki "preset")
+     cdp_current_preset -- joriy tanlangan preset qiymati (custom bo'lsa cdp_custom_value bilan bir xil)
+     cdp_current_label  -- trigger tugmasida ko'rsatiladigan matn (backend tomonidan tayyor keladi)
+     cdp_custom_value   -- "aniq oraliq" holatini bildiruvchi preset qiymati (odatda "custom")
+     cdp_date_from_param / cdp_date_to_param -- sana-oraliq query-parametrlari nomi
+     cdp_date_from / cdp_date_to -- joriy qiymatlar (custom bo'lmasa bo'sh string) #}
+<div class="la-dp" id="cdp-{{ cdp_id }}">
+  <button type="button" class="date-picker-trigger" id="cdp-{{ cdp_id }}-trigger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+    <span id="cdp-{{ cdp_id }}-label">{{ cdp_current_label }}</span>
+  </button>
+  <div class="la-dp-menu" id="cdp-{{ cdp_id }}-menu">
+    <div class="la-dp-presets">
+      {% for val, label in cdp_presets %}
+      <button type="button" class="la-dp-preset {{ 'active' if cdp_current_preset == val }}" data-preset="{{ val }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="la-dp-cal">
+      <div class="la-dp-cal-months" id="cdp-{{ cdp_id }}-months"></div>
+      <div class="la-dp-cal-footer">
+        <div class="la-dp-cal-inputs">
+          <input type="date" id="cdp-{{ cdp_id }}-from" value="{{ cdp_date_from }}">
+          <span>—</span>
+          <input type="date" id="cdp-{{ cdp_id }}-to" value="{{ cdp_date_to }}">
+        </div>
+        <button type="button" class="btn" id="cdp-{{ cdp_id }}-apply" style="padding:7px 16px; font-size:12.5px">Qo'llash</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var ID = {{ cdp_id|tojson }};
+  var wrap = document.getElementById('cdp-' + ID);
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+
+  var PRESET_PARAM = {{ cdp_preset_param|tojson }};
+  var CUSTOM_VALUE = {{ (cdp_custom_value or 'custom')|tojson }};
+  var FROM_PARAM = {{ cdp_date_from_param|tojson }};
+  var TO_PARAM = {{ cdp_date_to_param|tojson }};
+
+  var trigger = document.getElementById('cdp-' + ID + '-trigger');
+  var fromInput = document.getElementById('cdp-' + ID + '-from');
+  var toInput = document.getElementById('cdp-' + ID + '-to');
+  var applyBtn = document.getElementById('cdp-' + ID + '-apply');
+  var monthsEl = document.getElementById('cdp-' + ID + '-months');
+
+  trigger.addEventListener('click', function (e) { e.stopPropagation(); wrap.classList.toggle('open'); });
+  document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) wrap.classList.remove('open'); });
+
+  // MUHIM: LA'dagi eski versiyadan farqli -- bu yerda URL butunlay
+  // TOZALANMAYDI, faqat berilgan kalitlar YANGILANADI. Shu tufayli sahifaga
+  // xos boshqa filtr/holat parametrlari (masalan Target'dagi `level`/
+  // `show_all`) navigatsiyada avtomatik saqlanib qoladi.
+  function navigateTo(params) {
+    var url = new URL(window.location.href);
+    Object.keys(params).forEach(function (k) { url.searchParams.set(k, params[k]); });
+    window.location.href = url.toString();
+  }
+
+  wrap.querySelectorAll('.la-dp-preset').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var p = {};
+      p[PRESET_PARAM] = btn.dataset.preset;
+      navigateTo(p);
+    });
+  });
+
+  applyBtn.addEventListener('click', function () {
+    if (!fromInput.value || !toInput.value) return;
+    var a = fromInput.value, b = toInput.value;
+    if (a > b) { var t = a; a = b; b = t; }
+    var p = {};
+    p[PRESET_PARAM] = CUSTOM_VALUE;
+    p[FROM_PARAM] = a;
+    p[TO_PARAM] = b;
+    navigateTo(p);
+  });
+
+  // ---- Ikki oylik taqvim (Lead Analytics'dagi bilan bir xil vanilla JS) ----
+  var WD = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+  var MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+
+  function parseISO(s) { if (!s) return null; var p = s.split('-'); return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)); }
+  function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function sameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+  var rangeStart = parseISO(fromInput.value);
+  var rangeEnd = parseISO(toInput.value);
+  var viewAnchor = rangeEnd || rangeStart || new Date();
+  var viewYear = viewAnchor.getFullYear(), viewMonth = viewAnchor.getMonth();
+
+  function renderMonth(year, month, showPrevNav, showNextNav) {
+    var first = new Date(year, month, 1);
+    var startOffset = first.getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var html = '<div class="la-dp-cal-nav">';
+    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="Oldingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += '<span>' + MONTHS[month] + ' ' + year + '</span>';
+    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="Keyingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += '</div><div class="la-dp-cal-grid">';
+    WD.forEach(function (w) { html += '<div class="la-dp-cal-wd">' + w + '</div>'; });
+    for (var i = 0; i < startOffset; i++) html += '<div class="la-dp-cal-day la-dp-outside"></div>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var date = new Date(year, month, d);
+      var cls = 'la-dp-cal-day';
+      if (rangeStart && sameDay(date, rangeStart)) cls += ' la-dp-range-start';
+      if (rangeEnd && sameDay(date, rangeEnd)) cls += ' la-dp-range-end';
+      if (rangeStart && rangeEnd && date > rangeStart && date < rangeEnd) cls += ' la-dp-in-range';
+      html += '<div class="' + cls + '" data-date="' + toISO(date) + '">' + d + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function render() {
+    var leftHtml = '<div class="la-dp-cal-month">' + renderMonth(viewYear, viewMonth, true, false) + '</div>';
+    var nextM = viewMonth === 11 ? 0 : viewMonth + 1, nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+    var rightHtml = '<div class="la-dp-cal-month">' + renderMonth(nextY, nextM, false, true) + '</div>';
+    monthsEl.innerHTML = leftHtml + rightHtml;
+
+    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function () { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function () { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
+    monthsEl.querySelectorAll('.la-dp-cal-day[data-date]').forEach(function (cell) {
+      cell.addEventListener('click', function () {
+        var d = parseISO(cell.dataset.date);
+        if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = d; rangeEnd = null; }
+        else if (d < rangeStart) { rangeEnd = rangeStart; rangeStart = d; }
+        else { rangeEnd = d; }
+        fromInput.value = rangeStart ? toISO(rangeStart) : '';
+        toInput.value = rangeEnd ? toISO(rangeEnd) : '';
+        render();
+      });
+    });
+  }
+
+  fromInput.addEventListener('change', function () { rangeStart = parseISO(fromInput.value); render(); });
+  toInput.addEventListener('change', function () { rangeEnd = parseISO(toInput.value); render(); });
+
+  render();
+})();
+</script>

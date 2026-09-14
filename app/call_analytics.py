@@ -121,13 +121,21 @@ def group_call_sessions(calls: list, min_real_talk_seconds: int | None = None) -
     return sessions
 
 
-def build_individual_check(session, since: dt.datetime) -> dict:
+def build_individual_check(session, since: dt.datetime, until: dt.datetime | None = None) -> dict:
     """Admin uchun "Individual tekshirish" sahifasidagi to'liq ma'lumotni
     tayyorlaydi: har bir lead uchun (agar mos qo'ng'iroq topilsa) sessiyalar
-    ro'yxati + menejerlar bo'yicha kunlik aloqa soni."""
+    ro'yxati + menejerlar bo'yicha kunlik aloqa soni.
+
+    2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+    Analytics'dagi kalendarga o'xshatib qil"): `until` (ixtiyoriy) -- endi
+    faqat "shu sanadan hozirgacha" emas, ANIQ [since, until) oralig'ini ham
+    ko'rish mumkin (masalan "o'tgan oy" yoki aniq sana oralig'i)."""
     from db import CallRecord, Lead, Manager
 
-    calls = session.query(CallRecord).filter(CallRecord.started_at >= since).all()
+    q = session.query(CallRecord).filter(CallRecord.started_at >= since)
+    if until is not None:
+        q = q.filter(CallRecord.started_at < until)
+    calls = q.all()
     all_sessions = group_call_sessions(calls)
 
     leads_by_id = {l.id: l for l in session.query(Lead).filter(Lead.id.in_(

@@ -7,7 +7,23 @@
     <h1>Audio</h1>
     <p class="page-subtitle" style="margin-bottom:0">Moi Zvonki qo'ng'iroq yozuvlari lidlar bilan solishtirilib, menejer HAQIQATDA gaplashganmi tekshiriladi. Bu bo'lim faqat adminga ko'rinadi.</p>
   </div>
-  {% include "_date_picker.html" %}
+  {% set cdp_id = 'ic' %}
+  {% set cdp_presets = [
+    ('today','Bugun'), ('yesterday','Kecha'),
+    ('last_7d',"7 kun"), ('last_30d','30 kun'), ('last_90d','90 kun'),
+    ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
+    ('this_month','Shu oy'), ('last_month',"O'tgan oy"), ('this_year','Shu yil'),
+    ('maximum','Maksimal'),
+  ] %}
+  {% set cdp_preset_param = 'period' %}
+  {% set cdp_current_preset = period %}
+  {% set cdp_current_label = period_label %}
+  {% set cdp_custom_value = 'custom' %}
+  {% set cdp_date_from_param = 'date_from' %}
+  {% set cdp_date_to_param = 'date_to' %}
+  {% set cdp_date_from = date_from or '' %}
+  {% set cdp_date_to = date_to or '' %}
+  {% include "_calendar_date_picker.html" %}
 </div>
 
 {% if not configured %}
@@ -66,6 +82,9 @@
   <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="days" value="{{ days }}">
+    {% if period %}<input type="hidden" name="period" value="{{ period }}">{% endif %}
+    {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
+    {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
     <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">Chegara (soniyada):</label>
     <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">
     <button type="submit" class="btn">Saqlash</button>

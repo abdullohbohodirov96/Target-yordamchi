@@ -14,7 +14,21 @@
 </div>
 
 <div class="page-head" style="margin-top:-14px; align-items:center; flex-wrap:wrap; gap:10px">
-  {% include "_dashboard_date_picker.html" %}
+  {% set cdp_id = 'dash' %}
+  {% set cdp_presets = [
+    ('today','Bugun'), ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
+    ('this_month','Shu oy'), ('last_month',"O'tgan oy"), ('this_year','Shu yil'),
+    ('last_7d',"7 kun"), ('last_30d','30 kun'), ('last_90d','90 kun'),
+  ] %}
+  {% set cdp_preset_param = 'period' %}
+  {% set cdp_current_preset = o.period %}
+  {% set cdp_current_label = o.period_label %}
+  {% set cdp_custom_value = 'custom' %}
+  {% set cdp_date_from_param = 'date_from' %}
+  {% set cdp_date_to_param = 'date_to' %}
+  {% set cdp_date_from = o.date_from or '' %}
+  {% set cdp_date_to = o.date_to or '' %}
+  {% include "_calendar_date_picker.html" %}
 </div>
 
 {% if o.followups_overdue or o.followups_today %}

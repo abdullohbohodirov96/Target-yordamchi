@@ -2856,10 +2856,42 @@ def landing_contact_submit():
     return redirect(url_for("dashboard") + "#aloqa")
 
 
-_DASHBOARD_PERIOD_LABELS = {
-    "today": "Bugun", "last_7d": "So'nggi 7 kun",
-    "last_30d": "So'nggi 30 kun", "last_90d": "So'nggi 90 kun",
+# 2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+# Analytics'dagi kalendarga o'xshatib qil"): Dashboard/Target/Individual
+# tekshirish sahifalarining barchasi ENDI shu BITTA umumiy preset->nom
+# lug'atidan foydalanadi (ilgari faqat Dashboard'da `_DASHBOARD_PERIOD_LABELS`
+# bor edi, va u "Shu hafta"/"O'tgan hafta"/"Shu oy"/"O'tgan oy"/"Shu yil"
+# kabi ko'p qiymatlarni UMUMAN o'z ichiga OLMAGANDI -- shu preset'larni
+# tanlasa ham natija jimgina "Shu oy"ga qaytib ketardi, bu HAQIQIY XATO edi,
+# shu bilan birga tuzatildi).
+_PERIOD_PRESET_LABELS = {
+    "today": "Bugun", "yesterday": "Kecha",
+    "last_7d": "So'nggi 7 kun", "last_14d": "So'nggi 14 kun",
+    "last_28d": "So'nggi 28 kun", "last_30d": "So'nggi 30 kun",
+    "last_90d": "So'nggi 90 kun",
+    "this_week_mon_today": "Shu hafta", "last_week_mon_sun": "O'tgan hafta",
+    "this_month": "Shu oy", "last_month": "O'tgan oy", "this_year": "Shu yil",
+    "maximum": "Maksimal",
 }
+
+
+def _fmt_period_date(d: str) -> str:
+    """`YYYY-MM-DD` -> `DD.MM.YYYY` (o'qish qulay bo'lishi uchun, sana
+    tanlagichlarning barchasida bir xil format)."""
+    try:
+        y, m, dd = d.split("-")
+        return f"{dd}.{m}.{y}"
+    except ValueError:
+        return d
+
+
+def _period_label(period: str, date_from: str | None, date_to: str | None) -> str:
+    """Sana-tanlagich trigger tugmasida ko'rsatiladigan matn -- aniq oraliq
+    tanlangan bo'lsa (`period == "custom"`) ikkala sanani ko'rsatadi, aks
+    holda `_PERIOD_PRESET_LABELS`dan mos nomni qaytaradi."""
+    if period == "custom" and date_from and date_to:
+        return f"{_fmt_period_date(date_from)} — {_fmt_period_date(date_to)}"
+    return _PERIOD_PRESET_LABELS.get(period, period)
 
 
 def _dashboard_period_bounds(period: str, date_from: str | None, date_to: str | None, month_start, month_end):
@@ -2877,20 +2909,16 @@ def _dashboard_period_bounds(period: str, date_from: str | None, date_to: str | 
     if period == "custom" and date_from and date_to:
         bounds = custom_range_bounds_utc(date_from, date_to)
         if bounds:
-            # MUHIM (2026-08, foydalanuvchi so'rovi -- ixcham trigger tugmasi
-            # o'qish qulay bo'lishi uchun): xom ISO ("2026-08-01") o'rniga
-            # odatdagi "01.08.2026" formatida ko'rsatiladi.
-            def _fmt(d: str) -> str:
-                try:
-                    y, m, dd = d.split("-")
-                    return f"{dd}.{m}.{y}"
-                except ValueError:
-                    return d
-            return bounds[0], bounds[1], f"{_fmt(date_from)} — {_fmt(date_to)}"
-    if period in _DASHBOARD_PERIOD_LABELS:
+            return bounds[0], bounds[1], _period_label("custom", date_from, date_to)
+    if period == "maximum":
+        # "Maksimal" -- CRM tomonida filtr UMUMAN qo'yilmasin degani (butun
+        # mavjud tarix), boshqa preset'lar kabi aniq [start, end) kerak
+        # bo'lgani uchun juda uzoq o'tmishdan hozirgacha oraliq beriladi.
+        return dt.datetime(2000, 1, 1), dt.datetime.utcnow() + dt.timedelta(days=1), _PERIOD_PRESET_LABELS["maximum"]
+    if period in _PERIOD_PRESET_LABELS:
         bounds = _date_preset_bounds_utc(period)
         if bounds:
-            return bounds[0], bounds[1], _DASHBOARD_PERIOD_LABELS[period]
+            return bounds[0], bounds[1], _PERIOD_PRESET_LABELS[period]
     return month_start, month_end, "Shu oy"
 
 
@@ -3109,6 +3137,16 @@ def target_page():
         level = "campaign"
     show_all = request.args.get("show_all") == "1"
 
+    # 2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+    # Analytics'dagi kalendarga o'xshatib qil"): endi tayyor preset'lardan
+    # TASHQARI aniq (ixtiyoriy) sana oralig'i ham qo'llab-quvvatlanadi --
+    # `dashboard_data.get_kpis()` bunga allaqachon tayyor (Lead Analytics
+    # uchun qo'shilgan `date_from`/`date_to`).
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    if period != "custom" or not (date_from and date_to):
+        date_from = date_to = None
+
     meta_token, meta_account = _company_meta_creds(_current_company())
     if not (meta_token and meta_account):
         # 2026-09, foydalanuvchi shikoyati ("targeting ma'lumotlari boshqa
@@ -3118,7 +3156,7 @@ def target_page():
         data = {"not_connected": True, "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
     else:
         try:
-            data = get_kpis(level=level, date_preset=period, active_only=not show_all, access_token=meta_token, ad_account_id=meta_account)
+            data = get_kpis(level=level, date_preset=period, date_from=date_from, date_to=date_to, active_only=not show_all, access_token=meta_token, ad_account_id=meta_account)
         except Exception as e:
             # XAVFSIZLIK TUZATISHI (2026-09, to'liq sayt auditida topilgan):
             # bu yerda ILGARI `str(e)` to'g'ridan-to'g'ri foydalanuvchiga
@@ -3131,7 +3169,11 @@ def target_page():
             # umumiy xabar chiqariladi.
             logger.exception("Target: Meta ma'lumotlarini olishda xato")
             data = {"error": meta_api.safe_error_message(e), "rows": [], "totals": {}, "goal_breakdown": [], "generated_at": dt.datetime.utcnow().isoformat(), "level": level}
-    return render_template("target.html", data=data, period=period, level=level, show_all=show_all)
+    period_label = _period_label(period, date_from, date_to)
+    return render_template(
+        "target.html", data=data, period=period, level=level, show_all=show_all,
+        date_from=date_from or "", date_to=date_to or "", period_label=period_label,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -5313,17 +5355,42 @@ def individual_check():
     except (TypeError, ValueError):
         days = 30
 
-    since = dt.datetime.utcnow() - dt.timedelta(days=days)
+    # 2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+    # Analytics'dagi kalendarga o'xshatib qil"): eski "oxirgi N kun" maydoni
+    # ORQAGA MOSLIK uchun saqlanadi (hech qanday `period` berilmasa), lekin
+    # endi taqvim-preset'lar VA aniq sana oralig'i ham tanlash mumkin.
+    period = request.args.get("period", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    until = None
+    if period == "custom" and date_from and date_to:
+        bounds = custom_range_bounds_utc(date_from, date_to)
+        since, until = bounds if bounds else (dt.datetime.utcnow() - dt.timedelta(days=30), None)
+    elif period and period != "custom":
+        bounds = _date_preset_bounds_utc(period)
+        if bounds:
+            since, until = bounds
+        else:
+            # "maximum" -- filtr umuman qo'yilmasin.
+            since, until = dt.datetime(2000, 1, 1), None
+        date_from = date_to = ""
+    else:
+        since = dt.datetime.utcnow() - dt.timedelta(days=days)
+        period = ""
+        date_from = date_to = ""
+
+    period_label = _period_label(period, date_from, date_to) if period else f"So'nggi {days} kun"
 
     session = get_session()
     try:
-        check = call_analytics.build_individual_check(session, since)
+        check = call_analytics.build_individual_check(session, since, until=until)
     finally:
         session.close()
 
     return render_template(
         "individual_check.html",
-        days=days,
+        days=days, period=period, date_from=date_from, date_to=date_to, period_label=period_label,
         configured=call_sync.is_configured_for(_current_company()),
         min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
         **check,
@@ -5559,6 +5626,9 @@ def individual_check_set_threshold():
     `call_analytics.MIN_REAL_TALK_SECONDS` standart 60 soniya edi, endi
     bu yerdan sozlanadi (kv_store'da saqlanadi)."""
     days = request.form.get("days", "30")
+    period = request.form.get("period", "")
+    date_from = request.form.get("date_from", "")
+    date_to = request.form.get("date_to", "")
     value = request.form.get("min_real_talk_seconds", "").strip()
     try:
         seconds = int(value)
@@ -5568,7 +5638,10 @@ def individual_check_set_threshold():
         flash(f"Chegara {seconds} soniyaga o'rnatildi.", "success")
     except (TypeError, ValueError):
         flash("Noto'g'ri qiymat -- butun son (soniya) kiriting.", "error")
-    return redirect(url_for("individual_check", days=days))
+    # 2026-09: tanlangan sana/davr saqlanib qolsin (avval faqat `days`
+    # qaytarilardi -- kalendar orqali aniq oraliq tanlangan bo'lsa, chegarani
+    # saqlagach sahifa yana standart 30-kunlik ko'rinishga qaytib ketardi).
+    return redirect(url_for("individual_check", days=days, period=period or None, date_from=date_from or None, date_to=date_to or None))
 
 
 # ---------------------------------------------------------------------------
@@ -5993,11 +6066,20 @@ def smm_report():
     # aylanma oyna o'rniga ANIQ taqvim davri (`?preset=`). `?days=N` hali
     # ham qo'llab-quvvatlanadi ("Boshqa (so'nggi N kun)" maydoni orqali) --
     # `preset` berilgan bo'lsa u USTUN turadi.
+    # 2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+    # Analytics'dagi kalendarga o'xshatib qil"): tayyor preset'lardan
+    # TASHQARI endi aniq (ixtiyoriy) sana oralig'i ham tanlash mumkin
+    # (`?preset=custom&date_from=...&date_to=...`).
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
     preset = request.args.get("preset")
-    if preset not in smm_analytics.PERIOD_PRESET_KEYS:
-        preset = None
+    is_custom = preset == "custom" and bool(date_from) and bool(date_to)
+    if not is_custom:
+        date_from = date_to = ""
+        if preset not in smm_analytics.PERIOD_PRESET_KEYS:
+            preset = None
     days = None
-    if not preset:
+    if not preset and not is_custom:
         days_raw = request.args.get("days")
         if days_raw:
             try:
@@ -6009,7 +6091,10 @@ def smm_report():
 
     session = get_session()
     try:
-        report = smm_analytics.build_smm_report(session, days=days, preset=preset)
+        report = smm_analytics.build_smm_report(
+            session, days=days, preset=preset,
+            date_from=date_from or None, date_to=date_to or None,
+        )
     finally:
         session.close()
 
@@ -6028,6 +6113,7 @@ def smm_report():
         configured=smm_sync.is_configured(company),
         sync_status=smm_sync.get_last_status(company.id if company else None),
         smm_period_presets=smm_analytics.PERIOD_PRESETS,
+        date_from=date_from, date_to=date_to,
         **report,
     )
 

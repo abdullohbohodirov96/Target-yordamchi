@@ -30,14 +30,32 @@ PERIOD_PRESET_KEYS = {k for k, _ in PERIOD_PRESETS}
 DEFAULT_PRESET = "this_month"
 
 
-def resolve_period(preset: str | None, days: int | None = None) -> tuple[str, str, str]:
+def resolve_period(
+    preset: str | None, days: int | None = None,
+    date_from: str | None = None, date_to: str | None = None,
+) -> tuple[str, str, str]:
     """`preset` (yoki eski `days`) uchun Toshkent taqvim sanalarida
     (`YYYY-MM-DD`, IKKALASI HAM qamrab olinadi -- inclusive) [start, end]
     oralig'ini va ko'rsatish uchun nomni qaytaradi.
 
     `preset` noma'lum/berilmagan bo'lsa, eski "so'nggi N kun" (aylanma oyna,
     bugungi kunni ham o'z ichiga oladi) xatti-harakatiga qaytadi -- eski
-    testlar/route'lar buzilmasligi uchun."""
+    testlar/route'lar buzilmasligi uchun.
+
+    2026-09, foydalanuvchi so'rovi ("hamma joyda sana tanlashni Lead
+    Analytics'dagi kalendarga o'xshatib qil"): `date_from`/`date_to` (ikkalasi
+    ham) berilsa, tayyor preset/kun sonidan USTUN turadi -- foydalanuvchi
+    ANIQ ikkita sanani tanlagani ma'nosini bildiradi."""
+    if date_from and date_to:
+        def _fmt(d: str) -> str:
+            try:
+                y, m, dd = d.split("-")
+                return f"{dd}.{m}.{y}"
+            except ValueError:
+                return d
+        a, b = (date_from, date_to) if date_from <= date_to else (date_to, date_from)
+        return a, b, f"{_fmt(a)} — {_fmt(b)}"
+
     now_tashkent = tz_utils.now_local()
     today = now_tashkent.date()
 
@@ -249,7 +267,10 @@ def _build_platform_report(session, platform: str, start_date: str, end_date: st
     }
 
 
-def build_smm_report(session, days: int | None = None, preset: str | None = None) -> dict:
+def build_smm_report(
+    session, days: int | None = None, preset: str | None = None,
+    date_from: str | None = None, date_to: str | None = None,
+) -> dict:
     """To'liq SMM hisobotini qaytaradi: {"days": N (orqaga moslik uchun,
     faqat preset yo'q holatda ma'noli), "preset": ..., "period_label": ...,
     "start_date": ..., "end_date": ..., "platforms": {"instagram": {...},
@@ -260,9 +281,12 @@ def build_smm_report(session, days: int | None = None, preset: str | None = None
     `preset` -- `PERIOD_PRESETS`dagi 6 taqvim-davridan biri (bugun/shu
     hafta/o'tgan hafta/shu oy/o'tgan oy/shu yil). Berilmasa (yoki noma'lum
     bo'lsa), eski `days=N` ("so'nggi N kun") xatti-harakatiga qaytadi --
-    mavjud testlar/chaqiruvlar buzilmasligi uchun."""
-    start_date, end_date, period_label = resolve_period(preset, days)
-    effective_preset = preset if preset in PERIOD_PRESET_KEYS else None
+    mavjud testlar/chaqiruvlar buzilmasligi uchun. `date_from`/`date_to`
+    berilsa (ikkalasi ham), aniq sana oralig'i ishlatiladi va `preset`
+    natijada `"custom"` bo'lib qaytadi."""
+    is_custom = bool(date_from and date_to)
+    start_date, end_date, period_label = resolve_period(preset, days, date_from, date_to)
+    effective_preset = "custom" if is_custom else (preset if preset in PERIOD_PRESET_KEYS else None)
     return {
         "days": days or 30,
         "preset": effective_preset,
