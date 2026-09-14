@@ -602,17 +602,19 @@ def _daily_report_targets() -> list[int]:
 
 
 WELCOME_TEXT = (
-    "\U0001F44B Salom! Men — Targetolog.\n\n"
-    "Oddiy odam bilan gaplashgandek yozavering. Masalan:\n"
-    "\"IELTS kursi uchun yangi target yoq, kunlik $20, Toshkent\"\n"
-    "\"AB | Traffic | IG reklamani to'xtat\"\n"
-    "\"hisobim qanday ketyapti\"\n"
+    "\U0001F44B Salom! Men — Replix, sizning shaxsiy Targetolog AI-agentingizman.\n\n"
+    "\U0001F4AC Oddiy odam bilan gaplashgandek yozavering. Masalan:\n"
+    "• \"IELTS kursi uchun yangi target yo'q, kunlik $20, Toshkent\"\n"
+    "• \"AB | Traffic | IG reklamani to'xtat\"\n"
+    "• \"hisobim qanday ketyapti\"\n\n"
+    "\U0001F501 Takrorlanuvchi buyruq ham bera olasiz:\n"
     "\"AB | Traffic | IG ni har kuni 22:00 dan 08:00 gacha o'chirib tur\" — "
     "shunday deysiz, keyin buni har kuni o'zim eslab, avtomatik bajarib "
-    "boraman (qayta buyruq berishingiz shart emas). Ro'yxatini ko'rish uchun "
-    "/vazifalar, bekor qilish uchun /vazifa_off <ID>.\n\n"
-    "Har kuni 09:00 da o'zim hisobot yuboraman, kerak bo'lsa byudjet/"
-    "on-off qarorlarini o'zim qabul qilaman."
+    "boraman (qayta buyruq berishingiz shart emas).\n"
+    "\U0001F4CB Ro'yxat: /vazifalar   ❌ Bekor qilish: /vazifa_off <ID>\n\n"
+    "\U0001F551 Har kuni soat 09:00 da o'zim hisobot yuboraman, kerak bo'lsa "
+    "byudjet/on-off qarorlarini o'zim qabul qilaman.\n\n"
+    "\U0001F310 Boshqaruv paneli: https://replix.uz"
 )
 
 
@@ -676,12 +678,13 @@ _REGISTER_HELP_TEXT = (
 # bo'lmagan) chat uchun -- to'liq ro'yxatdan o'tish yo'riqnomasi shart
 # emas, faqat mavjud buyruqlar eslatiladi.
 _REGISTERED_MEMBER_WELCOME_TEXT = (
-    "\U0001F44B Salom! Bu Replix boti.\n\n"
-    "Mavjud buyruqlar:\n"
-    "/vazifalar — kompaniyangizning faol doimiy vazifalari/hisobot vaqtlari\n"
-    "/vazifa_off <ID> — birini bekor qilish\n"
-    "/id — shaxsiy Telegram ID'ingizni ko'rish\n"
-    "/groupid — shu guruhning Telegram ID'sini ko'rish"
+    "\U0001F44B Salom! Men — Replix'ning Telegram boti.\n\n"
+    "\U0001F4CB Mavjud buyruqlar:\n"
+    "• /vazifalar — kompaniyangizning faol doimiy vazifalari/hisobot vaqtlari\n"
+    "• /vazifa_off <ID> — birini bekor qilish\n"
+    "• /id — shaxsiy Telegram ID'ingizni ko'rish\n"
+    "• /groupid — shu guruhning Telegram ID'sini ko'rish\n\n"
+    "\U0001F310 Boshqaruv paneli: https://replix.uz"
 )
 
 
