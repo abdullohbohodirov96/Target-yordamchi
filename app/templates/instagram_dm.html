@@ -31,6 +31,68 @@
 <div class="flash flash-error" style="margin-bottom:20px">{{ refresh_error }}</div>
 {% endif %}
 
+<!-- 2026-09, foydalanuvchi so'rovi ("Instagram DM tahlilini ko'rinadigan
+     qilish"): pastdagi suhbatlar ro'yxati/badge'lar HAMISHA "hozirgi
+     holat"ni ko'rsatadi -- bu bo'lim esa Lead Analytics'ga o'xshab
+     TANLANGAN DAVR ichida nima bo'lganini (trend, javob tezligi, davr
+     taqsimoti) ko'rsatadi. -->
+<div class="page-head" style="margin-top:0">
+  <h2 style="margin:0">Davr bo'yicha tahlil</h2>
+  {% set cdp_id = 'dm' %}
+  {% set cdp_presets = [
+    ('today','Bugun'), ('yesterday','Kecha'),
+    ('last_7d',"So'nggi 7 kun"), ('last_30d',"So'nggi 30 kun"), ('last_90d',"So'nggi 90 kun"),
+    ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
+    ('this_month',"Shu oy"), ('last_month',"O'tgan oy"), ('this_year',"Shu yil"),
+    ('maximum','Maksimal'),
+  ] %}
+  {% set cdp_preset_param = 'period' %}
+  {% set cdp_current_preset = dm_period %}
+  {% set cdp_current_label = dm_period_label %}
+  {% set cdp_custom_value = 'custom' %}
+  {% set cdp_date_from_param = 'date_from' %}
+  {% set cdp_date_to_param = 'date_to' %}
+  {% set cdp_date_from = dm_date_from %}
+  {% set cdp_date_to = dm_date_to %}
+  {% include "_calendar_date_picker.html" %}
+</div>
+
+<div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom:16px">
+  <div class="kpi-card"><div class="kpi-label">Yangi suhbatlar</div><div class="kpi-value">{{ dm_analytics.new_conversations }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Mijoz xabarlari</div><div class="kpi-value">{{ dm_analytics.customer_messages }}</div></div>
+  <div class="kpi-card">
+    <div class="kpi-label">O'rtacha javob vaqti</div>
+    <div class="kpi-value">{{ (dm_analytics.avg_response_minutes ~ " daq.") if dm_analytics.avg_response_minutes is not none else "—" }}</div>
+  </div>
+  <div class="kpi-card"><div class="kpi-label">🔥 Issiq (davrda)</div><div class="kpi-value good">{{ dm_analytics.hot_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">🌤 Iliq (davrda)</div><div class="kpi-value">{{ dm_analytics.warm_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">❄️ Sovuq (davrda)</div><div class="kpi-value text-dim">{{ dm_analytics.cold_count }}</div></div>
+</div>
+
+{% if dm_analytics.daily_trend %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Kunlik mijoz xabarlari</h2>
+  <div style="height:220px"><canvas id="chart-dm-trend"></canvas></div>
+</div>
+{% endif %}
+
+{% if dm_analytics.top_reasons %}
+<div class="card" style="margin-bottom:20px">
+  <h2 style="margin-top:0">AI bahosining eng ko'p uchragan sabablari</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Davrda faol bo'lgan suhbatlarning AI tahlilida eng ko'p qaytarilgan sabablar (mavjud tahlildan -- yangi AI chaqiruvi qilinmaydi).</p>
+  <div style="display:flex; flex-direction:column; gap:8px">
+    {% for r in dm_analytics.top_reasons %}
+    <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--border-light)">
+      <span>{{ r.text }}</span>
+      <span class="text-dim">{{ r.count }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<h2>Hozirgi holat</h2>
+
 {% if sync_status and sync_status.errors %}
 <details class="card" style="margin-bottom:20px" open>
   <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
@@ -202,6 +264,29 @@
     </div>
   </div>
 </div>
+
+{% if dm_analytics.daily_trend %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('chart-dm-trend'), {
+  type: 'bar',
+  data: {
+    labels: {{ dm_analytics.daily_trend|map(attribute='day_label')|list|tojson }},
+    datasets: [{
+      label: 'Mijoz xabarlari',
+      data: {{ dm_analytics.daily_trend|map(attribute='count')|list|tojson }},
+      backgroundColor: '#0B63F5',
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { y: { ticks: { precision: 0 } } },
+  }
+});
+</script>
+{% endif %}
 
 <script>
 (function () {

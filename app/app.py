@@ -6146,6 +6146,24 @@ def instagram_dm():
     only_unanswered = request.args.get("filter") == "unanswered"
     refresh_error = None
 
+    # 2026-09, foydalanuvchi so'rovi ("Instagram DM tahlilini ko'rinadigan
+    # qilish"): pastdagi suhbatlar ro'yxati/badge'lar HAR DOIM "hozirgi
+    # holat"ni ko'rsatadi (o'zgarishsiz), lekin endi sahifa boshida DAVR
+    # bo'yicha tahlil (trend, o'rtacha javob vaqti, davr taqsimoti) ham bor
+    # -- boshqa sahifalar bilan bir xil umumiy kalendar-tanlagich orqali.
+    dm_period = request.args.get("period", "last_30d")
+    dm_date_from = request.args.get("date_from", "").strip()
+    dm_date_to = request.args.get("date_to", "").strip()
+    if dm_period != "custom" or not (dm_date_from and dm_date_to):
+        dm_date_from = dm_date_to = None
+    if dm_period == "custom" and dm_date_from and dm_date_to:
+        bounds = custom_range_bounds_utc(dm_date_from, dm_date_to)
+        dm_since, dm_until = bounds if bounds else (None, None)
+    else:
+        bounds = _date_preset_bounds_utc(dm_period)
+        dm_since, dm_until = bounds if bounds else (None, None)
+    dm_period_label = _period_label(dm_period, dm_date_from, dm_date_to)
+
     if company is not None and request.args.get("refresh"):
         try:
             result = ig_dm_sync.sync_once(company=_MetaCreds(company))
@@ -6173,6 +6191,7 @@ def instagram_dm():
                 session.expire_all()  # refresh_conversation boshqa session'da commit qildi -- shu yerdagi keshni tozalash kerak
 
         report = ig_dm_analytics.build_dm_report(session)
+        dm_analytics = ig_dm_analytics.build_period_analytics(session, dm_since, dm_until)
 
         selected = None
         messages = []
@@ -6213,6 +6232,9 @@ def instagram_dm():
         only_unanswered=only_unanswered,
         canned_replies=canned_replies,
         refresh_error=refresh_error,
+        dm_analytics=dm_analytics,
+        dm_period=dm_period, dm_period_label=dm_period_label,
+        dm_date_from=dm_date_from or "", dm_date_to=dm_date_to or "",
     )
 
 
