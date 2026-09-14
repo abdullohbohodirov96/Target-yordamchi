@@ -15,7 +15,10 @@ KERAKLI RUXSATLAR (Meta tomonida):
   (agar qo'lda bekor qilinmasa).
 
 ESLATMA: Bu MVP kodi. Ishlab chiqarishga (production) chiqarishdan oldin:
-  - Xatoliklarni qayta urinish (retry/backoff) mexanizmini kuchaytiring.
+  - ~~Xatoliklarni qayta urinish (retry/backoff) mexanizmini kuchaytiring.~~
+    TUZATILDI (2026-09) -- `_get`/`_post` endi tarmoq xatosi/Meta'ning
+    vaqtinchalik xatolarida avtomatik qayta uriladi (pastga, `_get`/`_post`
+    ta'rifidan oldingi izohga qarang -- YOZUV uchun ATAYLAB ehtiyotkorroq).
   - Rate limit (Meta har soatlik so'rov limiti bor) monitoringini qo'shing.
   - Har bir yozish amalini (pause/budget) alohida audit-log'ga yozing.
 """
@@ -25,6 +28,7 @@ import re
 import json
 import time
 import hmac
+import random
 import logging
 import hashlib
 import calendar
@@ -98,17 +102,72 @@ def safe_error_message(e: Exception) -> str:
     return "Meta bilan bog'lanishda vaqtinchalik xatolik yuz berdi (tarmoq muammosi bo'lishi mumkin). Birozdan keyin sahifani yangilab ko'ring."
 
 
+# 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 8-band): "Meta API va Claude
+# chaqiruvlarida retry/backoff yo'q" -- Claude tomoni ANIQLANDI: `anthropic`
+# Python SDK'si (`orchestrator.py`dagi `anthropic.Anthropic(...)` mijozi)
+# ULANISH xatosi/429/5xx uchun O'ZI, standart bo'yicha (`max_retries=2`,
+# eksponensial kechikish bilan) qayta urinadi -- bu yerda qo'shimcha kod
+# kerak emas edi. Meta (Graph API) tomoni esa HAQIQATAN HAM qayta
+# urinishsiz edi -- pastdagi `_MAX_ATTEMPTS`/`_retry_sleep` shuni tuzatadi.
+#
+# MUHIM ASIMMETRIYA (pul bilan bog'liq xavfsizlik uchun ATAYLAB): `_get`
+# (O'QISH, ta'sirsiz) tarmoq xatosida VA Meta'ning "vaqtinchalik" deb
+# belgilagan xatosida (`is_transient`/reyting-cheklov kodlari) ham qayta
+# uriniladi. `_post` (YOZUV -- byudjet, pauza va h.k.) esa FAQAT sof
+# TARMOQ xatosida (ulanish/timeout -- ya'ni so'rov Meta serveriga
+# YETIB BORMAGAN bo'lishi ehtimoli katta) qayta uriniladi; agar Meta
+# JAVOB QAYTARGAN bo'lsa (hatto "vaqtinchalik" xato bilan ham) -- ENDI
+# QAYTA URINILMAYDI, chunki yozuv allaqachon qisman bajarilgan bo'lishi
+# mumkin va qayta yuborish uni IKKILANTIRIB YUBORISHI mumkin (masalan
+# byudjet ikki marta o'zgarishi). Bu qatlamning ustidagi chaqiruvchilar
+# (`orchestrator.py`) allaqachon har bir yozuvdan keyin QAYTA O'QIB
+# TEKSHIRADI (`_execute_and_verify_status`) -- shu combo (tarmoqda
+# ehtiyotkor qayta urinish + natijani tekshirish) xavfsiz.
+_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 1.0  # soniya -- 1-qayta urinish ~1s, 2-qayta urinish ~2s kutadi
+_RETRYABLE_NETWORK_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+)
+_TRANSIENT_META_ERROR_CODES = {4, 17, 32, 613}  # Meta hujjati: rate-limit turlari
+
+
+def _retry_sleep(attempt: int) -> None:
+    time.sleep(_RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.4))
+
+
+def _is_transient_meta_error(data: dict) -> bool:
+    err = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(err, dict):
+        return False
+    if err.get("is_transient"):
+        return True
+    return err.get("code") in _TRANSIENT_META_ERROR_CODES
+
+
 def _get(path: str, params: dict | None = None, token: str | None = None) -> dict:
     params = {
         k: (json.dumps(v) if isinstance(v, (dict, list)) else v)
         for k, v in (params or {}).items()
     }
     params["access_token"] = token or ACCESS_TOKEN
-    r = requests.get(f"{GRAPH_URL}/{path}", params=params, timeout=30)
-    data = r.json()
-    if "error" in data:
-        raise MetaAPIError(data["error"])
-    return data
+    url = f"{GRAPH_URL}/{path}"
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            data = r.json()
+        except _RETRYABLE_NETWORK_ERRORS:
+            if attempt < _MAX_ATTEMPTS - 1:
+                _retry_sleep(attempt)
+                continue
+            raise
+        if "error" in data:
+            if _is_transient_meta_error(data) and attempt < _MAX_ATTEMPTS - 1:
+                _retry_sleep(attempt)
+                continue
+            raise MetaAPIError(data["error"])
+        return data
+    raise MetaAPIError({"message": "Meta bilan bog'lanib bo'lmadi (qayta urinishlar tugadi)."})
 
 
 def _post(path: str, data: dict, token: str | None = None) -> dict:
@@ -121,11 +180,58 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
         for k, v in data.items()
     }
     payload["access_token"] = token or ACCESS_TOKEN
-    r = requests.post(f"{GRAPH_URL}/{path}", data=payload, timeout=30)
-    result = r.json()
-    if isinstance(result, dict) and "error" in result:
-        raise MetaAPIError(result["error"])
-    return result
+    url = f"{GRAPH_URL}/{path}"
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            r = requests.post(url, data=payload, timeout=30)
+            result = r.json()
+        except _RETRYABLE_NETWORK_ERRORS:
+            # Faqat SOF tarmoq xatosida qayta urinamiz (izohga qarang, yuqorida)
+            # -- Meta javob qaytargan har qanday holatda (hatto xato bilan ham)
+            # darhol to'xtaymiz, IKKILANTIRIB YUBORISH xavfini olmaslik uchun.
+            if attempt < _MAX_ATTEMPTS - 1:
+                _retry_sleep(attempt)
+                continue
+            raise
+        if isinstance(result, dict) and "error" in result:
+            raise MetaAPIError(result["error"])
+        return result
+    raise MetaAPIError({"message": "Meta bilan bog'lanib bo'lmadi (qayta urinishlar tugadi)."})
+
+
+def _get_all_pages(path: str, params: dict | None = None, token: str | None = None) -> list[dict]:
+    """2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 9-band: "200 tadan
+    ortiq obyektli hisoblar uchun pagination yo'q"). `_get()` bilan bir xil,
+    lekin Meta'ning `paging.next` havolasini OXIRIGACHA ergashadi -- bitta
+    so'rov limitidan (odatda 100-200) ko'p obyekt bo'lgan hisoblarda natija
+    JIM RAVISHDA KESILIB QOLMASLIGI uchun. Ayniqsa `get_account_structure()`
+    uchun MUHIM: shu ro'yxat asosida `object_id` tasdiqlanadi (ijro
+    xavfsizligi, 2026-09 avvalroq tuzatilgan) -- kesilgan ro'yxat haqiqiy
+    obyektni "topilmadi" deb ko'rsatib, amalni asossiz bloklashi mumkin edi.
+
+    Har bir keyingi sahifa ham tarmoq xatosida qayta uriladi -- bu O'QISH,
+    ta'sirsiz, shuning uchun retry to'liq xavfsiz (yozuv uchun ehtiyotkor
+    asimmetriyaga bu yerda ehtiyoj yo'q)."""
+    data = _get(path, params, token=token)
+    items = list(data.get("data", []))
+    next_url = data.get("paging", {}).get("next")
+    while next_url:
+        page = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                r = requests.get(next_url, timeout=30)
+                page = r.json()
+                break
+            except _RETRYABLE_NETWORK_ERRORS:
+                if attempt < _MAX_ATTEMPTS - 1:
+                    _retry_sleep(attempt)
+                    continue
+                raise
+        if isinstance(page, dict) and "error" in page:
+            raise MetaAPIError(page["error"])
+        items.extend((page or {}).get("data", []))
+        next_url = (page or {}).get("paging", {}).get("next")
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -303,14 +409,10 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
         return _page_token_cache[resolved_page_id]
     if not resolved_page_id:
         raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
-    r = requests.get(
-        f"{GRAPH_URL}/{resolved_page_id}",
-        params={"fields": "access_token", "access_token": resolved_user_token},
-        timeout=30,
-    )
-    data = r.json()
-    if "error" in data:
-        raise MetaAPIError(data["error"])
+    # 2026-09: endi umumiy `_get()` orqali -- shu bilan tarmoq xatosi/Meta'ning
+    # vaqtinchalik xatolarida avtomatik qayta urinish ham qo'llanadi (O'QISH,
+    # ta'sirsiz -- retry uchun xavfsiz).
+    data = _get(resolved_page_id, params={"fields": "access_token"}, token=resolved_user_token)
     token = data.get("access_token")
     if not token:
         raise MetaAPIError({
@@ -473,8 +575,7 @@ def get_full_report(
 
 def get_active_ads(adset_id: str | None = None) -> list[dict]:
     path = f"{adset_id}/ads" if adset_id else f"{AD_ACCOUNT_ID}/ads"
-    data = _get(path, {"fields": "id,name,status,adset_id,campaign_id", "limit": 200})
-    return data.get("data", [])
+    return _get_all_pages(path, {"fields": "id,name,status,adset_id,campaign_id", "limit": 200})
 
 
 def get_account_structure(active_only: bool = True, *, access_token: str | None = None, ad_account_id: str | None = None) -> dict:
@@ -518,12 +619,12 @@ def get_account_structure(active_only: bool = True, *, access_token: str | None 
     # oldidan chaqiriladi).
     acct = ad_account_id or AD_ACCOUNT_ID
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        campaigns_future = pool.submit(_get, f"{acct}/campaigns", campaign_params, access_token)
-        adsets_future = pool.submit(_get, f"{acct}/adsets", adset_params, access_token)
-        ads_future = pool.submit(_get, f"{acct}/ads", ad_params, access_token)
-        campaigns = campaigns_future.result().get("data", [])
-        adsets = adsets_future.result().get("data", [])
-        ads = ads_future.result().get("data", [])
+        campaigns_future = pool.submit(_get_all_pages, f"{acct}/campaigns", campaign_params, access_token)
+        adsets_future = pool.submit(_get_all_pages, f"{acct}/adsets", adset_params, access_token)
+        ads_future = pool.submit(_get_all_pages, f"{acct}/ads", ad_params, access_token)
+        campaigns = campaigns_future.result()
+        adsets = adsets_future.result()
+        ads = ads_future.result()
     return {"campaigns": campaigns, "adsets": adsets, "ads": ads}
 
 
@@ -1152,18 +1253,14 @@ def get_leads(form_id: str, since: str | None = None, *, access_token: str | Non
     if since:
         params["filtering"] = [{"field": "time_created", "operator": "GREATER_THAN", "value": since}]
     page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token)
-    data = _get(f"{form_id}/leads", params, token=page_token)
-    leads = list(data.get("data", []))
-    # Sahifalash (pagination) -- forma bo'yicha 100 dan ko'p yangi lead
-    # bo'lishi kamdan-kam, lekin xavfsizlik uchun keyingi sahifalarni ham olamiz.
-    while data.get("paging", {}).get("next"):
-        next_url = data["paging"]["next"]
-        r = requests.get(next_url, timeout=30)
-        data = r.json()
-        if "error" in data:
-            break
-        leads.extend(data.get("data", []))
-    return leads
+    # 2026-09: endi `_get_all_pages()` orqali -- avvalgi qo'lda yozilgan
+    # sahifalash tsikli xatoda LIDLARNI JIM RAVISHDA (hech qanday xatosiz)
+    # tashlab yuborardi ("if 'error' in data: break"); endi xato chaqiruvchiga
+    # (`lead_sync.py`, bu allaqachon `MetaAPIError`ni to'g'ri tutadi va
+    # forma bo'yicha xato hisobotiga yozadi) ko'tariladi -- YO'QOLGAN
+    # LIDLAR ENDI SEZILMAY QOLMAYDI. Qayta urinish (tarmoq xatosida) ham
+    # avtomatik qo'llanadi.
+    return _get_all_pages(f"{form_id}/leads", params, token=page_token)
 
 
 def get_lead_forms(page_id: str, *, access_token: str | None = None) -> list[dict]:
@@ -1179,8 +1276,7 @@ def get_lead_forms(page_id: str, *, access_token: str | None = None) -> list[dic
     berilsa, aynan shu `page_id` + `access_token` juftligi uchun Page Access
     Token olinadi."""
     page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token)
-    data = _get(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=page_token)
-    return data.get("data", [])
+    return _get_all_pages(f"{page_id}/leadgen_forms", {"fields": "id,name,status,leads_count", "limit": 200}, token=page_token)
 
 
 # ---------------------------------------------------------------------------
