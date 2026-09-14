@@ -35,22 +35,24 @@
    qanday xalaqit bermaydi. */
 .lp-hero-glow {
   position: absolute; top: 0; left: 0; width: 440px; height: 440px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(37,99,235,0.16) 0%, rgba(37,99,235,0.06) 45%, transparent 72%);
+  background: radial-gradient(circle, rgba(11,99,245,0.16) 0%, rgba(11,99,245,0.06) 45%, transparent 72%);
   pointer-events: none; opacity: 0; z-index: 0; will-change: transform, opacity;
   transition: opacity 0.3s ease;
 }
 /* 2026-09, foydalanuvchi so'rovi ("...oppoq background... elementlar
    qo'shasanmi, oppoq bo'lib qolmasin"): hero endi tekis oq fon emas --
-   uch rangli (ko'k/binafsha/yashil) xira gradient-"tuman" dog'lari +
-   nozik nuqta-katak naqshi butun hero kengligini qoplaydi. Statik (kursor
-   effektidan mustaqil), shu sababli harakatga sezgir foydalanuvchilarga
-   ham xavfsiz. */
+   uch rangli xira gradient-"tuman" dog'lari + nozik nuqta-katak naqshi
+   butun hero kengligini qoplaydi. Statik (kursor effektidan mustaqil),
+   shu sababli harakatga sezgir foydalanuvchilarga ham xavfsiz.
+   2026-09 (YANGI logotip ranglariga o'tish): uchinchi dog' (avval yashil)
+   endi logotipning firuza (cyan) urg'usiga almashtirildi -- uchala dog'
+   birgalikda logotipdagi firuza->ko'k->binafsha gradientni aks ettiradi. */
 .lp-hero-bg {
   position: absolute; inset: -15% -6%; z-index: 0; pointer-events: none;
   background-image:
-    radial-gradient(520px 440px at 12% 20%, rgba(37,99,235,0.13), transparent 65%),
-    radial-gradient(440px 380px at 90% 6%, rgba(124,58,237,0.10), transparent 62%),
-    radial-gradient(480px 420px at 82% 96%, rgba(5,150,105,0.09), transparent 62%),
+    radial-gradient(520px 440px at 12% 20%, rgba(11,99,245,0.14), transparent 65%),
+    radial-gradient(440px 380px at 90% 6%, rgba(124,34,240,0.11), transparent 62%),
+    radial-gradient(480px 420px at 82% 96%, rgba(6,214,245,0.12), transparent 62%),
     radial-gradient(rgba(100,116,139,0.16) 1px, transparent 1.4px);
   background-repeat: no-repeat, no-repeat, no-repeat, repeat;
   background-size: auto, auto, auto, 26px 26px;
@@ -255,7 +257,7 @@
 }
 .lp-plan.highlight { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--shadow-md); }
 .lp-plan-badge {
-  position: absolute; top: -11px; left: 20px; background: var(--blue); color: #fff;
+  position: absolute; top: -11px; left: 20px; background: var(--brand-gradient); color: #fff;
   font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 999px; letter-spacing: 0.01em;
 }
 .lp-plan-name { font-size: 15px; font-weight: 600; color: var(--ink); margin: 4px 0 4px; }

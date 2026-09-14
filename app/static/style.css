@@ -4,13 +4,23 @@
    request is blocked on some network. */
 
 :root {
-  /* 2026-09, foydalanuvchi so'rovi ("umumiy interfeysniyam boshqacharo qil,
-     oddiy bo'lib qolgan"): rangli asos (--blue) ATAYLAB O'ZGARTIRILMAYDI --
-     u Replix logotipiga pikselma-piksel mos (yuqoridagi eski izohga qarang),
-     logotipni o'zgartirmasdan boshqa rangga o'tish LOGO bilan to'qnashardi.
-     "Boshqacha/premium" taassurot buning o'rniga shrift (zamonaviy Plus
-     Jakarta Sans), kenroq radius, chuqurroq soya va tugmalardagi gradient
-     orqali beriladi -- brend rangiga sodiq qolgan holda. */
+  /* 2026-09, foydalanuvchi so'rovi ("logoni shunaqa qilib qabul qildik ...
+     shu ranglarga to'liq vebni to'g'irlab chiq"): YANGI Replix logotipi
+     (ko'k->siyohrang-binafsha gradientli "R" ikonka, moviy-firuza urg'u
+     bilan) rasmiy brend manbai bo'ldi -- pastdagi uchta rang ("--blue",
+     "--purple", "--cyan") shu logotipdan piksel darajasida olingan
+     ("sample_pixel" bilan tekshirilgan, kontrast nisbati oq fonda >=4.5:1
+     bo'lishi WCAG AA'ga mos ekani tasdiqlangan -- faqat "--cyan" matn
+     uchun EMAS, faqat dekorativ/gradient uchun ishlatiladi, chunki oq
+     fonda kontrasti past). ESKI yagona tekis ko'k (#2B6EF5) o'rniga endi
+     "--blue" (asosiy) va "--purple" (ikkinchi brend rangi, gradientning
+     ikkinchi uchi) bor -- ular birga "--brand-gradient" ni hosil qiladi va
+     tugmalar/faol holatlar/urg'ular ENDI shu ikkalasi orasidagi gradient
+     bilan chiziladi (pastda `button, .btn` va `.nav-item.active .nav-icon`
+     qoidalariga qarang). Dizayn FALSAFASI o'zgarmadi -- fon/kartalar HALI
+     HAM oq/och kulrang (--bg/--card, pastda), rang faqat AKSENT sifatida
+     (tugma, faol nav, badge, fokus halqasi) ishlatiladi -- "hamma joyni
+     bo'yash" emas, "minimalistik, lekin brendga sodiq" saqlanadi. */
   --bg: #F6F7FB;
   --card: #FFFFFF;
   --border: #E2E8F0;
@@ -19,12 +29,22 @@
   --text: #1E293B;
   --text-dim: #64748B;
   --text-faint: #94A3B8;
-  /* 2026-08, foydalanuvchi so'rovi: "dizayn ham logoga to'g'ri kelsin" --
-     asosiy accent rang endi Replix logotipidagi ko'k bilan bir xil (avval
-     #2563EB edi, deyarli farqsiz lekin endi logo bilan pikselma-piksel mos). */
-  --blue: #2B6EF5;
-  --blue-deep: #1E56C4;
-  --blue-bg: #EFF6FF;
+  --blue: #0B63F5;
+  --blue-deep: #0B4FC7;
+  --blue-bg: #EAF2FE;
+  --purple: #7C22F0;
+  --purple-bg: #F4ECFE;
+  --cyan: #06D6F5;
+  --cyan-bg: #E3FBFE;
+  /* Asosiy tugma/aksent gradienti (ikki nuqtali, kundalik ishlatish uchun
+     -- tugmalar, faol nav ikonkasi, "premium" hover holatlari). */
+  --brand-gradient: linear-gradient(135deg, var(--blue) 0%, var(--purple) 100%);
+  /* To'liq (uch nuqtali, logotipdagi kabi firuza->ko'k->binafsha) gradient
+     -- faqat bir nechta "imzo" joylarda (AI yordamchi tugmasi, tarif
+     ta'kidlash) ishlatiladi, HAR BIR elementga qo'llanmaydi (foydalanuvchi
+     so'rovi: "ja minimalistikroq qil ... hamma joyi bo'yab tashlash shart
+     emas"). */
+  --brand-gradient-vivid: linear-gradient(135deg, var(--cyan) 0%, var(--blue) 55%, var(--purple) 100%);
   --good: #059669;
   --good-bg: #ECFDF5;
   --bad: #DC2626;
@@ -241,7 +261,7 @@ a { color: inherit; text-decoration: none; }
   transition: background 0.12s, color 0.12s;
 }
 .nav-item:hover .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: #E7ECF3; color: var(--ink); }
-.nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: linear-gradient(155deg, var(--blue), var(--blue-deep)); color: #fff; }
+.nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: var(--brand-gradient); color: #fff; }
 .nav-icon svg { width: 18px; height: 18px; }
 .nav-text { overflow: hidden; text-overflow: ellipsis; opacity: 0; width: 0; transition: opacity 0.1s; }
 .sidebar.open .nav-text { opacity: 1; width: auto; }
@@ -553,7 +573,7 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
   width: 100%; padding: 8px 12px 8px 32px; font-size: 13.5px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit;
 }
-.searchbar .search-input-wrap input:focus { outline: none; border-color: #94A3B8; background: #fff; box-shadow: 0 0 0 3px rgba(15,23,42,0.06); }
+.searchbar .search-input-wrap input:focus { outline: none; border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px var(--blue-bg); }
 
 /* ---------- Filter pills (leads page) ---------- */
 .filters { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -633,7 +653,7 @@ form select, form textarea {
 }
 form textarea { resize: vertical; min-height: 76px; }
 form input:focus, form select:focus, form textarea:focus {
-  outline: none; border-color: #94A3B8; box-shadow: 0 0 0 3px rgba(15,23,42,0.06);
+  outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg);
 }
 
 /* Sana tanlash (native date input) -- standart ustunlar bilan bir xil
@@ -647,17 +667,14 @@ form input[type="date"]::-webkit-calendar-picker-indicator {
 }
 form input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; background: var(--border-light); }
 form input[type="date"]::-webkit-datetime-edit { padding: 0; }
-/* 2026-08, foydalanuvchi so'rovi: "dizayn ham logoga to'g'ri kelsin" --
-   asosiy tugmalar avval quyuq (deyarli qora) rangda edi, endi Replix
-   logotipining ko'k rangiga mos qilib qayta ranglandi (AI yordamchining
-   to'liq rangli gradienti esa faqat o'sha widget uchun o'ziga xos belgi
-   bo'lib qoladi -- har bir tugmani rang-barang qilish ortiqcha bo'lardi). */
+/* 2026-09, foydalanuvchi so'rovi ("polniy hamma yoqni almashtirib
+   chiqqan knopkalarini, tugmalarini, chiroyli chiqsin" -- YANGI logotip
+   ranglariga to'liq o'tish): barcha tugmalar endi ikki nuqtali brend
+   gradienti (--brand-gradient, ko'k->binafsha, yuqoridagi :root'ga
+   qarang) bilan chiziladi -- Linear/Stripe uslubidagi zamonaviy "hajmli"
+   ko'rinish saqlangan holda, YANGI logotip bilan piksel darajasida mos. */
 button, .btn {
-  /* 2026-09, foydalanuvchi so'rovi ("oddiy bo'lib qolgan, boshqacharo
-     qil"): tekis bitta rang o'rniga yengil gradient -- brend ko'k rangi
-     saqlanadi (yuqoridagi izohga qarang), lekin tugma sal "hajmli"/premium
-     ko'rinadi (Linear/Stripe uslubidagi zamonaviy tugmalar shunga o'xshash). */
-  display: inline-block; background: linear-gradient(155deg, var(--blue), var(--blue-deep));
+  display: inline-block; background: var(--brand-gradient);
   color: #fff; border: none; font-family: inherit;
   padding: 10px 16px; border-radius: var(--radius); font-size: 13.5px; font-weight: 500; cursor: pointer;
   transition: filter 0.15s, transform 0.1s, box-shadow 0.15s; box-shadow: var(--shadow-sm);
@@ -702,7 +719,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
   /* 2026-08: logotipdagi gradient bilan bir xil (AI yordamchi widgeti ham
      shu gradientni ishlatadi) -- kirish sahifasi ham "logoga mos" bo'lsin. */
-  background: linear-gradient(90deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+  background: var(--brand-gradient-vivid);
 }
 .login-brand { display: flex; align-items: center; margin-bottom: 6px; }
 .login-logo { height: 44px; width: auto; object-fit: contain; display: block; }
@@ -734,7 +751,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .wizard-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-  background: linear-gradient(90deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+  background: var(--brand-gradient-vivid);
 }
 .wizard-title { font-size: 24px; margin: 4px 0 4px; }
 
@@ -789,27 +806,27 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .note-meta { color: var(--text-faint); font-size: 11px; margin-top: 3px; }
 
 /* ---------- AI yordamchi (floating chat widget) ----------
-   2026-08, foydalanuvchi so'rovi: rangларни logotipga (ko'k->siyohrang
-   gradient) moslashtirish, ikonkani esa OQ rangda qoldirish (rangli
-   logotipni to'g'ridan-to'g'ri qo'ysak, gradient fon bilan "aralashib"
-   ketardi). */
+   2026-09: ranglar endi YANGI logotipning to'liq uch nuqtali gradientiga
+   (--brand-gradient-vivid, :root'ga qarang) piksel darajasida mos --
+   ikonka esa OQ rangda qoladi (rangli logotipni to'g'ridan-to'g'ri
+   qo'ysak, gradient fon bilan "aralashib" ketardi). */
 #ai-assistant-root { position: fixed; right: 22px; bottom: 22px; z-index: 100; }
 
 #ai-assistant-toggle {
   width: 54px; height: 54px; border-radius: 50%; color: #fff;
-  background: linear-gradient(135deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+  background: var(--brand-gradient-vivid);
   border: none; display: flex; align-items: center; justify-content: center; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(43,110,245,0.35); transition: box-shadow 0.15s, transform 0.15s;
+  box-shadow: 0 4px 14px rgba(11,99,245,0.35); transition: box-shadow 0.15s, transform 0.15s;
   padding: 0; animation: ai-breathe 2.6s ease-in-out infinite;
 }
-#ai-assistant-toggle:hover { box-shadow: 0 6px 18px rgba(43,110,245,0.45); }
+#ai-assistant-toggle:hover { box-shadow: 0 6px 18px rgba(11,99,245,0.45); }
 #ai-assistant-toggle svg, #ai-assistant-toggle img { width: 30px; height: 30px; display: block; }
 #ai-assistant-toggle.active { animation: none; }
 #ai-assistant-toggle.ai-clicked { animation: ai-click-pop 0.35s ease-out; }
 
 @keyframes ai-breathe {
-  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(43,110,245,0.35); }
-  50% { transform: scale(1.07); box-shadow: 0 6px 20px rgba(43,110,245,0.45); }
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(11,99,245,0.35); }
+  50% { transform: scale(1.07); box-shadow: 0 6px 20px rgba(11,99,245,0.45); }
 }
 @keyframes ai-click-pop {
   0% { transform: scale(1); }
@@ -835,7 +852,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 #ai-assistant-header {
   display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
-  background: linear-gradient(135deg, #06E0EF 0%, #2B6EF5 50%, #A93EF0 100%);
+  background: var(--brand-gradient-vivid);
   color: #fff; font-size: 13.5px; font-weight: 600; flex-shrink: 0;
 }
 #ai-assistant-header-logo { height: 22px; width: auto; display: block; }
@@ -852,7 +869,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   max-width: 84%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45;
   white-space: pre-wrap; word-break: break-word;
 }
-.ai-msg-user .ai-bubble { background: #2B6EF5; color: #fff; border-bottom-right-radius: 3px; }
+.ai-msg-user .ai-bubble { background: var(--blue); color: #fff; border-bottom-right-radius: 3px; }
 .ai-msg-assistant .ai-bubble { background: var(--border-light); color: var(--text); border-bottom-left-radius: 3px; }
 .ai-msg.ai-typing .ai-bubble { color: var(--text-faint); font-style: italic; }
 
@@ -861,12 +878,12 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   flex: 1; padding: 9px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 999px;
   font-family: inherit; background: var(--bg); color: var(--text);
 }
-#ai-assistant-form input:focus { outline: none; border-color: #94A3B8; background: #fff; }
+#ai-assistant-form input:focus { outline: none; border-color: var(--blue); background: #fff; }
 #ai-assistant-form button {
-  width: 36px; height: 36px; border-radius: 50%; background: #2B6EF5; color: #fff; border: none;
+  width: 36px; height: 36px; border-radius: 50%; background: var(--blue); color: #fff; border: none;
   display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0;
 }
-#ai-assistant-form button:hover { background: #1E56C4; }
+#ai-assistant-form button:hover { background: var(--blue-deep); }
 #ai-assistant-form button svg { width: 16px; height: 16px; }
 
 @media (max-width: 480px) {
@@ -1023,7 +1040,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   background: var(--blue-bg); color: var(--blue); border-radius: 8px; margin: 4px 6px 8px;
   padding: 9px 10px !important; height: auto !important;
 }
-.sidebar-upsell:hover { background: var(--blue); color: #fff; }
+.sidebar-upsell:hover { background: var(--brand-gradient); color: #fff; }
 
 /* ---------- Marketplace: "ilovalar do'koni" uslubidagi katalog ----------
    2026-09, foydalanuvchi so'rovi: "playmarket shunaqa qil" -- har bir
@@ -1109,7 +1126,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   padding: 9px 12px; font-size: 12px; font-family: "SFMono-Regular", Consolas, monospace;
   border: 1px solid var(--border); border-radius: 6px; background: var(--border-light); color: var(--text-dim);
 }
-.copy-field input:focus { outline: none; border-color: #94A3B8; }
+.copy-field input:focus { outline: none; border-color: var(--blue); }
 .copy-field .copy-btn { flex-shrink: 0; white-space: nowrap; font-size: 12.5px; padding: 9px 14px; }
 .copy-field .copy-btn.copied { background: var(--good); }
 

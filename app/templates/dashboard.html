@@ -278,7 +278,7 @@
       datasets: [{
         label: 'Oborot',
         data: {{ o.leaderboard|map(attribute='turnover')|list|tojson }},
-        backgroundColor: '#2B6EF5',
+        backgroundColor: '#0B63F5',
         borderRadius: 5,
       }]
     },
@@ -319,7 +319,7 @@
         {
           type: 'bar', label: 'Haqiqiy gaplashuvlar',
           data: {{ o.calls_overview.days|map(attribute='count')|list|tojson }},
-          backgroundColor: '#2B6EF5', borderRadius: 4,
+          backgroundColor: '#0B63F5', borderRadius: 4,
         },
         {
           type: 'line', label: 'Jamoa rejasi',

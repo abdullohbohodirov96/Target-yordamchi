@@ -2907,7 +2907,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
 
     # 1) Lidlar holati -- voronka bosqichlari bo'yicha taqsimot
     stages = _active_funnel_stages(session)
-    color_hex = {"blue": "#2563EB", "good": "#059669", "bad": "#DC2626", "warn": "#D97706", "dim": "#94A3B8"}
+    color_hex = {"blue": "#0B63F5", "good": "#059669", "bad": "#DC2626", "warn": "#D97706", "dim": "#94A3B8"}
     all_leads = session.query(Lead.id, Lead.status, Lead.created_at).all()
     total_leads = len(all_leads)
     leads_in_period = sum(1 for l in all_leads if l.created_at and period_start <= l.created_at < period_end)
