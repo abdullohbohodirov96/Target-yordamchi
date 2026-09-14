@@ -47,11 +47,10 @@ import datetime as dt
 import meta_api
 import kv_store
 import db
+import tz_utils
 from db import get_session, SmmSnapshot, SmmPost
 
 logger = logging.getLogger("smm_sync")
-
-_TASHKENT_OFFSET = dt.timedelta(hours=5)
 
 
 def is_configured(company=None) -> bool:
@@ -64,7 +63,7 @@ def is_configured(company=None) -> bool:
 
 
 def _today_tashkent() -> str:
-    return (dt.datetime.utcnow() + _TASHKENT_OFFSET).strftime("%Y-%m-%d")
+    return tz_utils.today_local().strftime("%Y-%m-%d")
 
 
 def _parse_dt(value: str | None) -> dt.datetime | None:

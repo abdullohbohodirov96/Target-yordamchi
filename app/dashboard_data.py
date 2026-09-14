@@ -44,9 +44,8 @@ from sqlalchemy import func
 
 import meta_api
 import kpi_bonus
+import tz_utils
 from db import get_session, Lead, FunnelStage
-
-_TASHKENT_OFFSET = dt.timedelta(hours=5)
 
 # MUHIM (2026-08, foydalanuvchi so'rovi: "sayt sekinlashib qoldi, tezroq
 # ishlasin"): `get_kpis()` har chaqirilganda Meta Graph API'ga KAMIDA IKKITA
@@ -86,7 +85,7 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
     Noma'lum/qo'llab-quvvatlanmaydigan preset uchun `None` qaytaradi (filtr
     qo'yilmaydi -- "shu paytgacha jamlangan hammasi" ma'nosida, eski xatti-
     harakat saqlanib qoladi)."""
-    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    now_tashkent = tz_utils.now_local()
     today_start_tashkent = now_tashkent.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if date_preset == "today":
@@ -129,7 +128,7 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
     else:
         return None
 
-    return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
+    return tz_utils.to_utc(start_tashkent), tz_utils.to_utc(end_tashkent)
 
 
 def _shift_months(d: dt.datetime, delta_months: int) -> dt.datetime:
@@ -158,7 +157,7 @@ def custom_range_bounds_utc(date_from: str, date_to: str) -> tuple[dt.datetime, 
         start_date, end_date = end_date, start_date
     start_tashkent = start_date
     end_tashkent = end_date + dt.timedelta(days=1)
-    return start_tashkent - _TASHKENT_OFFSET, end_tashkent - _TASHKENT_OFFSET
+    return tz_utils.to_utc(start_tashkent), tz_utils.to_utc(end_tashkent)
 
 
 LEVELS = {

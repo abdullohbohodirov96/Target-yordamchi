@@ -75,6 +75,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor as APSchedulerThreadPo
 
 import orchestrator
 import budget_tracker
+import tz_utils
 import lead_sync
 import call_sync
 import smm_sync
@@ -260,7 +261,7 @@ def job_admin_report() -> dict:
          xavfsizlik naqshi -- boshqa kompaniyaning ma'lumoti begona
          guruhga sizib chiqmasligi kerak). Guruhini hali sozlamagan
          kompaniyaga hisobot shunchaki YUBORILMAYDI (xato emas)."""
-    now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
+    now = tz_utils.now_local()  # Toshkent = UTC+5
     today_str = now.strftime("%Y-%m-%d")
     yesterday = now - dt.timedelta(days=1)
     results: dict = {}
@@ -1255,7 +1256,7 @@ def job_standing_tasks() -> str:
     buyruq berishi shart emas. Faqat HOLAT O'ZGARGANDA (last_desired_state'dan
     farqli bo'lganda) Meta API'ga murojaat qiladi -- keraksiz qayta so'rovlar
     yubormaslik uchun."""
-    now = dt.datetime.utcnow() + dt.timedelta(hours=5)  # Toshkent = UTC+5
+    now = tz_utils.now_local()  # Toshkent = UTC+5
     now_hhmm = now.strftime("%H:%M")
     session = db.get_session()
     changes_by_chat: dict = {}
@@ -1340,7 +1341,7 @@ def job_standing_reports() -> str:
     aniqlanadi va O'SHA kompaniyaning O'Z hisobi bilan hisoblangan hisobot
     yuboriladi (bir nechta chat bir xil kompaniyaga tegishli bo'lsa, hisobot
     bir marta hisoblanadi -- keraksiz qayta so'rovlar yubormaslik uchun)."""
-    now = dt.datetime.utcnow() + dt.timedelta(hours=5)
+    now = tz_utils.now_local()
     now_hhmm = now.strftime("%H:%M")
     today_str = now.strftime("%Y-%m-%d")
     session = db.get_session()

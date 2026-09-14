@@ -6,11 +6,9 @@ faqat bazadagi ALLAQACHON saqlangan holatni o'qiydi (smm_analytics.py bilan
 bir xil ajratish: sync/tahlil boshqa faylda, hisobot-qurish shu yerda)."""
 
 import json
-import datetime as dt
 
+import tz_utils
 from db import IgDmConversation
-
-_TASHKENT_OFFSET = dt.timedelta(hours=5)
 
 
 def _conversation_to_dict(c: IgDmConversation) -> dict:
@@ -47,7 +45,7 @@ def build_dm_report(session, limit: int = 100) -> dict:
     )
     conversations = [_conversation_to_dict(c) for c in rows]
 
-    today_start = (dt.datetime.utcnow() + _TASHKENT_OFFSET).replace(hour=0, minute=0, second=0, microsecond=0) - _TASHKENT_OFFSET
+    today_start = tz_utils.to_utc(tz_utils.now_local().replace(hour=0, minute=0, second=0, microsecond=0))
     new_today = sum(1 for c in rows if c.last_message_at and c.last_message_at >= today_start and c.last_message_from == "customer")
 
     stats = {

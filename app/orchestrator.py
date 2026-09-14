@@ -35,6 +35,7 @@ import kv_store
 import monthly_report
 import db
 import dashboard_data
+import tz_utils
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
@@ -2333,7 +2334,7 @@ def _resolve_query_period(user_text: str) -> tuple[dict, str]:
     Qaytaradi: `(meta_api.get_insights ga beriladigan kwargs, odam o'qiydigan
     davr nomi)` -- masalan `({"date_preset": "today"}, "bugungi kun")` yoki
     `({"time_range": {"since": "2026-07-20", "until": "2026-07-20"}}, "20.07.2026")`."""
-    tashkent_today = (datetime.utcnow() + timedelta(hours=5)).date()
+    tashkent_today = tz_utils.today_local()
 
     # 1) DETERMINISTIK yo'l -- eng ko'p uchraydigan holatlar (bugun/kecha,
     # aniq bitta sana, kun oralig'i) LLM'ga umuman murojaat qilmasdan aniq
@@ -2532,9 +2533,9 @@ def _leads_summary_lines(company_id: "int | None") -> list:
         return []
 
     stage_by_key = {s.key: s for s in stages}
-    now = datetime.utcnow() + timedelta(hours=5)  # Toshkent
+    now = tz_utils.now_local()  # Toshkent
     today_start_tashkent = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_tashkent - timedelta(hours=5)
+    today_start_utc = tz_utils.to_utc(today_start_tashkent)
 
     total = len(leads)
     new_today = 0
@@ -2654,7 +2655,7 @@ def check_stale_pending_actions(timeout_seconds: int = _PENDING_ACTION_TIMEOUT_S
 
 
 def _current_tashkent_time() -> tuple[str, str]:
-    now = datetime.utcnow() + timedelta(hours=5)  # O'zbekiston vaqti (UTC+5)
+    now = tz_utils.now_local()  # O'zbekiston vaqti (UTC+5)
     return now.strftime("%d.%m.%Y"), now.strftime("%H:%M")
 
 

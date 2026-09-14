@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta
 
 import meta_api
 import budget_tracker
+import tz_utils
 
 # MUHIM (bug fix): reportlab'ning standart shriftlari (Helvetica va h.k.)
 # FAQAT Lotin-1 belgilarini qo'llab-quvvatlaydi -- kampaniya nomlarida
@@ -121,7 +122,7 @@ def resolve_monthly_period(user_text: str, today: date | None = None) -> tuple[s
     Python bilan (kalit so'z + oy nomi lug'ati orqali), rasmiy hisobot uchun
     sana chegarasi noto'g'ri aniqlanib qolmasligi uchun. Qaytaradi:
     `(since, until, period_label)` -- `since`/`until` YYYY-MM-DD formatida."""
-    today = today or (datetime.utcnow() + timedelta(hours=5)).date()
+    today = today or tz_utils.today_local()
     text_lower = (user_text or "").lower()
 
     if any(k in text_lower for k in ("o'tgan oy", "otgan oy", "oldingi oy")):
@@ -439,7 +440,7 @@ def gather_monthly_report_data(since: str, until: str, period_label: str) -> dic
         "prev_period_label": f"{prev_since_dt.strftime('%d.%m')}–{prev_until_dt.strftime('%d.%m.%Y')}",
         "daily": daily,
         "budget_status": budget_status,
-        "generated_at": datetime.utcnow() + timedelta(hours=5),  # O'zbekiston vaqti
+        "generated_at": tz_utils.now_local(),  # O'zbekiston vaqti
     }
 
 

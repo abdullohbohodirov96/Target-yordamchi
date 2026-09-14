@@ -11,3 +11,9 @@ APScheduler==3.10.4
 reportlab==4.2.2
 openpyxl==3.1.5
 cryptography==43.0.1
+# 2026-09, Item J auditi (🟡 O'RTA, 20-band -- markazlashgan vaqt zonasi,
+# tz_utils.py): `python:3.11-slim` (Dockerfile) OS darajasida IANA tzdata
+# bazasini o'z ichiga olmasligi mumkin -- `zoneinfo` shu holda avtomatik
+# ushbu sof-Python paketga zaxira sifatida murojaat qiladi (CPython
+# hujjatida rasman tavsiya etilgan naqsh).
+tzdata==2024.2

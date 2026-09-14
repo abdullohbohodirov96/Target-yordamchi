@@ -24,6 +24,7 @@ from collections import defaultdict
 
 import db
 import kv_store
+import tz_utils
 
 SESSION_GAP = dt.timedelta(hours=2)
 MIN_REAL_TALK_SECONDS = 60  # standart (admin o'zgartirmagan bo'lsa shu ishlatiladi)
@@ -60,12 +61,12 @@ def set_min_real_talk_seconds(value: int, company_id: "int | None" = None) -> No
 # tekshirish" sahifasida ko'rsatilganda va menejer bo'yicha KUNLIK
 # guruhlashda haqiqiy (Toshkent, UTC+5) vaqt ko'rsatilishi kerak -- aks
 # holda masalan soat 12:00 (Toshkent)dagi qo'ng'iroq "07:00" deb chiqadi.
-# (scheduler.py'dagi bilan bir xil konvensiya.)
-_TASHKENT_OFFSET = dt.timedelta(hours=5)
+# (tz_utils.py'dagi bilan bir xil konvensiya -- markazlashgan, 2026-09
+# Item J auditi 20-band.)
 
 
 def _to_tashkent(d: dt.datetime | None) -> dt.datetime | None:
-    return (d + _TASHKENT_OFFSET) if d else None
+    return tz_utils.to_local(d) if d else None
 
 
 def group_call_sessions(calls: list, min_real_talk_seconds: int | None = None) -> list[dict]:

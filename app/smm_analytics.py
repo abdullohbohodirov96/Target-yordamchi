@@ -13,7 +13,7 @@ OY/SHU YIL kabi ANIQ TAQVIM davrlarini ko'rish kerak" -- endi
 
 import datetime as dt
 
-_TASHKENT_OFFSET = dt.timedelta(hours=5)
+import tz_utils
 
 # Taqvim-preset -> ko'rsatiladigan nom. Tartib shu yerdagi kabi UI'da ham
 # ko'rinadi (`app.py`dagi `/smm` route shu ro'yxatni to'g'ridan-to'g'ri
@@ -38,7 +38,7 @@ def resolve_period(preset: str | None, days: int | None = None) -> tuple[str, st
     `preset` noma'lum/berilmagan bo'lsa, eski "so'nggi N kun" (aylanma oyna,
     bugungi kunni ham o'z ichiga oladi) xatti-harakatiga qaytadi -- eski
     testlar/route'lar buzilmasligi uchun."""
-    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    now_tashkent = tz_utils.now_local()
     today = now_tashkent.date()
 
     if preset == "today":
@@ -123,7 +123,7 @@ def _build_platform_report(session, platform: str, start_date: str, end_date: st
     # Tepadagi tanlangan davrdan (bugun/hafta/oy/yil) MUSTAQIL, doim JORIY
     # TAQVIM OYI bo'yicha hisoblanadi -- foydalanuvchi boshqa davrni tanlagan
     # bo'lsa ham, "bu oy" ko'rsatkichi to'g'ri chiqishi kerak.
-    now_tashkent = dt.datetime.utcnow() + _TASHKENT_OFFSET
+    now_tashkent = tz_utils.now_local()
     month_start_date = now_tashkent.strftime("%Y-%m-01")
     all_snapshots = (
         session.query(SmmSnapshot)
@@ -158,8 +158,8 @@ def _build_platform_report(session, platform: str, start_date: str, end_date: st
     # Tanlangan taqvim oralig'ini (Toshkent kunlari) UTC'ga o'tkazamiz --
     # `SmmPost.posted_at` UTC (naive) sifatida saqlanadi. `end_date`ning
     # O'ZI HAM to'liq hisobga olinishi kerak (o'sha kunning oxirigacha).
-    start_utc = dt.datetime.strptime(start_date, "%Y-%m-%d") - _TASHKENT_OFFSET
-    end_utc = dt.datetime.strptime(end_date, "%Y-%m-%d") + dt.timedelta(days=1) - _TASHKENT_OFFSET
+    start_utc = tz_utils.to_utc(dt.datetime.strptime(start_date, "%Y-%m-%d"))
+    end_utc = tz_utils.to_utc(dt.datetime.strptime(end_date, "%Y-%m-%d") + dt.timedelta(days=1))
     period_posts = [p for p in all_posts if p.posted_at and start_utc <= p.posted_at < end_utc]
 
     # MUHIM (2026-08, foydalanuvchi so'rovi: "nimadir noto'g'ri bo'lsa nima
