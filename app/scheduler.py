@@ -71,6 +71,7 @@ import datetime as dt
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.executors.pool import ThreadPoolExecutor as APSchedulerThreadPoolExecutor
 
 import orchestrator
 import budget_tracker
@@ -91,6 +92,23 @@ import payme_subscribe
 logger = logging.getLogger("scheduler")
 
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Tashkent")
+
+# 2026-09, Item J auditi (🟡 O'RTA, 22-band: "`--threads 4` gunicorn
+# sozlamasi tasdiqlanmagan"): tekshirib chiqildi -- APScheduler'ning
+# STANDART executor'i (`ThreadPoolExecutor(max_workers=10)`, kutubxona
+# ichida O'ZI o'rnatiladi, kod bu yerda hech qanday qiymat bermagan edi)
+# eng yomon holatda `render.yaml`dagi gunicorn `--threads 4` bilan
+# BIRGALIKDA bir vaqtning o'zida 4+10=14 ta thread'ni bazaga murojaat
+# qilishga undashi mumkin edi -- bu `db.py`dagi ulanish puli chegarasiga
+# (`pool_size=5 + max_overflow=10 = 15`) juda yaqin, aniq hisoblanmagan
+# holat edi (bir nechta cron vazifasi bir xil daqiqada -- masalan
+# `*/15` -- bir-biriga to'g'ri kelishi mumkin, 1447-qatorga qarang).
+# Endi ANIQ chegara qo'yildi: fon vazifalari bir vaqtning o'zida
+# ko'pi bilan shu qadar dona parallel ishlaydi -- 4 (gunicorn thread) +
+# 5 (scheduler) = 9, bazadagi 15 ta ulanish chegarasidan XAVFSIZ pastda,
+# lekin bir nechta vazifa bir xil daqiqada to'qnashsa ham (masalan
+# cpl-hard-kill + lead-sync + ig-dm-sync) hammasi navbatsiz ishlayveradi.
+_SCHEDULER_MAX_CONCURRENT_JOBS = 5
 
 
 def _group_id(env_name: str) -> int | None:
@@ -1416,7 +1434,10 @@ def start_scheduler(app) -> None:
         return
     _scheduler_started = True
 
-    scheduler = BackgroundScheduler(timezone=TIMEZONE)
+    scheduler = BackgroundScheduler(
+        timezone=TIMEZONE,
+        executors={"default": APSchedulerThreadPoolExecutor(max_workers=_SCHEDULER_MAX_CONCURRENT_JOBS)},
+    )
     # MUHIM: har bir CronTrigger'ga ALOHIDA ham `timezone=TIMEZONE` beriladi
     # (2026-08, foydalanuvchi so'rovi: "har kuni 9da" xabari aslida 14:00da
     # kelib turgan holat kuzatilgan -- bu BackgroundScheduler darajasidagi
