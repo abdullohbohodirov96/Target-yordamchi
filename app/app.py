@@ -55,6 +55,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("target-crm")
 
 app = Flask(__name__)
+
+# 2026-09, PRODUCTION xavfsizlik hodisasi (loglarda topildi: "TOKEN_ENCRYPTION_KEY
+# HAM, FLASK_SECRET_KEY HAM sozlanmagan"): Render'da bu ikkala environment
+# o'zgaruvchi sozlanmagan bo'lib chiqdi -- ya'ni sessiya cookie'lari VA
+# bazadagi shifrlangan tokenlar (Meta, Payme karta, MoiZvonki) kodga QATTIQ
+# YOZILGAN ("dev-secret-change-me" / crypto_util.py'dagi zaxira kalit), OMMAVIY
+# GitHub repo'da ko'rinadigan kalit bilan "himoyalangan" edi -- bu amalda
+# HIMOYASIZ degani. Bu ATAYLAB endi FAIL-FAST: Render muhitida (platforma
+# avtomatik `RENDER=true` o'rnatadi) FLASK_SECRET_KEY sozlanmasa, ilova
+# THIS SILENTLY XATO holatda ishga tushishi o'rniga darhol ishga tushmay
+# qoladi -- operator buni loglarda DARHOL ko'radi (jim/sokin xavfsizlik
+# tuynugi emas). Lokal ishlab chiqish/test muhitida (RENDER sozlanmagan)
+# hech narsa o'zgarmaydi -- eski "dev-secret-change-me" zaxira davom etadi.
+if os.environ.get("RENDER") and not os.environ.get("FLASK_SECRET_KEY", "").strip():
+    raise RuntimeError(
+        "FLASK_SECRET_KEY environment o'zgaruvchisi Render'da sozlanmagan. "
+        "Xavfsizlik uchun ilova ATAYLAB ishga tushmaydi (aks holda sessiya "
+        "cookie'lari va bazadagi shifrlangan tokenlar kodga qattiq yozilgan, "
+        "GitHub'da ochiq ko'rinadigan kalit bilan himoyasiz qolar edi). "
+        "Render dashboard -> Environment -> FLASK_SECRET_KEY (va tavsiya "
+        "etilgan holda TOKEN_ENCRYPTION_KEY) qo'shing, so'ng qayta deploy qiling."
+    )
+
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 # 2026-08, foydalanuvchi so'rovi: "sayt azgina qotvoti" -- brauzer statik
 # fayllarni (logo PNG'lari, va h.k.) har sahifa o'tishida qayta so'ramasin
@@ -101,6 +124,28 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
+
+# 2026-09, XATO TUZATISHI ("hammayoqda ulash ishlamayapti" -- Facebook
+# "URL Blocked" xatosi): ILGARI Facebook OAuth redirect_uri
+# `url_for(..., _external=True)` bilan qurilardi -- bu Flask'ning HAR
+# QANDAY so'rov qaysi domendan (`target-yordamchi.onrender.com` yoki
+# custom domen `replix.uz`) kelgan bo'lsa, O'SHA domenni qaytaradi. Meta
+# esa OAuth callback URL'ni ANIQ, oldindan App Dashboard'da ro'yxatdan
+# o'tgan qiymat bilan bitta-bitta solishtiradi -- shuning uchun admin
+# `onrender.com` orqali kirib "Ulash"ni bossa (Facebook App'da faqat
+# `replix.uz` versiyasi whitelist qilingan bo'lsa), Facebook "URL Blocked"
+# deb rad etardi. Endi redirect_uri QAYSI domendan kirilganidan qat'iy
+# nazar DOIM shu bitta, barqaror manzilga quriladi -- Facebook App
+# Dashboard'da faqat shu BITTA URL whitelist qilingan bo'lsa kifoya.
+APP_CANONICAL_BASE_URL = os.environ.get("APP_BASE_URL", "https://replix.uz").rstrip("/")
+
+
+def _canonical_external_url(endpoint: str, **values) -> str:
+    """`url_for(endpoint, _external=True)` o'rniga -- natija so'rov qaysi
+    domendan kelganiga EMAS, `APP_CANONICAL_BASE_URL`ga bog'liq bo'ladi.
+    Meta/Facebook kabi tashqi xizmatlarga ro'yxatdan o'tkazib qo'yiladigan
+    (redirect_uri) manzillar uchun ishlatiladi."""
+    return APP_CANONICAL_BASE_URL + url_for(endpoint, **values)
 
 # 2026-09, foydalanuvchi so'rovi ("Админу должно видеться всё, какие
 # компании создаются... если он нажал заплатить... сразу же активируя"):
@@ -1940,7 +1985,7 @@ def connect_facebook_start():
     state = secrets.token_urlsafe(24)
     flask_session["fb_oauth_state"] = state
     flask_session["fb_oauth_include_ads"] = include_ads
-    redirect_uri = url_for("connect_facebook_callback", _external=True)
+    redirect_uri = _canonical_external_url("connect_facebook_callback")
     return redirect(meta_api.oauth_dialog_url(redirect_uri, state, include_ads_scope=include_ads))
 
 
@@ -1965,7 +2010,7 @@ def connect_facebook_callback():
         return redirect(url_for("connect_accounts"))
 
     include_ads = flask_session.pop("fb_oauth_include_ads", False)
-    redirect_uri = url_for("connect_facebook_callback", _external=True)
+    redirect_uri = _canonical_external_url("connect_facebook_callback")
     try:
         short_token = meta_api.oauth_exchange_code(code, redirect_uri)
         long_token, expires_in = meta_api.oauth_exchange_long_lived(short_token)

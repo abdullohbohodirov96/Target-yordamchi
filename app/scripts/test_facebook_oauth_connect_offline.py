@@ -63,12 +63,12 @@ app_module.app.config["WTF_CSRF_ENABLED"] = False  # 2026-09, CSRF endi majburiy
 db_module.init_db()
 
 
-def _signup(client, *, company_name, admin_username, plan="business"):
+def _signup(client, *, company_name, admin_username, plan="business", environ_overrides=None):
     return client.post("/signup", data={
         "company_name": company_name, "admin_username": admin_username,
         "admin_full_name": "", "email": "", "plan": plan,
         "password": "parol123456", "password2": "parol123456",
-    }, follow_redirects=True)
+    }, follow_redirects=True, environ_overrides=environ_overrides)
 
 
 def _extract_state(location: str) -> str:
@@ -357,6 +357,53 @@ def test_successful_connection_triggers_immediate_background_lead_sync():
     finally:
         meta_api.META_APP_ID, meta_api.META_APP_SECRET = "", ""
     print("OK: Facebook muvaffaqiyatli ulangach, cron kutmasdan DARHOL fon oqimida lead_sync.sync_once() ishga tushadi -- ulanish bilan birinchi cron orasidagi lead yo'qolish oynasi yopiladi")
+
+
+def test_oauth_redirect_uri_is_host_independent():
+    """2026-09, JONLI BUG TUZATISHI (foydalanuvchi skrinshot bilan xabar
+    berdi -- Facebook "URL Blocked" xatosi, `redirect_uri`da
+    `target-yordamchi.onrender.com` ko'rinib turardi): ILGARI
+    `redirect_uri` `url_for(..., _external=True)` bilan qurilardi -- bu
+    so'rov QAYSI domendan (`Host` header) kelgan bo'lsa, O'SHA domenni
+    qaytaradi. Admin `onrender.com` orqali kirib "Ulash"ni bossa, lekin
+    Facebook App Dashboard'da faqat `replix.uz` versiyasi whitelist
+    qilingan bo'lsa -- Facebook "URL Blocked" deb rad etardi (yoki
+    aksincha). Endi `_canonical_external_url()` orqali `redirect_uri` HAR
+    DOIM `APP_CANONICAL_BASE_URL`ga (standart: https://replix.uz)
+    asoslanadi -- so'rov qaysi domendan kelganidan qat'iy nazar."""
+    from urllib.parse import urlparse, parse_qs
+
+    real_app_id, real_app_secret = meta_api.META_APP_ID, meta_api.META_APP_SECRET
+    meta_api.META_APP_ID, meta_api.META_APP_SECRET = "test_app_id", "test_app_secret"
+    try:
+        expected = "https://replix.uz/connect-accounts/facebook/callback"
+        for i, host in enumerate(("target-yordamchi.onrender.com", "replix.uz", "localhost:5000")):
+            # Har bir host uchun ALOHIDA test_client (va shu hostda ro'yxatdan
+            # o'tish) ishlatiladi: Werkzeug test client sessiya cookie'ni
+            # so'rov qilingan HOST'ga bog'lab saqlaydi (`environ_overrides`
+            # bilan faqat `Host` header'ini almashtirish yetarli emas --
+            # cookie domenini ham mos qilish kerak) -- shu sabab bitta umumiy
+            # client + turli host'lar kombinatsiyasi `_signup()`dan keyingi
+            # so'rovni "tanimay" `/login`ga qayta yo'naltirib yuborardi (bu
+            # sinov infratuzilmasi nozikligi, `_canonical_external_url()`
+            # ishlab chiqarish kodidagi nuqson emas).
+            with app_module.app.test_client() as client:
+                overrides = {"HTTP_HOST": host}
+                _signup(
+                    client, company_name=f"Host MChJ {i}", admin_username=f"host_admin_{i}",
+                    environ_overrides=overrides,
+                )
+                resp = client.get("/connect-accounts/facebook/start", environ_overrides=overrides)
+                location = resp.headers["Location"]
+                qs = parse_qs(urlparse(location).query)
+                got = qs.get("redirect_uri", [None])[0]
+                assert got == expected, (
+                    f"Host={host!r} orqali kirilganda redirect_uri {expected!r} bo'lishi kerak edi, "
+                    f"lekin {got!r} bo'ldi -- bu aynan 'URL Blocked' xatosini keltirib chiqaradi."
+                )
+    finally:
+        meta_api.META_APP_ID, meta_api.META_APP_SECRET = real_app_id, real_app_secret
+    print("OK: Facebook OAuth redirect_uri qaysi domendan kirilganidan qat'iy nazar doim bir xil (APP_CANONICAL_BASE_URL) bo'ladi")
 
 
 def run_all():
