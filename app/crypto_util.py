@@ -65,6 +65,34 @@ def _get_fernet() -> Fernet:
             )
 
     fallback_secret = os.environ.get("FLASK_SECRET_KEY", "") or "replix-dev-fallback-key"
+    if fallback_secret == "replix-dev-fallback-key":
+        # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 15-band): na
+        # TOKEN_ENCRYPTION_KEY, na FLASK_SECRET_KEY sozlangan -- BUTUNLAY
+        # qattiq yozilgan (kodda ochiq) zaxira kalitdan foydalanilmoqda.
+        # Bu lokal/test muhitida zararsiz, lekin PRODUCTION'da bo'lsa,
+        # bazadagi shifrlangan Meta tokenlar HAQIQIY himoyasiz qoladi --
+        # operatorga darhol ko'rinishi uchun ERROR darajasida.
+        logger.error(
+            "TOKEN_ENCRYPTION_KEY HAM, FLASK_SECRET_KEY HAM sozlanmagan -- "
+            "tokenlar kodga QATTIQ YOZILGAN, HIMOYASIZ kalit bilan "
+            "shifrlanmoqda. PRODUCTION muhitida bu DARHOL tuzatilishi kerak."
+        )
+    else:
+        # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 15-band: "Token
+        # shifrlash kaliti alohida sozlanmasa FLASK_SECRET_KEY'dan hosil
+        # qilinadi"): bu ATAYLAB tanlangan, hujjatlashtirilgan zaxira yo'li
+        # (yuqoridagi modul docstring'ga qarang) -- lekin ILGARI operator
+        # buni PRODUCTION loglarida UMUMAN ko'rmasdi. Endi bir marta (process
+        # boshida, keshlanganidan keyin qayta chiqmaydi) ogohlantiriladi --
+        # alohida `TOKEN_ENCRYPTION_KEY` sozlash tavsiya etiladi, chunki
+        # `FLASK_SECRET_KEY` almashtirilsa ESKI shifrlangan tokenlar o'qib
+        # bo'lmay qoladi (ikkala maxfiylik bitta kalitga bog'liq bo'lib qoladi).
+        logger.warning(
+            "TOKEN_ENCRYPTION_KEY sozlanmagan -- shifrlash kaliti "
+            "FLASK_SECRET_KEY'dan hosil qilinmoqda (zaxira yo'l). "
+            "PRODUCTION uchun alohida TOKEN_ENCRYPTION_KEY sozlash tavsiya "
+            "etiladi (docs/META_INTEGRATION_SETUP.md)."
+        )
     _fernet_instance = Fernet(_derive_key_from_secret(fallback_secret))
     return _fernet_instance
 

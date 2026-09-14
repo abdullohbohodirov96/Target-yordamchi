@@ -395,7 +395,20 @@ def send_conversion_event(
 # 2026-09, multi-tenant: HAR BIR kompaniyaning O'Z Page'i uchun alohida
 # Page Access Token kerak -- keshni endi `page_id` bo'yicha (avval "har
 # doim bitta" deb faraz qilingan yagona "token" kaliti emas) saqlaymiz.
-_page_token_cache: dict[str, str] = {}
+#
+# 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 14-band: "Page-token kesh
+# hech qachon tozalanmaydi"): `invalidate_page_token_cache()` FAQAT o'zimiz
+# bilgan bitta holatni (foydalanuvchi "qayta ulash" tugmasini bosgan payt)
+# yopadi -- agar Page ruxsati Meta tomonida BOSHQA sabab bilan (masalan
+# administrator Business Manager'dan olib tashlagan, yoki token muddati
+# tugagan) o'zgarsa, eski token PROCESS QAYTA ISHGA TUSHMAGUNCHA cheksiz
+# keshda qolardi. Endi har bir yozuv `(token, fetched_at)` bilan birga
+# saqlanadi va `_PAGE_TOKEN_TTL_SECONDS`dan eskirgan bo'lsa avtomatik qayta
+# so'raladi -- bu Render'da OYLAB uzluksiz ishlaydigan process uchun MUHIM
+# (foydalanuvchi hech qachon qayta ulanmasa ham, kesh o'zi vaqti-vaqti bilan
+# yangilanadi).
+_page_token_cache: "dict[str, tuple[str, float]]" = {}
+_PAGE_TOKEN_TTL_SECONDS = 12 * 60 * 60  # 12 soat
 
 
 def _get_page_access_token(page_id: str | None = None, user_access_token: str | None = None) -> str:
@@ -405,8 +418,12 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
     (orqaga moslik: CLI skript yoki hali company-parametrsiz chaqiruvlar)."""
     resolved_page_id = page_id or PAGE_ID
     resolved_user_token = user_access_token or ACCESS_TOKEN
-    if resolved_page_id in _page_token_cache:
-        return _page_token_cache[resolved_page_id]
+    cached = _page_token_cache.get(resolved_page_id)
+    if cached is not None:
+        token, fetched_at = cached
+        if time.monotonic() - fetched_at < _PAGE_TOKEN_TTL_SECONDS:
+            return token
+        del _page_token_cache[resolved_page_id]  # TTL tugagan -- qayta so'raladi
     if not resolved_page_id:
         raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     # 2026-09: endi umumiy `_get()` orqali -- shu bilan tarmoq xatosi/Meta'ning
@@ -422,7 +439,7 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
                 "ulanganini tekshiring."
             )
         })
-    _page_token_cache[resolved_page_id] = token
+    _page_token_cache[resolved_page_id] = (token, time.monotonic())
     return token
 
 
