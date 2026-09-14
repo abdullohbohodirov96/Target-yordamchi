@@ -483,7 +483,13 @@ def render_monthly_report_pdf(data: dict) -> bytes:
         ]
         if header:
             style += [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2E4053")),
+                # BUG FIX (2026-09, vizual audit: "brendga to'g'irla, hamma
+                # joyni tekshir"): bu neytral kulrang-ko'k (#2E4053) rebrend
+                # (ko'k/binafsha logotip) davomida yangilanmay qolib ketgan
+                # edi -- PDF hisobot rangi ilovaning o'zidan butunlay
+                # boshqacha ko'rinardi. Endi web'dagi --blue tokeni bilan
+                # bir xil (#0B63F5).
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B63F5")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
             ]
@@ -498,7 +504,7 @@ def render_monthly_report_pdf(data: dict) -> bytes:
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("TitleUZ", parent=styles["Title"], fontName=FONT_BOLD, fontSize=18, spaceAfter=4)
     subtitle_style = ParagraphStyle("SubUZ", parent=styles["Normal"], fontName=FONT_REGULAR, fontSize=10, textColor=colors.HexColor("#555555"))
-    h2 = ParagraphStyle("H2UZ", parent=styles["Heading2"], fontName=FONT_BOLD, fontSize=13, spaceBefore=16, spaceAfter=6, textColor=colors.HexColor("#2E4053"))
+    h2 = ParagraphStyle("H2UZ", parent=styles["Heading2"], fontName=FONT_BOLD, fontSize=13, spaceBefore=16, spaceAfter=6, textColor=colors.HexColor("#0B63F5"))
 
     elements = [
         Paragraph("OYLIK TARGET HISOBOTI", title_style),

@@ -50,12 +50,17 @@
     {% if capi_configured %}
     <form method="post" action="{{ url_for('connect_meta_test') }}" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Test connection</button>
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Ulanishni tekshirish</button>
     </form>
     {% endif %}
     <form method="post" action="{{ url_for('connect_meta_disconnect') }}" style="display:inline" onsubmit="return confirm('Meta ulanishini uzishga ishonchingiz komilmi? Bu bilan barcha saqlangan Meta ma\'lumotlari (token, Pixel, Business) tozalanadi.');">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="toggle-all-btn toggle-all-btn-outline" style="color:var(--bad, #DC2626)">Disconnect</button>
+      <!-- BUG FIX (2026-09, vizual audit: "brendga to'g'irla, hamma joyni
+           tekshir") -- bu tugma butunlay o'zbek tilidagi sahifada yagona
+           inglizcha matn edi ("Disconnect"), ko'z tashlab qolgandek
+           ko'rinardi. Endi pastdagi tasdiqlash dialogi bilan bir xil
+           atamada ("ulanishni uzish"). -->
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline" style="color:var(--bad, #DC2626)">Ulanishni uzish</button>
     </form>
   </div>
 </div>

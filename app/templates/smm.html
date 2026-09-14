@@ -301,7 +301,10 @@
 <script>
 (function () {
   if (typeof Chart === 'undefined') return;
-  Chart.defaults.font.family = "'IBM Plex Sans', -apple-system, sans-serif";
+  // BUG FIX (2026-09, vizual audit): dashboard.html'dagi bilan bir xil --
+  // rebrend paytida "Plus Jakarta Sans"ga o'tilgan, lekin bu yerdagi
+  // Chart.js konfiguratsiyasi eski shriftda qolib ketgan edi.
+  Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
   Chart.defaults.color = '#64748B';
   window._smmCharts = {};
 

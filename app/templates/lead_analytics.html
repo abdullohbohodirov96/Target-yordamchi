@@ -297,6 +297,14 @@
 // (ilgari ikkalasi bitta IIFE'da edi -- bittasi otsa, ikkinchisi ham
 // to'xtab qolardi).
 try {
+  // 2026-09, vizual audit: grafik matnlari qolgan UI bilan bir xil
+  // brend shriftida ("Plus Jakarta Sans", base.html) ko'rinishi uchun --
+  // ilgari bu yerda umuman sozlanmagan edi, Chart.js standart shriftini
+  // (Helvetica) ishlatardi.
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
+    Chart.defaults.color = '#64748B';
+  }
   new Chart(document.getElementById('chart-won-dynamics'), {
     type: 'bar',
     data: {

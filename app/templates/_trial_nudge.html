@@ -26,26 +26,32 @@
   .tn-bubble img{width:30px; height:30px; object-fit:contain; filter:brightness(0) invert(1)}
   .tn-bubble .tn-dot{
     position:absolute; top:-2px; right:-2px; width:16px; height:16px; border-radius:50%;
-    background:#E11D48; color:#fff; font-size:10px; font-weight:700; line-height:16px;
+    background:var(--bad); color:#fff; font-size:10px; font-weight:700; line-height:16px;
   }
   .tn-card{
+    /* BUG FIX (2026-09, vizual audit): bu vidjet ilgari o'zining, umumiy
+       dizayn-tokenlardan (--ink/--text/--text-dim/--border va h.k.)
+       ozgina farq qiladigan mustaqil kulrang palitrasiga ega edi (referens
+       skrinshotdan olingan, lekin brend tokenlariga moslashtirilmagan) --
+       yonma-yon qaralsa boshqa sahifalardan "sovuqroq" ko'rinardi. Endi
+       umumiy tokenlarga o'tkazildi. */
     position:fixed; right:20px; bottom:88px; z-index:61; width:290px; max-width:calc(100vw - 40px);
-    background:#fff; border:1px solid #E5E8F5; border-radius:16px;
-    box-shadow:0 20px 48px -16px rgba(18,20,43,.28);
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    box-shadow:0 20px 48px -16px rgba(15,23,42,.28);
     padding:16px 16px 14px; opacity:0; transform:translateY(10px) scale(.97);
     pointer-events:none; transition:opacity .22s ease, transform .22s ease;
   }
   .tn-card.tn-open{opacity:1; transform:translateY(0) scale(1); pointer-events:auto}
   .tn-close{
     position:absolute; top:8px; right:8px; width:22px; height:22px; border-radius:50%;
-    border:none; background:#F0F2FA; color:#6B7099; font-size:14px; line-height:1; cursor:pointer;
+    border:none; background:var(--border-light); color:var(--text-dim); font-size:14px; line-height:1; cursor:pointer;
   }
   .tn-head{display:flex; align-items:center; gap:9px; margin-bottom:9px}
   .tn-avatar{width:30px; height:30px; border-radius:9px; background:var(--brand-gradient); display:flex; align-items:center; justify-content:center; flex:0 0 auto}
   .tn-avatar img{width:17px; height:17px; object-fit:contain; filter:brightness(0) invert(1)}
-  .tn-head-name{font-size:12.5px; font-weight:700; color:#12142B; line-height:1.2}
-  .tn-head-sub{font-size:11px; color:#8286A8}
-  .tn-text{font-size:13px; line-height:1.5; color:#2A2D4A; margin:0 0 12px}
+  .tn-head-name{font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.2}
+  .tn-head-sub{font-size:11px; color:var(--text-faint)}
+  .tn-text{font-size:13px; line-height:1.5; color:var(--text); margin:0 0 12px}
   .tn-text strong{color:var(--blue)}
   .tn-cta{
     display:block; text-align:center; background:var(--brand-gradient); color:#fff !important;

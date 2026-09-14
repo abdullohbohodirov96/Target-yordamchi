@@ -258,7 +258,13 @@
 (function () {
   if (typeof Chart === 'undefined') return;
 
-  Chart.defaults.font.family = "'IBM Plex Sans', -apple-system, sans-serif";
+  // BUG FIX (2026-09, vizual audit: "brendga tog'ri qil"): grafik matnlari
+  // hali ESKI shrift (IBM Plex Sans)ni ishlatardi -- rebrend paytida butun
+  // ilova "Plus Jakarta Sans"ga o'tgan edi (base.html), lekin Chart.js
+  // konfiguratsiyasi yangilanmay qolib ketgan -- shu sabab grafiklar
+  // ustidagi yozuvlar (o'qlar, belgilar) qolgan matndan boshqacha shriftda
+  // ko'rinardi. Endi bir xil.
+  Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
   Chart.defaults.color = '#64748B';
 
   function fmtSom(v) {
