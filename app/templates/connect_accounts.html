@@ -42,7 +42,10 @@
 
   <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:6px">
     {% if fb_oauth_configured %}
-    <a href="{{ url_for('connect_facebook_start') }}" class="text-blue" style="font-size:13px">{{ ('Qayta ulash &rarr;' if company.meta_integration_status == 'reauth_required' else 'Boshqa sahifa/hisobga almashtirish &rarr;') | safe }}</a>
+    <a href="{{ url_for('connect_facebook_start') }}" class="btn toggle-all-btn toggle-all-btn-outline">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      {{ 'Qayta ulash' if company.meta_integration_status == 'reauth_required' else 'Boshqa sahifa/hisobga almashtirish' }}
+    </a>
     {% endif %}
     {% if capi_configured %}
     <form method="post" action="{{ url_for('connect_meta_test') }}" style="display:inline">
