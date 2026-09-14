@@ -1,53 +1,95 @@
 {% extends "base.html" %}
 {% block title %}Raqobatchilar — Replix{% endblock %}
 {% block content %}
-<h1>Raqobatchilar</h1>
-<p class="page-subtitle">Kuzatuvga qo'shgan raqobatchilaringizning Facebook/Instagram'da HOZIR ishlab turgan reklamalari har <strong>{{ rotation_days }} kunda BITTA</strong> raqobatchi navbat bilan Meta Ad Library orqali avtomatik tekshiriladi va Telegram guruhiga qisqa amaliy tahlil (qanday taklif/aksiya berishyapti, bizga qanday tavsiya) yuboriladi.</p>
+{# 2026-09, foydalanuvchi so'rovi ("raqobatchilarni alohida bo'lim qil,
+   interfeysni o'zing qur, targetolog yoki biznes egasi dasturdan
+   chiqmasdan bu yerda qulay ishlashi uchun"): sahifa ikkiga bo'lindi --
+   (1) jonli Ad Library qidiruvi (yulduzcha bilan kuzatuvga qo'shish),
+   (2) saqlangan raqobatchilar galereyasi (karta ko'rinishida, statistika
+   va harakat tugmalari bilan). "Qo'lda qo'shish" endi modal ichida --
+   asosiy e'tibor qidiruv+galereyaga qaratilgan. #}
+<div class="page-head">
+  <div>
+    <h1>Raqobatchilar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Kuzatuvga qo'shgan raqobatchilaringizning Facebook/Instagram'da HOZIR ishlab turgan reklamalari har <strong>{{ rotation_days }} kunda BITTA</strong> raqobatchi navbat bilan Meta Ad Library orqali avtomatik tekshiriladi va Telegram guruhiga qisqa amaliy tahlil (qanday taklif/aksiya berishyapti, bizga qanday tavsiya) yuboriladi.</p>
+  </div>
+  <div class="page-head-actions">
+    <button type="button" class="btn toggle-all-btn-outline" id="cpManualAddBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      Qo'lda qo'shish
+    </button>
+  </div>
+</div>
 
 <div class="hint-box">⚠️ Meta Ad Library ommaviy qidiruvi haqiqiy auditoriya/target sozlamalarini (yosh, jins, joylashuv) bermaydi — faqat reklama matnini ko'rsatadi. Shuning uchun "kimga target qilyapti" degan bo'lim har doim reklama matnidan kelib chiqqan <strong>AI taxmini</strong>, Meta'ning haqiqiy sozlamasi emas.</div>
 
-<div class="card" style="margin-bottom:24px">
+<div class="card cp-search-card">
   <h2>Ad Library'dan qidirish</h2>
   <p class="page-subtitle" style="margin-top:-6px">Brend/kompaniya nomini yozing, natijalar orasidan ☆ bosib kuzatuvga qo'shing.</p>
-  <form method="get" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; max-width:520px">
-    <div class="field" style="flex:1; min-width:200px; margin-bottom:0">
+  <form method="get" class="cp-search-form">
+    <div class="field">
       <label>Qidiruv</label>
       <input type="text" name="q" value="{{ query_term }}" placeholder="Masalan: Arboss">
     </div>
-    <button type="submit" style="height:38px">Qidirish</button>
+    <button type="submit">Qidirish</button>
   </form>
 
   {% if search_error %}
   <div class="hint-box" style="margin-top:16px">Qidiruvda xatolik: {{ search_error }}</div>
   {% elif search_results is not none %}
     {% if search_results %}
-    <div class="table-scroll" style="margin-top:16px">
-      <table>
-        <thead><tr><th>Sahifa</th><th>Reklama matni (namuna)</th><th></th><th></th></tr></thead>
-        <tbody>
-          {% for r in search_results %}
-          <tr>
-            <td>{{ r.page_name }}</td>
-            <td class="text-dim">{{ r.snippet or '—' }}</td>
-            <td>{% if r.snapshot_url %}<a href="{{ r.snapshot_url }}" target="_blank" rel="noopener">Ko'rish</a>{% endif %}</td>
-            <td>
-              {% if r.already_tracked %}
-              <span class="badge badge-color-dim">★ Kuzatuvda</span>
-              {% else %}
-              <form method="post" style="display:inline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="action" value="star_add">
-                <input type="hidden" name="q" value="{{ query_term }}">
-                <input type="hidden" name="name" value="{{ r.page_name }}">
-                <input type="hidden" name="search_term" value="{{ r.page_name }}">
-                <button type="submit" style="background:none; color:var(--blue); border:1px solid var(--blue); padding:4px 10px">☆ Kuzatuvga qo'sh</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
+    {# 2026-09, foydalanuvchi so'rovi ("ad library'ga o'xshab variantlar
+       chiqib kelsin, ichiga kirmasdan ... 2 variant yaxshi"): har bir
+       kompaniya-natija endi Meta Ad Library'dagiga o'xshab, o'zining bir
+       nechta (ko'pi bilan 2) namuna reklamasi bilan BIRGA, ICHKARIGA
+       kirmasdan to'g'ridan-to'g'ri shu yerda ko'rinadi. #}
+    <div class="cp-results">
+      {% for r in search_results %}
+      <div class="cp-result-card">
+        <div class="cp-result-card-head">
+          {% if r.picture_url %}
+          <img class="cp-result-avatar cp-result-avatar-img" src="{{ r.picture_url }}" alt="">
+          {% else %}
+          <span class="cp-result-avatar">{{ (r.page_name[0] if r.page_name else '?')|upper }}</span>
+          {% endif %}
+          <div class="cp-result-body">
+            <div class="cp-result-name">{{ r.page_name }}</div>
+            {# 2026-09, foydalanuvchi so'rovi ("brendlarni aniq logo, nechta
+               obunachisi hammasi ko'rinsin ... fayk akkauntlar juda ko'p,
+               aniq brendni topish uchun kerak, poiskda reklamasi bor yoki
+               yo'qligi ko'rinsin"): obunachilar soni + hozir reklama
+               ishlab turgan-turmaganligi -- fayk/taqlid sahifalarni asl
+               brenddan ajratishga yordam beradigan ikkita signal. #}
+            <div class="cp-result-meta">
+              {% if r.fan_count_display %}<span class="text-faint">{{ r.fan_count_display }}</span>{% endif %}
+              {% if r.has_active %}<span class="badge badge-color-good">Hozir reklamasi bor</span>{% else %}<span class="badge badge-color-dim">Hozir reklamasi yo'q</span>{% endif %}
+            </div>
+          </div>
+          {% if r.already_tracked %}
+          <span class="badge badge-color-dim">★ Kuzatuvda</span>
+          {% else %}
+          <form method="post" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="star_add">
+            <input type="hidden" name="q" value="{{ query_term }}">
+            <input type="hidden" name="name" value="{{ r.page_name }}">
+            <input type="hidden" name="search_term" value="{{ r.page_name }}">
+            <button type="submit" class="cp-star-btn">☆ Kuzatuvga qo'sh</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if r.ads %}
+        <div class="cp-result-ads">
+          {% for ad in r.ads %}
+          <div class="cp-result-ad">
+            <div class="cp-result-snippet" style="white-space:normal">{{ ad.snippet or 'Reklama matni topilmadi' }}</div>
+            {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12px; flex-shrink:0">Ko'rish</a>{% endif %}
+          </div>
           {% endfor %}
-        </tbody>
-      </table>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
     {% else %}
     <p class="page-subtitle" style="margin-top:16px">"{{ query_term }}" bo'yicha hech narsa topilmadi.</p>
@@ -55,55 +97,88 @@
   {% endif %}
 </div>
 
-<div class="card" style="max-width:480px; margin-bottom:24px">
-  <h2>Qo'lda qo'shish</h2>
-  <form method="post">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="action" value="add">
-    <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" placeholder="Masalan: Arboss" required></div>
-    <div class="field"><label>Veb-sayt (ixtiyoriy)</label><input type="text" name="domain" placeholder="arboss.uz"></div>
-    <div class="field">
-      <label>Ad Library qidiruv so'zi (ixtiyoriy)</label>
-      <input type="text" name="search_term" placeholder="Bo'sh qoldirsangiz kompaniya nomi ishlatiladi">
+<h2 style="margin-bottom:14px">Kuzatuvdagi raqobatchilar{% if competitors %} <span class="text-faint" style="font-weight:500; font-size:14px">({{ competitors|length }})</span>{% endif %}</h2>
+{% if competitors %}
+<div class="cp-grid">
+  {% for c in competitors %}
+  <div class="cp-card{{ '' if c.is_active else ' inactive' }}">
+    <div class="cp-card-head">
+      <span class="cp-card-avatar">{{ (c.name[0] if c.name else '?')|upper }}</span>
+      <div class="cp-card-title">
+        <div class="cp-card-name"><a href="{{ url_for('competitor_detail', competitor_id=c.id) }}">{{ c.name }}</a></div>
+        <div class="cp-card-domain">{{ c.domain or 'sayt ko\'rsatilmagan' }}</div>
+      </div>
+      {% if c.is_active %}<span class="badge badge-color-good">Faol</span>{% else %}<span class="badge badge-color-dim">O'chirilgan</span>{% endif %}
     </div>
-    <button type="submit" class="block">Qo'shish</button>
-  </form>
+    <div class="cp-card-stats">
+      <div>
+        <div class="cp-card-stat-num">{{ c.active_ads_count }}</div>
+        <div class="cp-card-stat-label">Faol reklama</div>
+      </div>
+      <div>
+        <div class="cp-card-stat-num" style="font-size:12.5px; font-weight:600; margin-top:2px">{{ c.last_analyzed_at or "hali tahlil qilinmagan" }}</div>
+        <div class="cp-card-stat-label">Oxirgi tahlil</div>
+      </div>
+    </div>
+    <div class="cp-card-actions">
+      <a href="{{ url_for('competitor_detail', competitor_id=c.id) }}" class="btn-outline" style="border-radius:var(--radius); text-decoration:none; display:inline-flex; align-items:center; justify-content:center">Tafsilot</a>
+      <form method="post" style="display:contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="toggle">
+        <input type="hidden" name="competitor_id" value="{{ c.id }}">
+        <button type="submit" class="btn-outline" style="border-radius:var(--radius)">{{ "To'xtatish" if c.is_active else "Yoqish" }}</button>
+      </form>
+      <form method="post" style="display:contents" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="competitor_id" value="{{ c.id }}">
+        <button type="submit" class="btn-outline" style="border-radius:var(--radius); color:var(--bad); border-color:var(--bad-bg)">O'chirish</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
 </div>
+{% else %}
+<div class="cp-empty">Hali raqobatchi qo'shilmagan — yuqoridagi qidiruvdan ☆ bosib yoki "Qo'lda qo'shish" orqali birinchisini qo'shing.</div>
+{% endif %}
 
-<div class="panel">
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Kompaniya</th><th>Sayt</th><th class="num">Faol reklamalar</th><th>Oxirgi tahlil</th><th>Holat</th><th></th></tr></thead>
-    <tbody>
-      {% for c in competitors %}
-      <tr>
-        <td><a href="{{ url_for('competitor_detail', competitor_id=c.id) }}">{{ c.name }}</a></td>
-        <td class="text-dim">{{ c.domain or '—' }}</td>
-        <td class="num">{{ c.active_ads_count }}</td>
-        <td class="text-dim">{{ c.last_analyzed_at or "hali tahlil qilinmagan" }}</td>
-        <td>
-          <form method="post" style="display:inline">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="action" value="toggle">
-            <input type="hidden" name="competitor_id" value="{{ c.id }}">
-            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if c.is_active else "O'chirilgan" }}</button>
-          </form>
-        </td>
-        <td style="white-space:nowrap">
-          <a href="{{ url_for('competitor_detail', competitor_id=c.id) }}" style="margin-right:10px">Tafsilot</a>
-          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="action" value="delete">
-            <input type="hidden" name="competitor_id" value="{{ c.id }}">
-            <button type="submit" style="background:var(--bad); padding:4px 10px">O'chirish</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="6">Hali raqobatchi qo'shilmagan.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="modal-overlay" id="cpManualAddModal">
+  <div class="modal-dialog" style="max-width:440px">
+    <div class="modal-header">
+      <h2>Qo'lda qo'shish</h2>
+      <button type="button" class="modal-close" id="cpManualAddClose" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="page-subtitle" style="margin-top:-6px">Ad Library qidiruvida topilmasa ham, raqobatchini qo'lda kuzatuvga qo'shishingiz mumkin.</p>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="add">
+        <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" placeholder="Masalan: Arboss" required></div>
+        <div class="field"><label>Veb-sayt (ixtiyoriy)</label><input type="text" name="domain" placeholder="arboss.uz"></div>
+        <div class="field">
+          <label>Ad Library qidiruv so'zi (ixtiyoriy)</label>
+          <input type="text" name="search_term" placeholder="Bo'sh qoldirsangiz kompaniya nomi ishlatiladi">
+        </div>
+        <button type="submit" class="block">Qo'shish</button>
+      </form>
+    </div>
   </div>
 </div>
+
+<script>
+(function () {
+  var overlay = document.getElementById('cpManualAddModal');
+  var openBtn = document.getElementById('cpManualAddBtn');
+  var closeBtn = document.getElementById('cpManualAddClose');
+  if (!overlay || !openBtn || !closeBtn) return;
+  function open() { overlay.classList.add('open'); }
+  function close() { overlay.classList.remove('open'); }
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();
+</script>
 {% endblock %}

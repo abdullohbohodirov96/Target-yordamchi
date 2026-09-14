@@ -110,6 +110,7 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_AD_LIBRA
     check("qidiruv natijasida sahifa nomi ko'rinadi", "Arboss" in html)
     check("qidiruv natijasida reklama matni ko'rinadi", "chegirma" in html)
     check("duplikatsiz -- bitta page_name uchun bitta qator", html.count("☆ Kuzatuvga qo'sh") == 1)
+    check("Ad Library'ga o'xshab IKKALA namuna reklama ham ko'rinadi (2 variant)", "chegirma" in html and "Yangi kolleksiya" in html)
 
     r = client_a.post("/settings/competitors", data={
         "action": "star_add", "name": "Arboss", "search_term": "Arboss", "q": "Arboss",
@@ -214,6 +215,46 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=[]):
 # (Competitor.id topib olib to'g'ridan-to'g'ri URL orqali kirishga urinish).
 r = client_b.get(f"/settings/competitors/{competitor_id}")  # competitor_id -- Kompaniya A'ning "Arboss"si
 check("Kompaniya B, Kompaniya A'ning raqobatchi ID'sini to'g'ridan-to'g'ri ochsa 404 oladi", r.status_code == 404)
+
+# --- 7. 2026-09, foydalanuvchi so'rovi: qidiruv natijasi Ad Library'ga
+# o'xshab (a) bitta sahifa uchun ko'pi bilan 2 ta namuna reklama bilan
+# cheklansin, (b) "hozir reklamasi bor/yo'q" holati BARCHA topilgan
+# reklamalar (faqat ko'rsatiladigan 2 tasi emas) asosida aniqlansin, (c)
+# sahifaning haqiqiy logotipi/obunachilar soni ko'rinsin (fayk
+# akkauntlardan ajratish uchun), (d) bitta sahifaning profili
+# olinmasa ham (masalan Meta xatosi) butun qidiruv ishlashda davom etsin.
+FAKE_MULTI_AD_RESULTS = [
+    {"id": "m1", "page_id": "pgid-1", "page_name": "Multibrand", "ad_snapshot_url": "https://facebook.com/ads/m1",
+     "ad_creative_bodies": ["Birinchi aksiya"], "ad_delivery_stop_time": "2026-08-01T00:00:00+0000"},
+    {"id": "m2", "page_id": "pgid-1", "page_name": "Multibrand", "ad_snapshot_url": "https://facebook.com/ads/m2",
+     "ad_creative_bodies": ["Ikkinchi aksiya"], "ad_delivery_stop_time": "2026-08-05T00:00:00+0000"},
+    # Uchinchi reklama -- HALI TUGAMAGAN (stop_time yo'q) -- ko'rsatiladigan
+    # 2 tadan tashqarida qolsa ham, "hozir reklamasi bor" holatiga ta'sir
+    # qilishi kerak.
+    {"id": "m3", "page_id": "pgid-1", "page_name": "Multibrand", "ad_snapshot_url": "https://facebook.com/ads/m3",
+     "ad_creative_bodies": ["Uchinchi, hali faol aksiya"], "ad_delivery_stop_time": None},
+]
+with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_MULTI_AD_RESULTS), \
+     mock.patch.object(meta_api, "get_page_public_profile", return_value={"picture_url": "https://example.com/logo.png", "fan_count": 12400}):
+    r = client_a.get("/settings/competitors?q=Multibrand")
+    html = r.get_data(as_text=True)
+    check("ko'pi bilan 2 ta namuna reklama ko'rsatiladi (3-si emas)", "Birinchi aksiya" in html and "Ikkinchi aksiya" in html and "Uchinchi, hali faol aksiya" not in html)
+    check("'hozir reklamasi bor' -- ko'rsatilmagan 3-reklama ham hisobga olindi", "Hozir reklamasi bor" in html)
+    check("sahifa logotipi (picture_url) <img> sifatida chiqadi", 'src="https://example.com/logo.png"' in html)
+    check("obunachilar soni ko'rinadi", "12 400 obunachi" in html)
+
+# Barcha ad'lar TUGAGAN (stop_time bor) bo'lsa -- "hozir reklamasi yo'q".
+FAKE_INACTIVE_RESULTS = [
+    {"id": "i1", "page_id": "pgid-2", "page_name": "Nofaol Brend", "ad_snapshot_url": None,
+     "ad_creative_bodies": ["Eski aksiya"], "ad_delivery_stop_time": "2026-01-01T00:00:00+0000"},
+]
+with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_INACTIVE_RESULTS), \
+     mock.patch.object(meta_api, "get_page_public_profile", side_effect=meta_api.MetaAPIError({"message": "vaqtinchalik xato"})):
+    r = client_a.get("/settings/competitors?q=Nofaol")
+    html = r.get_data(as_text=True)
+    check("barcha reklamalar tugagan bo'lsa 'hozir reklamasi yo'q'", "Hozir reklamasi yo'q" in html)
+    check("profil olishda xato bo'lsa ham sahifa 200 qaytaradi (butun qidiruv to'xtamaydi)", r.status_code == 200)
+    check("profil olinmasa harf-avatar'ga qaytadi (rasm yo'q)", 'cp-result-avatar-img' not in html)
 
 print()
 if failures:

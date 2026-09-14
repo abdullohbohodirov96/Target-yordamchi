@@ -1,61 +1,74 @@
 {% extends "base.html" %}
 {% block title %}{{ competitor.name }} — Raqobatchi tafsiloti — Replix{% endblock %}
 {% block content %}
-<p style="margin-bottom:12px"><a href="{{ url_for('competitors_settings') }}">← Raqobatchilar ro'yxati</a></p>
-<h1>{{ competitor.name }}</h1>
-<p class="page-subtitle">
-  {{ competitor.domain or '—' }} ·
-  {% if competitor.is_active %}<span class="badge badge-color-good">Faol kuzatuvda</span>{% else %}<span class="badge badge-color-dim">O'chirilgan</span>{% endif %}
-  · Oxirgi tahlil: {{ competitor.last_analyzed_at or "hali tahlil qilinmagan" }}
-</p>
+<a href="{{ url_for('competitors_settings') }}" class="back-link">
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+  Raqobatchilar ro'yxati
+</a>
 
-<div class="hint-box">⚠️ Pastdagi "Taxminiy auditoriya" bo'limi — Meta Ad Library'da haqiqiy target/auditoriya ma'lumoti yo'qligi sababli — reklama matnidan kelib chiqqan <strong>AI taxmini</strong>, Meta'ning o'zining aniq sozlamasi emas.</div>
-
-<div class="card" style="margin:20px 0">
-  <form method="post" action="{{ url_for('competitor_analyze_now', competitor_id=competitor.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit">Hozir tekshir</button>
-  </form>
-  <p class="page-subtitle" style="margin-bottom:0; margin-top:10px">Odatda har {{ rotation_days }} kunda BITTA navbatdagi raqobatchi avtomatik tekshirilib, Telegram guruhingizga yuboriladi. Bu tugma navbatni kutmasdan darhol yangilaydi (faqat shu sahifada ko'rinadi, Telegram'ga yubormaydi).</p>
+<div class="page-head">
+  <div>
+    <h1>{{ competitor.name }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">
+      {{ competitor.domain or 'sayt ko\'rsatilmagan' }} ·
+      {% if competitor.is_active %}<span class="badge badge-color-good">Faol kuzatuvda</span>{% else %}<span class="badge badge-color-dim">O'chirilgan</span>{% endif %}
+      · Oxirgi tahlil: {{ competitor.last_analyzed_at or "hali tahlil qilinmagan" }}
+    </p>
+  </div>
+  <div class="page-head-actions">
+    <form method="post" action="{{ url_for('competitor_analyze_now', competitor_id=competitor.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn">Hozir tekshir</button>
+    </form>
+  </div>
 </div>
 
-<h2>So'nggi tahlil</h2>
+<div class="hint-box">⚠️ Pastdagi "Taxminiy auditoriya" bo'limi — Meta Ad Library'da haqiqiy target/auditoriya ma'lumoti yo'qligi sababli — reklama matnidan kelib chiqqan <strong>AI taxmini</strong>, Meta'ning o'zining aniq sozlamasi emas.</div>
+<p class="page-subtitle" style="margin:-10px 0 22px">Odatda har {{ rotation_days }} kunda BITTA navbatdagi raqobatchi avtomatik tekshirilib, Telegram guruhingizga yuboriladi. Yuqoridagi "Hozir tekshir" tugmasi navbatni kutmasdan darhol yangilaydi (faqat shu sahifada ko'rinadi, Telegram'ga yubormaydi).</p>
+
+<h2 style="margin-bottom:14px">So'nggi tahlil</h2>
 {% if history %}
-<div class="card" style="margin-bottom:24px; white-space:pre-wrap; line-height:1.6">{{ history[0].summary_text or "Hozircha faol reklama topilmagan." }}</div>
+<div class="card cp-ai-card" style="margin-bottom:24px">
+  <div class="cp-ai-card-label">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.5"/></svg>
+    AI tahlil · {{ history[0].created_at }}
+  </div>
+  {{ (history[0].summary_text or "Hozircha faol reklama topilmagan.")|cp_summary }}
+</div>
 
 {% if history|length > 1 %}
 <details style="margin-bottom:24px">
   <summary style="cursor:pointer; color:var(--text-dim); font-size:13px">Oldingi tahlillar tarixi ({{ history|length - 1 }})</summary>
   {% for h in history[1:] %}
-  <div class="card" style="margin-top:12px; white-space:pre-wrap; line-height:1.6">
-    <div class="text-dim" style="font-size:12px; margin-bottom:8px">{{ h.created_at }}</div>
-    {{ h.summary_text or "Hozircha faol reklama topilmagan." }}
+  <div class="card" style="margin-top:12px; font-size:13.5px">
+    <div class="text-faint" style="font-size:12px; margin-bottom:8px">{{ h.created_at }}</div>
+    {{ (h.summary_text or "Hozircha faol reklama topilmagan.")|cp_summary }}
   </div>
   {% endfor %}
 </details>
 {% endif %}
 {% else %}
-<p class="page-subtitle">Hali hech qanday tahlil qilinmagan — "Hozir tekshir" tugmasini bosing yoki avtomatik navbatni kuting.</p>
+<div class="cp-empty" style="margin-bottom:24px">Hali hech qanday tahlil qilinmagan — yuqoridagi "Hozir tekshir" tugmasini bosing yoki avtomatik navbatni kuting.</div>
 {% endif %}
 
-<h2>Hozirgi faol reklamalar ({{ ads|length }})</h2>
-<div class="panel">
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Sahifa</th><th>Matn</th><th>Boshlangan</th><th></th></tr></thead>
-    <tbody>
-      {% for ad in ads %}
-      <tr>
-        <td>{{ ad.page_name or '—' }}</td>
-        <td class="text-dim">{{ ad.body_text or '(matnsiz reklama)' }}</td>
-        <td class="text-dim">{{ ad.ad_started_at or '—' }}</td>
-        <td>{% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener">Ko'rish</a>{% endif %}</td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="4">Hozircha faol reklama topilmadi.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<h2 style="margin-bottom:14px">Hozirgi faol reklamalar ({{ ads|length }})</h2>
+{% if ads %}
+<div class="cp-results">
+  {% for ad in ads %}
+  <div class="cp-result">
+    <span class="cp-result-avatar">{{ (ad.page_name[0] if ad.page_name else '?')|upper }}</span>
+    <div class="cp-result-body">
+      <div class="cp-result-name">{{ ad.page_name or competitor.name }}</div>
+      <div class="cp-result-snippet" style="white-space:normal">{{ ad.body_text or '(matnsiz reklama)' }}</div>
+    </div>
+    <div class="cp-result-actions">
+      {% if ad.ad_started_at %}<span class="cp-ad-date">{{ ad.ad_started_at }}</span>{% endif %}
+      {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12.5px">Ko'rish</a>{% endif %}
+    </div>
   </div>
+  {% endfor %}
 </div>
+{% else %}
+<div class="cp-empty">Hozircha faol reklama topilmadi.</div>
+{% endif %}
 {% endblock %}

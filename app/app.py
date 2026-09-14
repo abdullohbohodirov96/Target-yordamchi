@@ -16,9 +16,11 @@ import time
 import secrets
 import logging
 import threading
+import html as html_stdlib
 import datetime as dt
 from collections import defaultdict
 
+from markupsafe import Markup
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response, abort, g, send_from_directory
 from flask import session as flask_session  # noqa: F401 -- ATAYLAB alias: `session` nomi butun faylda SQLAlchemy DB sessiyasi (`session = get_session()`) uchun ishlatiladi, Flask'ning o'z (cookie) sessiyasi bilan chalkashmasin
 from flask_login import (
@@ -487,6 +489,44 @@ def _format_som(value) -> str:
 
 
 app.jinja_env.filters["som"] = _format_som
+
+
+def _format_competitor_summary(text) -> Markup:
+    """Raqobatchi AI-tahlili matnini (`competitor_analytics.py`dagi
+    `SYSTEM_PROMPT_SINGLE` ANIQ "## Taklif"/"## Taxminiy auditoriya ..."
+    sarlavhalari bilan qaytaradi) HTML'ga aylantiradi -- 2026-09, vizual
+    audit: ilgari xom "## Taklif" kabi markdown belgilari o'zgarishsiz
+    ekranga chiqib ketardi (chiroyli emas). Endi shu ikkita sarlavha
+    alohida, ajratilgan bo'lim sifatida ko'rsatiladi. Eski/xatolik-fallback
+    matnlar (sarlavhasiz, masalan "Hozircha faol reklama topilmagan.")
+    ham xavfsiz, oddiy paragraf sifatida ko'rsatiladi.
+
+    XAVFSIZLIK: matn AI tomonidan RAQOBATCHINING reklama matnidan
+    (potentsial ishonchsiz manba) sintez qilingani uchun, HAR DOIM avval
+    to'liq HTML-escape qilinadi -- faqat shundan KEYIN bizning o'zimiz
+    qo'shadigan <div>/<p>/<br> teglari (xom matnning bir qismi emas)
+    qo'shiladi, shuning uchun matn ichida tasodifan `<script>` va h.k.
+    bo'lsa ham xavfsiz oddiy matn sifatida chiqadi."""
+    if not text:
+        return Markup("")
+    parts = []
+    for para in str(text).split("\n\n"):
+        para = para.strip("\n")
+        if not para:
+            continue
+        lines = para.split("\n")
+        first = lines[0]
+        if first.startswith("## "):
+            heading = html_stdlib.escape(first[3:].strip())
+            body = "<br>".join(html_stdlib.escape(l) for l in lines[1:])
+            parts.append(f'<div class="cp-ai-section"><div class="cp-ai-section-h">{heading}</div>{body}</div>')
+        else:
+            body = "<br>".join(html_stdlib.escape(l) for l in lines)
+            parts.append(f'<p class="cp-ai-p">{body}</p>')
+    return Markup("".join(parts))
+
+
+app.jinja_env.filters["cp_summary"] = _format_competitor_summary
 
 
 # ---------------------------------------------------------------------------
@@ -6542,21 +6582,82 @@ def competitors_settings():
             except Exception as e:
                 search_error = meta_api.safe_error_message(e)
                 raw_results = []
+            # 2026-09, foydalanuvchi so'rovi ("ad library'ga o'xshab variantlar
+            # chiqib kelsin ... 2 variant yaxshi"): ILGARI har bir page_name
+            # uchun FAQAT bitta (birinchi) reklama namunasi ko'rsatilardi --
+            # Meta Ad Library'ning o'zida esa bitta reklama beruvchining bir
+            # nechta AKTIV kreativi birgalikda ko'rinadi. Endi shunga o'xshab
+            # HAR BIR sahifa (kompaniya) uchun natijalar ICHKARIGA
+            # kirilmasdan, to'g'ridan-to'g'ri qidiruv natijasi qatorida ikkita
+            # (yoki kamroq bo'lsa borini) namuna reklama birga ko'rsatiladi --
+            # foydalanuvchi qaysi kompaniya nimani targ'ib qilayotganini bitta
+            # qarashda ko'radi, keyin xohlasa BIR marta bosib butun kompaniyani
+            # kuzatuvga qo'shadi (keyinchalik "Tafsilot"da barcha reklamalar
+            # ko'rinadi).
             tracked_names = {n.lower() for (n,) in session.query(Competitor.name).all()}
-            seen_pages = set()
-            search_results = []
+            grouped: dict[str, dict] = {}
+            order: list[str] = []
+            MAX_AD_EXAMPLES = 2
             for ad in raw_results:
                 page_name = (ad.get("page_name") or "").strip()
-                if not page_name or page_name.lower() in seen_pages:
+                if not page_name:
                     continue
-                seen_pages.add(page_name.lower())
+                key = page_name.lower()
+                if key not in grouped:
+                    grouped[key] = {"page_name": page_name, "page_id": ad.get("page_id"), "ads": [], "has_active": False}
+                    order.append(key)
+                bucket = grouped[key]
+                # `ad_delivery_stop_time` bo'sh/yo'q bo'lsa -- reklama HALI
+                # ham ishlab turibdi degani (2026-09, foydalanuvchi so'rovi:
+                # "poiskda reklamasi bor yoki yo'qligi ko'rinsin, fayk
+                # akkauntlar ko'p"). Bu BARCHA topilgan reklamalar bo'yicha
+                # tekshiriladi (faqat ko'rsatiladigan 2 tasi emas), aks holda
+                # sahifada aslida faol reklama bo'la turib "yo'q" ko'rinishi
+                # mumkin edi (agar faol reklama tasodifan 3-o'rinda bo'lsa).
+                if not ad.get("ad_delivery_stop_time"):
+                    bucket["has_active"] = True
+                if len(bucket["ads"]) >= MAX_AD_EXAMPLES:
+                    continue
                 bodies = ad.get("ad_creative_bodies") or []
-                search_results.append({
-                    "page_name": page_name,
+                bucket["ads"].append({
                     "snippet": (bodies[0].strip().replace("\n", " ")[:200] if bodies else ""),
                     "snapshot_url": ad.get("ad_snapshot_url"),
-                    "already_tracked": page_name.lower() in tracked_names,
                 })
+
+            # 2026-09, foydalanuvchi so'rovi ("brendlarni aniq logo, nechta
+            # obunachisi hammasi ko'rinsin ... fayk akkauntlar juda ko'p,
+            # aniq brendni topish uchun kerak"): har bir topilgan sahifa
+            # uchun HAQIQIY logotip + obunachilar soni qo'shiladi -- shu
+            # ikkalasi (jonli reklama holati bilan birga) fayk/taqlid
+            # sahifalarni asl brenddan ajratishga yordam beradi. Bitta
+            # sahifaning profili olinmasa (masalan cheklangan) QIDIRUVNING
+            # QOLGANINI to'xtatmasligi uchun har biri alohida try/except
+            # bilan o'raladi.
+            for key in order:
+                bucket = grouped[key]
+                profile = {}
+                if bucket.get("page_id"):
+                    try:
+                        profile = meta_api.get_page_public_profile(bucket["page_id"])
+                    except Exception:
+                        profile = {}
+                bucket["picture_url"] = profile.get("picture_url")
+                fan_count = profile.get("fan_count")
+                bucket["fan_count_display"] = (
+                    f"{fan_count:,}".replace(",", " ") + " obunachi" if isinstance(fan_count, int) else None
+                )
+
+            search_results = [
+                {
+                    "page_name": grouped[key]["page_name"],
+                    "ads": grouped[key]["ads"],
+                    "already_tracked": key in tracked_names,
+                    "has_active": grouped[key]["has_active"],
+                    "picture_url": grouped[key]["picture_url"],
+                    "fan_count_display": grouped[key]["fan_count_display"],
+                }
+                for key in order
+            ]
 
         all_competitors = session.query(Competitor).order_by(Competitor.created_at.desc()).all()
         rows = []

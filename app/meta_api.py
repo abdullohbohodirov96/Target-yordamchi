@@ -1316,15 +1316,46 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
     bo'yicha qidiradi -- aniq Page ID emas, chunki bizda faqat veb-sayt
     domenlari bor, Page ID emas.
     """
+    # `page_id` -- 2026-09, foydalanuvchi so'rovi ("aniq brendni topish
+    # uchun logo va obunachi soni ko'rinsin, fayk akkauntlar ko'p"):
+    # natijadagi sahifaning HAQIQIY logotipi/obunachilar sonini olish
+    # uchun keyinroq `get_page_public_profile(page_id)` alohida so'raladi
+    # (ads_archive'ning o'zi bu ma'lumotni bermaydi) -- shuning uchun
+    # page_id shu yerda so'ralishi shart.
     data = _get("ads_archive", {
         "search_terms": search_terms,
         "ad_reached_countries": list(countries),
         "ad_active_status": "ALL",
         "ad_type": "ALL",
         "limit": limit,
-        "fields": "id,ad_snapshot_url,page_name,ad_creative_bodies,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time",
+        "fields": "id,ad_snapshot_url,page_id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time",
     })
     return data.get("data", [])
+
+
+def get_page_public_profile(page_id: str) -> dict:
+    """Bitta Facebook sahifaning OMMAVIY profil ma'lumotini (logotip rasmi
+    + obunachilar soni) qaytaradi -- 2026-09, foydalanuvchi so'rovi:
+    "brendlarni aniq logo, nechta obunachisi hammasi ko'rinsin ad
+    library'ga o'xshab ... fayk akkauntlar juda ko'p, aniq brendni
+    topish uchun kerak". `search_ad_library()` kabi -- bular sahifaning
+    O'ZI alohida ruxsat berishi SHART bo'lmagan, umumiy `picture`/
+    `fan_count` OMMAVIY maydonlari (standart `META_ACCESS_TOKEN`
+    yetarli), lekin `ads_archive` javobida yo'q -- har bir sahifa uchun
+    ALOHIDA so'rov kerak.
+
+    Xato bo'lsa (masalan sahifa cheklangan/o'chirilgan, yoki vaqtinchalik
+    tarmoq xatosi) BO'SH dict qaytaradi -- BITTA sahifaning
+    muvaffaqiyatsizligi butun qidiruv natijasini to'xtatmasligi kerak
+    (chaqiruvchi tomon shu sababli buni try/except bilan o'rab chaqiradi)."""
+    if not page_id:
+        return {}
+    try:
+        data = _get(page_id, {"fields": "picture{url},fan_count"})
+    except MetaAPIError:
+        return {}
+    picture = ((data.get("picture") or {}).get("data")) or {}
+    return {"picture_url": picture.get("url"), "fan_count": data.get("fan_count")}
 
 
 def get_instagram_business_account_id(*, page_id: str | None = None, access_token: str | None = None) -> str | None:
