@@ -448,6 +448,42 @@ body:has(.impersonation-banner) .mobile-menu-btn { top: 52px; }
   padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.5px;
 }
 
+/* ---------- "Lead Analytics" ikki oylik kalendar-sana tanlagichi
+   (_lead_analytics_date_picker.html) -- 2026-09, foydalanuvchi so'rovi:
+   referens skrinshotdagi kabi to'liq taqvim + tezkor tanlovlar ro'yxati. ---------- */
+.la-dp { position: relative; display: inline-block; }
+.la-dp-menu {
+  display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(15,23,42,0.16); overflow: hidden;
+}
+.la-dp.open .la-dp-menu { display: flex; }
+.la-dp-presets { display: flex; flex-direction: column; gap: 2px; padding: 8px; min-width: 150px; border-right: 1px solid var(--border-light); }
+.la-dp-presets button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text); background: none; border: none; font-family: inherit; cursor: pointer; box-shadow: none; }
+.la-dp-presets button:hover { background: var(--border-light); transform: none; box-shadow: none; }
+.la-dp-presets button.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
+.la-dp-cal { padding: 12px; width: 560px; max-width: 84vw; }
+.la-dp-cal-months { display: flex; gap: 18px; }
+.la-dp-cal-month { flex: 1; min-width: 0; }
+.la-dp-cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.la-dp-cal-nav button { background: none; border: 1px solid var(--border); border-radius: 6px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-dim); box-shadow: none; padding: 0; }
+.la-dp-cal-nav button:hover { background: var(--border-light); transform: none; box-shadow: none; }
+.la-dp-cal-nav button svg { width: 13px; height: 13px; }
+.la-dp-cal-nav .la-dp-cal-nav-spacer { width: 24px; }
+.la-dp-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.la-dp-cal-wd { text-align: center; font-size: 10.5px; color: var(--text-faint); padding: 4px 0 6px; font-weight: 600; }
+.la-dp-cal-day { text-align: center; font-size: 12.5px; padding: 6px 0; border-radius: 6px; cursor: pointer; color: var(--text); position: relative; }
+.la-dp-cal-day:hover { background: var(--border-light); }
+.la-dp-cal-day.la-dp-outside { color: var(--text-faint); opacity: 0.4; }
+.la-dp-cal-day.la-dp-in-range { background: var(--blue-bg); border-radius: 0; }
+.la-dp-cal-day.la-dp-range-start, .la-dp-cal-day.la-dp-range-end { background: var(--brand-gradient); color: #fff; font-weight: 600; }
+.la-dp-cal-day.la-dp-range-start { border-radius: 6px 0 0 6px; }
+.la-dp-cal-day.la-dp-range-end { border-radius: 0 6px 6px 0; }
+.la-dp-cal-day.la-dp-range-start.la-dp-range-end { border-radius: 6px; }
+.la-dp-cal-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.la-dp-cal-inputs { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
+.la-dp-cal-inputs input { width: 108px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.5px; }
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

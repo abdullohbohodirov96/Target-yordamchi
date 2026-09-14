@@ -70,6 +70,13 @@
         <td class="text-dim">{{ c.created_at.strftime('%d.%m.%Y') if c.created_at else '—' }}</td>
         <td class="num" onclick="event.stopPropagation()">
           <a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue">Tahrirlash</a>
+          {# 2026-09, foydalanuvchi so'rovi: "kompaniyalarni tanlab, leadlarga
+             kirish mumkin bo'lsin ... crm ko'rish tugmasini qo'shish kerak
+             ko'kda" -- impersonatsiyadan farqli, hisobga kirib-chiqmasdan
+             (`db.scoped_as`, `/leads?company_id=...`), qaysi forma(lar) va
+             yangi/ishlangan holatni oldindan tanlab, to'g'ridan-to'g'ri
+             CRM'ga o'tkazadi. #}
+          <button type="button" class="text-blue crm-view-open" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px" data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">CRM ko'rish</button>
           {% if c.id != 1 %}
           {# 2026-09, "CEO dashboard + impersonatsiya" ishi: platforma egasi
              mijoz kompaniyaning admin hisobi nomidan to'liq kirib, ular
@@ -134,6 +141,43 @@
   </div>
 </div>
 
+<!-- 2026-09, foydalanuvchi so'rovi: "CRM ko'rish" -- qaysi kompaniyaning
+     qaysi forma(lari)dan kelgan (va yangi/ishlangan) lidlarini ko'rmoqchi
+     ekanini oldindan tanlab, to'g'ridan-to'g'ri CRM'ga o'tkazadi (hisobga
+     kirib-chiqmasdan). Formalar ro'yxati modal ochilganda "dangasa"
+     yuklanadi (`/companies/<id>/lead-forms`). -->
+<div class="modal-overlay" id="crmViewModal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2>"<span id="crmViewCompanyName"></span>" — CRM ko'rish</h2>
+      <button type="button" class="modal-close" id="crmViewClose" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="page-subtitle" style="margin-top:-6px">Kerak bo'lsa, faqat ma'lum forma(lar)dan kelgan va/yoki yangi/ishlangan lidlarni tanlab ko'rsatishingiz mumkin. Hech narsa belgilamasangiz, hammasi ko'rsatiladi.</p>
+
+      <div class="field">
+        <label>Holat</label>
+        <select id="crmViewStatusGroup">
+          <option value="">Hammasi</option>
+          <option value="new">Yangi (hali bog'lanilmagan)</option>
+          <option value="processed">Ishlangan (bog'lanilgan/sifatli/sifatsiz/sotilgan)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Forma(lar)</label>
+        <div id="crmViewFormsList" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px">
+          <span class="text-faint" style="font-size:13px">Yuklanmoqda...</span>
+        </div>
+      </div>
+
+      <button type="button" class="block" id="crmViewGoBtn">CRM'ga o'tish</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   var overlay = document.getElementById('newCompanyModal');
@@ -172,6 +216,56 @@
     });
   });
   input.addEventListener('input', function () { submitBtn.disabled = (input.value !== currentName); });
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('open')) close(); });
+})();
+
+(function () {
+  var overlay = document.getElementById('crmViewModal');
+  var closeBtn = document.getElementById('crmViewClose');
+  var nameEl = document.getElementById('crmViewCompanyName');
+  var formsList = document.getElementById('crmViewFormsList');
+  var statusSel = document.getElementById('crmViewStatusGroup');
+  var goBtn = document.getElementById('crmViewGoBtn');
+  var currentCompanyId = null;
+
+  function close() { overlay.classList.remove('open'); }
+
+  document.querySelectorAll('.crm-view-open').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentCompanyId = btn.getAttribute('data-company-id');
+      nameEl.textContent = btn.getAttribute('data-company-name');
+      statusSel.value = '';
+      formsList.innerHTML = '<span class="text-faint" style="font-size:13px">Yuklanmoqda...</span>';
+      overlay.classList.add('open');
+
+      var url = "{{ url_for('company_lead_forms', company_id=0) }}".replace('/0/', '/' + currentCompanyId + '/');
+      fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+        if (!data.forms || !data.forms.length) {
+          formsList.innerHTML = '<span class="text-faint" style="font-size:13px">Bu kompaniyada hali Instant Formadan kelgan lead yo\'q.</span>';
+          return;
+        }
+        formsList.innerHTML = data.forms.map(function (f) {
+          return '<label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer">' +
+            '<input type="checkbox" class="crm-view-form-cb" value="' + f.id + '"> ' +
+            (f.name || f.id).replace(/</g, '&lt;') + ' <span class="text-faint">(' + f.count + ')</span></label>';
+        }).join('');
+      }).catch(function () {
+        formsList.innerHTML = '<span class="text-bad" style="font-size:13px">Formalarni yuklab bo\'lmadi.</span>';
+      });
+    });
+  });
+
+  goBtn.addEventListener('click', function () {
+    if (!currentCompanyId) return;
+    var params = new URLSearchParams();
+    params.set('company_id', currentCompanyId);
+    if (statusSel.value) params.set('status_group', statusSel.value);
+    document.querySelectorAll('.crm-view-form-cb:checked').forEach(function (cb) { params.append('form_id', cb.value); });
+    window.location.href = "{{ url_for('leads_list') }}?" + params.toString();
+  });
+
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('open')) close(); });

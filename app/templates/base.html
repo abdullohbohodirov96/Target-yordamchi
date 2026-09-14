@@ -156,7 +156,7 @@
     <nav class="sidebar-nav">
       {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
-      {% set _marketing_eps = ['target_page', 'smm_report'] %}
+      {% set _marketing_eps = ['target_page', 'smm_report', 'lead_analytics_page'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
       {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {# 2026-09, foydalanuvchi so'rovi ("habarlani alohida panelga chiqaz
@@ -322,7 +322,7 @@
     {% if current_user.is_authenticated and not _hide_chrome %}
       {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
-      {% set _marketing_eps = ['target_page', 'smm_report'] %}
+      {% set _marketing_eps = ['target_page', 'smm_report', 'lead_analytics_page'] %}
       {% set _settings_section_eps = ['settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered'] %}
       {% set _boshqaruv_eps = ['settings_hub'] + _settings_section_eps + ['managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {% if request.endpoint in _crm_eps and has_module(current_user, 'leads') %}
@@ -339,6 +339,7 @@
       {% elif request.endpoint in _marketing_eps and has_module(current_user, 'target') %}
       <nav class="page-subnav">
         <a href="{{ url_for('target_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'target_page' }}">{{ navicon('target') }}<span>Target</span></a>
+        <a href="{{ url_for('lead_analytics_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'lead_analytics_page' }}">{{ navicon('analytics') }}<span>Lead Analytics</span></a>
         <a href="{{ url_for('smm_report') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'smm_report' }}">{{ navicon('analytics') }}<span>SMM hisobot</span></a>
       </nav>
       {% elif request.endpoint in _boshqaruv_eps %}

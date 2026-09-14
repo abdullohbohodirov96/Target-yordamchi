@@ -1,0 +1,141 @@
+{# "Lead Analytics" uchun to'liq ikki oylik kalendar-sana tanlagichi
+   (2026-09, foydalanuvchi so'rovi: "sana tanlash mumkin bo'lsin, sana
+   oralig'ini uni bossa shunaqa chiqib kelsin" -- referens skrinshot
+   asosida: chapda tezkor tanlovlar ro'yxati, o'ngda ikkita oy taqvimi +
+   qo'lda sana kiritish maydonlari + "Qo'llash" tugmasi).
+
+   Ota shablonda mavjud bo'lishi kerak: `period`, `date_from`, `date_to`,
+   `level` (jadval darajasi -- URL'da saqlanib qolishi uchun). #}
+{% set LA_PRESETS = [
+  ('today', 'Bugun'), ('yesterday', 'Kecha'),
+  ('last_7d', 'Oxirgi 7 kun'), ('last_14d', 'Oxirgi 14 kun'),
+  ('last_28d', 'Oxirgi 28 kun'), ('last_30d', 'Oxirgi 30 kun'),
+  ('this_week_mon_today', 'Shu hafta'), ('this_month', 'Shu oy'),
+  ('last_month', "O'tgan oy"), ('maximum', 'Maksimal'),
+] %}
+{% set LA_PRESET_LABELS = dict(LA_PRESETS) %}
+<div class="la-dp" id="laDatePicker">
+  <button type="button" class="date-picker-trigger" id="laDatePickerTrigger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+    <span id="laDatePickerLabel">
+      {% if period == 'custom' and date_from and date_to %}{{ date_from }} — {{ date_to }}{% else %}{{ LA_PRESET_LABELS.get(period, 'Oxirgi 30 kun') }}{% endif %}
+    </span>
+  </button>
+  <div class="la-dp-menu" id="laDatePickerMenu">
+    <div class="la-dp-presets">
+      {% for p, label in LA_PRESETS %}
+      <button type="button" class="la-dp-preset {{ 'active' if period == p }}" data-preset="{{ p }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="la-dp-cal">
+      <div class="la-dp-cal-months" id="laCalMonths"></div>
+      <div class="la-dp-cal-footer">
+        <div class="la-dp-cal-inputs">
+          <input type="date" id="laDateFromInput" value="{{ date_from }}">
+          <span>—</span>
+          <input type="date" id="laDateToInput" value="{{ date_to }}">
+        </div>
+        <button type="button" class="btn" id="laApplyBtn" style="padding:7px 16px; font-size:12.5px">Qo'llash</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var wrap = document.getElementById('laDatePicker');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+
+  var LEVEL = {{ (level or 'campaign')|tojson }};
+  var trigger = document.getElementById('laDatePickerTrigger');
+  var fromInput = document.getElementById('laDateFromInput');
+  var toInput = document.getElementById('laDateToInput');
+  var applyBtn = document.getElementById('laApplyBtn');
+  var monthsEl = document.getElementById('laCalMonths');
+
+  trigger.addEventListener('click', function (e) { e.stopPropagation(); wrap.classList.toggle('open'); });
+  document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) wrap.classList.remove('open'); });
+
+  function navigateTo(params) {
+    var url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('level', LEVEL);
+    Object.keys(params).forEach(function (k) { url.searchParams.set(k, params[k]); });
+    window.location.href = url.toString();
+  }
+
+  wrap.querySelectorAll('.la-dp-preset').forEach(function (btn) {
+    btn.addEventListener('click', function () { navigateTo({ period: btn.dataset.preset }); });
+  });
+
+  applyBtn.addEventListener('click', function () {
+    if (!fromInput.value || !toInput.value) return;
+    var a = fromInput.value, b = toInput.value;
+    if (a > b) { var t = a; a = b; b = t; }
+    navigateTo({ period: 'custom', date_from: a, date_to: b });
+  });
+
+  // ---- Ikki oylik taqvim (vanilla JS, kutubxonasiz -- kod bazasining
+  // qolgan qismidagi sana-tanlagichlar bilan bir xil uslub) ----
+  var WD = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']; // Yak/Dush/Sesh/Chor/Pay/Jum/Shan -- hafta Yakshanbadan boshlanadi (referens skrinshotdagi kabi)
+  var MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+
+  function parseISO(s) { if (!s) return null; var p = s.split('-'); return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)); }
+  function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function sameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+  var rangeStart = parseISO(fromInput.value);
+  var rangeEnd = parseISO(toInput.value);
+  var viewAnchor = rangeEnd || rangeStart || new Date();
+  var viewYear = viewAnchor.getFullYear(), viewMonth = viewAnchor.getMonth();
+
+  function renderMonth(year, month, showPrevNav, showNextNav) {
+    var first = new Date(year, month, 1);
+    var startOffset = first.getDay(); // 0=Yakshanba
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var html = '<div class="la-dp-cal-nav">';
+    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="Oldingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += '<span>' + MONTHS[month] + ' ' + year + '</span>';
+    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="Keyingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += '</div><div class="la-dp-cal-grid">';
+    WD.forEach(function (w) { html += '<div class="la-dp-cal-wd">' + w + '</div>'; });
+    for (var i = 0; i < startOffset; i++) html += '<div class="la-dp-cal-day la-dp-outside"></div>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var date = new Date(year, month, d);
+      var cls = 'la-dp-cal-day';
+      if (rangeStart && sameDay(date, rangeStart)) cls += ' la-dp-range-start';
+      if (rangeEnd && sameDay(date, rangeEnd)) cls += ' la-dp-range-end';
+      if (rangeStart && rangeEnd && date > rangeStart && date < rangeEnd) cls += ' la-dp-in-range';
+      html += '<div class="' + cls + '" data-date="' + toISO(date) + '">' + d + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function render() {
+    var leftHtml = '<div class="la-dp-cal-month">' + renderMonth(viewYear, viewMonth, true, false) + '</div>';
+    var nextM = viewMonth === 11 ? 0 : viewMonth + 1, nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+    var rightHtml = '<div class="la-dp-cal-month">' + renderMonth(nextY, nextM, false, true) + '</div>';
+    monthsEl.innerHTML = leftHtml + rightHtml;
+
+    monthsEl.querySelectorAll('.la-cal-prev').forEach(function (b) { b.addEventListener('click', function () { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }); });
+    monthsEl.querySelectorAll('.la-cal-next').forEach(function (b) { b.addEventListener('click', function () { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }); });
+    monthsEl.querySelectorAll('.la-dp-cal-day[data-date]').forEach(function (cell) {
+      cell.addEventListener('click', function () {
+        var d = parseISO(cell.dataset.date);
+        if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = d; rangeEnd = null; }
+        else if (d < rangeStart) { rangeEnd = rangeStart; rangeStart = d; }
+        else { rangeEnd = d; }
+        fromInput.value = rangeStart ? toISO(rangeStart) : '';
+        toInput.value = rangeEnd ? toISO(rangeEnd) : '';
+        render();
+      });
+    });
+  }
+
+  fromInput.addEventListener('change', function () { rangeStart = parseISO(fromInput.value); render(); });
+  toInput.addEventListener('change', function () { rangeEnd = parseISO(toInput.value); render(); });
+
+  render();
+})();
+</script>

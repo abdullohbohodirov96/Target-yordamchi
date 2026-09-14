@@ -26,6 +26,7 @@ from flask_login import (
     current_user,
 )
 from flask_wtf.csrf import CSRFProtect, CSRFError
+from sqlalchemy import func
 import meta_api
 import meta_events
 import payme_subscribe
@@ -39,6 +40,7 @@ import lang as lang_module
 import db
 from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
+import lead_analytics
 import lead_sync
 import call_sync
 import call_analytics
@@ -3133,6 +3135,88 @@ def target_page():
 
 
 # ---------------------------------------------------------------------------
+# Lead Analytics -- 2026-09, foydalanuvchi so'rovi: Target sahifasidagi
+# kampaniya/adset/ad jadvaliga o'xshaydi, lekin uchta qo'shimcha ustun bilan
+# (ACT/bog'lanildi, CONV.RATE, DEAL TIME -- qarang lead_analytics.py) va
+# aniq kalendar-sana oralig'i tanlash bilan (referens: boshqa CRM
+# tizimlarining "Lead Analytics" bo'limi, foydalanuvchi skrinshot bilan
+# yubordi). To'rtinchi "CRM" tab'i kampaniya bo'yicha JAMLANMAGAN, xom
+# lead ro'yxatini (shu davr uchun) ko'rsatadi.
+# ---------------------------------------------------------------------------
+
+@app.route("/lead-analytics")
+@login_required
+@module_required("target")
+def lead_analytics_page():
+    period = request.args.get("period", "last_30d")
+    level = request.args.get("level", "campaign")
+    if level not in ("campaign", "adset", "ad", "crm"):
+        level = "campaign"
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    # Faqat "custom" davr ANIQ ikkala sana bilan birga kelganda ishlatiladi --
+    # aks holda (masalan foydalanuvchi tezkor tanlovga qaytsa) eskirgan
+    # sanalar tasodifan qolib ketmasligi uchun tozalanadi.
+    if period != "custom" or not (date_from and date_to):
+        date_from = date_to = None
+
+    meta_token, meta_account = _company_meta_creds(_current_company())
+    # "CRM" tab jadval darajasiga ega emas (xom lead ro'yxati) -- lekin
+    # tepadagi KPI pliltkalar/"Won dynamics" grafigi baribir kampaniya
+    # darajasidagi hisobga tayanadi.
+    table_level = "campaign" if level == "crm" else level
+    if not (meta_token and meta_account):
+        data = {
+            "not_connected": True, "rows": [], "totals": {}, "goal_breakdown": [],
+            "won_dynamics": [], "pipeline_totals": {},
+            "generated_at": dt.datetime.utcnow().isoformat(), "level": table_level,
+        }
+    else:
+        try:
+            data = lead_analytics.get_lead_analytics(
+                level=table_level, date_preset=period, date_from=date_from, date_to=date_to,
+                access_token=meta_token, ad_account_id=meta_account,
+            )
+        except Exception as e:
+            # XAVFSIZLIK: target_page()dagi bilan bir xil qoida -- xom
+            # exception matni emas, xavfsiz umumiy xabar ko'rsatiladi.
+            logger.exception("Lead Analytics: ma'lumot olishda xato")
+            data = {
+                "error": meta_api.safe_error_message(e), "rows": [], "totals": {}, "goal_breakdown": [],
+                "won_dynamics": [], "pipeline_totals": {},
+                "generated_at": dt.datetime.utcnow().isoformat(), "level": table_level,
+            }
+
+    crm_leads = []
+    stage_color_by_key, stage_label_by_key = {}, {}
+    if level == "crm" and not data.get("error") and not data.get("not_connected"):
+        date_bounds = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else _date_preset_bounds_utc(period)
+        session = get_session()
+        try:
+            stages = _active_funnel_stages(session)
+            stage_color_by_key = {s.key: s.color for s in stages}
+            stage_label_by_key = {s.key: s.label for s in stages}
+            q = session.query(Lead).order_by(Lead.created_at.desc())
+            if date_bounds:
+                start_utc, end_utc = date_bounds
+                effective_created = func.coalesce(Lead.lead_created_time, Lead.created_at)
+                q = q.filter(effective_created >= start_utc, effective_created < end_utc)
+            crm_leads = [{
+                "id": l.id, "full_name": l.full_name, "phone": l.phone,
+                "campaign_name": l.campaign_name, "form_name": l.form_name, "source": l.source,
+                "status": l.status, "created_at": l.created_at,
+            } for l in q.limit(300).all()]
+        finally:
+            session.close()
+
+    return render_template(
+        "lead_analytics.html", data=data, period=period, level=level,
+        date_from=date_from or "", date_to=date_to or "",
+        crm_leads=crm_leads, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Analitika -- barcha hisobotlarni asta-sekin to'plab boradigan umumiy bo'lim
 # (target/xarajat, menejerlar faolligi, qo'ng'iroq statistikasi).
 # ---------------------------------------------------------------------------
@@ -3410,39 +3494,111 @@ def _sold_stage_key(stages) -> str | None:
     return None
 
 
+_LEAD_SOURCE_LABELS = {"meta": "Meta", "manual": "Qo'lda", "import": "Import"}
+_LEADS_PER_PAGE = 50
+
+
 @app.route("/leads")
 @login_required
 @module_required("leads")
 def leads_list():
     status_filter = request.args.get("status", "")
     search_q = request.args.get("q", "").strip()
+    # 2026-09, foydalanuvchi so'rovi ("forma bo'yicha, import bo'yicha, sana
+    # bo'yicha, filtrlash to'liq mumkin bo'lsin"): qo'shimcha filtrlar --
+    # forma (bir nechtasi tanlanishi mumkin, "Filtr" tugmasidagi
+    # katakchalar), manba ("import" ham shu -- Lead.source ning uchta
+    # qiymatidan biri), va sana oralig'i.
+    form_ids = [f for f in request.args.getlist("form_id") if f]
+    source_filters = [s for s in request.args.getlist("source") if s in _LEAD_SOURCE_LABELS]
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    # "yangi" (hali bog'lanilmagan) yoki "ishlangan" (bog'lanilgan/sifatli/
+    # sifatsiz/sotilgan -- barchasi "yangi"dan boshqa) bo'yicha filtr --
+    # `/companies`dagi "CRM ko'rish" modalidan keladi (2026-09, foydalanuvchi
+    # so'rovi: "obrabotka qilinganlarni yoki obrabotka qilinmagan, yangi
+    # bo'lsa ... tanlab berish kerak"). Aniq `status` berilgan bo'lsa, u
+    # ustun turadi (pastda).
+    status_group = request.args.get("status_group", "")  # "new" | "processed" | ""
+    try:
+        page = max(int(request.args.get("page", "1")), 1)
+    except ValueError:
+        page = 1
+
+    # 2026-09, foydalanuvchi so'rovi ("kompaniyalarni tanlab, leadlarga
+    # kirish mumkin bo'lsin"): platforma egasi `/companies`dagi "CRM
+    # ko'rish" tugmasi orqali BOSHQA kompaniyaning lidlarini, hisobiga
+    # kirib-chiqmasdan, to'g'ridan-to'g'ri shu sahifada ko'rishi mumkin --
+    # `db.scoped_as()` orqali (`_managers_view`dagi bilan bir xil andoza).
+    # Oddiy foydalanuvchi uchun bu parametr e'tiborga olinmaydi (faqat
+    # o'zining kompaniyasini ko'radi, avvalgidek).
+    viewing_company = None
+    requested_company_id = request.args.get("company_id", type=int)
+    scope_company_id = current_user.company_id
+    if requested_company_id and _is_platform_owner():
+        scope_company_id = requested_company_id
+
     session = get_session()
     try:
-        stages = _active_funnel_stages(session)
-        q = session.query(Lead).order_by(Lead.created_at.desc())
-        if status_filter:
-            q = q.filter(Lead.status == status_filter)
-        if search_q:
-            like = f"%{search_q}%"
-            q = q.filter(
-                (Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.phone2.ilike(like))
-                | (Lead.campaign_name.ilike(like))
+        with db.scoped_as(scope_company_id):
+            if requested_company_id and _is_platform_owner():
+                viewing_company = session.get(Company, scope_company_id)
+            stages = _active_funnel_stages(session)
+            available_forms = (
+                session.query(Lead.form_id, Lead.form_name, func.count(Lead.id))
+                .filter(Lead.form_id.isnot(None))
+                .group_by(Lead.form_id, Lead.form_name)
+                .order_by(func.count(Lead.id).desc())
+                .all()
             )
-        leads = q.limit(300).all()
-        rows = [{
-            "id": l.id, "full_name": l.full_name, "phone": l.phone, "phone2": l.phone2,
-            "campaign_name": l.campaign_name, "adset_name": l.adset_name, "ad_name": l.ad_name,
-            "status": l.status, "source": l.source,
-            "created_at": l.created_at, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else None,
-            "sale_amount": l.sale_amount,
-        } for l in leads]
-        stage_rows = [{"key": s.key, "label": s.label} for s in stages]
-        stage_color_by_key = {s.key: s.color for s in stages}
-        stage_label_by_key = {s.key: s.label for s in stages}
+
+            q = session.query(Lead).order_by(Lead.created_at.desc())
+            if status_filter:
+                q = q.filter(Lead.status == status_filter)
+            elif status_group in ("new", "processed"):
+                new_keys = lead_analytics._new_stage_keys(session)
+                q = q.filter(Lead.status.in_(new_keys)) if status_group == "new" else q.filter(Lead.status.notin_(new_keys))
+            if search_q:
+                like = f"%{search_q}%"
+                q = q.filter(
+                    (Lead.full_name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.phone2.ilike(like))
+                    | (Lead.campaign_name.ilike(like))
+                )
+            if form_ids:
+                q = q.filter(Lead.form_id.in_(form_ids))
+            if source_filters:
+                q = q.filter(Lead.source.in_(source_filters))
+            date_bounds = custom_range_bounds_utc(date_from, date_to) if (date_from and date_to) else None
+            if date_bounds:
+                start_utc, end_utc = date_bounds
+                effective_created = func.coalesce(Lead.lead_created_time, Lead.created_at)
+                q = q.filter(effective_created >= start_utc, effective_created < end_utc)
+
+            total_count = q.count()
+            total_pages = max((total_count + _LEADS_PER_PAGE - 1) // _LEADS_PER_PAGE, 1)
+            page = min(page, total_pages)
+            leads = q.offset((page - 1) * _LEADS_PER_PAGE).limit(_LEADS_PER_PAGE).all()
+            rows = [{
+                "id": l.id, "full_name": l.full_name, "phone": l.phone, "phone2": l.phone2,
+                "campaign_name": l.campaign_name, "adset_name": l.adset_name, "ad_name": l.ad_name,
+                "form_name": l.form_name,
+                "status": l.status, "source": l.source,
+                "created_at": l.created_at, "assigned_manager": l.assigned_manager.full_name if l.assigned_manager else None,
+                "sale_amount": l.sale_amount,
+            } for l in leads]
+            stage_rows = [{"key": s.key, "label": s.label} for s in stages]
+            stage_color_by_key = {s.key: s.color for s in stages}
+            stage_label_by_key = {s.key: s.label for s in stages}
+            form_options = [{"id": fid, "name": fname or fid, "count": cnt} for fid, fname, cnt in available_forms]
+            viewing_company_row = {"id": viewing_company.id, "name": viewing_company.name} if viewing_company else None
     finally:
         session.close()
     return render_template(
-        "leads.html", leads=rows, status_filter=status_filter, search_q=search_q,
+        "leads.html", leads=rows, status_filter=status_filter, search_q=search_q, status_group=status_group,
+        form_ids=form_ids, source_filters=source_filters, date_from=date_from, date_to=date_to,
+        form_options=form_options, source_labels=_LEAD_SOURCE_LABELS,
+        page=page, total_pages=total_pages, total_count=total_count,
+        viewing_company=viewing_company_row,
         stages=stage_rows, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
     )
 
@@ -5075,6 +5231,35 @@ def company_delete(company_id):
     finally:
         session.close()
     return redirect(url_for("companies"))
+
+
+@app.route("/companies/<int:company_id>/lead-forms")
+@login_required
+@platform_owner_required
+def company_lead_forms(company_id):
+    """2026-09, foydalanuvchi so'rovi ("kompaniyalarni tanlab, forma bo'yicha
+    galochka qo'yib CRM ko'rish"): `/companies` sahifasidagi "CRM ko'rish"
+    modali shu JSON'ni chaqirib, o'sha ANIQ kompaniyaning qaysi Meta
+    Instant Formalaridan lead kelganini (va nechtadan) ko'rsatadi --
+    modal ochilganda "dangasa" yuklanadi (har bir kompaniya qatori uchun
+    oldindan so'ralmaydi, faqat tugma bosilganda)."""
+    session = get_session()
+    try:
+        with db.scoped_as(company_id):
+            rows = (
+                session.query(Lead.form_id, Lead.form_name, func.count(Lead.id))
+                .filter(Lead.form_id.isnot(None))
+                .group_by(Lead.form_id, Lead.form_name)
+                .order_by(func.count(Lead.id).desc())
+                .all()
+            )
+            total_leads = session.query(func.count(Lead.id)).scalar() or 0
+    finally:
+        session.close()
+    return jsonify({
+        "forms": [{"id": fid, "name": fname or fid, "count": cnt} for fid, fname, cnt in rows],
+        "total_leads": total_leads,
+    })
 
 
 @app.route("/companies/<int:company_id>/managers", methods=["GET", "POST"])

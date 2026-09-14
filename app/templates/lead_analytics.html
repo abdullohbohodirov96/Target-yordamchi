@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Lead Analytics — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Lead Analytics</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Har bir target bo'yicha: xarajat, lidlar, bog'lanish/sotuv statistikasi va o'rtacha yopilish vaqti &middot; Yangilangan {{ data.generated_at[:16].replace('T',' ') }} UTC</p>
+  </div>
+  {% include "_lead_analytics_date_picker.html" %}
+</div>
+
+{% if data.not_connected %}
+  <div class="card" style="max-width:520px; margin-bottom:20px">
+    <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
+    <p class="page-subtitle" style="margin-top:-6px">Lead Analytics uchun avval reklama hisobingizni ulang.</p>
+    <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+  </div>
+{% elif data.error %}
+  <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
+{% endif %}
+
+{% set t = data.totals %}
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">ACT <span class="text-faint" style="font-weight:400">(bog'lanildi)</span></div><div class="kpi-value text-blue">{{ t.act or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">WON <span class="text-faint" style="font-weight:400">(yutilgan)</span></div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">CONV.RATE</div><div class="kpi-value">{{ "%.1f"|format(t.conv_rate or 0) }}%</div></div>
+</div>
+
+<div class="panel">
+  <div class="tabs">
+    {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads'), ('crm','CRM')] %}
+    <a href="?period={{ period }}&level={{ lvl }}{% if date_from %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="{{ 'active' if level==lvl }}">
+      {{ label }}{% if level==lvl %} <span class="badge badge-color-dim" style="margin-left:4px">{{ crm_leads|length if lvl=='crm' else (data.rows|length) }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if level == 'crm' %}
+  {# ---- 4-tab: kampaniya bo'yicha JAMLANMAGAN, xom lead ro'yxati (shu davr uchun) ---- #}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Ism</th><th>Telefon</th><th>Kampaniya</th><th>Forma</th><th>Manba</th><th>Holat</th><th>Sana</th></tr></thead>
+    <tbody>
+      {% for l in crm_leads %}
+      <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
+        <td>{{ l.full_name or '—' }}</td>
+        <td class="text-dim">{{ l.phone or '—' }}</td>
+        <td class="text-dim">{{ l.campaign_name or '—' }}</td>
+        <td class="text-faint">{{ l.form_name or '—' }}</td>
+        <td class="text-faint">{{ {'meta':'Meta','manual':"Qo'lda",'import':'Import'}.get(l.source, l.source) }}</td>
+        <td><span class="badge badge-color-{{ stage_color_by_key.get(l.status, 'dim') }}">{{ stage_label_by_key.get(l.status, l.status) }}</span></td>
+        <td class="text-faint">{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="7">Bu davrda lead yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="searchbar">
+    <div class="search-input-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
+      <input id="laSearch" type="text" placeholder="Qidirish...">
+    </div>
+  </div>
+
+  <div class="table-scroll">
+  <table id="la-table">
+    <thead>
+      <tr>
+        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
+        <th class="sortable num" data-key="spend" data-type="num">Spend</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">Leads</th>
+        <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
+        <th class="sortable num" data-key="act" data-type="num" style="color:var(--blue)">ACT</th>
+        <th class="sortable num" data-key="sold" data-type="num" style="color:var(--good)">WON</th>
+        <th class="sortable num" data-key="unqualified" data-type="num" style="color:var(--bad)">LOSS</th>
+        <th class="sortable num" data-key="cost_per_won" data-type="num">COST/WON</th>
+        <th class="sortable num" data-key="conv_rate" data-type="num">CONV.RATE</th>
+        <th class="sortable num" data-key="deal_time_days" data-type="num">DEAL TIME</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in data.rows %}
+      <tr data-name="{{ r.name|lower }}"
+          data-spend="{{ r.spend }}" data-crm_leads_total="{{ r.crm_leads_total }}" data-cpl="{{ r.cpl }}"
+          data-act="{{ r.act }}" data-sold="{{ r.sold }}" data-unqualified="{{ r.unqualified }}"
+          data-cost_per_won="{{ r.cost_per_won }}" data-conv_rate="{{ r.conv_rate }}"
+          data-deal_time_days="{{ r.deal_time_days if r.deal_time_days is not none else -1 }}">
+        <td><span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}</td>
+        <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
+        <td class="num">{{ r.crm_leads_total or 0 }}</td>
+        <td class="num">${{ "%.2f"|format(r.cpl or 0) }}</td>
+        <td class="num text-blue">{{ r.act or 0 }}</td>
+        <td class="num text-good-strong">{{ r.sold or 0 }}</td>
+        <td class="num text-bad">{{ r.unqualified or 0 }}</td>
+        <td class="num">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
+        <td class="num">{{ "%.1f"|format(r.conv_rate or 0) }}%</td>
+        <td class="num">{{ "%.1f"|format(r.deal_time_days)+" kun" if r.deal_time_days is not none else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="10">Ma'lumot yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
+{% set pt = data.pipeline_totals %}
+<div class="card" style="margin-top:20px">
+  <h2>Won dynamics — kunlar bo'yicha</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Tanlangan davrda kuniga nechta lead sotuvga (WON) aylanganini ko'rsatadi &middot; butun kompaniya bo'yicha.</p>
+  <div class="kpi-grid" style="margin-bottom:18px">
+    <div class="kpi-card"><div class="kpi-label">WON</div><div class="kpi-value good">{{ pt.won or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">LOSS</div><div class="kpi-value bad">{{ pt.lost or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">IN PIPELINE</div><div class="kpi-value">{{ pt.in_pipeline or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">CONV.RATE</div><div class="kpi-value">{{ "%.1f"|format(pt.conv_rate or 0) }}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">COST/WON</div><div class="kpi-value">${{ "%.2f"|format(pt.cost_per_won or 0) }}</div></div>
+  </div>
+  {% if data.won_dynamics %}
+  <div style="height:220px"><canvas id="chart-won-dynamics"></canvas></div>
+  {% else %}
+  <p class="text-faint">Bu davrda hali sotuv yo'q.</p>
+  {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  {% if level != 'crm' %}
+  var table = document.getElementById('la-table');
+  var tbody = table.querySelector('tbody');
+  var search = document.getElementById('laSearch');
+  var sortState = { key: null, dir: 1 };
+
+  search.addEventListener('input', function () {
+    var q = search.value.trim().toLowerCase();
+    Array.prototype.forEach.call(tbody.rows, function (row) {
+      if (row.dataset.name === undefined) return;
+      row.style.display = row.dataset.name.indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
+
+  Array.prototype.forEach.call(table.querySelectorAll('th.sortable'), function (th) {
+    th.addEventListener('click', function () {
+      var key = th.dataset.key, type = th.dataset.type;
+      sortState.dir = sortState.key === key ? -sortState.dir : 1;
+      sortState.key = key;
+      var rows = Array.prototype.filter.call(tbody.rows, function (r) { return r.dataset.name !== undefined; });
+      rows.sort(function (a, b) {
+        var va = a.dataset[key], vb = b.dataset[key];
+        if (type === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+        return va > vb ? sortState.dir : va < vb ? -sortState.dir : 0;
+      });
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      Array.prototype.forEach.call(table.querySelectorAll('th.sortable'), function (h) { h.removeAttribute('data-sorted'); });
+      th.dataset.sorted = sortState.dir === 1 ? 'asc' : 'desc';
+    });
+  });
+  {% endif %}
+})();
+</script>
+
+{% if data.won_dynamics %}
+<script>
+// 2026-09: qidirish/saralash JS'idan ATAYLAB ALOHIDA <script> blokida --
+// Chart.js CDN'dan yuklanmasa (masalan sekin tarmoq/ad-blocker) yoki
+// grafik chizishda xato bo'lsa, shu try/catch faqat grafikni o'tkazib
+// yuboradi, yuqoridagi jadval qidirish/saralash funksiyasini "sindirmaydi"
+// (ilgari ikkalasi bitta IIFE'da edi -- bittasi otsa, ikkinchisi ham
+// to'xtab qolardi).
+try {
+  new Chart(document.getElementById('chart-won-dynamics'), {
+    type: 'bar',
+    data: {
+      labels: {{ data.won_dynamics|map(attribute='date')|list|tojson }},
+      datasets: [{ label: 'WON', data: {{ data.won_dynamics|map(attribute='won')|list|tojson }}, backgroundColor: '#0B63F5', borderRadius: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    }
+  });
+} catch (e) { console.error('Won dynamics grafigini chizib bo\'lmadi:', e); }
+</script>
+{% endif %}
+{% endblock %}

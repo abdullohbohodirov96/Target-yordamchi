@@ -125,6 +125,11 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
     elif date_preset == "this_year":
         start_tashkent = today_start_tashkent.replace(month=1, day=1)
         end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+    elif date_preset == "maximum":
+        # "Lead Analytics" kalendaridagi "Maksimal" tanlovi -- Meta'ning o'zi
+        # ham shu nomdagi date_preset'ni tan oladi (butun mavjud tarix).
+        # CRM tomonida buning ma'nosi -- filtr UMUMAN qo'yilmasin (None).
+        return None
     else:
         return None
 
@@ -288,7 +293,8 @@ def _resolve_meta_result(goal: str, actions: list[dict] | None, reach: int, impr
 
 def get_kpis(
     level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False,
-    *, access_token: str | None = None, ad_account_id: str | None = None,
+    *, date_from: str | None = None, date_to: str | None = None,
+    access_token: str | None = None, ad_account_id: str | None = None,
 ) -> dict:
     """`_get_kpis_uncached()`ning keshlangan qatlami -- pastdagi izohga
     qarang. Xato natija (`"error"` kaliti bilan) HECH QACHON keshlanmaydi,
@@ -301,8 +307,15 @@ def get_kpis(
     va shu 120 soniya ichida Kompaniya B ham Target sahifasini ochsa, u
     Kompaniya A'ning (yoki teskarisi) keshlangan ma'lumotini ko'rardi,
     HATTO ikkalasi turli `ad_account_id` bilan chaqirilgan bo'lsa ham!
-    Endi kesh kaliti aniq qaysi hisob so'ralganini o'z ichiga oladi."""
-    cache_key = (level, date_preset, active_only, ad_account_id or "__default__")
+    Endi kesh kaliti aniq qaysi hisob so'ralganini o'z ichiga oladi.
+
+    2026-09, "Lead Analytics" bo'limi (kalendar bilan ANIQ sana oralig'ini
+    tanlash) uchun: `date_from`/`date_to` (YYYY-MM-DD) berilsa, bular
+    `date_preset`dan USTUN turadi -- Meta'ga aniq `time_range` sifatida
+    yuboriladi, CRM tomonida esa `custom_range_bounds_utc()` bilan mos
+    filtr qo'yiladi. Berilmasa (None, None) -- eski xatti-harakat
+    (`date_preset` orqali) o'zgarishsiz saqlanadi."""
+    cache_key = (level, date_preset, active_only, date_from or "", date_to or "", ad_account_id or "__default__")
     now = time.monotonic()
     with _kpi_cache_lock:
         cached = _kpi_cache.get(cache_key)
@@ -311,6 +324,7 @@ def get_kpis(
 
     result = _get_kpis_uncached(
         level=level, date_preset=date_preset, active_only=active_only,
+        date_from=date_from, date_to=date_to,
         access_token=access_token, ad_account_id=ad_account_id,
     )
 
@@ -322,7 +336,8 @@ def get_kpis(
 
 def _get_kpis_uncached(
     level: str = "campaign", date_preset: str = "last_30d", active_only: bool = False,
-    *, access_token: str | None = None, ad_account_id: str | None = None,
+    *, date_from: str | None = None, date_to: str | None = None,
+    access_token: str | None = None, ad_account_id: str | None = None,
 ) -> dict:
     """Qaytaradi: {"rows": [...], "totals": {...}, "goal_breakdown": [...],
     "generated_at": ISO, "level": level}
@@ -333,11 +348,13 @@ def _get_kpis_uncached(
     result_label."""
     cfg = LEVELS.get(level, LEVELS["campaign"])
     id_field, name_field = cfg["id_field"], cfg["name_field"]
+    custom_range = {"since": date_from, "until": date_to} if (date_from and date_to) else None
 
     try:
         insight_rows = meta_api.get_insights(
             level=level,
             date_preset=date_preset,
+            time_range=custom_range,
             fields=[id_field, name_field, "spend", "impressions", "reach", "actions"],
             access_token=access_token, ad_account_id=ad_account_id,
         )
@@ -426,7 +443,7 @@ def _get_kpis_uncached(
     # XIL davr uchun (yuqoridagi Meta xarajat/ko'rsatish so'rovi ham shu
     # davr uchun edi). Preset tanib bo'lmasa (masalan kelajakda yangi
     # preset qo'shilsa), eski xatti-harakat -- filtrisiz, hammasi -- saqlanadi.
-    date_bounds = _date_preset_bounds_utc(date_preset)
+    date_bounds = custom_range_bounds_utc(date_from, date_to) if custom_range else _date_preset_bounds_utc(date_preset)
     session = get_session()
     try:
         lead_query = session.query(Lead)
