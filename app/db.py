@@ -1114,6 +1114,11 @@ class CampaignDraftMedia(Base):
     meta_video_id = Column(String(64), nullable=True)
     upload_status = Column(String(16), nullable=False, default="pending")  # pending|uploaded|failed
     upload_error = Column(Text, nullable=True)
+    # 2026-09, Kreativ studiya (AI rasm-generatsiya, `creative_studio.py`):
+    # bu media Kreativ studiyadagi qaysi rasmdan (`CreativeAsset`) olingan
+    # -- FAQAT kuzatuv uchun, majburiy emas (qo'lda yuklangan rasm/video
+    # uchun NULL qoladi).
+    creative_asset_id = Column(Integer, ForeignKey("creative_assets.id"), nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
@@ -1399,6 +1404,119 @@ class KVEntry(Base):
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
 
 
+# ---------------------------------------------------------------------------
+# 2026-09, KREATIV STUDIYA (foydalanuvchi so'rovi: "kompaniya brifidan kelib
+# chiqib OpenAI orqali to'liq tayyor, brend logotipi ilova qilingan, matni
+# chotki reklama rasmini AI generatsiya qilib bersin... tahrirlash mumkin
+# bo'lsin... PNG/PDF yuklab olish... Autopilot'ga tashlash... 20 ta tayyor
+# shablon... tariflar bo'yicha oylik limit").
+#
+# ARXITEKTURA (muhim, `creative_studio.py` ham shuni tushuntiradi): OpenAI
+# rasm modellari matnni (ayniqsa lotin-o'zbekcha apostrofli so'zlarni) rasm
+# ICHIGA ishonchli chizmaydi. Shuning uchun OpenAI'dan FAQAT matnsiz fon/
+# mahsulot tasviri olinadi (`CreativeAsset.base_image_storage_path`), matn
+# (sarlavha/tavsif/CTA) va logotip esa Pillow orqali dasturiy ravishda,
+# aniq shrift bilan USTIGA chiziladi (`layers_json` -> `final_storage_path`).
+# Natija har doim 100% o'qiladigan bo'ladi va foydalanuvchi qatlamlarni
+# (matn/logo joylashuvi) keyin tahrirlay oladi.
+# ---------------------------------------------------------------------------
+
+class CompanyBrandKit(Base):
+    """Kompaniyaning brend aktivlari -- BITTA kompaniyaga BITTA qator
+    (`company_id` unique). Logotip fayli `creative_studio.BRAND_ROOT/
+    <company_id>/logo.<ext>` ostida saqlanadi (`logo_storage_path` -- shu
+    ildizga nisbatan, `campaign_media.MEDIA_ROOT`dan ALOHIDA). Ranglar --
+    "#RRGGBB" (ixtiyoriy; bo'lsa AI fon promptida va shablon ranglarida
+    hisobga olinadi)."""
+    __tablename__ = "company_brand_kits"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, unique=True, index=True)
+    logo_storage_path = Column(Text, nullable=True)
+    logo_content_type = Column(String(64), nullable=True)
+    primary_color = Column(String(9), nullable=True)
+    secondary_color = Column(String(9), nullable=True)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+
+class CreativeAsset(Base):
+    """Bitta generatsiya qilingan / shablondan yaratilgan reklama rasmi.
+
+    `status` oqimi: "collecting_brief" (savol-javob hali tugamagan) ->
+    "generating" (OpenAI so'rovi ketyapti -- ikki marta bosishdan himoya) ->
+    "ready" (rasm tayyor, tahrirlash/eksport mumkin) yoki "failed"
+    (`error_message` -- foydalanuvchiga ko'rsatiladigan o'zbekcha matn).
+    `kind`: "ai_generated" | "template" | "upload".
+    `aspect`: "1:1" | "4:5" | "9:16" (Meta joylashuvlariga mos).
+    `brief_answers_json` -- {key: javob} (`creative_studio.
+    CREATIVE_BRIEF_QUESTIONS`); `missing_fields_json` -- hali so'ralmagan
+    savol kalitlari ro'yxati.
+    `base_image_storage_path` -- OpenAI'dan olingan XOM (matnsiz) fon,
+    `layers_json` -- matn/logo qatlamlari (0..1 nisbiy koordinatalar,
+    sxemasi `creative_templates.py`da), `final_storage_path` -- qatlamlar
+    bilan birga chizilgan YAKUNIY PNG (Autopilot mediasi/eksport shundan).
+    Yo'llar `creative_studio.CREATIVE_ROOT`ga nisbatan."""
+    __tablename__ = "creative_assets"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    created_by_manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
+    title = Column(String(255), nullable=True)
+    kind = Column(String(16), nullable=False, default="ai_generated")  # ai_generated | template | upload
+    status = Column(String(16), nullable=False, default="collecting_brief")  # collecting_brief|generating|ready|failed
+    template_key = Column(String(64), nullable=True)
+    aspect = Column(String(8), nullable=False, default="1:1")  # 1:1 | 4:5 | 9:16
+    brief_answers_json = Column(Text, nullable=True)
+    missing_fields_json = Column(Text, nullable=True)
+    prompt_used = Column(Text, nullable=True)
+    openai_response_id = Column(String(128), nullable=True)
+    base_image_storage_path = Column(Text, nullable=True)
+    layers_json = Column(Text, nullable=True)
+    final_storage_path = Column(Text, nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+    def get_brief_answers(self) -> dict:
+        return CampaignDraft._load_json(self.brief_answers_json)
+
+    def set_brief_answers(self, answers: dict) -> None:
+        self.brief_answers_json = json.dumps(answers or {}, ensure_ascii=False)
+
+    def get_layers(self) -> list:
+        if not self.layers_json:
+            return []
+        try:
+            parsed = json.loads(self.layers_json)
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    def set_layers(self, layers: list) -> None:
+        self.layers_json = json.dumps(layers or [], ensure_ascii=False)
+
+
+class ImageGenerationUsage(Base):
+    """Oylik AI rasm-generatsiya sanog'i (tarif kvotasi, `plans.Plan.
+    image_generation_monthly_limit`). Har kompaniya + oy ("YYYY-MM") uchun
+    BITTA qator; `count` FAQAT muvaffaqiyatli generatsiyadan KEYIN
+    oshiriladi (`creative_studio.increment_usage`) -- xato bo'lsa kvota
+    sarflanmaydi."""
+    __tablename__ = "image_generation_usage"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    period_key = Column(String(7), nullable=False)  # "YYYY-MM"
+    count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "period_key", name="uq_image_gen_usage_company_period"),
+    )
+
+
 # 2026-09, foydalanuvchi so'rovi: "kompaniyalarni o'chirib tashlash chiqar"
 # -- ro'yxatda ilgari FAQAT "Yoqish/To'xtatish" (Company.is_active, hech
 # narsa o'chirmaydi) bor edi. Haqiqiy O'CHIRISH uchun har bir `company_id`
@@ -1529,6 +1647,9 @@ _COMPANY_SCOPED_MODELS = [
     # (tenant-filtrsiz) -- tuzatildi. Meta Ads Autopilot jadvallari ham
     # shu yerda -- qoralamalar boshqa kompaniyaga HECH QACHON ko'rinmasin.
     IgDmAdSource, CampaignDraft, CampaignDraftMedia, CampaignDraftEvent,
+    # 2026-09: Kreativ studiya (AI rasm-generatsiya) jadvallari -- brend
+    # kit, rasmlar va oylik kvota sanog'i boshqa kompaniyaga ko'rinmasin.
+    CompanyBrandKit, CreativeAsset, ImageGenerationUsage,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

@@ -44,6 +44,13 @@ keyingisida cheksiz"):
     Bu DB xarajati (`CompetitorAd`/`CompetitorAnalysis` qatorlari va har
     {ROTATION_DAYS} kunda BITTA raqobatchiga ketadigan Meta Ad Library +
     AI-tahlil xarajati) tarifga mutanosib bo'lishi uchun.
+
+2026-09, foydalanuvchi so'rovi (Kreativ studiya / AI rasm-generatsiya,
+`creative_studio.py`): oylik rasm-generatsiya limiti
+(`image_generation_monthly_limit`) qo'shildi -- Sinov 0 (yopiq),
+Boshlang'ich 10, Biznes 30, Ekspert cheksiz. ANIQ sonlar HOZIRCHA
+placeholder, keyinchalik moslashtiriladi -- mexanizm (`creative_studio.
+check_quota`/`increment_usage`, `db.ImageGenerationUsage`) to'liq ishlaydi.
 """
 
 from dataclasses import dataclass
@@ -64,6 +71,10 @@ class Plan:
     can_connect_meta_ads: bool    # False bo'lsa -- connect-accounts sahifasida faqat Instagram maydoni ko'rinadi
     highlight: bool               # narxlar sahifasida "Eng ommabop" belgisi
     features: tuple                # marketing/taqqoslash jadvali uchun aniq bandlar
+    # 2026-09 Kreativ studiya: oyiga nechta AI rasm generatsiya qilish
+    # mumkin (OpenAI Images xarajati). None = cheksiz, 0 = funksiya yopiq.
+    # Sonlar HOZIRCHA placeholder (qarang: fayl boshidagi izoh).
+    image_generation_monthly_limit: "int | None" = 0
 
 
 PLANS = {
@@ -81,6 +92,7 @@ PLANS = {
         modules=frozenset({"dashboard", "leads", "target", "analytics"}),
         manager_limit=1, leads_limit=100, competitor_limit=0,
         ai_enabled=False, can_connect_meta_ads=False, highlight=False,
+        image_generation_monthly_limit=0,
         features=(
             "5 kun bepul, karta shart emas",
             "Faqat Instagram akkauntini ulash",
@@ -105,6 +117,7 @@ PLANS = {
         # dan 90%+" bosqichida) va tarifni oshirish taklifi ko'rsatiladi.
         manager_limit=2, leads_limit=500, competitor_limit=3,
         ai_enabled=False, can_connect_meta_ads=True, highlight=False,
+        image_generation_monthly_limit=10,
         features=(
             "Sinovdagi hammasi",
             "To'liq Meta Ads hisoblar (bir nechta kampaniya) ulash",
@@ -124,6 +137,7 @@ PLANS = {
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check", "lead_analytics"}),
         manager_limit=4, leads_limit=5000, competitor_limit=10,
         ai_enabled=True, can_connect_meta_ads=True, highlight=True,
+        image_generation_monthly_limit=30,
         features=(
             "Boshlang'ichdagi hammasi",
             "Raqobatchilar kuzatuvi (Meta Ad Library) -- 10 tagacha",
@@ -140,6 +154,7 @@ PLANS = {
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check", "lead_analytics"}),
         manager_limit=None, leads_limit=None, competitor_limit=None,
         ai_enabled=True, can_connect_meta_ads=True, highlight=False,
+        image_generation_monthly_limit=None,
         features=(
             "Biznesdagi hammasi",
             "Cheksiz raqobatchilar kuzatuvi (Meta Ad Library)",
@@ -209,6 +224,10 @@ FEATURE_MATRIX = [
     {"label": "Sozlamalar (voronka, vazifalar, qo'shimcha maydonlar)", "values": _has("settings")},
     {"label": "Qo'ng'iroq audio nazorati (Individual tekshirish)", "values": _has("individual_check")},
     {"label": "Ichki AI-yordamchi", "values": {p.key: p.ai_enabled for p in PLAN_LIST}},
+    # 2026-09 Kreativ studiya: 0 = X ikonkasi (False), son = "N tagacha
+    # rasm/oyda", None = "Cheksiz".
+    {"label": "AI rasm-generatsiya (Kreativ studiya)",
+     "values": {p.key: (_count_or_unlimited(p.image_generation_monthly_limit, "rasm/oyda") if p.image_generation_monthly_limit != 0 else False) for p in PLAN_LIST}},
     {"label": "Menejer/admin hisoblar soni",
      "values": {p.key: _count_or_unlimited(p.manager_limit, "hisob") for p in PLAN_LIST}},
     {"label": "Qo'llab-quvvatlash",
@@ -268,6 +287,13 @@ def competitor_limit_for_plan(key: "str | None") -> "int | None":
 
 def ai_enabled_for_plan(key: "str | None") -> bool:
     return get_plan(key).ai_enabled
+
+
+def image_generation_limit_for_plan(key: "str | None") -> "int | None":
+    """Kreativ studiya (AI rasm) oylik limiti: `None` -- cheksiz, `0` --
+    funksiya shu tarifda yopiq (`creative_studio.check_quota` shu qiymat
+    bilan ishlaydi)."""
+    return get_plan(key).image_generation_monthly_limit
 
 
 def next_plan_up(key: "str | None") -> "Plan | None":
