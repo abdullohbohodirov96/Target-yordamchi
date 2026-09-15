@@ -917,7 +917,14 @@ class IgDmConversation(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # 2026-08 multi-tenant 1-bosqich -- hali hech qanday route bo'yicha filtrlamaydi
     external_id = Column(String(64), unique=True, nullable=False)  # Meta Graph API suhbat (conversation) ID'i
-    customer_ig_id = Column(String(64), nullable=True, index=True)  # mijozning Instagram-Scoped ID'i (IGSID)
+    # 2026-09, foydalanuvchi so'rovi ("facebookdan keladigan, instagramdan
+    # keladigan sms xabarnomalarimiz bor... facebookga otdelniy ikonkasi
+    # bo'lsin"): shu suhbat Instagram Direct orqalimi yoki Facebook
+    # Messenger orqalimi -- ro'yxatda va sarlavhada alohida ikonka
+    # ko'rsatish uchun. Eski qatorlar avtomatik "instagram" bo'ladi
+    # (default) -- ular haqiqatan ham faqat shu yo'l orqali yig'ilgan edi.
+    channel = Column(String(16), nullable=False, default="instagram")  # "instagram" | "facebook"
+    customer_ig_id = Column(String(64), nullable=True, index=True)  # mijozning Instagram-Scoped ID'i (IGSID) yoki Facebook Page-Scoped ID'i (PSID)
     customer_username = Column(String(255), nullable=True)  # ma'lum bo'lsa (Meta har doim ham bermaydi)
 
     message_count = Column(Integer, nullable=False, default=0)  # shu suhbatda hozircha sinxronlangan JAMI xabar soni

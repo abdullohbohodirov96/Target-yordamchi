@@ -169,6 +169,16 @@ def refresh_conversation(company, conversation) -> dict:
     qayta tortish shart emas. Qaytaradi: {"ok": bool, "error": str|None}."""
     if not is_configured(company):
         return {"ok": False, "error": None}
+    # 2026-09, Facebook Messenger qo'llab-quvvatlashi qo'shilganda: bu
+    # funksiya (va pastdagi `_upsert_conversation_and_messages`) FAQAT
+    # Instagram Graph API suhbat/xabar so'rovlaridan foydalanadi -- shu
+    # sabab Facebook suhbatlari (channel="facebook") uchun bu yerda
+    # chaqirilsa doim xato qaytaradi (sintetik `webhook:...` ID Instagram
+    # suhbat ID'i sifatida yuborilib ketardi). Facebook FAQAT real-time
+    # webhook orqali yangilanadi -- saqlangan holat ALLAQACHON eng so'nggi,
+    # shuning uchun bu yerda qo'shimcha so'rov QILINMAYDI.
+    if (conversation.channel or "instagram") == "facebook":
+        return {"ok": True, "error": None}
     session = get_session()
     try:
         ig_business_id = _get_ig_business_id(page_id=company.meta_page_id, access_token=company.get_meta_access_token())
@@ -304,7 +314,11 @@ def _upsert_conversation_and_messages(
     # mumkin edi.
     row = session.query(IgDmConversation).filter_by(external_id=external_id).first()
     if row is None:
-        row = IgDmConversation(external_id=external_id, company_id=company_id)
+        # Bu funksiya FAQAT Instagram Graph API suhbatlar ro'yxatidan
+        # (`meta_api.get_instagram_conversations()`) chaqiriladi -- shuning
+        # uchun bu yerda YARATILGAN qator har doim "instagram" (2026-09,
+        # Facebook Messenger qo'llab-quvvatlashi qo'shilganda).
+        row = IgDmConversation(external_id=external_id, company_id=company_id, channel="instagram")
         session.add(row)
         session.flush()  # id kerak (IgDmMessage.conversation_id uchun)
     else:
@@ -333,9 +347,16 @@ def _upsert_conversation_and_messages(
             # item 9: webhook/poll BIRLASHTIRISH -- shu mijoz bilan
             # ALLAQACHON (masalan webhook orqali, sintetik external_id
             # bilan) boshqa qator bo'lsa, ikkisini bittaga birlashtiramiz.
+            # 2026-09: `channel="instagram"` bilan CHEKLANGAN -- bu funksiya
+            # (polling) FAQAT Instagram Graph API orqali ishlaydi, shuning
+            # uchun `row` doim Instagram; Facebook Messenger suhbatlari
+            # (channel="facebook", faqat webhook orqali yig'iladi) bilan
+            # tasodifiy IGSID/PSID mos kelib qolsa ham ALOHIDA qolishi
+            # kerak -- ikki xil ID maydoni, lekin nazariy ehtimoldan
+            # himoya sifatida.
             duplicate = (
                 session.query(IgDmConversation)
-                .filter_by(company_id=company_id, customer_ig_id=customer_ig_id)
+                .filter_by(company_id=company_id, customer_ig_id=customer_ig_id, channel="instagram")
                 .filter(IgDmConversation.id != row.id)
                 .first()
             )
@@ -564,7 +585,7 @@ class _CompanyCreds:
 def ingest_webhook_message(
     company, *, sender_id: "str | None", recipient_id: "str | None",
     message_id: "str | None", text: "str | None", timestamp_ms: "int | None",
-    is_echo: bool = False,
+    is_echo: bool = False, channel: str = "instagram",
 ) -> "dict | None":
     """2026-09, foydalanuvchi so'rovi (item 9): "yangi Instagram DM
     kelganda Meta webhook orqali DBga yozilsin. Polling/Yangilash faqat
@@ -573,6 +594,14 @@ def ingest_webhook_message(
     POST route'i chaqiradi) BITTA `messaging` elementini qabul qilib,
     darhol (Graph API'ga QAYTA MUROJAAT QILMASDAN -- webhook payload'ining
     o'zida yetarli ma'lumot bor) bazaga yozadi.
+
+    `channel` -- 2026-09, foydalanuvchi so'rovi ("facebookdan keladigan,
+    instagramdan keladigan sms xabarnomalarimiz bor... o'shalar
+    kelmayapti"): Meta webhook payload'i top-level `"object"` maydoni
+    orqali Instagram ("instagram") va Facebook Page/Messenger ("page")
+    hodisalarini ajratadi -- chaqiruvchi (`app.py`) shuni shu yerga
+    "instagram"/"facebook" sifatida uzatadi, YANGI suhbat qatoriga
+    yoziladi (mavjud qatorlar o'zgartirilmaydi).
 
     `is_echo` -- Meta'ning O'ZI shuni bildiradi: `True` bo'lsa, xabarni
     BIZNES (Page) tomoni yuborgan (masalan boshqa qurilma/menejer orqali
@@ -611,14 +640,15 @@ def ingest_webhook_message(
 
         row = (
             session.query(IgDmConversation)
-            .filter_by(company_id=company.id, customer_ig_id=customer_igsid)
+            .filter_by(company_id=company.id, customer_ig_id=customer_igsid, channel=channel)
             .first()
         )
         if row is None:
             row = IgDmConversation(
-                external_id=f"webhook:{company.id}:{customer_igsid}",
+                external_id=f"webhook:{company.id}:{channel}:{customer_igsid}",
                 company_id=company.id,
                 customer_ig_id=customer_igsid,
+                channel=channel,
             )
             session.add(row)
             session.flush()

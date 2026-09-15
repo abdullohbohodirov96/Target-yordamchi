@@ -350,7 +350,13 @@ def test_ingest_webhook_message_creates_conversation_and_dedups():
         assert conv is not None
         assert conv.is_unanswered is True
         assert conv.message_count == 1
-        assert conv.external_id == "webhook:1:CUST_WH"
+        # 2026-09, Facebook Messenger qo'llab-quvvatlashi qo'shilganda:
+        # sintetik external_id endi channel'ni ham o'z ichiga oladi
+        # (`webhook:{company_id}:{channel}:{igsid}`) -- Instagram/Facebook
+        # bir xil customer_ig_id raqami bilan tasodifan to'qnashib
+        # qolmasligi uchun.
+        assert conv.external_id == "webhook:1:instagram:CUST_WH"
+        assert conv.channel == "instagram"
         session.close()
 
         # Xuddi shu message_id bilan qayta kelsa (masalan fallback polling

@@ -29,6 +29,13 @@ def _conversation_to_dict(c: IgDmConversation) -> dict:
         reasons = []
     return {
         "id": c.id,
+        # 2026-09, foydalanuvchi so'rovi ("facebookga otdelniy ikonkasi
+        # bo'lsin... instagramni, instagram ikonkasi bo'lsin"): eski
+        # qatorlarda `channel` bazada NULL bo'lishi mumkin (migratsiya
+        # yangi ustunni NULL bilan qo'shadi) -- ular haqiqatan ham FAQAT
+        # Instagram orqali yig'ilgan edi, shuning uchun `None` "instagram"
+        # sifatida ko'rsatiladi.
+        "channel": c.channel or "instagram",
         "customer": c.customer_username or c.customer_ig_id or "noma'lum",
         "last_message_text": c.last_message_text,
         "last_message_from": c.last_message_from,

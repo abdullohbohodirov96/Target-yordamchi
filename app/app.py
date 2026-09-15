@@ -1505,15 +1505,19 @@ def webhook():
 
 
 # ---------------------------------------------------------------------------
-# Instagram Direct webhook (real-time) -- 2026-09, foydalanuvchi so'rovi
-# (item 9): "yangi Instagram DM kelganda Meta webhook orqali DBga yozilsin.
-# Polling/Yangilash faqat fallback va initial sync bo'lsin." QO'LDA QADAM
-# (BU KOD AVTOMATLASHTIRA OLMAYDI): Meta App Dashboard -> Webhooks ->
-# Instagram bo'limida Callback URL (`https://<domen>/webhooks/instagram`)
-# va Verify Token (`META_WEBHOOK_VERIFY_TOKEN` ENV bilan BIR XIL qiymat)
-# kiritilib, "messages" maydoniga obuna bo'lish kerak. Boshqa webhook
-# route'lar (`/api/webhook`, `/api/webhook/leads/<token>`) bilan bir xil
-# konvensiya: login/CSRF SHART EMAS, har doim tezkor 200 qaytariladi.
+# Instagram Direct + Facebook Messenger webhook (real-time) -- 2026-09,
+# foydalanuvchi so'rovi (item 9): "yangi Instagram DM kelganda Meta
+# webhook orqali DBga yozilsin. Polling/Yangilash faqat fallback va
+# initial sync bo'lsin." QO'LDA QADAM (BU KOD AVTOMATLASHTIRA OLMAYDI):
+# Meta App Dashboard -> Webhooks bo'limida IKKALA ob'ekt tab'i UCHUN HAM
+# (Instagram VA Page -- MUSTAQIL ravishda ikkalasi) bir xil Callback URL
+# (`https://<domen>/webhooks/instagram`) va Verify Token
+# (`META_WEBHOOK_VERIFY_TOKEN` ENV bilan BIR XIL qiymat) kiritilib,
+# "messages" maydoniga obuna bo'lish kerak -- Facebook xabarlari faqat
+# Instagram tab'i ulangan bo'lsa YETIB KELMAYDI, "Page" tab'i ALOHIDA
+# ulanishi shart. Boshqa webhook route'lar (`/api/webhook`,
+# `/api/webhook/leads/<token>`) bilan bir xil konvensiya: login/CSRF
+# SHART EMAS, har doim tezkor 200 qaytariladi.
 # ---------------------------------------------------------------------------
 
 @app.route("/webhooks/instagram", methods=["GET"])
@@ -1539,22 +1543,44 @@ def instagram_webhook_verify():
 @app.route("/webhooks/instagram", methods=["POST"])
 @csrf.exempt  # Meta server-serverga chaqiradi (imzo bilan tekshiriladi) -- CSRF tokeni yo'q
 def instagram_webhook_receive():
-    """Meta'dan REAL-TIME kelgan Instagram DM hodisalari. AVVAL
-    `X-Hub-Signature-256` imzosini (`meta_api.verify_webhook_signature`)
-    tekshiradi -- SOXTA so'rovlar (imzosiz/noto'g'ri imzo bilan) 401 bilan
-    rad etiladi, aks holda ISTALGAN kishi bazaga yolg'on "yangi xabar"
-    yozdira olardi. So'ng har bir `entry[].messaging[]` elementini
-    `entry[].id` (=Page ID) bo'yicha topilgan kompaniyaga
-    `ig_dm_sync.ingest_webhook_message()` orqali yozadi. BITTA elementdagi
-    kutilmagan xato butun so'rovni to'xtatmaydi (logga yozilib, keyingi
-    elementga o'tiladi) -- Meta HAR DOIM tezkor 200 kutadi."""
+    """Meta'dan REAL-TIME kelgan Instagram DM VA Facebook Messenger
+    hodisalari. AVVAL `X-Hub-Signature-256` imzosini
+    (`meta_api.verify_webhook_signature`) tekshiradi -- SOXTA so'rovlar
+    (imzosiz/noto'g'ri imzo bilan) 401 bilan rad etiladi, aks holda
+    ISTALGAN kishi bazaga yolg'on "yangi xabar" yozdira olardi. So'ng har
+    bir `entry[].messaging[]` elementini `entry[].id` (=Page ID) bo'yicha
+    topilgan kompaniyaga `ig_dm_sync.ingest_webhook_message()` orqali
+    yozadi. BITTA elementdagi kutilmagan xato butun so'rovni to'xtatmaydi
+    (logga yozilib, keyingi elementga o'tiladi) -- Meta HAR DOIM tezkor
+    200 kutadi.
+
+    2026-09 TUZATISH (foydalanuvchi so'rovi: "facebookdan keladigan,
+    instagramdan keladigan sms xabarnomalarimiz bor... o'shalar
+    kelmayapti, ulanmayapti"): Meta bitta xabar hodisasini payload'ining
+    top-level `"object"` maydoni orqali ikki xil yuboradi -- Instagram
+    Direct uchun `"instagram"`, Facebook Page/Messenger uchun `"page"`.
+    Ikkalasining `entry[].messaging[]` tuzilishi BIR XIL, shuning uchun
+    faqat qaysi "object" kelganini `channel`ga aylantirib, xuddi shu
+    ishlov berish yo'lidan o'tkazish YETARLI.
+
+    MUHIM -- BU FAQAT KOD TOMONIDAGI YARIM QISM: Facebook xabarlari shu
+    yerga umuman YETIB KELISHI uchun Meta App Dashboard -> Webhooks
+    bo'limida ALOHIDA "Page" ob'ekti tab'i (xuddi shu Callback URL va
+    Verify Token bilan, "messages" maydoniga obuna) HAM qo'lda
+    ulanishi/tasdiqlanishi kerak -- bu kod orqali avtomatlashtirib
+    bo'lmaydigan tashqi qadam (Instagram tab'idan MUSTAQIL)."""
     raw_body = request.get_data()
     signature = request.headers.get("X-Hub-Signature-256")
     if not meta_api.verify_webhook_signature(raw_body, signature):
         return jsonify({"ok": False, "error": "invalid signature"}), 401
 
     payload = request.get_json(silent=True) or {}
-    if payload.get("object") != "instagram":
+    object_type = payload.get("object")
+    if object_type == "instagram":
+        channel = "instagram"
+    elif object_type == "page":
+        channel = "facebook"
+    else:
         return jsonify({"ok": True})
 
     session = get_session()
@@ -1578,13 +1604,15 @@ def instagram_webhook_receive():
                             text=message.get("text"),
                             timestamp_ms=m.get("timestamp"),
                             is_echo=bool(message.get("is_echo")),
+                            channel=channel,
                         )
                     except Exception:
                         logger.exception(
-                            "Instagram webhook: bitta xabarni yozishda xato (page_id=%s)", page_id,
+                            "Instagram/Facebook webhook: bitta xabarni yozishda xato (page_id=%s, channel=%s)",
+                            page_id, channel,
                         )
     except Exception:
-        logger.exception("Instagram webhook: kutilmagan xato")
+        logger.exception("Instagram/Facebook webhook: kutilmagan xato")
     finally:
         session.close()
 
@@ -7296,6 +7324,18 @@ def health():
         "moizvonki_configured": call_sync.is_configured(),
         "ffmpeg_available": call_analysis.ffmpeg_available(),
         "ffprobe_available": call_analysis.ffprobe_available(),
+        # 2026-09, foydalanuvchi so'rovi ("sms xabarnoma ishlamayapti,
+        # ulanmayapti... qayerda xato bo'layotganini aniq bilsam"): Payme
+        # SUBSCRIBE (kartadan avtomatik to'lov, SMS-tasdiqlash shu orqali
+        # yuboriladi) sozlamalarini QIYMATSIZ (faqat true/false/rejim)
+        # ko'rsatadi -- shu orqali Render'dagi ENV noto'g'ri (masalan
+        # TEST rejimida qolib ketgan) ekanini tashqi Render panelini
+        # ochmasdan tekshirish mumkin.
+        "payme_subscribe_configured": payme_subscribe.is_configured(),
+        "payme_merchant_id_set": bool(payme_subscribe.PAYME_MERCHANT_ID),
+        "payme_test_mode": payme_subscribe.PAYME_TEST_MODE,
+        "payme_test_key_set": bool(payme_subscribe.PAYME_TEST_KEY),
+        "payme_prod_key_set": bool(payme_subscribe.PAYME_KEY),
     })
 
 

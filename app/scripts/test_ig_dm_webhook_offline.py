@@ -75,9 +75,9 @@ def _sign(body: bytes) -> str:
     return f"sha256={digest}"
 
 
-def _messaging_payload(page_id: str, *, sender_id: str, recipient_id: str, mid: str, text: str) -> bytes:
+def _messaging_payload(page_id: str, *, sender_id: str, recipient_id: str, mid: str, text: str, object_type: str = "instagram") -> bytes:
     payload = {
-        "object": "instagram",
+        "object": object_type,
         "entry": [{
             "id": page_id,
             "messaging": [{
@@ -160,9 +160,68 @@ def test_post_webhook_with_valid_signature_ingests_message():
         assert msg.company_id == company_id
         assert msg.text == "Narxi qancha?"
         assert msg.sender == "customer"
+        conv = session.query(db_module.IgDmConversation).filter_by(id=msg.conversation_id).first()
+        assert conv.channel == "instagram", "\"object\": \"instagram\" payload -- suhbat channel='instagram' deb belgilanishi kerak"
     finally:
         session.close()
     print("OK: POST /webhooks/instagram to'g'ri imzo bilan kelgan xabarni darhol bazaga yozadi (Graph API'ga qayta murojaat qilmasdan)")
+
+
+def test_post_webhook_facebook_page_object_ingests_with_facebook_channel():
+    """2026-09 TUZATISH (foydalanuvchi so'rovi: "facebookdan keladigan...
+    sms xabarnomalarimiz... o'shalar kelmayapti, ulanmayapti"): Meta
+    Facebook Messenger hodisalarini `"object": "page"` bilan yuboradi --
+    avval bu turdagi payload butunlay tashlab yuborilardi (xato/yo'qotish
+    manbai), endi `channel="facebook"` bilan bazaga yozilishi kerak."""
+    page_id = "page_fb_test"
+    company_id = _make_company("Facebook Test", page_id=page_id)
+    body = _messaging_payload(
+        page_id, sender_id="CUST_FB", recipient_id="BIZ", mid="mid.fb1", text="Facebook orqali savol",
+        object_type="page",
+    )
+
+    with app_module.app.test_client() as client:
+        r = client.post("/webhooks/instagram", data=body, content_type="application/json", headers={
+            "X-Hub-Signature-256": _sign(body),
+        })
+        assert r.status_code == 200
+
+    session = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            msg = session.query(db_module.IgDmMessage).filter_by(external_id="mid.fb1").first()
+        assert msg is not None, "\"object\": \"page\" (Facebook Messenger) xabari ENDI bazaga yozilishi kerak"
+        assert msg.company_id == company_id
+        assert msg.text == "Facebook orqali savol"
+        conv = session.query(db_module.IgDmConversation).filter_by(id=msg.conversation_id).first()
+        assert conv.channel == "facebook", "\"object\": \"page\" payload -- suhbat channel='facebook' deb belgilanishi kerak"
+    finally:
+        session.close()
+    print("OK: POST /webhooks/instagram \"object\": \"page\" (Facebook Messenger) xabarini channel='facebook' bilan bazaga yozadi")
+
+
+def test_post_webhook_unrecognized_object_type_is_ignored():
+    """`"object"` maydoni na \"instagram\" na \"page\" bo'lsa (masalan
+    Meta'ning boshqa mahsulot turi) -- jim o'tkazib yuborilishi, xato
+    tashlamasligi kerak."""
+    page_id = "page_unrec_test"
+    _make_company("Unrecognized Object Test", page_id=page_id)
+    body = _messaging_payload(page_id, sender_id="CUST_X", recipient_id="BIZ", mid="mid.unrec1", text="?", object_type="whatsapp_business_account")
+
+    with app_module.app.test_client() as client:
+        r = client.post("/webhooks/instagram", data=body, content_type="application/json", headers={
+            "X-Hub-Signature-256": _sign(body),
+        })
+        assert r.status_code == 200
+
+    session = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            msg = session.query(db_module.IgDmMessage).filter_by(external_id="mid.unrec1").first()
+        assert msg is None
+    finally:
+        session.close()
+    print("OK: POST /webhooks/instagram tanilmagan \"object\" turini xatosiz jim o'tkazib yuboradi")
 
 
 def test_post_webhook_isolates_messages_by_company():
