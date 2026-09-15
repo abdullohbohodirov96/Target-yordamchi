@@ -927,6 +927,21 @@ class IgDmConversation(Base):
     customer_ig_id = Column(String(64), nullable=True, index=True)  # mijozning Instagram-Scoped ID'i (IGSID) yoki Facebook Page-Scoped ID'i (PSID)
     customer_username = Column(String(255), nullable=True)  # ma'lum bo'lsa (Meta har doim ham bermaydi)
 
+    # 2026-09, foydalanuvchi so'rovi ("smsdan target yoqilinadi... o'shani
+    # aniqlash yo'lini topishimiz kerak"): agar shu suhbat "Xabar yuborish"
+    # tugmali (Click-to-Message) reklamadan boshlangan bo'lsa, Meta
+    # webhook'ning BIRINCHI xabarida `referral.ad_id` yuboradi -- shu yerga
+    # qotiriladi (keyingi xabarlarda o'zgarmaydi -- birinchi aniqlangani
+    # saqlanadi). Nomi/kreativi esa BU YERDA emas, `IgDmAdSource` jadvalida
+    # (bitta reklama ko'p suhbatga sabab bo'lishi mumkin -- ortiqcha Graph
+    # API chaqiruvidan saqlanish uchun bitta joyda keshlanadi).
+    source_ad_id = Column(String(64), nullable=True, index=True)
+    # 2026-09, foydalanuvchi so'rovi ("sotib olsa odam... sotuvga
+    # bog'lash"): menejer suhbatni CRM'dagi Lead sifatida saqlab qo'ysa,
+    # shu yerga bog'lanadi -- keyin "shu suhbat sotuvga aylandimi" savoliga
+    # `Lead.status`/`Sale` orqali javob berish mumkin bo'ladi.
+    linked_lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True)
+
     message_count = Column(Integer, nullable=False, default=0)  # shu suhbatda hozircha sinxronlangan JAMI xabar soni
     last_message_at = Column(DateTime, nullable=True, index=True)
     last_message_text = Column(Text, nullable=True)  # oxirgi xabar matni -- ro'yxatda "oldindan ko'rish" uchun
@@ -949,6 +964,31 @@ class IgDmConversation(Base):
 
     created_at = Column(DateTime, default=dt.datetime.utcnow)
     last_synced_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+
+class IgDmAdSource(Base):
+    """Instagram/Facebook DM suhbatini boshlagan reklamaning (Click-to-Message
+    ad) nomi va matni -- 2026-09, foydalanuvchi so'rovi ("smsga target
+    yoqilinadi... o'shani aniqlash... sifatli chiqsa copyni ulash kerak").
+
+    `IgDmConversation.source_ad_id` faqat XOM ad_id'ni saqlaydi (webhook'dan
+    darhol, Graph API'ga murojaat qilmasdan). Nomi/kreativi esa BIR MARTA
+    shu yerga (ad_id bo'yicha, kompaniya ichida) keshlanadi -- bitta reklama
+    ko'plab suhbatga sabab bo'lishi mumkin, har safar qayta so'rab
+    o'tirmaslik uchun. `ig_dm_sync.resolve_ad_sources()` (har 15 daqiqalik
+    sync tsiklining bir qismi) yangi, hali keshlanmagan ad_id'larni topib,
+    `meta_api.get_ad_creative_details()` orqali bir marta to'ldiradi."""
+    __tablename__ = "ig_dm_ad_sources"
+    __table_args__ = (UniqueConstraint("company_id", "ad_id", name="uq_ig_dm_ad_source_company_ad"),)
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    ad_id = Column(String(64), nullable=False, index=True)
+    ad_name = Column(String(255), nullable=True)
+    ad_copy = Column(Text, nullable=True)  # reklamaning asosiy matni (headline + tana matni birlashtirilgan)
+    resolved_at = Column(DateTime, nullable=True)  # muvaffaqiyatli aniqlangan payt (None -- hali/hech qachon)
+    resolve_error = Column(Text, nullable=True)  # oxirgi urinish xato bergan bo'lsa (masalan reklama o'chirilgan)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class IgDmMessage(Base):

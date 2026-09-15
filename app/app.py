@@ -44,7 +44,7 @@ import manager_reporting
 import lang as lang_module
 import tz_utils
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog, MetaEventLog
+from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, IgDmAdSource, CannedReply, ImpersonationLog, MetaEventLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -1596,6 +1596,17 @@ def instagram_webhook_receive():
                 for m in entry.get("messaging", []):
                     try:
                         message = m.get("message") or {}
+                        # 2026-09, foydalanuvchi so'rovi ("smsdan target
+                        # yoqilinadi... o'shani aniqlash yo'lini
+                        # topishimiz kerak"): agar suhbat "Xabar yuborish"
+                        # tugmali (Click-to-Message) reklamadan
+                        # boshlangan bo'lsa, Meta shu maydonni yuboradi --
+                        # ba'zan `m`ning o'zida (m.me/ads referral),
+                        # ba'zan `message.referral` ichida (ads that
+                        # click to message) keladi, shuning uchun
+                        # ikkalasi ham tekshiriladi.
+                        referral = m.get("referral") or message.get("referral") or {}
+                        source_ad_id = referral.get("ad_id")
                         ig_dm_sync.ingest_webhook_message(
                             company,
                             sender_id=(m.get("sender") or {}).get("id"),
@@ -1605,6 +1616,7 @@ def instagram_webhook_receive():
                             timestamp_ms=m.get("timestamp"),
                             is_echo=bool(message.get("is_echo")),
                             channel=channel,
+                            source_ad_id=source_ad_id,
                         )
                     except Exception:
                         logger.exception(
@@ -3864,7 +3876,7 @@ def _sold_stage_key(stages) -> str | None:
     return None
 
 
-_LEAD_SOURCE_LABELS = {"meta": "Meta", "manual": "Qo'lda", "import": "Import"}
+_LEAD_SOURCE_LABELS = {"meta": "Meta", "manual": "Qo'lda", "import": "Import", "dm": "Instagram DM"}
 _LEADS_PER_PAGE = 50
 
 
@@ -6819,6 +6831,70 @@ def instagram_dm_reply():
         session.close()
 
     return redirect(url_for("instagram_dm", c=conversation_id))
+
+
+@app.route("/instagram-xabarlar/lid", methods=["POST"])
+@login_required
+@module_required("target")
+def instagram_dm_to_lead():
+    """DM suhbatini CRM lidiga aylantiradi (2026-09, foydalanuvchi so'rovi:
+    "agar sifatli chiqsa... sotib olsa odam... shularni menga bo'lib
+    berishini qilsa bo'ladimi"): menejer suhbat sahifasidagi "Lid sifatida
+    saqlash" tugmasini bosganda, shu suhbat asosida yangi `Lead` yaratiladi
+    (auto-duplikatsiyaning oldini olish uchun suhbat ALLAQACHON bog'langan
+    bo'lsa, YANGI lid yaratilmaydi -- mavjud lidga qaytariladi) va
+    `IgDmConversation.linked_lead_id` shu lidga ko'rsatiladi -- shu orqali
+    "nechta DM sotib olishga aylandi" (CRM'da lid `status`i "sold"ga
+    o'tganda) keyinchalik `ig_dm_analytics.py`da hisoblanadi. Reklama
+    (`source_ad_id`) allaqachon `IgDmAdSource`da keshlangan bo'lsa, uning
+    nomi lidning `ad_name` maydoniga ham yoziladi."""
+    conversation_id = request.form.get("conversation_id", type=int)
+    company = _current_company()
+    if not conversation_id or company is None:
+        flash("Suhbat topilmadi.", "error")
+        return redirect(url_for("instagram_dm"))
+
+    session = get_session()
+    try:
+        conv = session.get(IgDmConversation, conversation_id)
+        if conv is None:
+            flash("Bu suhbat topilmadi.", "error")
+            return redirect(url_for("instagram_dm"))
+
+        if conv.linked_lead_id:
+            existing = session.get(Lead, conv.linked_lead_id)
+            if existing is not None:
+                flash("Bu suhbat allaqachon lid sifatida saqlangan.", "success")
+                return redirect(url_for("lead_detail", lead_id=existing.id))
+
+        ad_name = None
+        if conv.source_ad_id:
+            ad_source = session.query(IgDmAdSource).filter_by(ad_id=conv.source_ad_id).first()
+            if ad_source:
+                ad_name = ad_source.ad_name
+
+        quality_label = {
+            "hot": "Sifatli (AI bahosi: qizgin)",
+            "warm": "O'rtacha (AI bahosi: iliq)",
+            "cold": "Sifatsiz (AI bahosi: sovuq)",
+        }.get(conv.ai_lead_quality)
+        note_parts = [p for p in (quality_label, conv.ai_summary) if p]
+
+        lead = Lead(
+            company_id=conv.company_id or company.id,
+            full_name=conv.customer_username or conv.customer_ig_id or "Instagram mijozi",
+            ad_id=conv.source_ad_id, ad_name=ad_name,
+            source="dm", status="new",
+            quality_note="\n".join(note_parts) or None,
+        )
+        session.add(lead)
+        session.flush()
+        conv.linked_lead_id = lead.id
+        session.commit()
+        flash("Lid sifatida saqlandi.", "success")
+        return redirect(url_for("lead_detail", lead_id=lead.id))
+    finally:
+        session.close()
 
 
 @app.route("/instagram-xabarlar/templates", methods=["POST"])

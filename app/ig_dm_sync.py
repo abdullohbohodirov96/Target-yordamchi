@@ -42,7 +42,7 @@ from pathlib import Path
 import meta_api
 import kv_store
 import db
-from db import get_session, IgDmConversation, IgDmMessage
+from db import get_session, IgDmConversation, IgDmMessage, IgDmAdSource
 
 logger = logging.getLogger("ig_dm_sync")
 
@@ -396,6 +396,66 @@ def _upsert_conversation_and_messages(
     return {"new_messages": new_messages, "became_overdue": became_overdue, "row": row}
 
 
+def resolve_ad_sources(session, *, company_id, access_token) -> int:
+    """2026-09, foydalanuvchi so'rovi ("target orqali kelgan xabarlarni
+    aniqlash... agar sifatli chiqsa, copyni ulash kerak"): webhook orqali
+    aniqlangan `source_ad_id`lar (reklama ID) uchun BIR MARTA (suhbatlar
+    soniga qarab EMAS, har bir NOYOB ad_id uchun bir marta) Meta'dan
+    reklama nomi va "copy" (sarlavha+matn) matnini so'rab, `IgDmAdSource`
+    jadvaliga keshlaydi. Xarajatni tejash konventsiyasi (`ig_dm_analysis.py`
+    bilan bir xil naqsh) -- har chaqiriqda faqat HALI KESHLANMAGAN
+    ad_id'lar uchun Graph API so'rovi yuboriladi. Xato bo'lsa (masalan,
+    reklama o'chirilgan yoki token yetarli ruxsatga ega emas), qatorni
+    `resolve_error` bilan baribir keshlaydi -- aks holda har sync
+    tsiklida (15 daqiqada bir) xato bergan reklamani qayta-qayta
+    so'rayverib, behuda Graph API chaqiruvi qilinardi.
+
+    Qaytaradi: shu chaqiriqda yangi keshlangan (muvaffaqiyatli yoki
+    xatoli) ad_id'lar soni."""
+    pending_rows = (
+        session.query(IgDmConversation.source_ad_id)
+        .filter(
+            IgDmConversation.company_id == company_id,
+            IgDmConversation.source_ad_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    pending_ids = {row[0] for row in pending_rows if row[0]}
+    if not pending_ids:
+        return 0
+
+    cached_rows = (
+        session.query(IgDmAdSource.ad_id)
+        .filter(IgDmAdSource.company_id == company_id, IgDmAdSource.ad_id.in_(pending_ids))
+        .all()
+    )
+    already_cached = {row[0] for row in cached_rows}
+    to_resolve = pending_ids - already_cached
+    if not to_resolve:
+        return 0
+
+    resolved_count = 0
+    for ad_id in to_resolve:
+        row = IgDmAdSource(company_id=company_id, ad_id=ad_id)
+        try:
+            details = meta_api.get_ad_creative_details(ad_id, access_token=access_token)
+            row.ad_name = details.get("ad_name")
+            row.ad_copy = meta_api.extract_ad_copy_text(details.get("object_story_spec")) or None
+            row.resolved_at = dt.datetime.utcnow()
+        except meta_api.MetaAPIError as e:
+            row.resolve_error = meta_api.safe_error_message(e)
+            row.resolved_at = dt.datetime.utcnow()
+        except Exception as e:
+            logger.exception("IG DM reklama-manba: ad_id=%s uchun kutilmagan xato", ad_id)
+            row.resolve_error = meta_api.safe_error_message(e)
+            row.resolved_at = dt.datetime.utcnow()
+        session.add(row)
+        resolved_count += 1
+    session.flush()
+    return resolved_count
+
+
 def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa
     (`db.Company` qatori) -- O'SHA kompaniyaning O'Z `meta_page_id`/
@@ -505,6 +565,18 @@ def sync_once(company=None) -> dict:
                         "preview": (row.last_message_text or "")[:150],
                         "since_minutes": round(since_minutes),
                     })
+
+        # 2026-09, foydalanuvchi so'rovi: yangi aniqlangan `source_ad_id`
+        # (reklama)larni keshlash -- xato bo'lsa ham asosiy xabar
+        # sinxronizatsiyasini TO'XTATMASLIGI kerak, shuning uchun alohida
+        # try/except (keng qamrovli, chunki bu FAQAT qo'shimcha/ixtiyoriy
+        # boyitish, DM sinxronizatsiyaning o'zi emas).
+        try:
+            resolve_ad_sources(session, company_id=company_id, access_token=access_token)
+        except Exception:
+            logger.exception(
+                "IG DM sync: reklama manbalarini keshlashda kutilmagan xato (company_id=%s)", company_id
+            )
     finally:
         session.close()
 
@@ -585,7 +657,7 @@ class _CompanyCreds:
 def ingest_webhook_message(
     company, *, sender_id: "str | None", recipient_id: "str | None",
     message_id: "str | None", text: "str | None", timestamp_ms: "int | None",
-    is_echo: bool = False, channel: str = "instagram",
+    is_echo: bool = False, channel: str = "instagram", source_ad_id: "str | None" = None,
 ) -> "dict | None":
     """2026-09, foydalanuvchi so'rovi (item 9): "yangi Instagram DM
     kelganda Meta webhook orqali DBga yozilsin. Polling/Yangilash faqat
@@ -621,6 +693,15 @@ def ingest_webhook_message(
     keyinroq (masalan fallback polling orqali) yana kelsa, IKKINCHI
     marta yozilmaydi.
 
+    `source_ad_id` -- 2026-09, foydalanuvchi so'rovi ("smsdan target
+    yoqilinadi... o'shani aniqlash"): agar Meta payload'ida `referral.ad_id`
+    kelgan bo'lsa (`app.py` shuni ajratib uzatadi), suhbat qatoriga BIR
+    MARTA (hali `None` bo'lsa) yoziladi -- birinchi aniqlangan reklama
+    saqlanadi, keyingi xabarlar buni O'ZGARTIRMAYDI. Reklamaning nomi/matni
+    BU YERDA hal qilinmaydi (Graph API'ga qayta murojaat qilmaslik uchun) --
+    `resolve_ad_sources()` buni davriy ravishda, bitta ad_id uchun BIR
+    MARTA (`IgDmAdSource` keshi orqali) bajaradi.
+
     Qaytaradi: `{"new_message": bool, "became_overdue": bool,
     "conversation_id": int}` yoki `None` (kompaniya sozlanmagan yoki
     mijoz IGSID'i aniqlanmasa)."""
@@ -649,9 +730,12 @@ def ingest_webhook_message(
                 company_id=company.id,
                 customer_ig_id=customer_igsid,
                 channel=channel,
+                source_ad_id=source_ad_id or None,
             )
             session.add(row)
             session.flush()
+        elif source_ad_id and not row.source_ad_id:
+            row.source_ad_id = source_ad_id
 
         sent_at = (
             dt.datetime.utcfromtimestamp(timestamp_ms / 1000.0) if timestamp_ms else dt.datetime.utcnow()

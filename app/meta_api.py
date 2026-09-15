@@ -1181,6 +1181,28 @@ def get_ad_creative_details(ad_id: str, *, access_token: str | None = None) -> d
     }
 
 
+def extract_ad_copy_text(object_story_spec: dict) -> str:
+    """`object_story_spec`dan (yuqoridagi `get_ad_creative_details()`
+    qaytargan) o'qiladigan reklama matnini (sarlavha + asosiy matn)
+    ajratib oladi -- 2026-09, foydalanuvchi so'rovi ("sifatli chiqqan
+    reklamaga copyni ulash"): DM tahlilida qaysi reklama yaxshi natija
+    berayotganini ko'rsatganda, menejer o'sha matnni o'qib, Meta Ads
+    Manager'da qo'lda nusxalay olishi uchun. `video_data`/`link_data`/
+    `photo_data`dan qaysi biri bo'lsa, o'shandan (Meta reklama turiga
+    qarab qaysi biri to'ldirilgani farq qiladi)."""
+    spec = object_story_spec or {}
+    for key in ("video_data", "link_data", "photo_data"):
+        block = spec.get(key)
+        if not block:
+            continue
+        headline = (block.get("title") or block.get("name") or "").strip()
+        body = (block.get("message") or "").strip()
+        parts = [p for p in (headline, body) if p]
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
 def create_ad_creative_with_new_copy(
     page_id: str,
     base_story_spec: dict,

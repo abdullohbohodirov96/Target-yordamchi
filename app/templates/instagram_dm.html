@@ -119,6 +119,40 @@
 </div>
 {% endif %}
 
+{% if dm_analytics.by_ad %}
+<div class="card" style="margin-bottom:20px">
+  <h2 style="margin-top:0">Reklamalar (target) bo'yicha taqsimot</h2>
+  <p class="page-subtitle" style="margin-top:-6px">Davrda qaysi Meta reklamasi orqali DM suhbati boshlangani va shundan nechtasi sifatli (🔥) chiqqani. Yaxshi natija bergan reklamaning "Copy" matnini oching va Meta Ads Manager'da qo'lda nusxalab, o'xshash reklama yarating.</p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Reklama</th><th>Suhbatlar</th><th>🔥 Sifatli</th><th>🌤 O'rtacha</th><th>❄️ Sifatsiz</th><th>Sotilgan</th><th>Copy</th></tr>
+      </thead>
+      <tbody>
+        {% for a in dm_analytics.by_ad %}
+        <tr>
+          <td>{{ a.ad_name or a.ad_id }}</td>
+          <td>{{ a.conversation_count }}</td>
+          <td class="text-good">{{ a.hot_count }}</td>
+          <td>{{ a.warm_count }}</td>
+          <td class="text-dim">{{ a.cold_count }}</td>
+          <td>{{ a.sold_count }}</td>
+          <td>
+            {% if a.ad_copy %}
+            <details>
+              <summary class="text-blue" style="cursor:pointer">Ko'rish</summary>
+              <div style="white-space:pre-wrap; margin-top:6px; font-size:13px; max-width:340px">{{ a.ad_copy }}</div>
+            </details>
+            {% else %}<span class="text-faint">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <h2>Hozirgi holat</h2>
 
 {% if sync_status and sync_status.errors %}
@@ -216,6 +250,33 @@
     {% if selected.ai_summary %}
     <div class="dm-ai-summary"><strong>AI xulosasi:</strong> {{ selected.ai_summary }}</div>
     {% endif %}
+
+    {% if selected.source_ad_id %}
+    <div class="dm-ai-summary" style="background:var(--purple-bg)">
+      <strong>Target:</strong> {{ selected.source_ad_name or selected.source_ad_id }}
+      {% if selected.source_ad_copy %}
+      <details style="margin-top:4px">
+        <summary class="text-blue" style="cursor:pointer; font-size:13px">Reklama copy'sini ko'rish</summary>
+        <div style="white-space:pre-wrap; margin-top:6px; font-size:13px">{{ selected.source_ad_copy }}</div>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div style="margin:0 0 10px">
+      {% if selected.linked_lead_id %}
+      <a href="{{ url_for('lead_detail', lead_id=selected.linked_lead_id) }}" class="badge badge-color-good" style="text-decoration:none">
+        ✓ Lidga bog'langan{% if selected.linked_lead_status == 'sold' %} · Sotildi{% endif %} — ko'rish
+      </a>
+      {% else %}
+      <form method="post" action="{{ url_for('instagram_dm_to_lead') }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="conversation_id" value="{{ selected.id }}">
+        <button type="submit" class="btn btn-outline" style="padding:6px 12px; font-size:12.5px">Lid sifatida saqlash</button>
+      </form>
+      {% endif %}
+    </div>
+
     <div class="dm-messages">
       {% for m in messages %}
       <div class="dm-bubble-row {{ 'from-business' if m.sender == 'business' else 'from-customer' }}">
