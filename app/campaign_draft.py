@@ -99,7 +99,32 @@ OPTIMIZATION_GOALS = {
 BID_STRATEGIES = {"LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP"}
 DESTINATION_TYPES = {"MESSENGER", "INSTAGRAM_DIRECT", "WHATSAPP", "ON_AD", "WEBSITE", "PHONE_CALL", "APP", "ON_POST", "ON_VIDEO", "ON_PAGE", "ON_EVENT"}
 GENDERS = {1, 2}  # Meta: 1 = erkak, 2 = ayol; bo'sh ro'yxat = hammasi
-LEAD_QUESTION_TYPES = {"FULL_NAME", "PHONE", "EMAIL", "CUSTOM"}
+# 2026-09, foydalanuvchi so'rovi ("ads menejerda instant forum yaratayotganingda
+# to'liq hali bor... multiplay choice bor va boshqalar... shularni hammasini
+# to'liq qil"): avval FAQAT 4 ta tur (FULL_NAME/PHONE/EMAIL/CUSTOM) bor edi --
+# haqiqiy Meta Ads Manager'dagi standart savol maydonlari TO'LIQ ro'yxati bilan
+# kengaytirildi, VA "CUSTOM" savoliga endi ixtiyoriy `options` (bir nechta
+# variant -- multiple choice) qo'shish mumkin (pastda `coerce_value`/
+# `_validate_lead_form`/`lead_form_config_from_state`ga qarang). Tartib
+# `LEAD_QUESTION_TYPES_ORDER` -- UI'da "qo'shish" tanlovi shu tartibda chiqadi.
+LEAD_QUESTION_TYPES_ORDER = [
+    "FULL_NAME", "FIRST_NAME", "LAST_NAME", "EMAIL", "PHONE",
+    "CITY", "STATE", "COUNTRY", "ZIP", "STREET_ADDRESS",
+    "DOB", "GENDER", "MARITAL_STATUS", "RELATIONSHIP_STATUS", "MILITARY_STATUS",
+    "COMPANY_NAME", "JOB_TITLE", "WORK_EMAIL", "WORK_PHONE_NUMBER",
+    "CUSTOM",
+]
+LEAD_QUESTION_TYPES = set(LEAD_QUESTION_TYPES_ORDER)
+LEAD_QUESTION_TYPE_LABELS = {
+    "FULL_NAME": "To'liq ism", "FIRST_NAME": "Ism", "LAST_NAME": "Familiya",
+    "EMAIL": "Email", "PHONE": "Telefon", "CITY": "Shahar", "STATE": "Viloyat",
+    "COUNTRY": "Davlat", "ZIP": "Pochta indeksi", "STREET_ADDRESS": "Manzil",
+    "DOB": "Tug'ilgan sana", "GENDER": "Jinsi", "MARITAL_STATUS": "Oilaviy holati",
+    "RELATIONSHIP_STATUS": "Munosabat holati", "MILITARY_STATUS": "Harbiy holati",
+    "COMPANY_NAME": "Kompaniya nomi", "JOB_TITLE": "Lavozim",
+    "WORK_EMAIL": "Ish emaili", "WORK_PHONE_NUMBER": "Ish telefoni",
+    "CUSTOM": "Maxsus savol",
+}
 SPECIAL_AD_CATEGORIES = {"NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS", "FINANCIAL_PRODUCTS_SERVICES"}
 
 # Meta byudjeti eng kichik valyuta birligida (tiyin/sent) yuboriladi. Ko'p
@@ -512,6 +537,15 @@ def _coerce_list_item(path: str, item: dict) -> dict:
                 raise DraftPatchError("Maxsus (CUSTOM) savol uchun matn (label) kerak.")
             out["label"] = label
             out["key"] = str(item.get("key") or _slug(label))
+            # 2026-09: `options` bo'lsa -- bu savol "bir nechta variant"
+            # (multiple choice) turida (Ads Manager'dagi kabi). Ro'yxat
+            # bo'lmasa (kalit umuman yo'q) -- oddiy erkin matnli CUSTOM savol.
+            if "options" in item:
+                raw_options = item.get("options") or []
+                if not isinstance(raw_options, list):
+                    raise DraftPatchError("Variantlar ro'yxat (list) bo'lishi kerak.")
+                options = [str(o).strip() for o in raw_options if str(o or "").strip()]
+                out["options"] = options
         else:
             if item.get("key"):
                 out["key"] = str(item["key"])
@@ -842,8 +876,14 @@ def _validate_lead_form(lead_form: dict) -> list[dict]:
     if not ({"PHONE", "EMAIL"} & types):
         errors.append(_err("ad", "lead_form.questions", "Formada telefon yoki email savoli bo'lishi shart (aks holda lid bilan bog'lanib bo'lmaydi)."))
     for q in questions:
-        if str(q.get("type") or "").upper() == "CUSTOM" and not (q.get("label") or "").strip():
+        if str(q.get("type") or "").upper() != "CUSTOM":
+            continue
+        if not (q.get("label") or "").strip():
             errors.append(_err("ad", "lead_form.questions", "Maxsus savol matni bo'sh."))
+        if "options" in q:
+            good_options = [o for o in (q.get("options") or []) if str(o).strip()]
+            if len(good_options) < 2:
+                errors.append(_err("ad", "lead_form.questions", "Bir nechta variantli savolda kamida 2 ta variant bo'lishi kerak."))
     privacy = (form.get("privacy_url") or "").strip()
     if not privacy.startswith("http"):
         errors.append(_err("ad", "lead_form.privacy_url", "Maxfiylik siyosati havolasi (privacy_url) kerak -- Meta buni talab qiladi."))
@@ -1002,7 +1042,17 @@ def lead_form_config_from_state(state: dict) -> dict:
     for q in form.get("questions") or []:
         qtype = str(q.get("type") or "CUSTOM").upper()
         if qtype == "CUSTOM":
-            questions.append({"type": "CUSTOM", "key": q.get("key") or _slug(q.get("label") or "savol"), "label": q.get("label") or ""})
+            label = q.get("label") or ""
+            entry = {"type": "CUSTOM", "key": q.get("key") or _slug(label or "savol"), "label": label}
+            # 2026-09, foydalanuvchi so'rovi ("multiplay choice"): variantlar
+            # bo'lsa -- Meta v21 `leadgen_forms` hujjati bo'yicha CUSTOM
+            # savolga "options": [{"key","value"}, ...] qo'shiladi (bir nechta
+            # tanlovli savol). Rad etilsa friendly xato ko'rsatiladi (boshqa
+            # noaniq Meta shakllari kabi).
+            good_options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+            if good_options:
+                entry["options"] = [{"key": _slug(o) or f"variant_{i + 1}", "value": o} for i, o in enumerate(good_options)]
+            questions.append(entry)
         else:
             questions.append({"type": qtype})
     return {

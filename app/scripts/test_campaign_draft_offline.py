@@ -273,6 +273,57 @@ def test_summary_and_unsupported():
     check("lead_form_config privacy_policy kaliti", "privacy_policy" in cfg and "questions" in cfg)
 
 
+def test_lead_form_question_types_and_multiple_choice():
+    # 2026-09, foydalanuvchi so'rovi ("ads menejerda instant forum
+    # yaratayotganingda to'liq hali bor... multiplay choice bor va
+    # boshqalar... shularni hammasini to'liq qil"): kengaytirilgan savol
+    # turlari ro'yxati va CUSTOM savolga "options" (bir nechta variant).
+    check("kengaytirilgan ro'yxatda CITY/COMPANY_NAME bor", {"CITY", "COMPANY_NAME", "WORK_EMAIL"} <= cd.LEAD_QUESTION_TYPES)
+    check("LEAD_QUESTION_TYPE_LABELS hamma turni qamraydi", set(cd.LEAD_QUESTION_TYPES) == set(cd.LEAD_QUESTION_TYPE_LABELS))
+
+    s2 = cd.new_empty_state("LEADS")
+    new, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CITY"}}}}, source="USER_OVERRIDDEN", field_sources={})
+    check("yangi standart tur (CITY) qabul qilinadi", new["ad"]["lead_form"]["new_form"]["questions"][-1]["type"] == "CITY")
+
+    try:
+        cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "SHOE_SIZE"}}}}, source="USER_OVERRIDDEN", field_sources={})
+        check("noma'lum savol turi rad etiladi", False)
+    except cd.DraftPatchError:
+        check("noma'lum savol turi rad etiladi", True)
+
+    # CUSTOM + options -> multiple choice savol
+    new, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Qaysi hajm kerak?", "options": ["Kichik", "O'rta", "Katta", "  "]}}}}, source="USER_OVERRIDDEN", field_sources={})
+    q = new["ad"]["lead_form"]["new_form"]["questions"][-1]
+    check("multiple-choice savolda options saqlandi (bo'sh qator tashlab yuborildi)", q.get("options") == ["Kichik", "O'rta", "Katta"])
+
+    # options'siz CUSTOM -- hali ham erkin matnli savol (eski xatti-harakat)
+    new2, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Izoh"}}}}, source="USER_OVERRIDDEN", field_sources={})
+    check("options'siz CUSTOM hali ham erkin matn (kalit yo'q)", "options" not in new2["ad"]["lead_form"]["new_form"]["questions"][-1])
+
+    # validate_state: kamida 2 ta variant kerak
+    s = _filled_state("LEADS")
+    s["ad"]["lead_form"]["new_form"] = {
+        "name": "Forma", "intro_headline": "", "intro_description": "",
+        "questions": [{"type": "PHONE"}, {"type": "CUSTOM", "label": "Hajmi?", "options": ["Kichik"]}],
+        "privacy_url": "https://example.uz/privacy", "thank_you_title": "", "thank_you_body": "",
+    }
+    errs = cd.validate_state(s)
+    check("1 ta variant bilan xato beradi", any("kamida 2 ta variant" in e["message"] for e in errs))
+    s["ad"]["lead_form"]["new_form"]["questions"][1]["options"] = ["Kichik", "Katta"]
+    check("2 ta variant bilan xatosiz", cd.validate_state(s) == [])
+
+    # lead_form_config_from_state -> Meta options={key,value} shakliga o'giradi
+    cfg = cd.lead_form_config_from_state(s)
+    custom_q = next(q for q in cfg["questions"] if q["type"] == "CUSTOM")
+    check("Meta config'da options key/value juftliklari", custom_q["options"] == [{"key": "kichik", "value": "Kichik"}, {"key": "katta", "value": "Katta"}])
+
+    # options'siz CUSTOM -- Meta config'da "options" kaliti umuman yo'q
+    s["ad"]["lead_form"]["new_form"]["questions"][1] = {"type": "CUSTOM", "label": "Izoh"}
+    cfg2 = cd.lead_form_config_from_state(s)
+    custom_q2 = next(q for q in cfg2["questions"] if q["type"] == "CUSTOM")
+    check("options'siz CUSTOM Meta config'da 'options' kaliti yo'q", "options" not in custom_q2)
+
+
 test_new_empty_state()
 test_apply_patch_allowlist_and_coercion()
 test_approvals_after_change()
@@ -281,6 +332,7 @@ test_to_meta_targeting()
 test_to_meta_creative_spec()
 test_currency()
 test_summary_and_unsupported()
+test_lead_form_question_types_and_multiple_choice()
 
 print()
 if failures:

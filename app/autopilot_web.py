@@ -363,7 +363,10 @@ def serialize_draft(draft, assets: "dict | None", ctx: "dict | None", *, session
             "unsupported": campaign_draft.META_UNSUPPORTED_UI_FIELDS,
             "preview_formats": list(meta_api.AD_PREVIEW_FORMATS.keys()),
             "special_ad_categories": sorted(campaign_draft.SPECIAL_AD_CATEGORIES),
-            "lead_question_types": sorted(campaign_draft.LEAD_QUESTION_TYPES),
+            "lead_question_types": [
+                {"value": t, "label": campaign_draft.LEAD_QUESTION_TYPE_LABELS.get(t, t)}
+                for t in campaign_draft.LEAD_QUESTION_TYPES_ORDER
+            ],
         },
         "company": {"id": getattr(company, "id", None), "name": getattr(company, "name", None), "phone": (ctx or {}).get("phone"),
                     "default_location": (ctx or {}).get("default_location")},

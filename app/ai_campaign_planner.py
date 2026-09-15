@@ -388,7 +388,16 @@ def plan_campaign(ctx: dict, answers: dict, *, meta_assets: "dict | None", resol
                 label = str(q.get("label") or "").strip()
                 if not label:
                     continue
-                questions.append({"type": "CUSTOM", "label": label, "key": campaign_draft._slug(label)})
+                entry = {"type": "CUSTOM", "label": label, "key": campaign_draft._slug(label)}
+                # 2026-09, foydalanuvchi so'rovi ("multiplay choice... rbx
+                # o'zi yaratib bersin"): AI ham variantli (bir nechta
+                # tanlovli) savol taklif qilishi mumkin bo'lsin.
+                raw_options = q.get("options")
+                if isinstance(raw_options, list):
+                    opts = [str(o).strip() for o in raw_options if str(o).strip()]
+                    if opts:
+                        entry["options"] = opts
+                questions.append(entry)
             else:
                 questions.append({"type": qtype})
         if not any(q["type"] in ("PHONE", "EMAIL") for q in questions):

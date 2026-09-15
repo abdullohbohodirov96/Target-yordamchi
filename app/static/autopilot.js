@@ -51,7 +51,8 @@
   var FB_POS_LABELS = { feed: 'Lenta', story: 'Story', reels: 'Reels', marketplace: 'Marketplace', video_feeds: 'Video lenta', search: 'Qidiruv' };
   var IG_POS_LABELS = { stream: 'Lenta', story: 'Story', reels: 'Reels', explore: 'Explore' };
   var SPECIAL_LABELS = { NONE: 'Yo\'q', HOUSING: 'Uy-joy', EMPLOYMENT: 'Ish', CREDIT: 'Kredit', ISSUES_ELECTIONS_POLITICS: 'Siyosat', FINANCIAL_PRODUCTS_SERVICES: 'Moliya' };
-  var QTYPE_LABELS = { FULL_NAME: 'To\'liq ism', PHONE: 'Telefon', EMAIL: 'Email', CUSTOM: 'Maxsus savol' };
+  // 2026-09: savol turi yorliqlari endi SERVERDAN keladi (`d.options.lead_question_types`,
+  // `campaign_draft.LEAD_QUESTION_TYPE_LABELS` -- to'liq Ads Manager ro'yxati), qarang `renderLeadFormEditor()`.
   var VALIDATION_FIELD_MAP = {
     // validate_state `field` -> forma yo'li (inline xato ko'rsatish uchun)
     'campaign.name': 'campaign.name', 'campaign.objective': 'objective', 'campaign.special_ad_categories': 'campaign.special_ad_categories', 'campaign.pixel': 'campaign.pixel', 'campaign.meta_objective': 'objective',
@@ -716,7 +717,16 @@
     var g2 = h('div', { class: 'ap-grid-2' });
     g2.appendChild(fieldWrap('ad.cta', 'Tugma (CTA)', selectInput('ad', 'ad.cta', d.options.cta)));
     var linkLabel = s.objective === 'CALLS' ? 'Telefon (tel:+998...)' : 'Havola (link)';
-    g2.appendChild(fieldWrap('ad.link_url', linkLabel, textInput('ad', 'ad.link_url', { placeholder: s.objective === 'CALLS' ? 'tel:+998901234567' : 'https://…', nullable: true }), { hint: s.objective === 'MESSAGES' ? 'Xabar maqsadi uchun shart emas (sahifa havolasi ishlatiladi).' : null }));
+    var linkHint = null;
+    if (s.objective === 'MESSAGES') { linkHint = 'Xabar maqsadi uchun shart emas (sahifa havolasi ishlatiladi).'; }
+    // 2026-09, foydalanuvchi savoli ("nega havola bo'ladi, men Instant
+    // Formaga to'ldiryapman?"): LEADS'da tugma to'g'ridan-to'g'ri Instant
+    // Form'ni ochadi (pastdagi "Instant Form" bo'limi) -- bu havola HECH
+    // QAYERGA olib bormaydi, Meta shunchaki texnik jihatdan shu maydonni
+    // talab qiladi. Bo'sh qoldirsangiz -- Facebook sahifangiz havolasi
+    // avtomatik qo'yiladi, reklamada ko'rinmaydi/bosilmaydi.
+    if (s.objective === 'LEADS') { linkHint = 'Instant Form uchun shart emas -- tugma sahifani emas, pastdagi formani ochadi. Bo\'sh qoldirsangiz, Meta talabi bo\'yicha sahifangiz havolasi orqa fonda avtomatik ishlatiladi (hech qayerda ko\'rinmaydi).'; }
+    g2.appendChild(fieldWrap('ad.link_url', linkLabel, textInput('ad', 'ad.link_url', { placeholder: s.objective === 'CALLS' ? 'tel:+998901234567' : 'https://…', nullable: true }), { hint: linkHint }));
     sec2.appendChild(g2);
     var g3 = h('div', { class: 'ap-grid-2' });
     g3.appendChild(fieldWrap('ad.display_link', 'Ko\'rinadigan havola', textInput('ad', 'ad.display_link', { placeholder: 'masalan sayt.uz', nullable: true })));
@@ -839,7 +849,13 @@
     var lf = state().ad.lead_form || { mode: 'new', existing_form_id: null, new_form: {} };
     var sec = h('div', { class: 'ap-section' }, [sectionTitle('Instant Form (lead forma)', miniBtn('AI matnlarni qayta yozsin', function () { regenerate('lead_form'); }, { cls: 'primary' }))]);
     var forms = (d.assets.lead_forms || []).map(function (f) { return { value: f.id, label: (f.name || 'Forma') + ' · ' + f.id }; });
-    sec.appendChild(fieldWrap('ad.lead_form.mode', 'Forma manbai', selectInput('ad', 'ad.lead_form.mode', [{ value: 'new', label: 'Yangi forma (Replix yaratadi)' }, { value: 'existing', label: 'Mavjud forma (Meta\'dan)', disabled: !forms.length }], { rerender: true })));
+    // 2026-09, foydalanuvchi so'rovi ("kompaniya, facebook, biznes, ads
+    // menejer ulangan, ad account ulangan forumlar chiqib kelsin"): ulangan
+    // Facebook sahifangizdagi TAYYOR Instant Form'lar shu yerda avtomatik
+    // ko'rinadi (Meta'dan haqiqiy ro'yxat, `meta_publish.get_meta_assets`).
+    // Hali bitta ham yo'q bo'lsa -- sabab shu yerda tushuntiriladi.
+    sec.appendChild(fieldWrap('ad.lead_form.mode', 'Forma manbai', selectInput('ad', 'ad.lead_form.mode', [{ value: 'new', label: 'Yangi forma (Replix yaratadi)' }, { value: 'existing', label: 'Mavjud forma (Meta\'dan) — ' + forms.length + ' ta topildi', disabled: !forms.length }], { rerender: true }),
+      { hint: forms.length ? 'Sahifangizda ' + forms.length + ' ta tayyor Instant Form topildi -- xohlasangiz shulardan birini tanlashingiz mumkin.' : 'Sahifangizda hali tayyor Instant Form yo\'q -- Replix hoziroq yangisini avtomatik yaratadi. Meta\'da avval yaratilgan forma bo\'lsa, ulanish/yangilanishdan keyin shu yerda ko\'rinadi.' }));
     if (lf.mode === 'existing') {
       sec.appendChild(fieldWrap('ad.lead_form.existing_form_id', 'Mavjud Instant Form', forms.length ? selectInput('ad', 'ad.lead_form.existing_form_id', forms, { allowEmpty: true, emptyLabel: 'Tanlang…' }) : h('input', { type: 'text', value: 'Sahifada tayyor forma topilmadi', disabled: true })));
       return sec;
@@ -851,27 +867,76 @@
     g.appendChild(fieldWrap('ad.lead_form.new_form.privacy_url', 'Maxfiylik siyosati havolasi', textInput('ad', 'ad.lead_form.new_form.privacy_url', { placeholder: 'https://…' }), { hint: 'Meta majburiy talab qiladi.' }));
     sec.appendChild(g);
     sec.appendChild(fieldWrap('ad.lead_form.new_form.intro_description', 'Kirish matni', textInput('ad', 'ad.lead_form.new_form.intro_description', { textarea: true, rows: 2, maxlength: 300 })));
+    // 2026-09, foydalanuvchi so'rovi ("ads menejerda instant forum
+    // yaratayotganingda to'liq hali bor... multiplay choice bor va
+    // boshqalar... shularni hammasini to'liq qil"): savol turlari endi
+    // SERVERDAN keladi (`campaign_draft.LEAD_QUESTION_TYPES_ORDER` -- Ads
+    // Manager'dagi TO'LIQ standart maydonlar ro'yxati), VA "Maxsus savol"
+    // endi ikki ko'rinishda bo'lishi mumkin: erkin matn (javob yozadi) yoki
+    // bir nechta variant -- "multiple choice" (`q.options` massivi bo'lsa).
+    var qtypeOptions = d.options.lead_question_types || [];
+    var qtypeLabels = {};
+    qtypeOptions.forEach(function (o) { qtypeLabels[o.value] = o.label; });
+
     var qs = nf.questions || [];
     var list = h('div', { class: 'ap-list-editor' });
     qs.forEach(function (q, i) {
       var row = h('div', { class: 'ap-list-row' }, [h('span', { class: 'text-faint', text: (i + 1) + '.' })]);
       if (q.type === 'CUSTOM') {
-        var input = h('input', { type: 'text', value: q.label || '', disabled: !editable(), dataset: { path: 'ad.lead_form.new_form.questions.' + i } });
+        var col = h('div', { style: 'flex:1;display:flex;flex-direction:column;gap:6px;min-width:0' });
+        var input = h('input', { type: 'text', value: q.label || '', disabled: !editable(), placeholder: 'Savol matni' });
         input.addEventListener('input', function () { var next = JSON.parse(JSON.stringify(qs)); next[i].label = input.value; queueChange('ad', 'ad.lead_form.new_form.questions', next); });
-        row.appendChild(input);
+        col.appendChild(input);
+        if (Array.isArray(q.options)) {
+          // "Bir nechta variant" (multiple choice) -- har bir variant alohida matn maydoni.
+          col.appendChild(h('span', { class: 'text-faint', style: 'font-size:11px', text: 'Bir nechta variant (multiple choice):' }));
+          var optWrap = h('div', { class: 'ap-list-editor', style: 'margin-left:4px' });
+          q.options.forEach(function (opt, oi) {
+            var orow = h('div', { class: 'ap-list-row' });
+            var oInput = h('input', { type: 'text', value: opt || '', disabled: !editable(), placeholder: (oi + 1) + '-variant' });
+            oInput.addEventListener('input', function () { var next = JSON.parse(JSON.stringify(qs)); next[i].options[oi] = oInput.value; queueChange('ad', 'ad.lead_form.new_form.questions', next); });
+            orow.appendChild(oInput);
+            if (editable()) {
+              orow.appendChild(miniBtn('✕', function () {
+                var next = JSON.parse(JSON.stringify(qs));
+                next[i].options = next[i].options.filter(function (_, j) { return j !== oi; });
+                queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
+              }, { cls: 'danger' }));
+            }
+            optWrap.appendChild(orow);
+          });
+          if (editable()) {
+            optWrap.appendChild(miniBtn('+ Variant qo\'shish', function () {
+              var next = JSON.parse(JSON.stringify(qs));
+              next[i].options = (next[i].options || []).concat(['']);
+              queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
+            }));
+          }
+          col.appendChild(optWrap);
+        }
+        row.appendChild(col);
       } else {
-        row.appendChild(h('span', { class: 'ap-list-fixed', text: QTYPE_LABELS[q.type] || q.type }));
+        row.appendChild(h('span', { class: 'ap-list-fixed', text: qtypeLabels[q.type] || q.type }));
       }
       row.appendChild(miniBtn('O\'chirish', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.filter(function (_, j) { return j !== i; }), { immediate: true, rerender: true }); }, { cls: 'danger' }));
       list.appendChild(row);
     });
     if (editable()) {
-      var addRow = h('div', { class: 'ap-inline-actions' });
-      ['FULL_NAME', 'PHONE', 'EMAIL'].forEach(function (tp) {
-        if (qs.some(function (q) { return q.type === tp; })) { return; }
-        addRow.appendChild(miniBtn('+ ' + QTYPE_LABELS[tp], function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: tp }]), { immediate: true, rerender: true }); }));
+      var usedTypes = {};
+      qs.forEach(function (q) { usedTypes[q.type] = true; });
+      var stdSelect = h('select', {}, [h('option', { value: '', text: 'Standart maydon tanlang…' })]);
+      qtypeOptions.forEach(function (o) {
+        if (o.value === 'CUSTOM' || usedTypes[o.value]) { return; }
+        stdSelect.appendChild(h('option', { value: o.value, text: o.label }));
       });
-      addRow.appendChild(miniBtn('+ Maxsus savol', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: 'CUSTOM', label: 'Yangi savol?' }]), { immediate: true, rerender: true }); }, { cls: 'primary' }));
+      var addRow = h('div', { class: 'ap-inline-actions', style: 'flex-wrap:wrap;align-items:center;gap:8px' });
+      addRow.appendChild(stdSelect);
+      addRow.appendChild(miniBtn('+ Qo\'shish', function () {
+        if (!stdSelect.value) { return; }
+        queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: stdSelect.value }]), { immediate: true, rerender: true });
+      }));
+      addRow.appendChild(miniBtn('+ Maxsus savol (erkin matn)', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: 'CUSTOM', label: 'Yangi savol?' }]), { immediate: true, rerender: true }); }, { cls: 'primary' }));
+      addRow.appendChild(miniBtn('+ Maxsus savol (bir nechta variant)', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: 'CUSTOM', label: 'Yangi savol?', options: ['', ''] }]), { immediate: true, rerender: true }); }, { cls: 'primary' }));
       list.appendChild(addRow);
     }
     sec.appendChild(fieldWrap('ad.lead_form.new_form.questions', 'Savollar', list, { hint: 'Kamida 2 ta, telefon yoki email shart. Chatda "Lead formga byudjet degan savol qo\'sh" deb ham yozsangiz bo\'ladi.' }));
