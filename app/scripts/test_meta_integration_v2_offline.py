@@ -302,6 +302,82 @@ def test_cross_tenant_manual_capi_isolation():
     print("OK: Advanced/Manual CAPI Dataset ID/token ikkinchi kompaniyaga HECH QACHON sizib chiqmaydi (cross-tenant izolyatsiya saqlanadi)")
 
 
+# --- 8. 2026-09, foydalanuvchi so'rovi ("CAPI'ni to'liq ishlaydigan qilib,
+# Meta'ga yaxshi leadlarni yuboradigan qilib ber"): dispatch qatlami
+# allaqachon ishlaydi, lekin buni ILOVA ICHIDA tekshirish imkoni yo'q edi.
+# `/connect-accounts` sahifasiga qo'shilgan "so'nggi CAPI hodisalari"
+# bo'limi (MetaEventLog tarixi + 7 kunlik yig'indi) shu yerda tekshiriladi.
+def test_capi_event_log_visible_on_connect_accounts_page():
+    real_verify = meta_api.verify_dataset_credentials
+    real_send = meta_api.send_conversion_event
+    meta_api.verify_dataset_credentials = lambda dataset_id, token: {"id": dataset_id, "name": "D"}
+    try:
+        _signup("EventLog MChJ", "eventlog_admin", plan="business")
+        _login("eventlog_admin")
+        client.post("/connect-accounts/meta/manual", data={
+            "dataset_id": "dataset_EL", "capi_access_token": "TOKEN_EL",
+        }, follow_redirects=True)
+
+        session = db_module.get_session()
+        try:
+            company = session.query(db_module.Company).filter_by(name="EventLog MChJ").first()
+            company_id = company.id
+            lead_sent = db_module.Lead(company_id=company_id, full_name="Sent Lead", phone="+998900000001", status="new")
+            lead_failed = db_module.Lead(company_id=company_id, full_name="Failed Lead", phone="+998900000002", status="new")
+            session.add_all([lead_sent, lead_failed])
+            session.commit()
+            lead_sent_id, lead_failed_id = lead_sent.id, lead_failed.id
+        finally:
+            session.close()
+
+        # 8a. Muvaffaqiyatli dispatch -- "yuborildi" yozuvi yaratadi.
+        meta_api.send_conversion_event = lambda *a, **kw: {"events_received": 1, "fbtrace_id": "trace-1"}
+        session = db_module.get_session()
+        try:
+            lead = session.get(db_module.Lead, lead_sent_id)
+            meta_events.dispatch_lead_event(session, lead)
+        finally:
+            session.close()
+
+        # 8b. Muvaffaqiyatsiz dispatch -- "xato" yozuvi, xavfsiz matn bilan.
+        def _raise(*a, **kw):
+            raise meta_api.MetaAPIError({"message": "Vaqtinchalik server xatosi", "code": 2})
+        meta_api.send_conversion_event = _raise
+        session = db_module.get_session()
+        try:
+            lead = session.get(db_module.Lead, lead_failed_id)
+            meta_events.dispatch_lead_event(session, lead)
+        finally:
+            session.close()
+
+        html = client.get("/connect-accounts").get_data(as_text=True)
+        check("CAPI hodisalar bo'limi sahifada ko'rinadi", "Conversions API (CAPI) — so'nggi hodisalar" in html)
+        check("7 kunlik 'yuborildi' yig'indisi to'g'ri (1 ta)", "1 ta yuborildi" in html)
+        check("7 kunlik 'xato' yig'indisi to'g'ri (1 ta)", "1 ta xato" in html)
+        check("'Yangi lead' o'zbekcha nom bilan ko'rinadi (xom 'Lead' emas)", "Yangi lead" in html)
+        check("muvaffaqiyatli hodisa uchun lead'ga havola bor", f"/leads/{lead_sent_id}" in html)
+        check("muvaffaqiyatsiz hodisa uchun ham lead'ga havola bor", f"/leads/{lead_failed_id}" in html)
+        check("xavfsiz xato matni ko'rinadi", "Vaqtinchalik server xatosi" in html)
+        check("token hech qachon sahifada ko'rinmaydi", "TOKEN_EL" not in html)
+
+        # 8c. Cross-tenant: boshqa kompaniya bu hodisalarni ko'rmaydi.
+        client.get("/logout")
+        _signup("EventLog Boshqa MChJ", "eventlog_other_admin", plan="business")
+        _login("eventlog_other_admin")
+        client.post("/connect-accounts/meta/manual", data={
+            "dataset_id": "dataset_OTHER", "capi_access_token": "TOKEN_OTHER",
+        }, follow_redirects=True)
+        other_html = client.get("/connect-accounts").get_data(as_text=True)
+        check("boshqa kompaniya 'EventLog MChJ'ning lead havolalarini ko'rmaydi", f"/leads/{lead_sent_id}" not in other_html)
+        check("boshqa kompaniyada CAPI hodisasi yo'q -- bo'sh holat ko'rinadi", "Hali hech qanday CAPI hodisasi yuborilmagan" in other_html)
+    finally:
+        meta_api.verify_dataset_credentials = real_verify
+        meta_api.send_conversion_event = real_send
+        client.get("/logout")
+
+    print("OK: /connect-accounts sahifasida so'nggi CAPI hodisalari (yuborildi/xato, 7 kunlik yig'indi) to'g'ri va kompaniyalar orasida izolyatsiyalangan holda ko'rinadi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

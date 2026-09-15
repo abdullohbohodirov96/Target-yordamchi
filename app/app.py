@@ -41,7 +41,7 @@ import plans
 import lang as lang_module
 import tz_utils
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog
+from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog, MetaEventLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -1722,12 +1722,58 @@ def connect_accounts():
             session.close()
         return redirect(url_for("connect_accounts"))
 
+    # 2026-09, foydalanuvchi so'rovi ("CAPI'ni to'liq ishlaydigan qilib,
+    # Meta'ga yaxshi leadlarni yuboradigan qilib ber"): dispatch qatlami
+    # (`meta_events.py`) va Advanced-sozlash (`connect_meta_manual`, live
+    # tekshiruv bilan) ALLAQACHON to'liq ishlagan -- har bir CRM voronka
+    # bosqichi (yangi lead / sifatli / sotildi) Meta'ga mos CAPI hodisasi
+    # sifatida yuboriladi. Foydalanuvchiga BUNING HAQIQATAN ishlayotganiga
+    # ishonch berish uchun yetishmayotgan yagona narsa -- ilova ICHIDA
+    # ko'rinadigan tarix edi (avval faqat Meta Events Manager'ning o'zida
+    # tekshirish mumkin edi). Shu yerda so'nggi hodisalar + 7 kunlik
+    # yig'indi qo'shiladi.
+    recent_capi_events = []
+    capi_sent_7d = capi_failed_7d = 0
+    if plan_def.can_connect_meta_ads:
+        session = get_session()
+        try:
+            since = dt.datetime.utcnow() - dt.timedelta(days=7)
+            rows = (
+                session.query(MetaEventLog)
+                .order_by(MetaEventLog.created_at.desc())
+                .limit(15)
+                .all()
+            )
+            recent_capi_events = [{
+                "event_name": r.event_name,
+                "status": r.status,
+                "lead_id": r.lead_id,
+                "error": r.safe_error_message,
+                "created_at": r.created_at.strftime("%d.%m.%Y %H:%M") if r.created_at else None,
+            } for r in rows]
+            capi_sent_7d = (
+                session.query(MetaEventLog)
+                .filter(MetaEventLog.status == "sent", MetaEventLog.created_at >= since)
+                .count()
+            )
+            capi_failed_7d = (
+                session.query(MetaEventLog)
+                .filter(MetaEventLog.status == "failed", MetaEventLog.created_at >= since)
+                .count()
+            )
+        except Exception:
+            logger.exception("CAPI hodisalar tarixini o'qishda xatolik (company_id=%s)", company.id)
+        finally:
+            session.close()
+
     return render_template(
         "connect_accounts.html", company=company, plan=plan_def,
         fb_oauth_configured=meta_api.oauth_configured(),
         capi_configured=meta_events.capi_credentials_configured(company),
         manual_capi_configured=bool(company.meta_capi_dataset_id and company.get_meta_capi_token()),
         telegram_bot_username=_get_bot_identity().get("username"),
+        recent_capi_events=recent_capi_events,
+        capi_sent_7d=capi_sent_7d, capi_failed_7d=capi_failed_7d,
     )
 
 
