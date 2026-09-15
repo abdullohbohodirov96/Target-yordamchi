@@ -11,6 +11,7 @@ DATABASE_URL Render'da Postgres qo'shganda avtomatik beriladi
 """
 
 import os
+import json
 import logging
 import contextlib
 import contextvars
@@ -991,6 +992,153 @@ class IgDmAdSource(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+# ---------------------------------------------------------------------------
+# META ADS AUTOPILOT -- 2026-09, foydalanuvchi so'rovi: "Replix ... Ads
+# Manager'dagi har bir maydonni boshidan o'zi to'ldirmasligi kerak". Kompaniya
+# admini faqat bir nechta savolga (maqsad, byudjet, hudud, muddat, media)
+# javob beradi -- AI esa kompaniyaning saqlangan biznes-profilidan kelib
+# chiqib TO'LIQ Campaign -> Ad Set -> Ad qoralamasini tuzadi. Qoralama BITTA
+# kanonik JSON holat (`state_json`, sxemasi `campaign_draft.py`da) sifatida
+# saqlanadi: qo'lda forma tahriri ham, AI-chat buyrug'i ("Yoshni 25-50 qil")
+# ham AYNAN SHU holatni allowlist'langan patch orqali o'zgartiradi.
+# Uch daraja (campaign/adset/ad) ALOHIDA tasdiqlanadi; biror darajadagi har
+# qanday tahrir o'sha darajaning tasdig'ini bekor qiladi; uchalasi ham
+# tasdiqlanmaguncha Meta'ga chiqarib bo'lmaydi (`meta_publish.py`).
+# ---------------------------------------------------------------------------
+
+class CampaignDraft(Base):
+    """Bitta reklama kampaniyasi qoralamasi (Campaign + Ad Set + Ad birga).
+
+    `state_json` -- kanonik holat (`campaign_draft.new_empty_state()` sxemasi).
+    `field_sources_json` -- {"adset.targeting.age_min": "AI_RECOMMENDED" |
+        "USER_OVERRIDDEN" | "META_IMPORTED"} -- foydalanuvchi qo'lda
+        o'zgartirgan (USER_OVERRIDDEN) maydonni keyingi AI qayta-rejalashtirish
+        HECH QACHON jimgina qayta yozmaydi (`ai_campaign_planner.
+        replan_preserving_overrides`).
+    `ai_plan_json` -- oxirgi AI rejasi: reasoning_summary, explanations
+        {path: matn}, confidence {path: 0-100}, questions[], warnings[].
+    `meta_*_id` -- Meta'da yaratilgan obyektlar (nashr pipeline'i HAR
+        qadamdan keyin darhol saqlaydi -- qayta urinishda DUBLIKAT
+        yaratilmasligi uchun, `meta_publish.publish_draft`).
+    `meta_snapshot_json` -- oxirgi sinxronizatsiyada Meta'dan o'qilgan
+        qisqa holat (nom/status/byudjet/yosh) -- "Meta'da o'zgargan"
+        (`sync_status="meta_changed"`) ni aniqlash uchun."""
+    __tablename__ = "campaign_drafts"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    created_by_manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
+    title = Column(String(255), nullable=True)
+    source = Column(String(16), nullable=False, default="AI")  # AI | MANUAL | IMPORTED
+    status = Column(String(24), nullable=False, default="draft")  # draft|publishing|published|active|failed|archived
+    objective = Column(String(24), nullable=True)  # MESSAGES|LEADS|SALES|TRAFFIC|CALLS|AWARENESS|ENGAGEMENT
+    state_json = Column(Text, nullable=True)
+    field_sources_json = Column(Text, nullable=True)
+    ai_plan_json = Column(Text, nullable=True)
+    campaign_approved = Column(Boolean, nullable=False, default=False)
+    adset_approved = Column(Boolean, nullable=False, default=False)
+    ad_approved = Column(Boolean, nullable=False, default=False)
+    meta_campaign_id = Column(String(64), nullable=True)
+    meta_adset_id = Column(String(64), nullable=True)
+    meta_creative_id = Column(String(64), nullable=True)
+    meta_ad_id = Column(String(64), nullable=True)
+    meta_lead_form_id = Column(String(64), nullable=True)
+    publish_step = Column(String(32), nullable=True)
+    publish_error = Column(Text, nullable=True)
+    last_meta_error_raw = Column(Text, nullable=True)
+    sync_status = Column(String(24), nullable=False, default="local")  # local|synced|local_changes|publishing|meta_changed|sync_error
+    meta_snapshot_json = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+    @staticmethod
+    def _load_json(raw: "str | None") -> dict:
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def get_state(self) -> dict:
+        return self._load_json(self.state_json)
+
+    def set_state(self, state: dict) -> None:
+        self.state_json = json.dumps(state or {}, ensure_ascii=False)
+
+    def get_field_sources(self) -> dict:
+        return self._load_json(self.field_sources_json)
+
+    def set_field_sources(self, sources: dict) -> None:
+        self.field_sources_json = json.dumps(sources or {}, ensure_ascii=False)
+
+    def get_ai_plan(self) -> dict:
+        return self._load_json(self.ai_plan_json)
+
+    def set_ai_plan(self, plan: dict) -> None:
+        self.ai_plan_json = json.dumps(plan or {}, ensure_ascii=False)
+
+    def get_meta_snapshot(self) -> dict:
+        return self._load_json(self.meta_snapshot_json)
+
+    def set_meta_snapshot(self, snapshot: dict) -> None:
+        self.meta_snapshot_json = json.dumps(snapshot or {}, ensure_ascii=False)
+
+    @property
+    def all_approved(self) -> bool:
+        """Uchala daraja ham tasdiqlanganmi -- faqat shunda nashr qilinadi."""
+        return bool(self.campaign_approved and self.adset_approved and self.ad_approved)
+
+
+class CampaignDraftMedia(Base):
+    """Qoralamaga yuklangan rasm/video. Fayl `campaign_media.MEDIA_ROOT/
+    <company_id>/<draft_id>/...` ostida saqlanadi (`storage_path` -- shu
+    ildizga nisbatan). Meta'ga yuklash (`adimages`/`advideos`) alohida,
+    idempotent qadam: `meta_image_hash`/`meta_video_id` to'lgan bo'lsa qayta
+    yuklanmaydi (`campaign_media.ensure_uploaded_to_meta`)."""
+    __tablename__ = "campaign_draft_media"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    draft_id = Column(Integer, ForeignKey("campaign_drafts.id"), nullable=False, index=True)
+    kind = Column(String(8), nullable=False, default="image")  # image | video
+    filename = Column(String(255), nullable=True)
+    storage_path = Column(Text, nullable=True)
+    content_type = Column(String(64), nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    meta_image_hash = Column(String(64), nullable=True)
+    meta_video_id = Column(String(64), nullable=True)
+    upload_status = Column(String(16), nullable=False, default="pending")  # pending|uploaded|failed
+    upload_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+class CampaignDraftEvent(Base):
+    """Qoralama audit-jurnali + AI tahrir tarixi: kim (user/ai/system) nima
+    qildi (action), qaysi darajada (scope), tafsilotlar (details_json --
+    masalan o'zgargan path'lar, Meta ID'lar, xato matni). Nashr pipeline'i
+    HAR qadamni shu yerga yozadi -- muammo bo'lsa aynan qaysi qadamda
+    to'xtagani ko'rinadi."""
+    __tablename__ = "campaign_draft_events"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    draft_id = Column(Integer, ForeignKey("campaign_drafts.id"), nullable=False, index=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)
+    actor = Column(String(8), nullable=False, default="system")  # user | ai | system
+    action = Column(String(48), nullable=False)
+    scope = Column(String(16), nullable=True)  # campaign | adset | ad | all
+    details_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+
+    def get_details(self) -> dict:
+        return CampaignDraft._load_json(self.details_json)
+
+
 class IgDmMessage(Base):
     """Bitta Instagram DM xabari -- `IgDmConversation.message_count`/
     `last_message_*` shu jadvaldan HISOBLANADI, lekin AI tahlili uchun
@@ -1377,6 +1525,10 @@ _COMPANY_SCOPED_MODELS = [
     CompetitorAd, CompetitorAnalysis, AssistantUnanswered, CustomField, FunnelStage,
     StandingTask, StandingReport, IgDmConversation, IgDmMessage, MetaEventLog,
     CannedReply, PaymeReceipt,
+    # 2026-09: `IgDmAdSource` ilgari bu ro'yxatga qo'shilmay qolgan edi
+    # (tenant-filtrsiz) -- tuzatildi. Meta Ads Autopilot jadvallari ham
+    # shu yerda -- qoralamalar boshqa kompaniyaga HECH QACHON ko'rinmasin.
+    IgDmAdSource, CampaignDraft, CampaignDraftMedia, CampaignDraftEvent,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

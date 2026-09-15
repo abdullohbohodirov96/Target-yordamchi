@@ -199,6 +199,34 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
     raise MetaAPIError({"message": "Meta bilan bog'lanib bo'lmadi (qayta urinishlar tugadi)."})
 
 
+def _post_multipart(path: str, data: dict, files: dict, token: str | None = None) -> dict:
+    """2026-09, Meta Ads Autopilot: fayl (rasm/video) yuklash uchun
+    `multipart/form-data` POST -- `adimages`/`advideos` endpoint'lari.
+    Xato ishlovi `_post()` bilan bir xil (yozuv -- faqat SOF tarmoq xatosida
+    qayta uriniladi; Meta javob qaytargan bo'lsa darhol to'xtaydi, aks holda
+    bitta rasm ikki marta yuklanib ketishi mumkin). `files` -- `requests`
+    formatida: {"filename": (name, bytes, content_type)}."""
+    payload = {
+        k: (json.dumps(v) if isinstance(v, (dict, list)) else v)
+        for k, v in (data or {}).items()
+    }
+    payload["access_token"] = token or ACCESS_TOKEN
+    url = f"{GRAPH_URL}/{path}"
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            r = requests.post(url, data=payload, files=files, timeout=120)
+            result = r.json()
+        except _RETRYABLE_NETWORK_ERRORS:
+            if attempt < _MAX_ATTEMPTS - 1:
+                _retry_sleep(attempt)
+                continue
+            raise
+        if isinstance(result, dict) and "error" in result:
+            raise MetaAPIError(result["error"])
+        return result
+    raise MetaAPIError({"message": "Meta bilan bog'lanib bo'lmadi (qayta urinishlar tugadi)."})
+
+
 def _get_all_pages(path: str, params: dict | None = None, token: str | None = None) -> list[dict]:
     """2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 9-band: "200 tadan
     ortiq obyektli hisoblar uchun pagination yo'q"). `_get()` bilan bir xil,
@@ -1040,19 +1068,30 @@ def update_targeting(adset_id: str, targeting: dict, *, access_token: str | None
     return _post(adset_id, {"targeting": _sanitize_targeting_for_write(targeting)}, access_token)
 
 
-def search_geo_location(query: str, location_types: list[str] | None = None) -> list[dict]:
+def search_geo_location(query: str, location_types: list[str] | None = None, *, access_token: str | None = None) -> list[dict]:
     """Erkin matndagi joy nomini (masalan 'Chirchiq', 'Zangiota tumani') Meta'ning
     rasmiy geo-target kaliti va turiga bog'laydi. Bir nechta nomzod qaytishi mumkin
     (bir xil nomli joylar turli davlatlarda bo'lishi mumkin) — Targetolog davlat/
-    kontekstga qarab eng mosini tanlashi kerak. Natija elementlari odatda:
-    {"key": "...", "name": "...", "type": "city"|"region"|"country"|..., "country_code": "UZ", ...}
+    kontekstga qarab eng mosini tanlashi kerak. Natija elementlari:
+    {"key": "...", "name": "...", "type": "city"|"region"|"country"|..., "country_code": "UZ", "region": "..."}
     Bu funksiyasiz shahar/tuman nomlarini exclude/include qilib bo'lmaydi — Meta
-    faqat raqamli `key` bilan ishlaydi, nom bilan emas."""
+    faqat raqamli `key` bilan ishlaydi, nom bilan emas.
+
+    2026-09, Meta Ads Autopilot: `access_token` kwarg qo'shildi -- har bir
+    kompaniya O'Z tokeni bilan qidiradi (berilmasa eski global token)."""
     params = {"type": "adgeolocation", "q": query}
     if location_types:
         params["location_types"] = location_types
-    data = _get("search", params)
-    return data.get("data", [])
+    data = _get("search", params, token=access_token)
+    out = []
+    for item in data.get("data", []):
+        # Meta qaytargan barcha maydonlar saqlanadi (orchestrator LLM'ga
+        # to'liq nomzodni ko'rsatadi), lekin 5 ta asosiy kalit HAR DOIM bor.
+        row = dict(item)
+        for key in ("key", "name", "type", "country_code", "region"):
+            row.setdefault(key, None)
+        out.append(row)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1089,6 +1128,10 @@ def create_adset(
     *,
     access_token: str | None = None,
     ad_account_id: str | None = None,
+    lifetime_budget_cents: int | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    destination_type: str | None = None,
 ) -> dict:
     """Bo'lim 4.2-4.3 qoidalariga mos targeting spec bilan yangi Ad Set yaratadi.
 
@@ -1098,17 +1141,33 @@ def create_adset(
         "age_min": 18, "age_max": 65,
         "targeting_automation": {"advantage_audience": 1}
     }
+
+    2026-09, Meta Ads Autopilot -- ixtiyoriy kwarg'lar qo'shildi (eski
+    chaqiruvlar o'zgarmaydi): `lifetime_budget_cents` berilsa `daily_budget`
+    O'RNIGA umumiy byudjet yuboriladi (Meta ikkalasini birga qabul
+    qilmaydi); `start_time`/`end_time` (ISO); `destination_type` (MESSENGER/
+    INSTAGRAM_DIRECT/WHATSAPP/WEBSITE/ON_AD/PHONE_CALL) -- Meta v21 hujjati
+    bo'yicha; rad etilsa friendly xato ko'rsatiladi.
     """
     payload = {
         "name": name,
         "campaign_id": campaign_id,
-        "daily_budget": daily_budget_cents,
         "targeting": targeting,
         "optimization_goal": optimization_goal,
         "billing_event": billing_event,
         "bid_strategy": bid_strategy,
         "status": status,
     }
+    if lifetime_budget_cents:
+        payload["lifetime_budget"] = lifetime_budget_cents
+    else:
+        payload["daily_budget"] = daily_budget_cents
+    if start_time:
+        payload["start_time"] = start_time
+    if end_time:
+        payload["end_time"] = end_time
+    if destination_type:
+        payload["destination_type"] = destination_type
     if promoted_object:
         payload["promoted_object"] = promoted_object
     return _post(f"{ad_account_id or AD_ACCOUNT_ID}/adsets", payload, access_token)
@@ -1250,7 +1309,7 @@ def update_ad_creative(ad_id: str, creative_id: str, *, access_token: str | None
 # INSTANT FORMS / LEAD ADS (4.9-bo'lim)
 # ---------------------------------------------------------------------------
 
-def create_lead_form(page_id: str, form_config: dict) -> dict:
+def create_lead_form(page_id: str, form_config: dict, *, access_token: str | None = None) -> dict:
     """Instant Form (Lead Ads) yaratadi.
 
     form_config namunasi:
@@ -1265,8 +1324,13 @@ def create_lead_form(page_id: str, form_config: dict) -> dict:
         "privacy_policy": {"url": "https://example.com/privacy"},
         "thank_you_page": {"title": "Rahmat!", "body": "Tez orada bog'lanamiz."},
     }
+
+    2026-09, Meta Ads Autopilot: `access_token` (kompaniyaning foydalanuvchi
+    tokeni) berilsa, shu Page uchun Page Access Token AYNAN shu tokendan
+    olinadi (multi-tenant); berilmasa eski global yo'l.
     """
-    return _post(f"{page_id}/leadgen_forms", form_config, token=_get_page_access_token())
+    page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token) if access_token else _get_page_access_token()
+    return _post(f"{page_id}/leadgen_forms", form_config, token=page_token)
 
 
 def get_leads(form_id: str, since: str | None = None, *, access_token: str | None = None, page_id: str | None = None) -> list[dict]:
@@ -1799,3 +1863,186 @@ def verify_webhook_signature(payload_body: bytes, signature_header: "str | None"
     expected = hmac.new(META_APP_SECRET.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()
     provided = signature_header.split("=", 1)[1]
     return hmac.compare_digest(expected, provided)
+
+
+# ---------------------------------------------------------------------------
+# META ADS AUTOPILOT (2026-09, foydalanuvchi so'rovi: "Replix ... Ads
+# Manager'dagi har bir maydonni boshidan o'zi to'ldirmasligi kerak").
+# Kampaniya qoralamasini (`campaign_draft.py`) Meta'ga chiqarish
+# (`meta_publish.py`) uchun kerak bo'lgan QO'SHIMCHA endpoint'lar. Hammasi
+# `access_token` (kompaniyaning O'Z tokeni) bilan ishlaydi -- global ENV
+# tokeniga tayanmaydi. Meta v21 hujjati bo'yicha yozilgan; rad etilsa
+# `meta_publish.friendly_publish_error()` foydalanuvchiga tushunarli xato
+# ko'rsatadi (xom API matni ekranga chiqmaydi).
+# ---------------------------------------------------------------------------
+
+_MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024  # bitta so'rovli yuklash chegarasi (chunked yuklash amalga oshirilmagan)
+
+AD_PREVIEW_FORMATS = {
+    "facebook_feed": "DESKTOP_FEED_STANDARD",
+    "facebook_mobile": "MOBILE_FEED_STANDARD",
+    "instagram_feed": "INSTAGRAM_STANDARD",
+    "instagram_story": "INSTAGRAM_STORY",
+    "instagram_reels": "INSTAGRAM_REELS",
+}
+
+
+def get_ad_account_info(ad_account_id: str, *, access_token: str) -> dict:
+    """Reklama hisobining valyutasi/vaqt zonasi/holati -- byudjetni to'g'ri
+    kichik birlikka o'tkazish (`campaign_draft.to_minor_units`) va UI'da
+    ko'rsatish uchun."""
+    data = _get(ad_account_id, {"fields": "name,currency,timezone_name,account_status,spend_cap,amount_spent"}, token=access_token)
+    return {
+        "id": data.get("id") or ad_account_id,
+        "name": data.get("name"),
+        "currency": data.get("currency"),
+        "timezone_name": data.get("timezone_name"),
+        "account_status": data.get("account_status"),
+        "spend_cap": data.get("spend_cap"),
+        "amount_spent": data.get("amount_spent"),
+    }
+
+
+def list_custom_audiences(ad_account_id: str, *, access_token: str, limit: int = 100) -> list[dict]:
+    """Reklama hisobidagi Custom/Lookalike auditoriyalar -- qoralamada
+    tanlash uchun (egalik tekshiruvi ham shu ro'yxat bo'yicha)."""
+    data = _get(f"{ad_account_id}/customaudiences", {"fields": "id,name,subtype,approximate_count_lower_bound", "limit": limit}, token=access_token)
+    return [
+        {"id": a.get("id"), "name": a.get("name"), "subtype": a.get("subtype"),
+         "approximate_count_lower_bound": a.get("approximate_count_lower_bound")}
+        for a in data.get("data", [])
+    ]
+
+
+def list_ad_images(ad_account_id: str, *, access_token: str, limit: int = 50) -> list[dict]:
+    """Hisobga ilgari yuklangan rasmlar (hash bilan) -- qayta yuklamasdan
+    tanlash uchun."""
+    data = _get(f"{ad_account_id}/adimages", {"fields": "hash,name,url,width,height,created_time", "limit": limit}, token=access_token)
+    return data.get("data", [])
+
+
+def upload_ad_image(ad_account_id: str, filename: str, file_bytes: bytes, *, access_token: str) -> dict:
+    """Rasmni `act_x/adimages`ga yuklaydi, {"hash","url"} qaytaradi.
+    Meta javobi: {"images": {"<filename>": {"hash": ..., "url": ...}}}."""
+    result = _post_multipart(f"{ad_account_id}/adimages", {}, {"filename": (filename, file_bytes, "application/octet-stream")}, token=access_token)
+    images = result.get("images") if isinstance(result, dict) else None
+    if not isinstance(images, dict) or not images:
+        raise MetaAPIError({"message": "Rasm yuklandi, lekin Meta hash qaytarmadi."})
+    entry = images.get(filename) or next(iter(images.values()))
+    if not isinstance(entry, dict) or not entry.get("hash"):
+        raise MetaAPIError({"message": "Rasm yuklandi, lekin Meta hash qaytarmadi."})
+    return {"hash": entry["hash"], "url": entry.get("url")}
+
+
+def upload_ad_video(ad_account_id: str, filename: str, file_bytes: bytes, *, access_token: str) -> dict:
+    """Videoni `act_x/advideos`ga BITTA so'rov bilan (`source`) yuklaydi va
+    {"id"} qaytaradi. Bo'laklab (chunked/resumable) yuklash AMALGA
+    OSHIRILMAGAN -- 50 MB dan katta fayl uchun friendly xato."""
+    if len(file_bytes) > _MAX_VIDEO_UPLOAD_BYTES:
+        raise MetaAPIError({"message": "Video 50 MB dan katta -- hozircha faqat 50 MB gacha video yuklash mumkin. Faylni siqib qayta yuklang."})
+    result = _post_multipart(f"{ad_account_id}/advideos", {"name": filename}, {"source": (filename, file_bytes, "application/octet-stream")}, token=access_token)
+    if not isinstance(result, dict) or not result.get("id"):
+        raise MetaAPIError({"message": "Video yuklandi, lekin Meta ID qaytarmadi."})
+    return {"id": str(result["id"])}
+
+
+def search_targeting_interests(query: str, *, access_token: str, limit: int = 10) -> list[dict]:
+    """Qiziqish (interest) NOMINI Meta'ning haqiqiy targeting ID'siga
+    bog'laydi (`GET /search?type=adinterest`). AI hech qachon ID
+    o'ylab topmaydi -- faqat shu natijadan tanlanadi."""
+    data = _get("search", {"type": "adinterest", "q": query, "limit": limit}, token=access_token)
+    return [
+        {"id": i.get("id"), "name": i.get("name"), "audience_size_lower_bound": i.get("audience_size_lower_bound"), "path": i.get("path")}
+        for i in data.get("data", []) if i.get("id")
+    ]
+
+
+def generate_ad_preview(ad_account_id: str, object_story_spec: dict, ad_format: str, *, access_token: str) -> str:
+    """Kreativ hali yaratilmagan bo'lsa ham reklama ko'rinishini (iframe
+    HTML) qaytaradi -- `act_x/generatepreviews`. `ad_format` --
+    `AD_PREVIEW_FORMATS` qiymatlaridan. Meta v21 hujjati bo'yicha; rad
+    etilsa friendly xato ko'rsatiladi."""
+    data = _get(f"{ad_account_id}/generatepreviews", {
+        "creative": {"object_story_spec": object_story_spec},
+        "ad_format": ad_format,
+    }, token=access_token)
+    items = data.get("data") or []
+    if not items or not isinstance(items[0], dict):
+        raise MetaAPIError({"message": "Meta preview qaytarmadi."})
+    return items[0].get("body") or ""
+
+
+def create_ad_creative(ad_account_id: str, name: str, object_story_spec: dict, *, access_token: str) -> dict:
+    """Yangi AdCreative (`act_x/adcreatives`) -- {"id"} qaytaradi.
+    `object_story_spec` `campaign_draft.to_meta_creative_spec()`dan keladi."""
+    result = _post(f"{ad_account_id}/adcreatives", {"name": name, "object_story_spec": object_story_spec}, token=access_token)
+    return {"id": str(result.get("id"))} if result.get("id") else result
+
+
+def get_campaign_tree(campaign_id: str, *, access_token: str) -> dict:
+    """Import uchun: kampaniya + uning adset'lari + reklamalari (kreativ
+    spec bilan) BITTA so'rovda (nested fields)."""
+    fields = (
+        "id,name,objective,status,special_ad_categories,daily_budget,lifetime_budget,bid_strategy,buying_type,"
+        "adsets.limit(25){id,name,status,daily_budget,lifetime_budget,optimization_goal,billing_event,bid_strategy,"
+        "destination_type,promoted_object,targeting,start_time,end_time,"
+        "ads.limit(25){id,name,status,creative{id,object_story_spec}}}"
+    )
+    data = _get(campaign_id, {"fields": fields}, token=access_token)
+    adsets = data.get("adsets")
+    if isinstance(adsets, dict):
+        data["adsets"] = adsets.get("data", [])
+    for adset in data.get("adsets") or []:
+        ads = adset.get("ads")
+        if isinstance(ads, dict):
+            adset["ads"] = ads.get("data", [])
+    return data
+
+
+def get_campaign_basic(campaign_id: str, *, access_token: str) -> dict:
+    """Nashrdan keyingi tekshiruv/sinxronizatsiya uchun qisqa holat."""
+    return _get(campaign_id, {"fields": "id,name,status,effective_status,objective,updated_time"}, token=access_token)
+
+
+def get_adset_basic(adset_id: str, *, access_token: str) -> dict:
+    return _get(adset_id, {"fields": "id,name,status,effective_status,daily_budget,lifetime_budget,targeting,start_time,end_time,optimization_goal,updated_time"}, token=access_token)
+
+
+def get_ad_basic(ad_id: str, *, access_token: str) -> dict:
+    return _get(ad_id, {"fields": "id,name,status,effective_status,creative{id},updated_time"}, token=access_token)
+
+
+_UPDATABLE_FIELDS = {"name", "status", "daily_budget", "lifetime_budget", "end_time", "targeting", "bid_strategy"}
+
+
+def _update_object(object_id: str, fields: dict, *, access_token: str, allowed: set) -> dict:
+    payload = {k: v for k, v in (fields or {}).items() if k in allowed}
+    if not payload:
+        raise MetaAPIError({"message": "Yangilash uchun ruxsat etilgan maydon yo'q."})
+    if "targeting" in payload and isinstance(payload["targeting"], dict):
+        payload["targeting"] = _sanitize_targeting_for_write(payload["targeting"])
+    return _post(object_id, payload, token=access_token)
+
+
+def update_campaign(campaign_id: str, fields: dict, *, access_token: str) -> dict:
+    """Kampaniyaning FAQAT ruxsat etilgan maydonlarini (name, status,
+    daily/lifetime_budget, bid_strategy) yangilaydi."""
+    return _update_object(campaign_id, fields, access_token=access_token, allowed={"name", "status", "daily_budget", "lifetime_budget", "bid_strategy"})
+
+
+def update_adset(adset_id: str, fields: dict, *, access_token: str) -> dict:
+    """Ad Set'ning ruxsat etilgan maydonlari: name, status, daily_budget,
+    lifetime_budget, end_time, targeting, bid_strategy."""
+    return _update_object(adset_id, fields, access_token=access_token, allowed=_UPDATABLE_FIELDS)
+
+
+def update_ad(ad_id: str, fields: dict, *, access_token: str) -> dict:
+    """Reklamaning ruxsat etilgan maydonlari: name, status (kreativ
+    `update_ad_creative()` orqali -- kreativlar immutable)."""
+    return _update_object(ad_id, fields, access_token=access_token, allowed={"name", "status"})
+
+
+def list_ad_account_campaigns(ad_account_id: str, *, access_token: str, limit: int = 50) -> list[dict]:
+    """Import tanlovi uchun hisobdagi kampaniyalar ro'yxati."""
+    data = _get(f"{ad_account_id}/campaigns", {"fields": "id,name,objective,status,updated_time", "limit": limit}, token=access_token)
+    return data.get("data", [])
