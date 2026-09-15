@@ -2715,7 +2715,7 @@ def sitemap_xml():
     # FAQAT haqiqiy tavsif beruvchi sahifalar qoladi; /login va /signup esa
     # o'zlarida <meta name="robots" content="noindex"> orqali alohida
     # chiqarib tashlanadi (pastga qarang: login.html/signup.html).
-    public_paths = ["/", "/tariflar"]
+    public_paths = ["/", "/tariflar", "/maxfiylik-siyosati", "/malumotlarni-ochirish"]
     entries = "\n".join(
         f"  <url><loc>{base}{p}</loc></url>" for p in public_paths
     )
@@ -2726,6 +2726,26 @@ def sitemap_xml():
         "</urlset>\n"
     )
     return Response(xml, mimetype="application/xml")
+
+
+# ---------------------------------------------------------------------------
+# Maxfiylik siyosati va ma'lumotlarni o'chirish -- 2026-09, Meta App
+# Dashboard'ning "Publish" (App Review/Go Live) sahifasida ilovani chop
+# etish uchun talab qilingan ikkita majburiy havola: "Privacy policy URL"
+# va "Data deletion URL". Ikkalasi ham ochiq (login TALAB QILINMAYDI) --
+# Meta'ning o'z tekshiruv jarayoni ham, oddiy mehmon ham ochib ko'ra olishi
+# shart, aks holda ilova "Live" holatiga o'tkazilmaydi va real webhook
+# ma'lumotlari (Instagram/Facebook DM) hech qachon kelmaydi (faqat
+# qo'lda yuborilgan test xabarlar keladi).
+# ---------------------------------------------------------------------------
+@app.route("/maxfiylik-siyosati")
+def privacy_policy():
+    return render_template("privacy_policy.html")
+
+
+@app.route("/malumotlarni-ochirish")
+def data_deletion():
+    return render_template("data_deletion.html")
 
 
 # ---------------------------------------------------------------------------
