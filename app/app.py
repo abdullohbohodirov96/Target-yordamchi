@@ -59,6 +59,15 @@ import ig_dm_analytics
 import competitor_sync
 import competitor_analytics
 import integrations
+# 2026-09, Meta Ads Autopilot (foydalanuvchi so'rovi: "Replix ... Ads
+# Manager'dagi har bir maydonni boshidan o'zi to'ldirmasligi kerak"):
+# AI reja + Ads Manager'ga o'xshash tasdiqlash sahifasi + Meta'ga nashr.
+import campaign_draft
+import company_context as company_context_module
+import ai_campaign_planner
+import campaign_media
+import meta_publish
+import autopilot_web
 from phone_utils import phone_key9
 
 logging.basicConfig(level=logging.INFO)
@@ -6970,6 +6979,839 @@ def instagram_dm_templates():
             session.close()
 
     return redirect(url_for("instagram_dm", c=selected_id) if selected_id else url_for("instagram_dm"))
+
+
+# ---------------------------------------------------------------------------
+# Meta Ads Autopilot (2026-09, foydalanuvchi so'rovi: "Replix ... Ads
+# Manager'dagi har bir maydonni boshidan o'zi to'ldirmasligi kerak").
+#
+# Oqim: /avtopilot (ro'yxat) -> /avtopilot/yangi (kichik wizard: maqsad,
+# byudjet, [hudud], muddat, mahsulot, media) -> AI to'liq Campaign -> Ad Set
+# -> Ad rejasini tuzadi -> /avtopilot/<id> (Ads Manager'ga o'xshash
+# ko'rib chiqish sahifasi: chapda daraxt, o'rtada forma, o'ngda "Replix AI"
+# chat) -> uchta alohida tasdiq -> "Meta'ga nashr qilish" (hammasi PAUSED)
+# -> alohida "Faollashtirish".
+#
+# Qat'iy qoidalar (web qatlamda ham): forma ham, chat ham BITTA kanonik
+# holatni `autopilot_web.apply_and_persist_patch` quvuri orqali
+# o'zgartiradi (allowlist -> validate -> tasdiqni bekor qilish -> audit);
+# barcha yozuvchi amallar FAQAT admin; API xatolari o'zbekcha JSON
+# {"error": ...}; Meta xatolari `meta_api.safe_error_message` orqali (token
+# sizmaydi); boshqa kompaniya qoralamasi -- 404.
+# Katta yordamchilar `autopilot_web.py`da (app.py shishmasin).
+# ---------------------------------------------------------------------------
+
+def _autopilot_admin_json():
+    """Yozuvchi JSON endpoint'lar uchun: admin bo'lmasa 403 JSON, aks holda None."""
+    if current_user.role != "admin":
+        return jsonify({"error": "Bu amal faqat admin uchun. Menejer sifatida qoralamani faqat ko'rishingiz mumkin."}), 403
+    return None
+
+
+def _autopilot_manager_id() -> "int | None":
+    try:
+        return int(current_user.id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _autopilot_load_draft(session, draft_id: int, company):
+    """Qoralamani yuklaydi -- tenant-filtr avtomatik (`_COMPANY_SCOPED_MODELS`),
+    ustiga yana `company_id` tekshiruvi (belt and braces); topilmasa 404."""
+    draft = session.get(db.CampaignDraft, draft_id)
+    if draft is None or company is None or draft.company_id != company.id:
+        abort(404)
+    return draft
+
+
+def _autopilot_payload(session, draft, company, assets=None, ctx=None) -> dict:
+    assets = assets if assets is not None else autopilot_web.safe_meta_assets(company)
+    ctx = ctx if ctx is not None else company_context_module.build_company_context(company, session)
+    return autopilot_web.serialize_draft(
+        draft, assets, ctx, session=session, company=company,
+        media_url_builder=lambda mid: url_for("autopilot_media_file", media_id=mid),
+        base_url=url_for("autopilot_review", draft_id=draft.id),
+    )
+
+
+def _autopilot_json_error(e: Exception, where: str):
+    """Kutilmagan xato: log (stack bilan) + o'zbekcha JSON 500 (xom matn/token yo'q)."""
+    logger.exception("Autopilot %s xatosi", where)
+    return jsonify({"error": "Kutilmagan xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring."}), 500
+
+
+@app.route("/avtopilot")
+@login_required
+@module_required("target")
+def autopilot_list():
+    company = _current_company()
+    session = get_session()
+    try:
+        rows = []
+        if company is not None:
+            drafts = (
+                session.query(db.CampaignDraft)
+                .filter(db.CampaignDraft.company_id == company.id)
+                .order_by(db.CampaignDraft.updated_at.desc().nullslast(), db.CampaignDraft.id.desc())
+                .limit(200)
+                .all()
+            )
+            rows = [autopilot_web.list_row(d) for d in drafts]
+        conn = autopilot_web.connection_status(company, None)
+        return render_template("autopilot_list.html", drafts=rows, connection=conn)
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/yangi", methods=["GET", "POST"])
+@login_required
+@module_required("target")
+def autopilot_new():
+    """Wizard: `ai_campaign_planner.missing_questions()` qaysi savollar
+    HALI kerakligini aytadi (maqsad + byudjet har doim; hudud faqat
+    profilda standart hudud bo'lmasa). POST -> AI reja -> qoralama ->
+    ko'rib chiqish sahifasiga yo'naltirish."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    session = get_session()
+    try:
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        conn = autopilot_web.connection_status(company, assets)
+        questions = ai_campaign_planner.missing_questions(ctx, {})
+        question_keys = [q["key"] for q in questions]
+        objectives = [{"value": o, "label": campaign_draft.OBJECTIVE_LABELS[o], "meta": campaign_draft.OBJECTIVE_META[o]} for o in campaign_draft.OBJECTIVES]
+        form = {"objective": "MESSAGES", "budget": "", "location": ctx.get("default_location") or "", "location_key": "", "location_type": "",
+                "duration_days": str(ai_campaign_planner.DEFAULT_DURATION_DAYS), "product_focus": ""}
+
+        if request.method == "POST":
+            if current_user.role != "admin":
+                flash("Yangi kampaniya tuzish faqat admin uchun.", "error")
+                return redirect(url_for("autopilot_list"))
+            for key in form:
+                value = (request.form.get(key) or "").strip()
+                # Maqsad/muddat bo'sh kelsa standart qoladi; qolganlari aynan kelganidek
+                form[key] = (value or form[key]) if key in ("objective", "duration_days") else value
+            answers = {
+                "objective": form["objective"], "budget": form["budget"],
+                "duration_days": form["duration_days"] or ai_campaign_planner.DEFAULT_DURATION_DAYS,
+                "product_focus": form["product_focus"] or None, "currency": conn.get("currency"),
+            }
+            location_name = (request.form.get("location") or "").strip()
+            if location_name:
+                answers["locations"] = [location_name]
+            media_file = request.files.get("media")
+            if media_file is not None and media_file.filename:
+                answers["media"] = f"{'video' if (media_file.content_type or '').startswith('video') else 'rasm'} ({media_file.filename})"
+            still_missing = ai_campaign_planner.missing_questions(ctx, answers)
+            if still_missing:
+                flash("To'ldiring: " + "; ".join(q["question"] for q in still_missing), "error")
+                return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
+                                       form=form, connection=conn, ctx=ctx), 400
+
+            # Typeahead'dan tanlangan hudud (key bilan) -- Meta'ni qayta so'ramasdan shu key ishlatiladi
+            base_geo = autopilot_web.resolve_geo_factory(company)
+            chosen_key = (request.form.get("location_key") or "").strip()
+            chosen_type = (request.form.get("location_type") or "city").strip()
+
+            def resolve_geo(name):
+                if chosen_key and location_name and name.strip().lower() == location_name.lower():
+                    return {"key": chosen_key, "name": location_name, "type": chosen_type}
+                return base_geo(name)
+
+            try:
+                result = ai_campaign_planner.plan_campaign(
+                    ctx, answers, meta_assets=assets, resolve_geo=resolve_geo,
+                    resolve_interests=autopilot_web.resolve_interests_factory(company),
+                )
+            except ai_campaign_planner.PlannerUnavailableError as e:
+                flash(str(e), "error")
+                return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
+                                       form=form, connection=conn, ctx=ctx), 503
+            except campaign_draft.DraftPatchError as e:
+                flash(str(e), "error")
+                return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
+                                       form=form, connection=conn, ctx=ctx), 400
+
+            state = result["state"]
+            draft = db.CampaignDraft(
+                company_id=company.id, created_by_manager_id=_autopilot_manager_id(),
+                title=(state.get("campaign") or {}).get("name") or "Yangi kampaniya", source="AI", status="draft",
+                objective=state.get("objective"), sync_status="local",
+            )
+            draft.set_state(state)
+            draft.set_field_sources(result["field_sources"])
+            draft.set_ai_plan(result["plan"])
+            session.add(draft)
+            session.flush()
+            autopilot_web.log_event(session, draft, actor="ai", action="ai_generated_plan", scope="all",
+                                    details={"answers": {k: v for k, v in answers.items() if k != "media"}, "warnings": result["plan"].get("warnings"),
+                                             "reasoning_summary": result["plan"].get("reasoning_summary")},
+                                    manager_id=_autopilot_manager_id())
+            session.commit()
+
+            if media_file is not None and media_file.filename:
+                try:
+                    row = campaign_media.save_uploaded_media(session, company.id, draft.id, media_file, media_file.filename, media_file.content_type)
+                    upload_err = autopilot_web.try_upload_to_meta(session, row, company)
+                    autopilot_web.apply_and_persist_patch(
+                        session, draft, autopilot_web.media_patch_for_row(row, 0), source="USER_OVERRIDDEN",
+                        manager_id=_autopilot_manager_id(), actor="user", action="media_added",
+                        details={"media_id": row.id, "upload_error": upload_err}, company=company, assets=assets,
+                    )
+                    if upload_err:
+                        flash(upload_err, "error")
+                except campaign_media.MediaError as e:
+                    flash(f"Media saqlanmadi: {e}", "error")
+                except campaign_draft.DraftPatchError as e:
+                    flash(f"Media biriktirilmadi: {e}", "error")
+            flash("AI reja tuzdi -- endi har bir darajani ko'rib chiqing va tasdiqlang.", "success")
+            return redirect(url_for("autopilot_review", draft_id=draft.id))
+
+        return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
+                               form=form, connection=conn, ctx=ctx)
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/import", methods=["GET", "POST"])
+@login_required
+@module_required("target")
+def autopilot_import():
+    """Meta'dagi mavjud kampaniyani tanlab qoralamaga aylantirish (barcha
+    maydonlar "Meta" belgisi bilan, sync_status=synced)."""
+    company = _current_company()
+    token = company.get_meta_access_token() if company is not None else None
+    if company is None or not token or not company.meta_ad_account_id:
+        flash("Import uchun Meta reklama hisobi ulangan bo'lishi kerak.", "error")
+        return redirect(url_for("autopilot_list"))
+    if request.method == "POST":
+        if current_user.role != "admin":
+            flash("Import faqat admin uchun.", "error")
+            return redirect(url_for("autopilot_list"))
+        campaign_id = (request.form.get("campaign_id") or "").strip()
+        if not campaign_id:
+            flash("Kampaniya tanlanmadi.", "error")
+            return redirect(url_for("autopilot_import"))
+        session = get_session()
+        try:
+            draft = meta_publish.import_campaign(session, company, campaign_id, manager_id=_autopilot_manager_id())
+            flash("Kampaniya Meta'dan import qilindi.", "success")
+            return redirect(url_for("autopilot_review", draft_id=draft.id))
+        except meta_publish.PublishError as e:
+            flash(e.friendly, "error")
+            return redirect(url_for("autopilot_import"))
+        except Exception:
+            logger.exception("Autopilot import xatosi")
+            flash("Import qilib bo'lmadi -- birozdan keyin qayta urinib ko'ring.", "error")
+            return redirect(url_for("autopilot_import"))
+        finally:
+            session.close()
+    campaigns, error = [], None
+    try:
+        campaigns = meta_api.list_ad_account_campaigns(company.meta_ad_account_id, access_token=token, limit=100)
+    except Exception as e:  # noqa: BLE001
+        error = meta_api.safe_error_message(e)
+        logger.warning("Autopilot import ro'yxati olinmadi: %s", error)
+    return render_template("autopilot_import.html", campaigns=campaigns, error=error)
+
+
+@app.route("/avtopilot/<int:draft_id>")
+@login_required
+@module_required("target")
+def autopilot_review(draft_id: int):
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        payload = _autopilot_payload(session, draft, company)
+        return render_template("autopilot_review.html", draft_json=payload, draft=payload)
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/patch", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_patch(draft_id: int):
+    """Qo'lda tahrir: {"scope": "campaign|adset|ad|objective", "changes": {path: value}}."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if draft.status in ("publishing", "archived"):
+            return jsonify({"error": "Bu qoralamani hozir tahrirlab bo'lmaydi (nashr jarayonida yoki arxivda)."}), 400
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            result = autopilot_web.apply_and_persist_patch(
+                session, draft, {"scope": data.get("scope"), "changes": data.get("changes")}, source="USER_OVERRIDDEN",
+                manager_id=_autopilot_manager_id(), actor="user", action="user_edit", company=company, assets=assets,
+            )
+        except campaign_draft.DraftPatchError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"ok": True, "changed_paths": result["changed_paths"], "reset_scopes": result["reset_scopes"],
+                        "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "patch")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/ai-edit", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_ai_edit(draft_id: int):
+    """"Replix AI" chat paneli: tabiiy tildagi buyruq -> `chat_edit` ->
+    patch (QO'LLANMAGAN) -> xuddi qo'lda tahrir kabi yagona quvur."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()[:2000]
+    if not message:
+        return jsonify({"error": "Buyruq bo'sh."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if draft.status in ("publishing", "archived"):
+            return jsonify({"error": "Bu qoralamani hozir tahrirlab bo'lmaydi (nashr jarayonida yoki arxivda)."}), 400
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            result = ai_campaign_planner.chat_edit(
+                ctx, draft.get_state(), message,
+                resolve_geo=autopilot_web.resolve_geo_factory(company),
+                resolve_interests=autopilot_web.resolve_interests_factory(company),
+            )
+        except ai_campaign_planner.PlannerUnavailableError as e:
+            return jsonify({"error": str(e), "reply": str(e), "applied": False, "clarify": False}), 503
+        applied = False
+        reset = []
+        changed = []
+        reply = result.get("reply") or ""
+        warnings = list(result.get("warnings") or [])
+        if result.get("patch"):
+            try:
+                applied_info = autopilot_web.apply_and_persist_patch(
+                    session, draft, result["patch"], source="USER_OVERRIDDEN", manager_id=_autopilot_manager_id(),
+                    actor="ai", action="ai_edit", details={"message": message, "patch": result["patch"], "warnings": warnings},
+                    company=company, assets=assets,
+                )
+                applied = True
+                reset = applied_info["reset_scopes"]
+                changed = applied_info["changed_paths"]
+            except campaign_draft.DraftPatchError as e:
+                reply = f"Buyruqni qo'llab bo'lmadi: {e}"
+                autopilot_web.log_event(session, draft, actor="ai", action="ai_edit_rejected", scope=result["patch"].get("scope"),
+                                        details={"message": message, "patch": result["patch"], "error": str(e)}, manager_id=_autopilot_manager_id())
+                session.commit()
+        return jsonify({"reply": reply, "applied": applied, "clarify": bool(result.get("clarify")), "warnings": warnings,
+                        "changed_paths": changed, "reset_scopes": reset, "draft": _autopilot_payload(session, draft, company, assets, ctx)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "ai-edit")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/regenerate-copy", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_regenerate_copy(draft_id: int):
+    """"Qayta yoz" tugmasi: {"field": primary_text|headline|description|messages|lead_form}."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    message = autopilot_web.regenerate_message((data.get("field") or "").strip())
+    if not message:
+        return jsonify({"error": "Noma'lum maydon. Variantlar: primary_text, headline, description, messages, lead_form."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            result = ai_campaign_planner.chat_edit(
+                ctx, draft.get_state(), message,
+                resolve_geo=autopilot_web.resolve_geo_factory(company),
+                resolve_interests=autopilot_web.resolve_interests_factory(company),
+            )
+        except ai_campaign_planner.PlannerUnavailableError as e:
+            return jsonify({"error": str(e)}), 503
+        if not result.get("patch"):
+            return jsonify({"error": result.get("reply") or "AI yangi variant bera olmadi."}), 400
+        try:
+            autopilot_web.apply_and_persist_patch(
+                session, draft, result["patch"], source="AI_RECOMMENDED", manager_id=_autopilot_manager_id(), actor="ai",
+                action="ai_regenerate_copy", details={"field": data.get("field"), "patch": result["patch"]}, company=company, assets=assets,
+            )
+        except campaign_draft.DraftPatchError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"reply": result.get("reply"), "draft": _autopilot_payload(session, draft, company, assets, ctx)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "regenerate-copy")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/replan", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_replan(draft_id: int):
+    """AI rejani qaytadan tuzadi; foydalanuvchi qo'lda o'zgartirgan
+    maydonlar SAQLANADI (`replan_preserving_overrides`); tasdiqlar bekor."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if draft.status in ("publishing", "archived"):
+            return jsonify({"error": "Bu qoralamani hozir qayta rejalashtirib bo'lmaydi."}), 400
+        old_state = draft.get_state()
+        old_sources = draft.get_field_sources()
+        adset = old_state.get("adset") or {}
+        geo = ((adset.get("targeting") or {}).get("geo_locations") or {})
+        loc_names = [c.get("name") or c.get("key") for c in (geo.get("cities") or []) + (geo.get("regions") or [])] + list(geo.get("countries") or [])
+        answers = {
+            "objective": old_state.get("objective"), "budget": adset.get("daily_budget") or adset.get("lifetime_budget"),
+            "duration_days": adset.get("duration_days") or ai_campaign_planner.DEFAULT_DURATION_DAYS,
+            "product_focus": (data.get("product_focus") or "").strip() or None, "currency": adset.get("currency"),
+            "locations": [n for n in loc_names if n],
+        }
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            result = ai_campaign_planner.plan_campaign(
+                ctx, answers, meta_assets=assets, resolve_geo=autopilot_web.resolve_geo_factory(company),
+                resolve_interests=autopilot_web.resolve_interests_factory(company),
+            )
+        except ai_campaign_planner.PlannerUnavailableError as e:
+            return jsonify({"error": str(e)}), 503
+        except campaign_draft.DraftPatchError as e:
+            return jsonify({"error": str(e)}), 400
+        merged = ai_campaign_planner.replan_preserving_overrides(old_state, old_sources, result["state"])
+        # Media foydalanuvchiniki -- yangi reja uni yo'qotmasin
+        merged["ad"]["media"] = (old_state.get("ad") or {}).get("media") or merged["ad"]["media"]
+        sources = dict(result["field_sources"])
+        for path, src in old_sources.items():
+            if src == "USER_OVERRIDDEN":
+                sources[path] = src
+        for p in ("ad.media.media_id", "ad.media.image_hash", "ad.media.video_id", "ad.media.selected_variant"):
+            if old_sources.get(p):
+                sources[p] = old_sources[p]
+        draft.set_state(merged)
+        draft.set_field_sources(sources)
+        draft.set_ai_plan(result["plan"])
+        draft.campaign_approved = draft.adset_approved = draft.ad_approved = False
+        draft.title = (merged.get("campaign") or {}).get("name") or draft.title
+        draft.updated_at = dt.datetime.utcnow()
+        if draft.meta_campaign_id:
+            draft.sync_status = "local_changes"
+        autopilot_web.log_event(session, draft, actor="ai", action="ai_replan", scope="all",
+                                details={"preserved": [p for p, s in old_sources.items() if s == "USER_OVERRIDDEN"], "warnings": result["plan"].get("warnings")},
+                                manager_id=_autopilot_manager_id())
+        session.commit()
+        return jsonify({"ok": True, "draft": _autopilot_payload(session, draft, company, assets, ctx)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "replan")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/approve", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_approve(draft_id: int):
+    """{"scope": "campaign|adset|ad"} -- shu darajada tekshiruv xatosi bo'lmasa tasdiqlaydi."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    scope = (data.get("scope") or "").strip().lower()
+    if scope not in ("campaign", "adset", "ad"):
+        return jsonify({"error": "Daraja noto'g'ri (campaign, adset yoki ad)."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        errors = [e for e in campaign_draft.validate_state(draft.get_state(), company=company, meta_assets=assets) if e["scope"] == scope]
+        if errors:
+            return jsonify({"error": "Tasdiqlashdan oldin xatolarni tuzating: " + "; ".join(e["message"] for e in errors), "errors": errors}), 400
+        setattr(draft, f"{scope}_approved", True)
+        draft.updated_at = dt.datetime.utcnow()
+        autopilot_web.log_event(session, draft, actor="user", action=f"approve_{scope}", scope=scope, details={}, manager_id=_autopilot_manager_id())
+        session.commit()
+        return jsonify({"ok": True, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "approve")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/media", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_media_upload(draft_id: int):
+    """Rasm/video yuklash (multipart `file`). Birinchi media yoki `select=1`
+    bo'lsa `ad.media` shu faylga o'rnatiladi; Meta'ga yuklash urinib
+    ko'riladi (xato bo'lsa fayl lokal qoladi, xabar qaytadi)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "Fayl tanlanmagan."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            row = campaign_media.save_uploaded_media(session, company.id, draft.id, f, f.filename, f.content_type)
+        except campaign_media.MediaError as e:
+            return jsonify({"error": str(e)}), 400
+        upload_err = autopilot_web.try_upload_to_meta(session, row, company)
+        current = ((draft.get_state().get("ad") or {}).get("media") or {})
+        first = not (current.get("media_id") or current.get("image_hash") or current.get("video_id"))
+        if first or request.form.get("select") == "1":
+            existing = autopilot_web.media_for_draft(session, draft)
+            idx = next((m["index"] for m in existing if m["id"] == row.id), None)
+            try:
+                autopilot_web.apply_and_persist_patch(
+                    session, draft, autopilot_web.media_patch_for_row(row, idx), source="USER_OVERRIDDEN",
+                    manager_id=_autopilot_manager_id(), actor="user", action="media_added",
+                    details={"media_id": row.id, "kind": row.kind, "upload_error": upload_err}, company=company, assets=assets,
+                )
+            except campaign_draft.DraftPatchError as e:
+                return jsonify({"error": str(e)}), 400
+        else:
+            autopilot_web.log_event(session, draft, actor="user", action="media_added", scope="ad",
+                                    details={"media_id": row.id, "kind": row.kind, "upload_error": upload_err}, manager_id=_autopilot_manager_id())
+            session.commit()
+        return jsonify({"ok": True, "media_id": row.id, "upload_error": upload_err, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "media")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/media/<int:media_id>/select", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_media_select(draft_id: int, media_id: int):
+    """"N-rasmni tanla" -- `ad.media`ni shu qatorga o'rnatadi (USER_OVERRIDDEN)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        row = session.get(db.CampaignDraftMedia, media_id)
+        if row is None or row.draft_id != draft.id or row.company_id != company.id:
+            return jsonify({"error": "Media topilmadi."}), 404
+        assets = autopilot_web.safe_meta_assets(company)
+        upload_err = None
+        if not (row.meta_image_hash or row.meta_video_id):
+            upload_err = autopilot_web.try_upload_to_meta(session, row, company)
+        existing = autopilot_web.media_for_draft(session, draft)
+        idx = next((m["index"] for m in existing if m["id"] == row.id), None)
+        try:
+            autopilot_web.apply_and_persist_patch(
+                session, draft, autopilot_web.media_patch_for_row(row, idx), source="USER_OVERRIDDEN",
+                manager_id=_autopilot_manager_id(), actor="user", action="media_selected",
+                details={"media_id": row.id, "upload_error": upload_err}, company=company, assets=assets,
+            )
+        except campaign_draft.DraftPatchError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"ok": True, "upload_error": upload_err, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "media-select")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/media/<int:media_id>")
+@login_required
+@module_required("target")
+def autopilot_media_file(media_id: int):
+    """Yuklangan faylni ko'rsatadi (faqat o'z kompaniyasi)."""
+    from flask import send_file
+    company = _current_company()
+    session = get_session()
+    try:
+        row = session.get(db.CampaignDraftMedia, media_id)
+        if row is None or company is None or row.company_id != company.id:
+            abort(404)
+        path = campaign_media.media_file_path(row)
+        if not path.exists():
+            abort(404)
+        return send_file(str(path), mimetype=row.content_type or "application/octet-stream", max_age=3600)
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/preview")
+@login_required
+@module_required("target")
+def autopilot_preview(draft_id: int):
+    """?fmt=facebook_feed|facebook_mobile|instagram_feed|instagram_story|instagram_reels.
+    Haqiqiy Meta preview (media Meta'da + sahifa bo'lsa) yoki {"local": true}."""
+    company = _current_company()
+    fmt = (request.args.get("fmt") or "instagram_feed").strip()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        media_url = None
+        for m in autopilot_web.media_for_draft(session, draft, lambda mid: url_for("autopilot_media_file", media_id=mid)):
+            if m["selected"] and m["kind"] == "image":
+                media_url = m["url"]
+                break
+        return jsonify(autopilot_web.preview_for_draft(draft, company, assets, fmt, media_url=media_url))
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "preview")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/summary")
+@login_required
+@module_required("target")
+def autopilot_summary(draft_id: int):
+    """Yakuniy tasdiq modali uchun xulosa + nashr oldi tekshiruv xabarlari."""
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        summary = campaign_draft.summary_for_review(draft.get_state(), ctx)
+        gate = autopilot_web.publish_gate(draft, company, assets)
+        return jsonify({"summary": summary, "can_publish": gate["can_publish"], "reasons": gate["reasons"]})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "summary")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/publish", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_publish(draft_id: int):
+    """Meta'ga nashr (hammasi PAUSED). Faqat admin, faqat uchala tasdiq +
+    tekshiruvlar o'tgan bo'lsa (`validate_for_publish`)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        # "failed" qoralama qayta uriniladi -- uning tekshiruvi `publish_draft`
+        # ichida (resume rejimi); qolganlari uchun aniq sabablar ro'yxati bilan 400.
+        reasons = [] if draft.status == "failed" else meta_publish.validate_for_publish(draft, company, assets)
+        if reasons:
+            return jsonify({"error": "Nashr qilib bo'lmaydi: " + " ".join(reasons), "errors": reasons,
+                            "draft": _autopilot_payload(session, draft, company, assets)}), 400
+        try:
+            result = meta_publish.publish_draft(session, draft, company, manager_id=_autopilot_manager_id())
+        except meta_publish.PublishError as e:
+            session.refresh(draft)
+            return jsonify({"error": e.friendly, "step": e.step, "draft": _autopilot_payload(session, draft, company, assets)}), 400
+        return jsonify({"ok": True, "result": result, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "publish")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/activate", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_activate(draft_id: int):
+    """PAUSED -> ACTIVE. Faqat admin, JSON {"confirm": true} shart (pul sarfi boshlanadi)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    if data.get("confirm") is not True:
+        return jsonify({"error": "Faollashtirish uchun tasdiq kerak (confirm: true) -- reklama xarajati boshlanadi."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            result = meta_publish.activate_draft(session, draft, company, manager_id=_autopilot_manager_id())
+        except meta_publish.PublishError as e:
+            return jsonify({"error": e.friendly, "step": e.step, "draft": _autopilot_payload(session, draft, company, assets)}), 400
+        return jsonify({"ok": True, "result": result, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "activate")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/sync", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_sync(draft_id: int):
+    """"Yangilash": Meta'dagi haqiqiy holatni o'qib sync_status'ni aniqlaydi."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if not draft.meta_campaign_id:
+            return jsonify({"error": "Bu qoralama hali Meta'ga chiqarilmagan -- sinxronlash uchun avval nashr qiling."}), 400
+        status = meta_publish.sync_draft_from_meta(session, draft, company)
+        assets = autopilot_web.safe_meta_assets(company)
+        return jsonify({"ok": True, "sync_status": status, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "sync")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/push", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_push(draft_id: int):
+    """Nashr qilingan/import qilingan qoralamaning lokal o'zgarishlarini
+    Meta'ga yuboradi. O'zgargan yo'llar -- oxirgi sinxronizatsiyadan keyingi
+    audit yozuvlaridan (yoki JSON {"paths": [...]})."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if not draft.all_approved:
+            return jsonify({"error": "Meta'ga yuborishdan oldin uchala darajani qayta tasdiqlang."}), 400
+        paths = [p for p in (data.get("paths") or []) if campaign_draft.is_allowed_path(p)] or autopilot_web.changed_paths_since_sync(session, draft)
+        if not paths:
+            return jsonify({"error": "Meta'ga yuboriladigan o'zgarish yo'q."}), 400
+        try:
+            result = meta_publish.push_updates_to_meta(session, draft, company, paths, manager_id=_autopilot_manager_id())
+        except meta_publish.PublishError as e:
+            return jsonify({"error": e.friendly, "step": e.step}), 400
+        assets = autopilot_web.safe_meta_assets(company)
+        return jsonify({"ok": True, "result": result, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "push")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/archive", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_archive(draft_id: int):
+    """Qoralamani arxivlaydi (Meta'dagi obyektlarga tegmaydi)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        if request.is_json:
+            return denied
+        flash("Bu amal faqat admin uchun.", "error")
+        return redirect(url_for("autopilot_list"))
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        draft.status = "archived"
+        draft.updated_at = dt.datetime.utcnow()
+        autopilot_web.log_event(session, draft, actor="user", action="archived", scope="all", details={}, manager_id=_autopilot_manager_id())
+        session.commit()
+        if request.is_json:
+            return jsonify({"ok": True})
+        flash("Qoralama arxivlandi.", "success")
+        return redirect(url_for("autopilot_list"))
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/api/search-geo")
+@login_required
+@module_required("target")
+def autopilot_search_geo():
+    """Qo'lda hudud tanlash (typeahead): ?q=Toshkent -> Meta geo nomzodlari."""
+    company = _current_company()
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+    token = company.get_meta_access_token() if company is not None else None
+    if not token:
+        return jsonify({"results": [], "error": "Meta ulanmagan -- hudud qidiruvi ishlamaydi."})
+    try:
+        hits = meta_api.search_geo_location(q, access_token=token)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"results": [], "error": meta_api.safe_error_message(e)})
+    out = [{"key": h.get("key"), "name": h.get("name"), "type": h.get("type"), "country_code": h.get("country_code"), "region": h.get("region")} for h in hits[:15] if h.get("key")]
+    out.sort(key=lambda h: 0 if (h.get("country_code") or "").upper() == "UZ" else 1)
+    return jsonify({"results": out})
+
+
+@app.route("/avtopilot/api/search-interests")
+@login_required
+@module_required("target")
+def autopilot_search_interests():
+    """Qo'lda qiziqish tanlash (typeahead): ?q=Furniture -> Meta interest ID'lari."""
+    company = _current_company()
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+    token = company.get_meta_access_token() if company is not None else None
+    if not token:
+        return jsonify({"results": [], "error": "Meta ulanmagan -- qiziqish qidiruvi ishlamaydi."})
+    try:
+        hits = meta_api.search_targeting_interests(q, access_token=token, limit=10)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"results": [], "error": meta_api.safe_error_message(e)})
+    return jsonify({"results": hits})
 
 
 # ---------------------------------------------------------------------------

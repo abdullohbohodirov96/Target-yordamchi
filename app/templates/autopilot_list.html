@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Avtopilot — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Meta Ads Autopilot (foydalanuvchi so'rovi: "Replix ... Ads
+   Manager'dagi har bir maydonni boshidan o'zi to'ldirmasligi kerak"):
+   qoralamalar ro'yxati -- har bir qator: nom, maqsad, holat, sinxronizatsiya,
+   tasdiqlar (x/3), oxirgi o'zgarish. Yuqorida "Yangi kampaniya" (wizard) va
+   "Meta'dan import" tugmalari. #}
+
+<div class="page-head">
+  <div>
+    <h1>Avtopilot</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Meta Ads kampaniyasini AI o'zi rejalashtiradi -- siz ko'rib chiqasiz, tasdiqlaysiz va Meta'ga chiqarasiz (hammasi avval PAUSED holatda).</p>
+  </div>
+  <div class="page-head-actions">
+    {% if connection.has_ad_account and connection.has_token %}
+    <a href="{{ url_for('autopilot_import') }}" class="btn btn-outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      Meta'dan import
+    </a>
+    {% endif %}
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('autopilot_new') }}" class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      Yangi kampaniya
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if connection.problems %}
+<div class="card ap-connect-banner">
+  <h2 class="text-warn" style="color:var(--warn)">Meta'ga nashr uchun quyidagilar yetishmayapti</h2>
+  <ul class="ap-banner-list">
+    {% for p in connection.problems %}<li>{{ p }}</li>{% endfor %}
+  </ul>
+  <p class="page-subtitle" style="margin:8px 0 0">AI reja tuzish va qoralamani tahrirlash baribir ishlaydi. Ulash: <a href="{{ url_for('connect_accounts') }}">Sozlamalar &rarr; Ulanishlar</a>{% if not connection.plan_allows_meta %} &middot; Tarif: <a href="{{ url_for('pricing') }}">Tariflar</a>{% endif %}</p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Kampaniya</th><th>Maqsad</th><th>Manba</th><th>Holat</th><th>Sinxron</th><th>Tasdiqlar</th><th>Yangilangan</th></tr></thead>
+    <tbody>
+      {% for d in drafts %}
+      <tr class="rowlink" onclick="window.location='{{ url_for('autopilot_review', draft_id=d.id) }}'">
+        <td><a href="{{ url_for('autopilot_review', draft_id=d.id) }}" class="ap-row-title">{{ d.title }}</a></td>
+        <td class="text-dim">{{ d.objective_label }}</td>
+        <td>
+          {% if d.source == 'IMPORTED' %}<span class="badge badge-color-dim">Meta</span>
+          {% elif d.source == 'AI' %}<span class="badge badge-color-blue">AI</span>
+          {% else %}<span class="badge badge-color-dim">Qo'lda</span>{% endif %}
+        </td>
+        <td>
+          {% set sc = {'draft':'dim','publishing':'warn','published':'blue','active':'good','failed':'bad','archived':'dim'}[d.status] if d.status in ['draft','publishing','published','active','failed','archived'] else 'dim' %}
+          <span class="badge badge-color-{{ sc }}">{{ d.status_label }}</span>
+        </td>
+        <td>
+          {% set yc = {'local':'dim','synced':'good','local_changes':'warn','publishing':'warn','meta_changed':'warn','sync_error':'bad'}[d.sync_status] if d.sync_status in ['local','synced','local_changes','publishing','meta_changed','sync_error'] else 'dim' %}
+          <span class="badge badge-color-{{ yc }}">{{ d.sync_label }}</span>
+        </td>
+        <td class="num"><span class="{{ 'text-good' if d.approved == 3 else 'text-dim' }}">{{ d.approved }}/3</span></td>
+        <td class="text-dim">{{ d.updated_at.strftime('%d.%m.%Y %H:%M') if d.updated_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="7">Hali qoralama yo'q. "Yangi kampaniya" tugmasini bosing -- AI 2-3 savoldan keyin to'liq rejani tuzib beradi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% endblock %}

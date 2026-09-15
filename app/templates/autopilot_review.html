@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ draft.title }} — Avtopilot — Replix{% endblock %}
+{# Bu sahifaning O'Z "Replix AI" paneli bor (o'ng ustun) -- umumiy suzuvchi
+   AI-yordamchi tugmasi pastki yopishqoq panelning "Meta'ga nashr qilish"
+   tugmasini to'sib qo'yardi (vizual tekshiruvda aniqlandi), shuning uchun
+   faqat shu sahifada yashiriladi. #}
+{% block extra_head %}<style>#ai-assistant-root{display:none !important}</style>{% endblock %}
+{% block content %}
+
+{# 2026-09, Meta Ads Autopilot -- KO'RIB CHIQISH sahifasi (Ads Manager'ga
+   o'xshash): chapda Campaign -> Ad Set -> Ad daraxti, o'rtada tanlangan
+   darajaning formasi (har maydonda "✨ AI" / "Siz o'zgartirdingiz" / "Meta"
+   belgisi), o'ngda "Replix AI" chat paneli (bir xil kanonik holatni tabiiy
+   til orqali o'zgartiradi), yuqorida ulanish/holat, pastda yopishqoq
+   Orqaga / Tasdiqlash / Keyingisi. Butun sahifa `static/autopilot.js`
+   (vanilla JS, freymvorksiz) tomonidan `#ap-data` JSON'idan chiziladi --
+   server har javobda qoralamaning TO'LIQ yangilangan ko'rinishini qaytaradi,
+   JS uni bitta `store`ga yozadi va hammasini qayta chizadi (bitta haqiqat
+   manbai: forma ham, chat ham, tasdiqlar ham). #}
+
+<div class="ap-app" id="ap-app" data-csrf="{{ csrf_token() }}" data-is-admin="{{ '1' if current_user.role == 'admin' else '0' }}" data-connect-url="{{ url_for('connect_accounts') }}" data-list-url="{{ url_for('autopilot_list') }}" data-pricing-url="{{ url_for('pricing') }}">
+  <div class="ap-topbar" id="ap-topbar"></div>
+  <div id="ap-banner"></div>
+  <div id="ap-warnings"></div>
+
+  <div class="ap-layout">
+    <aside class="ap-tree panel" id="ap-tree" aria-label="Kampaniya tuzilmasi"></aside>
+
+    <section class="ap-editor panel" id="ap-editor">
+      <div class="ap-tabs" id="ap-tabs" role="tablist"></div>
+      <div class="ap-editor-body" id="ap-editor-body"></div>
+    </section>
+
+    <aside class="ap-chat panel" id="ap-chat" aria-label="Replix AI">
+      <div class="ap-chat-head">
+        <span class="ap-chat-title"><span class="ap-sparkle">&#10024;</span> Replix AI</span>
+        <span class="text-faint" style="font-size:11.5px">Oddiy tilda yozing: "Yoshni 25-45 qil", "Faqat Toshkent qil", "Budjetni 300 ming qil"</span>
+      </div>
+      <div class="ap-chat-log" id="ap-chat-log"></div>
+      <div class="ap-chat-suggest" id="ap-chat-suggest"></div>
+      <form class="ap-chat-form" id="ap-chat-form" autocomplete="off">
+        <textarea id="ap-chat-input" rows="2" placeholder="Nimani o'zgartiray?"></textarea>
+        <button type="submit" class="btn" id="ap-chat-send">Yuborish</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="ap-bottombar" id="ap-bottombar"></div>
+</div>
+
+<!-- Modallar: yakuniy xulosa (nashr), faollashtirish, preview -->
+<div class="modal-overlay" id="ap-modal-summary">
+  <div class="modal-dialog" style="max-width:680px">
+    <div class="modal-header"><h2>Meta'ga nashr qilish -- yakuniy tekshiruv</h2><button type="button" class="modal-close" data-close="ap-modal-summary" aria-label="Yopish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body" id="ap-modal-summary-body"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="ap-modal-activate">
+  <div class="modal-dialog" style="max-width:520px">
+    <div class="modal-header"><h2>Kampaniyani faollashtirish</h2><button type="button" class="modal-close" data-close="ap-modal-activate" aria-label="Yopish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body" id="ap-modal-activate-body"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="ap-modal-preview">
+  <div class="modal-dialog" style="max-width:760px">
+    <div class="modal-header"><h2>Reklama ko'rinishi</h2><button type="button" class="modal-close" data-close="ap-modal-preview" aria-label="Yopish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body" id="ap-modal-preview-body"></div>
+  </div>
+</div>
+
+<script id="ap-data" type="application/json">{{ draft_json|tojson }}</script>
+<script src="{{ url_for('static', filename='autopilot.js') }}?v={{ asset_v('autopilot.js') }}"></script>
+
+{% endblock %}

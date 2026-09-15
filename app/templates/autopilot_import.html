@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Meta'dan import — Avtopilot — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Meta Ads Autopilot: Meta'da ALLAQACHON bor kampaniyani tanlab
+   qoralamaga aylantirish (`meta_publish.import_campaign`) -- barcha
+   maydonlar "Meta" belgisi bilan, keyin xuddi AI qoralamasi kabi
+   tahrirlanadi va "Meta'ga yuborish" orqali yangilanadi. #}
+
+<div class="page-head">
+  <div>
+    <h1>Meta'dan import</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Reklama hisobingizdagi mavjud kampaniyani tanlang -- u Replix'da qoralama sifatida ochiladi (birinchi Ad Set va birinchi reklama).</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">Orqaga</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="flash flash-error">Kampaniyalar ro'yxati olinmadi: {{ error }}</div>
+{% endif %}
+
+<div class="panel">
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Kampaniya</th><th>Meta maqsadi</th><th>Holat</th><th>Yangilangan</th><th></th></tr></thead>
+    <tbody>
+      {% for c in campaigns %}
+      <tr>
+        <td><strong>{{ c.name }}</strong><div class="text-faint" style="font-size:11.5px">ID {{ c.id }}</div></td>
+        <td class="text-dim">{{ c.objective or '—' }}</td>
+        <td>
+          {% set st = (c.status or '')|upper %}
+          <span class="badge badge-color-{{ 'good' if st == 'ACTIVE' else ('dim' if st == 'PAUSED' else 'warn') }}">{{ st or '—' }}</span>
+        </td>
+        <td class="text-dim">{{ (c.updated_time or '')[:16].replace('T', ' ') }}</td>
+        <td class="num">
+          {% if current_user.role == 'admin' %}
+          <form method="post" style="display:inline" onsubmit="this.querySelector('button').disabled=true">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="campaign_id" value="{{ c.id }}">
+            <button type="submit" class="btn toggle-all-btn">Import qilish</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="5">{% if error %}Ro'yxat olinmadi.{% else %}Reklama hisobida kampaniya topilmadi.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% endblock %}
