@@ -3743,6 +3743,18 @@ def leads_list():
         with db.scoped_as(scope_company_id):
             if requested_company_id and _is_platform_owner():
                 viewing_company = session.get(Company, scope_company_id)
+            # 2026-09, tariflar qayta ko'rib chiqilganda qo'shildi (foydalanuvchi
+            # so'rovi: "besh yuzta lidga jam qilamizmi... shunaqa qilish
+            # kerak"): CRM'ning O'ZI (filtrsiz, butun kompaniya) qancha
+            # lid ishlatganini shu yerda olamiz -- `plans.leads_usage_status()`
+            # FAQAT ogohlantirish uchun, yangi lidlarni HECH QACHON
+            # bloklamaydi (Meta'dan kelayotgan haqiqiy lid yo'qolmasligi
+            # kerak).
+            scope_company_row = viewing_company or session.get(Company, scope_company_id)
+            leads_usage = plans.leads_usage_status(
+                session.query(Lead).count(),
+                plans.leads_limit_for_plan(scope_company_row.plan if scope_company_row else None),
+            )
             stages = _active_funnel_stages(session)
             available_forms = (
                 session.query(Lead.form_id, Lead.form_name, func.count(Lead.id))
@@ -3823,6 +3835,7 @@ def leads_list():
         page=page, total_pages=total_pages, total_count=total_count,
         viewing_company=viewing_company_row,
         stages=stage_rows, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
+        leads_usage=leads_usage,
     )
 
 

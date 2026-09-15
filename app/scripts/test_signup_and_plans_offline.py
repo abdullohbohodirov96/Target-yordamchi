@@ -275,6 +275,74 @@ def test_competitor_limit_enforced_per_plan():
     print("OK: 'boshlang'ich' tarifida 3 tadan ortiq raqobatchi qo'shib bo'lmaydi")
 
 
+def test_leads_limit_warns_but_never_blocks_new_leads():
+    """2026-09, foydalanuvchi so'rovi ("besh yuzta lidga jam qilamizmi...
+    nimadir qolganlarni bitta fenai mi"): AskUserQuestion orqali tanlangan
+    yechim -- FAQAT ogohlantirish, YANGI lidlar hech qachon bloklanmaydi.
+    'start' tarifida leads_limit=500."""
+    import datetime as _dt
+
+    with app_module.app.test_client() as client:
+        _signup(client, company_name="Lid Limit MChJ", admin_username="lidlimit_admin", plan="start")
+
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                company = session.query(db_module.Company).filter_by(name="Lid Limit MChJ").first()
+            # 449 ta lid -- limit (500)ning 90%idan PASTDA (ogohlantirish YO'Q).
+            for i in range(449):
+                session.add(db_module.Lead(full_name=f"Lid {i}", phone=f"+99890{i:07d}", company_id=company.id, created_at=_dt.datetime.utcnow()))
+            session.commit()
+        finally:
+            session.close()
+
+        html = client.get("/leads").get_data(as_text=True)
+        assert "tarifingiz limitiga yetasiz" not in html
+        assert "limitidan oshdingiz" not in html
+
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                company = session.query(db_module.Company).filter_by(name="Lid Limit MChJ").first()
+            # Yana 1 ta -- jami 450 (90%, ogohlantirish chegarasi).
+            session.add(db_module.Lead(full_name="Lid 449", phone="+998900000449", company_id=company.id, created_at=_dt.datetime.utcnow()))
+            session.commit()
+        finally:
+            session.close()
+
+        html2 = client.get("/leads").get_data(as_text=True)
+        assert "tarifingiz limitiga yetasiz" in html2
+        assert "limitidan oshdingiz" not in html2
+
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                company = session.query(db_module.Company).filter_by(name="Lid Limit MChJ").first()
+            for i in range(450, 501):
+                session.add(db_module.Lead(full_name=f"Lid {i}", phone=f"+99890{i:07d}", company_id=company.id, created_at=_dt.datetime.utcnow()))
+            session.commit()
+        finally:
+            session.close()
+
+        html3 = client.get("/leads").get_data(as_text=True)
+        assert "limitidan oshdingiz" in html3
+
+        # ENG MUHIMI: limitdan OSHGAN holatda ham yangi lead qo'shish
+        # (masalan qo'lda /leads/new orqali) HALI HAM ISHLAYDI -- bloklanmagan.
+        r = client.post("/leads/new", data={
+            "full_name": "Limitdan Keyingi Lid", "phone": "+998900000999",
+        }, follow_redirects=True)
+        assert r.status_code == 200
+        session = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                added = session.query(db_module.Lead).filter_by(full_name="Limitdan Keyingi Lid").first()
+                assert added is not None, "Limitdan oshgan bo'lsa ham yangi lead BLOKLANMASLIGI kerak"
+        finally:
+            session.close()
+    print("OK: 'boshlang'ich' (500 lid) tarifida limitga yaqinlashganda/yetganda FAQAT ogohlantirish -- yangi lid hech qachon bloklanmaydi")
+
+
 def test_pricing_page_lists_lead_analytics_and_competitor_rows():
     with app_module.app.test_client() as client:
         html = client.get("/tariflar").get_data(as_text=True)

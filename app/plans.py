@@ -95,7 +95,15 @@ PLANS = {
         key="start", name="Boshlang'ich", price_usd=20, period_days=None,
         tagline="Kichik jamoalar uchun to'liq CRM + target monitoring",
         modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "lead_analytics"}),
-        manager_limit=2, leads_limit=1000, competitor_limit=3,
+        # 2026-09, foydalanuvchi so'rovi ("boshlang'ichda misol uchun besh
+        # yuzta lidga jam qilamizmi... lid analytics, crm lidlarni
+        # qisqartirishimiz kerak"): 1000'dan 500'ga TUSHIRILDI -- CRM
+        # (DB qatorlari) va AI-tahlil xarajati eng arzon tarifda cheklanishi
+        # kerak. Limitga yetish YANGI lidlarni BLOKLAMAYDI (haqiqiy pullik
+        # reklamadan kelgan lid hech qachon yo'qotilmaydi) -- faqat CRM'da
+        # ko'rinadigan ogohlantirish (`app.py`dagi `leads_list()`, "500
+        # dan 90%+" bosqichida) va tarifni oshirish taklifi ko'rsatiladi.
+        manager_limit=2, leads_limit=500, competitor_limit=3,
         ai_enabled=False, can_connect_meta_ads=True, highlight=False,
         features=(
             "Sinovdagi hammasi",
@@ -105,7 +113,7 @@ PLANS = {
             "Lid tahlili (CRM/voronka bo'yicha chuqur tahlil)",
             "Raqobatchilar kuzatuvi (Meta Ad Library) -- 3 tagacha",
             "Voronka, majburiy vazifalar, qo'shimcha maydonlar sozlamalari",
-            "1 000 tagacha lid (CRM)",
+            "500 tagacha lid (CRM) -- limitga yaqinlashganda ogohlantirish, yangi lidlar hech qachon bloklanmaydi",
             "2 tagacha menejer/admin hisob",
             "Email orqali qo'llab-quvvatlash",
         ),
@@ -225,6 +233,30 @@ def manager_limit_for_plan(key: "str | None") -> "int | None":
 
 def leads_limit_for_plan(key: "str | None") -> "int | None":
     return get_plan(key).leads_limit
+
+
+# 2026-09, foydalanuvchi so'rovi ("besh yuzta lidga jam qilamizmi...
+# nimadir qolganlarni..."): limitga yetgan kompaniyada YANGI lidlar
+# BLOKLANMAYDI (pullik reklamadan kelgan haqiqiy lid hech qachon
+# yo'qotilmasligi kerak) -- faqat CRM'da ogohlantirish ko'rsatiladi.
+# Bosqich: 90%+ = "warning" (tez orada tarifni oshiring), 100%+ = "over"
+# (limitdan oshgan, lekin ishlashda davom etadi).
+LEADS_WARNING_THRESHOLD = 0.9
+
+
+def leads_usage_status(used: int, limit: "int | None") -> dict:
+    """CRM sahifasidagi (`leads_list`) ogohlantirish banneri uchun.
+    `limit=None` (cheksiz tarif) bo'lsa -- doim "ok"."""
+    if limit is None or limit <= 0:
+        return {"status": "ok", "percent": None, "used": used, "limit": limit}
+    percent = round(min(used / limit, 1.5) * 100)
+    if used >= limit:
+        status = "over"
+    elif used >= limit * LEADS_WARNING_THRESHOLD:
+        status = "warning"
+    else:
+        status = "ok"
+    return {"status": status, "percent": percent, "used": used, "limit": limit}
 
 
 def competitor_limit_for_plan(key: "str | None") -> "int | None":

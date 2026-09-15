@@ -34,6 +34,24 @@
   </div>
 </div>
 
+{# 2026-09, tariflar qayta ko'rib chiqilganda qo'shildi (foydalanuvchi
+   so'rovi: "boshlang'ichda besh yuzta lidga jam qilamizmi"): tarifdagi
+   lid limitiga yaqinlashilganda/yetilganda ogohlantirish -- FAQAT
+   ko'rinish, YANGI lidlar hech qachon bloklanmaydi (`app.py`,
+   `leads_list()`). "over" holatida ham CRM avvalgidek to'liq ishlaydi. #}
+{% if leads_usage and leads_usage.status != 'ok' %}
+<div class="flash {{ 'flash-error' if leads_usage.status == 'over' else 'flash-info' }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+  <span>
+    {% if leads_usage.status == 'over' %}
+    CRM'da <strong>{{ leads_usage.used }} / {{ leads_usage.limit }}</strong> lid ishlatilgan -- joriy tarifingiz limitidan oshdingiz. Yangi lidlar hamon qabul qilinadi, lekin ko'proq joy uchun tarifni yangilashni tavsiya qilamiz.
+    {% else %}
+    CRM'da <strong>{{ leads_usage.used }} / {{ leads_usage.limit }}</strong> lid ishlatilgan ({{ leads_usage.percent }}%) -- tez orada tarifingiz limitiga yetasiz.
+    {% endif %}
+  </span>
+  <a href="{{ url_for('pricing') }}" class="text-blue" style="white-space:nowrap">Tarifni yangilash →</a>
+</div>
+{% endif %}
+
 {% if viewing_company %}
 <div class="flash flash-info" style="display:flex; align-items:center; justify-content:space-between; gap:10px">
   <span><strong>{{ viewing_company.name }}</strong> kompaniyasining lidlari ko'rsatilyapti (platforma egasi rejimi).</span>
