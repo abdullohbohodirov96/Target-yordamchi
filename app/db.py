@@ -115,6 +115,15 @@ class Company(Base):
     # NULL bo'lsa -- eski global META_PIXEL_ID'ga qaytiladi (orqaga moslik).
     meta_pixel_id = Column(String(32), nullable=True)
     telegram_group_id = Column(String(32), nullable=True)  # shu kompaniyaning o'z Telegram guruhi (hozirgi global TELEGRAM_AGENTS_GROUP_ID o'rniga)
+    # 2026-09, foydalanuvchi so'rovi ("vazifalar guruhi bo'ladi... guruhda
+    # bot so'rasin nima bo'ldi deb"): `telegram_group_id`dan ALOHIDA -- o'sha
+    # guruh targeting/xarajat/CPL kabi UMUMIY operatsion ogohlantirishlar
+    # uchun, bu esa FAQAT menejerlarning kunlik lead-vazifalari (qayta
+    # aloqa eslatmalari, bot-so'rovnoma) uchun mo'ljallangan alohida guruh.
+    # Bo'sh bo'lsa -- `telegram_group_id`ga qaytiladi (agar u ham bo'sh
+    # bo'lsa, hech qayerga yuborilmaydi). Har qanday menejer (nafaqat admin)
+    # `/sozlamalar/umumiy`dagi "bitta tugma" havolasi orqali ulay oladi.
+    tasks_group_id = Column(String(32), nullable=True)
 
     # ---------------------------------------------------------------------
     # 2026-09, foydalanuvchi so'rovi ("production-ready Meta Ads + CAPI
@@ -334,6 +343,12 @@ class Company(Base):
     def is_moizvonki_configured(self) -> bool:
         return bool(self.moizvonki_api_address and self.moizvonki_user_name and self.get_moizvonki_api_key())
 
+    def resolved_tasks_group_id(self) -> "str | None":
+        """2026-09, "vazifalar guruhi" -- alohida ulanmagan bo'lsa, umumiy
+        `telegram_group_id`ga qaytadi (kichik kompaniyalar ikkita guruh
+        ochishga majbur bo'lmasin). Ikkalasi ham bo'sh bo'lsa `None`."""
+        return self.tasks_group_id or self.telegram_group_id
+
     def disconnect_meta(self) -> None:
         """`/connect-accounts/meta/disconnect` uchun -- BARCHA Meta bilan
         bog'liq maydonlarni tozalaydi (token, Business/Ad Account/Dataset,
@@ -467,6 +482,16 @@ class Lead(Base):
     # ko'rinadi. NULL -- hech qanday qayta aloqa rejalashtirilmagan.
     next_contact_at = Column(DateTime, nullable=True)
     next_contact_note = Column(Text, nullable=True)  # nima haqida qayta bog'lanish kerak (ixtiyoriy)
+
+    # 2026-09, foydalanuvchi so'rovi ("qayta aloqaga... majburiy eslatish
+    # kerak"): qayta aloqa muddati o'tgan/yetgan lead uchun kun davomida
+    # BIR NECHA marta eslatiladi (scheduler.py: job_followup_reminders),
+    # lekin har safar job ishga tushganda emas -- shu ikkita maydon
+    # "oxirgi qachon eslatilgan"ni kuzatib, spam qilmaslik uchun ishlatiladi.
+    # `next_contact_at` o'zgarganda (menejer harakat qilganda) ikkalasi ham
+    # 0/NULL'ga qaytariladi (app.py: lead_detail).
+    followup_reminder_count = Column(Integer, nullable=False, default=0)
+    followup_last_reminded_at = Column(DateTime, nullable=True)
 
     lead_created_time = Column(DateTime, nullable=True)  # Meta'da lead yaratilgan vaqt
     created_at = Column(DateTime, default=dt.datetime.utcnow)
@@ -978,6 +1003,66 @@ class CustomField(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("company_id", "key", name="uq_custom_fields_company_key"),)
+
+
+class LeadStatusEvent(Base):
+    """2026-09, foydalanuvchi so'rovi ("bitta menejer nechta odam bilan
+    kuniga lead bilan gaplashyapti, kvalifikatsiya nechta odam bilan
+    qilyapti... to'liq ma'lumot"): `Lead.status` faqat JORIY holatni
+    saqlaydi -- "bugun nechta lead bilan gaplashildi" kabi savolga javob
+    berish uchun HAR BIR status/izoh o'zgarishining o'zi alohida qator
+    sifatida shu yerga yoziladi (audit-jurnal). `manager_reporting.py`
+    kunlik hisobotni shu jadvaldan hisoblaydi.
+
+    Yoziladigan joylar: `app.py: lead_detail()` (veb-formadan qo'lda
+    o'zgartirish, source="web") va kelajakda bot-suhbat orqali
+    o'zgartirilganda (source="bot")."""
+    __tablename__ = "lead_status_events"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    old_status = Column(String(32), nullable=True)
+    new_status = Column(String(32), nullable=True)
+    note = Column(Text, nullable=True)
+    source = Column(String(16), nullable=False, default="web")  # web | bot | system
+
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_lead_status_events_mgr_day", "company_id", "manager_id", "created_at"),
+    )
+
+
+class BotPrompt(Base):
+    """2026-09, "vazifalar guruhi" -- bot Telegram guruhda (yoki shaxsiy
+    xabarda) menejerdan aniq bitta lead haqida savol so'raganda, shu
+    xabarning telegram message_id'si shu yerga yoziladi. Menejer o'sha
+    xabarga JAVOB (reply) qilib yozganda, webhook `reply_to_message.
+    message_id` orqali qaysi lead/savol haqida ekanini shu jadvaldan
+    topadi va AI yordamida javobni CRM statusi/izohiga aylantiradi
+    (`manager_bot.py`)."""
+    __tablename__ = "bot_prompts"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True, index=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    telegram_chat_id = Column(String(32), nullable=False)
+    telegram_message_id = Column(String(32), nullable=False, index=True)
+    prompt_type = Column(String(24), nullable=False, default="followup")  # followup | new_lead | qualify
+    prompt_text = Column(Text, nullable=True)
+
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_status = Column(String(32), nullable=True)
+    resolved_note = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_bot_prompts_chat_msg", "telegram_chat_id", "telegram_message_id"),
+    )
 
 
 class FunnelStage(Base):

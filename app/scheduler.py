@@ -35,10 +35,14 @@ Jadval (standart, ENV orqali sozlanadi):
   - Har 5 daqiqada -- foydalanuvchi Telegram orqali qo'ygan DOIMIY vazifalarni
     (schedule_on_off: har kuni belgilangan vaqtda avtomatik yoqish/o'chirish,
     schedule_report: qo'shimcha doimiy hisobot vaqti) tekshiradi va bajaradi.
-  - 08:30 Toshkent -- "Qayta aloqa" (follow-up) eslatmasi: bugun yoki
-    muddati o'tgan `Lead.next_contact_at`ga ega lidlar haqida shaxsiy
-    Telegram xabari (menejerga, `Manager.telegram_user_id` bo'lsa) va
-    adminlarga umumiy xulosa.
+  - 09:00dan 19:00gacha, har 2 soatda -- "Qayta aloqa" (follow-up)
+    eslatmasi: bugun yoki muddati o'tgan `Lead.next_contact_at`ga ega
+    lidlar haqida shaxsiy Telegram xabari (menejerga, `Manager.
+    telegram_user_id` bo'lsa) va "vazifalar guruhi"ga umumiy xulosa --
+    menejer harakat qilmaguncha KUN DAVOMIDA QAYTA-QAYTA yuboriladi
+    (2026-09, foydalanuvchi so'rovi).
+  - 19:30 Toshkent -- shu kun hali hal qilinmagan qayta aloqalar bo'yicha
+    ADMINGA alohida eskalatsiya (`job_followup_admin_escalation`).
   - Har 3 soatda -- Instagram Business + Facebook Page uchun SMM statistikasi
     (obunachilar, postlar, qamrov) -- "SMM hisobot" (`/smm`) sahifasi uchun.
   - Har 15 daqiqada -- Instagram DM (Direct) suhbatlarini tortish + uzoq
@@ -1116,17 +1120,33 @@ def job_competitor_analysis() -> dict:
 
 
 def job_followup_reminders() -> dict:
-    """"Qayta aloqa" (follow-up) eslatmasi -- har kuni ertalab, `Lead.next_contact_at`
-    BUGUN yoki undan OLDINROQ (kechiktirilgan) bo'lgan har bir lead uchun:
+    """"Qayta aloqa" (follow-up) eslatmasi -- ish kuni davomida BIR NECHA
+    MARTA (har safar bu job cron orqali chaqirilganda, pastga qarang),
+    `Lead.next_contact_at` BUGUN yoki undan OLDINROQ (kechiktirilgan)
+    bo'lgan har bir lead uchun:
       - shu leadga biriktirilgan menejerga (agar `Manager.telegram_user_id`
         to'ldirilgan bo'lsa) SHAXSIY Telegram xabar -- "bugun kimlar bilan
         qayta bog'lanish kerak" ro'yxati (eng ko'p kechikkani birinchi).
-      - kompaniyaning umumiy guruhiga UMUMIY qisqa xulosa -- nechta
-        lead kechikkan/bugungi, va biriktirilmagan (egasiz) qayta aloqalar
-        bo'lsa alohida ogohlantirish (ular hech kimga yuborilmaydi, chunki
-        egasi yo'q -- admin o'zi ko'rib biriktirishi kerak).
+      - kompaniyaning "vazifalar guruhi"ga (`Company.tasks_group_id`,
+        bo'lmasa `telegram_group_id`ga -- `resolved_tasks_group_id()`)
+        UMUMIY qisqa xulosa -- nechta lead kechikkan/bugungi, va
+        biriktirilmagan (egasiz) qayta aloqalar bo'lsa alohida
+        ogohlantirish (ular hech kimga yuborilmaydi, chunki egasi yo'q --
+        admin o'zi ko'rib biriktirishi kerak).
     CRM'dagi "/qayta-aloqa" sahifasi bilan BIR XIL mantiq (`app.py:
     followups_list`).
+
+    2026-09, foydalanuvchi so'rovi ("qayta aloqaga... majburiy eslatish
+    kerak... menejer javob bermaguncha bir necha marta qayta eslatib
+    tursin"): ILGARI bu job kuniga FAQAT BIR MARTA (08:30) ishga tushardi.
+    Endi (`_register_jobs()`ga qarang) ish soatlari davomida bir necha
+    marta chaqiriladi -- job'ning o'zida qo'shimcha "cooldown" mantig'i
+    YO'Q (har safar chaqirilganda hali hal qilinmagan (next_contact_at
+    o'zgarmagan) har bir lead uchun QAYTA eslatadi -- bu ATAYLAB, chunki
+    "hal qilinmaguncha eslatib turish" aynan so'ralgan xatti-harakat).
+    `Lead.followup_reminder_count`/`followup_last_reminded_at` faqat
+    HISOB YURITISH uchun (necha marta eslatilgani -- admin eskalatsiyasida
+    ko'rsatiladi), spam-to'xtatish uchun EMAS.
 
     2026-09, multi-tenant xavfsizlik tuzatishi (foydalanuvchi so'rovi:
     "endi bir necha kompaniya bor, leadlar adashib chalkashmasin"): ILGARI
@@ -1142,8 +1162,8 @@ def job_followup_reminders() -> dict:
     ALOHIDA, `db.scoped_as(company_id)` bilan ANIQ tenant-filtrlangan
     holda ishlaydi -- umumiy xulosa platforma egasi uchun eski
     (`_full_activity_targets()`) guruhga, boshqa har bir kompaniya uchun
-    FAQAT o'zining `Company.telegram_group_id`siga (sozlanmagan bo'lsa --
-    hech qayerga, xato emas)."""
+    FAQAT o'zining vazifalar guruhiga (sozlanmagan bo'lsa -- hech qayerga,
+    xato emas)."""
     now = dt.datetime.utcnow()
     today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
     default_company_id = db.get_default_company_id()
@@ -1152,7 +1172,7 @@ def job_followup_reminders() -> dict:
     try:
         with db.unscoped():
             companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
-            company_rows = [{"id": c.id, "telegram_group_id": c.telegram_group_id} for c in companies]
+            company_rows = [{"id": c.id, "tasks_group_id": c.resolved_tasks_group_id()} for c in companies]
     finally:
         session.close()
 
@@ -1202,18 +1222,25 @@ def job_followup_reminders() -> dict:
                         result = _tg_send(int(m.telegram_user_id), text)
                         if result["ok"]:
                             sent_to_managers += 1
+                            # 2026-09: har safar haqiqatan eslatilganda
+                            # hisoblagich oshadi -- admin eskalatsiyasida
+                            # "bu lead N marta eslatildi" ko'rsatish uchun.
+                            for lead in leads:
+                                lead.followup_reminder_count = (lead.followup_reminder_count or 0) + 1
+                                lead.followup_last_reminded_at = now
                         else:
                             logger.warning("Qayta aloqa eslatmasi menejer %s (telegram_user_id=%s)ga yuborilmadi: %s", m.username, m.telegram_user_id, result["error"])
+                    session.commit()
 
                 if company_id == default_company_id:
                     targets = _full_activity_targets()
                 else:
                     targets = []
-                    if crow["telegram_group_id"]:
+                    if crow["tasks_group_id"]:
                         try:
-                            targets = [int(crow["telegram_group_id"])]
+                            targets = [int(crow["tasks_group_id"])]
                         except (TypeError, ValueError):
-                            logger.warning("Company id=%s telegram_group_id noto'g'ri formatda: %r", company_id, crow["telegram_group_id"])
+                            logger.warning("Company id=%s vazifalar guruhi ID noto'g'ri formatda: %r", company_id, crow["tasks_group_id"])
 
                 if targets:
                     overdue_count = sum(1 for l in due if l.next_contact_at.date() < now.date())
@@ -1238,6 +1265,87 @@ def job_followup_reminders() -> dict:
             session.close()
 
     result = {"due_count": total_due, "overdue_count": total_overdue, "sent_to_managers": total_sent_to_managers, "unassigned": total_unassigned}
+    if errors:
+        result["errors"] = errors
+    return result
+
+
+def job_followup_admin_escalation() -> dict:
+    """2026-09, foydalanuvchi so'rovi ("agar menejer kunning oxirigacha ham
+    javob bermasa, kompaniya egasiga alohida signal ketsin"): kechqurun
+    BIR MARTA ishga tushadi (`_register_jobs()`ga qarang) -- kamida bir
+    marta eslatilgan (`Lead.followup_reminder_count > 0`), lekin hali ham
+    "hal qilinmagan" (`next_contact_at` shu kunga/undan oldinga tegishli
+    bo'lib qolgan -- menejer harakat qilganda bu maydon o'zgaradi/nolga
+    tushadi, qarang: `app.py: lead_detail()`) lidlarni menejer bo'yicha
+    guruhlab, HAR BIR admin (`Manager.role == "admin"`, `telegram_user_id`
+    to'ldirilgan)ga SHAXSIY xabar yuboradi."""
+    now = dt.datetime.utcnow()
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            company_ids = [c.id for c in session.query(db.Company).filter(db.Company.is_active.is_(True)).all()]
+    finally:
+        session.close()
+
+    total_escalated = 0
+    errors = []
+    for company_id in company_ids:
+        session = db.get_session()
+        try:
+            with db.scoped_as(company_id):
+                overdue = (
+                    session.query(db.Lead)
+                    .filter(
+                        db.Lead.next_contact_at.isnot(None),
+                        db.Lead.next_contact_at <= today_end,
+                        db.Lead.followup_reminder_count > 0,
+                    )
+                    .order_by(db.Lead.next_contact_at.asc())
+                    .all()
+                )
+                if not overdue:
+                    continue
+
+                admins = (
+                    session.query(db.Manager)
+                    .filter(db.Manager.role == "admin", db.Manager.telegram_user_id.isnot(None))
+                    .all()
+                )
+                if not admins:
+                    continue
+
+                by_manager: dict[int, list] = {}
+                for lead in overdue:
+                    by_manager.setdefault(lead.assigned_manager_id or 0, []).append(lead)
+                manager_ids = [k for k in by_manager if k]
+                managers_lookup = {m.id: m for m in session.query(db.Manager).filter(db.Manager.id.in_(manager_ids)).all()} if manager_ids else {}
+
+                lines = [f"\U0001F6A8 Kun oxirigacha hali hal qilinmagan qayta aloqalar ({len(overdue)} ta):"]
+                for mgr_id, leads in by_manager.items():
+                    mgr = managers_lookup.get(mgr_id)
+                    mgr_name = (mgr.full_name or mgr.username) if mgr else "Biriktirilmagan"
+                    lines.append(f"\n{mgr_name} -- {len(leads)} ta:")
+                    for lead in leads[:10]:
+                        name = lead.full_name or "Noma'lum"
+                        phone = lead.phone or "-"
+                        lines.append(f"  • {name} ({phone}) -- {lead.followup_reminder_count} marta eslatilgan, hali javobsiz")
+                    if len(leads) > 10:
+                        lines.append(f"  ... va yana {len(leads) - 10} ta")
+                text = "\n".join(lines)
+
+                for admin in admins:
+                    _tg_send(int(admin.telegram_user_id), text)
+                total_escalated += len(overdue)
+        except Exception as e:
+            logger.exception("Qayta aloqa eskalatsiyasida xatolik (company_id=%s)", company_id)
+            errors.append(f"{company_id}: {e}")
+        finally:
+            session.close()
+
+    result = {"escalated_leads": total_escalated}
     if errors:
         result["errors"] = errors
     return result
@@ -1420,6 +1528,7 @@ JOBS = {
     "call-cleanup": job_call_cleanup,
     "call-debug": job_call_debug,
     "followup-reminders": job_followup_reminders,
+    "followup-admin-escalation": job_followup_admin_escalation,
     "smm-sync": job_smm_sync,
     "ig-dm-sync": job_ig_dm_sync,
     "ig-dm-analysis": job_ig_dm_analysis,
@@ -1467,7 +1576,14 @@ def start_scheduler(app) -> None:
     # tahlil butunlay olib tashlandi (`job_call_analysis` va uning cron'i
     # ham endi kodda yo'q).
     scheduler.add_job(job_call_sync, CronTrigger(minute="*/20", timezone=TIMEZONE), id="call-sync")
-    scheduler.add_job(job_followup_reminders, CronTrigger(hour=8, minute=30, timezone=TIMEZONE), id="followup-reminders")
+    # 2026-09, foydalanuvchi so'rovi ("qayta aloqaga... majburiy eslatish
+    # kerak... bir necha marta qayta eslatib tursin"): ILGARI kuniga
+    # FAQAT BIR MARTA (08:30) edi -- endi ish soatlari davomida (09:00dan
+    # 19:00gacha, har 2 soatda) bir necha marta qayta ishga tushadi.
+    scheduler.add_job(job_followup_reminders, CronTrigger(hour="9-19/2", minute=0, timezone=TIMEZONE), id="followup-reminders")
+    # Kun oxirida (ish kuni tugashiga yaqin) hali hal qilinmagan qayta
+    # aloqalar bo'yicha adminga alohida eskalatsiya (foydalanuvchi so'rovi).
+    scheduler.add_job(job_followup_admin_escalation, CronTrigger(hour=19, minute=30, timezone=TIMEZONE), id="followup-admin-escalation")
     scheduler.add_job(job_smm_sync, CronTrigger(hour="*/3", minute=15, timezone=TIMEZONE), id="smm-sync")  # obunachilar/postlar tez o'zgarmaydi, har 3 soatda yetarli
     scheduler.add_job(job_ig_dm_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="ig-dm-sync")  # AI'siz, tez -- yangi xabar/javobsizlik tekshiruvi
     scheduler.add_job(job_ig_dm_analysis, CronTrigger(hour="*/3", minute=20, timezone=TIMEZONE), id="ig-dm-analysis")  # gpt-4o-mini, davriy, xarajatni nazorat qilish uchun

@@ -12,6 +12,12 @@
   </div>
 </div>
 
+{# 2026-09, foydalanuvchi so'rovi: "menejerlar akkauntini nastroyka degan
+   joyi yo'q... minimalniy qilib qo'shish kerak" -- Telegram ulash kartasi
+   bu sahifadan "Mening profilim" (`/mening-profilim`) sahifasiga ko'chirildi,
+   chunki bu sahifa (`/sozlamalar/umumiy`) FAQAT "settings" moduliga ruxsati
+   bor menejerlar uchun ochiq (standart YO'Q), "Mening profilim" esa
+   HAR QANDAY menejer uchun (modul ruxsatidan qat'iy nazar) ochiq. #}
 <div class="card">
   <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:18px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

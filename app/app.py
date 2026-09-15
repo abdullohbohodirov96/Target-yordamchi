@@ -39,10 +39,12 @@ import monthly_report
 import permissions
 import plans
 import business_profile
+import incomplete_leads
+import manager_reporting
 import lang as lang_module
 import tz_utils
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog, MetaEventLog
+from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, CannedReply, ImpersonationLog, MetaEventLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -280,6 +282,7 @@ class ManagerUser(UserMixin):
         self.full_name = manager.full_name
         self.role = manager.role
         self.phone_number = manager.phone_number
+        self.telegram_user_id = manager.telegram_user_id
         self.allowed_modules = permissions.parse_allowed_modules(manager.allowed_modules)
         # 2026-08 (multi-tenant, item 5 -- obuna/to'lov tekshiruvi uchun kerak):
         # `Manager.company_id` hozircha DEYARLI barcha eski qatorlarda
@@ -1108,9 +1111,20 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                     return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
                 manager.telegram_user_id = str(chat_id)
                 session.commit()
+                # 2026-09, foydalanuvchi so'rovi ("menejer topilganda siz
+                # mana bu akkauntga ulandingiz, muvaffaqiyatli ulandingiz
+                # degan xabar kelsin"): qaysi menejer sifatida (ism/rol)
+                # ulanganini ANIQ ko'rsatamiz -- shunda noto'g'ri hisobga
+                # (masalan boshqa menejerning havolasi orqali) ulanib
+                # qolinmaganini o'zi tekshira oladi.
+                role_label = "administrator" if manager.role == "admin" else "menejer"
+                display_name = manager.full_name or manager.username
                 return (
-                    f"✅ Telegram hisobingiz \"{company.name}\" kompaniyasiga shaxsan ulandi. "
-                    "Endi \"Qayta aloqa\" va boshqa shaxsiy eslatmalar shu yerga keladi."
+                    f"✅ Muvaffaqiyatli ulandingiz!\n\n"
+                    f"Hisob: {display_name} ({role_label}, \"{company.name}\")\n\n"
+                    "Bu shaxsiy chatga sizga tegishli narsalar keladi: qayta aloqa "
+                    "eslatmalari va lidlar bo'yicha savollar. Umumiy xarajat/byudjet "
+                    "hisobotlari bu yerga kelmaydi -- ular admin/guruh uchun."
                 )
             if kind == "group":
                 if chat_type not in ("group", "supergroup"):
@@ -1121,6 +1135,21 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                 return (
                     f"✅ Ushbu guruh \"{company.name}\" kompaniyasiga ulandi. Targeting/xarajat va CPL "
                     "avtomatik pauza ogohlantirishlari, shuningdek lidlar haqidagi xabarlar endi shu guruhga keladi."
+                )
+            if kind == "tasks_group":
+                # 2026-09, foydalanuvchi so'rovi ("vazifalar guruhi bo'ladi"):
+                # `telegram_group_id`dan ALOHIDA -- faqat menejerlarning
+                # kunlik lead-vazifalari (qayta aloqa eslatmalari) uchun.
+                # HAR QANDAY menejer (nafaqat admin) ulay oladi -- pastdagi
+                # `/sozlamalar/umumiy` sahifasidagi tugma orqali.
+                if chat_type not in ("group", "supergroup"):
+                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+                c = session.get(Company, company_id)
+                c.tasks_group_id = str(chat_id)
+                session.commit()
+                return (
+                    f"✅ Ushbu guruh \"{company.name}\" kompaniyasining VAZIFALAR guruhi sifatida ulandi. "
+                    "Qayta aloqa eslatmalari va menejerlarga oid lid-vazifalari endi shu guruhga keladi."
                 )
             return None
     finally:
@@ -1581,6 +1610,32 @@ def login():
             session.close()
         flash("Login yoki parol xato.", "error")
     return render_template("login.html")
+
+
+@app.route("/mening-profilim")
+@login_required
+def my_profile():
+    """2026-09, foydalanuvchi so'rovi ("menejerlar akkauntini nastroyka
+    degan joyi yo'q... minimalniy qilib qo'shish kerak, ya'ni menejerga
+    kerak nastroykalarni qo'shib qo'yish kerak... telegram ulash, telegram
+    guruhlarni ulash"): HAR QANDAY tizimga kirgan hisob (admin ham, oddiy
+    menejer ham, module-ruxsatidan QAT'IY NAZAR) shu yerdan o'zining
+    shaxsiy Telegramini va kompaniyaning "vazifalar guruhi"ni bitta tugma
+    bilan ulay oladi -- `/sozlamalar/...` bo'limlaridan FARQLI, bu sahifa
+    hech qanday modulga bog'liq emas (chunki oddiy menejerda standart
+    bo'yicha "settings" moduli yo'q -- `permissions.DEFAULT_MANAGER_
+    MODULES`ga qarang -- lekin Telegram ulash HAMMAGA kerak bo'ladigan
+    asosiy amal, "sozlama" emas, "profil" harakati)."""
+    session = get_session()
+    try:
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        return render_template(
+            "my_profile.html",
+            my_telegram_connected=bool(current_user.telegram_user_id),
+            tasks_group_connected=bool(company_row and company_row.tasks_group_id),
+        )
+    finally:
+        session.close()
 
 
 @app.route("/logout")
@@ -2513,6 +2568,62 @@ def connect_telegram_group_link():
     token = secrets.token_urlsafe(18)
     kv_store.set_json(f"tg_link_token:{token}", {
         "kind": "group",
+        "company_id": company.id,
+        "created_at": dt.datetime.utcnow().isoformat(),
+    })
+    return redirect(f"https://t.me/{bot_username}?startgroup={token}")
+
+
+@app.route("/sozlamalar/telegram/shaxsiy-ulash", methods=["POST"])
+@login_required
+def settings_connect_telegram_personal():
+    """2026-09, foydalanuvchi so'rovi ("menejerlar akkauntini nastroyka
+    degan joyi yo'q... o'zini telegramni avtomaticheski ulashi mumkin
+    bo'lsin"): `connect_telegram_personal_link` bilan BIR XIL mantiq
+    (bir martalik token + `?start=` chuqur havola), lekin FAQAT admin
+    emas -- HAR QANDAY tizimga kirgan menejer o'zining shaxsiy Telegram
+    hisobini shu yerdan ulay oladi. Muvaffaqiyatsiz bo'lsa (yoki xato
+    bo'lsa) `/sozlamalar/umumiy`ga qaytariladi -- oddiy menejer
+    `/connect-accounts` (admin-only) sahifasini ko'ra olmaydi."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("settings_general"))
+    bot_username = _get_bot_identity().get("username")
+    if not bot_username:
+        flash("Telegram bot hozircha sozlanmagan -- administratorga murojaat qiling.", "error")
+        return redirect(url_for("settings_general"))
+    token = secrets.token_urlsafe(18)
+    kv_store.set_json(f"tg_link_token:{token}", {
+        "kind": "personal",
+        "company_id": company.id,
+        "manager_id": current_user.id,
+        "created_at": dt.datetime.utcnow().isoformat(),
+    })
+    return redirect(f"https://t.me/{bot_username}?start={token}")
+
+
+@app.route("/sozlamalar/telegram/vazifalar-guruhi-ulash", methods=["POST"])
+@login_required
+def settings_connect_telegram_tasks_group():
+    """"Vazifalar guruhi" (2026-09, foydalanuvchi so'rovi) -- HAR QANDAY
+    menejer (nafaqat admin) botni yangi/mavjud Telegram guruhga qo'shib,
+    shu guruhni kompaniyaning umumiy `Company.tasks_group_id`siga
+    bog'lay oladi (bir martalik token + `?startgroup=`, xuddi asosiy
+    guruh-ulash kabi). Bu guruh KELAJAKDA bot-so'rovnoma (menejerlardan
+    lid holati haqida so'rab-surishtirish) uchun ishlatiladi; hozircha
+    qayta aloqa eslatmalari ham shu guruhga (agar ulangan bo'lsa) boradi."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("settings_general"))
+    bot_username = _get_bot_identity().get("username")
+    if not bot_username:
+        flash("Telegram bot hozircha sozlanmagan -- administratorga murojaat qiling.", "error")
+        return redirect(url_for("settings_general"))
+    token = secrets.token_urlsafe(18)
+    kv_store.set_json(f"tg_link_token:{token}", {
+        "kind": "tasks_group",
         "company_id": company.id,
         "created_at": dt.datetime.utcnow().isoformat(),
     })
@@ -3858,6 +3969,11 @@ def leads_list():
             form_options = [{"id": fid, "name": fname or fid, "count": cnt} for fid, fname, cnt in available_forms]
             campaign_options = [{"id": cid, "name": cname or cid, "count": cnt} for cid, cname, cnt in available_campaigns]
             viewing_company_row = {"id": viewing_company.id, "name": viewing_company.name} if viewing_company else None
+            # 2026-09, foydalanuvchi so'rovi ("chala to'ldirilganlarni
+            # alohida ro'yxatga olib tashlansin"): ism/telefon bo'sh
+            # lidlar soni -- CRM sahifasidagi ogohlantirish banneri +
+            # Excel yuklab olish havolasi uchun.
+            incomplete_count = len(incomplete_leads.find_incomplete_leads(session, company_id=current_user.company_id))
     finally:
         session.close()
     period_label = _period_label(period, date_from, date_to)
@@ -3869,7 +3985,7 @@ def leads_list():
         page=page, total_pages=total_pages, total_count=total_count,
         viewing_company=viewing_company_row,
         stages=stage_rows, stage_color_by_key=stage_color_by_key, stage_label_by_key=stage_label_by_key,
-        leads_usage=leads_usage,
+        leads_usage=leads_usage, incomplete_count=incomplete_count,
     )
 
 
@@ -4415,6 +4531,34 @@ def leads_import():
     return render_template("leads_import.html")
 
 
+@app.route("/leads/chala-toldirilganlar.xlsx")
+@login_required
+@module_required("leads")
+def leads_incomplete_export():
+    """2026-09, foydalanuvchi so'rovi ("agar xom to'ltirilgan bo'lsa,
+    alohida excel qilinsin... ismi, nomeri bo'lsin va chala to'ldirgani
+    bo'lsin... lyuboy kompaniyada shunaqa bo'lsa, hamma kompaniya uchun"):
+    joriy kompaniyaning ism/telefon MAYDONI BO'SH bo'lgan lidlarini bitta
+    Excel faylga yig'ib, yuklab olishga beradi -- standart tenant-scoping
+    (before_request) tufayli AVTOMATIK ravishda faqat joriy kompaniyaga
+    tegishli lidlarni ko'radi, alohida kod yozmasdan har qanday kompaniya
+    uchun ishlaydi."""
+    session = get_session()
+    try:
+        leads = incomplete_leads.find_incomplete_leads(session, company_id=current_user.company_id)
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        company_name = company_row.name if company_row else ""
+        xlsx_bytes = incomplete_leads.build_incomplete_leads_workbook(leads, company_name=company_name)
+    finally:
+        session.close()
+    filename = incomplete_leads.incomplete_leads_filename(company_name)
+    return Response(
+        xlsx_bytes,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.route("/leads/<int:lead_id>", methods=["GET", "POST"])
 @login_required
 @module_required("leads")
@@ -4536,6 +4680,7 @@ def lead_detail(lead_id):
             if "email" in request.form:
                 lead.email = new_email or None
 
+            status_before_save = lead.status
             old_category = stage_by_key[lead.status].category if lead.status in stage_by_key else None
 
             # 2026-09 TUZATISH (CAPI/daromad xatosi): "Holat" ro'yxatidan
@@ -4575,6 +4720,7 @@ def lead_detail(lead_id):
             # belgilaydi. Sana maydoni bo'sh yuborilsa -- qayta aloqa
             # bekor qilinadi (rejalashtirilmagan holatga qaytadi). ---
             if "next_contact_date" in request.form:
+                next_contact_before = lead.next_contact_at
                 next_contact_raw = request.form.get("next_contact_date", "").strip()
                 if next_contact_raw:
                     try:
@@ -4584,6 +4730,14 @@ def lead_detail(lead_id):
                 else:
                     lead.next_contact_at = None
                 lead.next_contact_note = request.form.get("next_contact_note", "").strip() or None
+                # 2026-09, foydalanuvchi so'rovi ("qayta aloqaga majburiy
+                # eslatish"): menejer sanani o'zgartirsa (yangi belgilasa,
+                # o'zgartirsa yoki bekor qilsa) -- bu "men harakat qildim"
+                # degani, shuning uchun kun davomidagi takroriy eslatish
+                # hisoblagichi nolga qaytadi (scheduler.py: job_followup_reminders).
+                if lead.next_contact_at != next_contact_before:
+                    lead.followup_reminder_count = 0
+                    lead.followup_last_reminded_at = None
 
             if custom_fields:
                 try:
@@ -4602,6 +4756,22 @@ def lead_detail(lead_id):
                 session.add(LeadNote(company_id=lead.company_id, lead_id=lead.id, manager_id=manager_row.id if manager_row else None, text=note_text))
             if manager_row and not lead.assigned_manager_id:
                 lead.assigned_manager_id = manager_row.id
+
+            # 2026-09, foydalanuvchi so'rovi ("bitta menejer nechta odam
+            # bilan kuniga lead bilan gaplashyapti... to'liq ma'lumot"):
+            # `Lead.status` faqat JORIY holatni bildiradi -- "bugun
+            # nechta lead bilan gaplashildi" kabi kunlik hisobotni
+            # hisoblash uchun HAR BIR saqlashning o'zi audit-jurnalga
+            # yoziladi (status o'zgarmagan, faqat izoh qo'shilgan holatlar
+            # ham -- bu ham "gaplashish" hisoblanadi). `manager_reporting.py`
+            # shu jadvaldan hisoblaydi.
+            session.add(LeadStatusEvent(
+                company_id=lead.company_id, lead_id=lead.id,
+                manager_id=(manager_row.id if manager_row else None),
+                old_status=status_before_save, new_status=lead.status,
+                note=(note_text or None), source="web",
+            ))
+
             session.flush()
             _recompute_lead_sale_total(session, lead)
             session.commit()
@@ -4947,6 +5117,34 @@ def _managers_view(target_company_id, *, back_url=None, page_title=None):
         "managers.html", managers=rows, modules=permissions.MODULES,
         default_modules=permissions.DEFAULT_MANAGER_MODULES, show_new_manager_modal=show_new_manager_modal,
         back_url=back_url, page_title=page_title,
+    )
+
+
+@app.route("/menejer-faoliyati")
+@login_required
+@module_required("leads")
+@admin_required
+def manager_daily_activity():
+    """2026-09, foydalanuvchi so'rovi ("bitta menejer nechta odam bilan
+    kuniga lead bilan gaplashyapti, kvalifikatsiya nechta odam bilan
+    qilyapti... to'liq ma'lumot"): kunlik (standart -- bugun, `?date=`
+    bilan boshqa kun) menejer bo'yicha faollik hisoboti --
+    `manager_reporting.daily_manager_activity()`ga qarang."""
+    date_raw = request.args.get("date", "").strip()
+    try:
+        day = dt.datetime.strptime(date_raw, "%Y-%m-%d").date() if date_raw else dt.datetime.utcnow().date()
+    except ValueError:
+        day = dt.datetime.utcnow().date()
+        flash("Sana noto'g'ri formatda -- bugungi kun ko'rsatilmoqda.", "error")
+    session = get_session()
+    try:
+        rows = manager_reporting.daily_manager_activity(session, current_user.company_id, day=day)
+    finally:
+        session.close()
+    return render_template(
+        "manager_daily_activity.html", rows=rows, selected_date=day.isoformat(),
+        today=dt.datetime.utcnow().date().isoformat(),
+        yesterday=(dt.datetime.utcnow().date() - dt.timedelta(days=1)).isoformat(),
     )
 
 

@@ -166,7 +166,7 @@
     </div>
 
     <nav class="sidebar-nav">
-      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
+      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _lead_analytics_eps = ['lead_analytics_page'] %}
@@ -318,9 +318,9 @@
         </span>
       </a>
       {% endif %}
-      <div class="nav-item nav-user-info" title="{{ current_user.full_name or current_user.username }}">
+      <a href="{{ url_for('my_profile') }}" class="nav-item nav-user-info" title="{{ current_user.full_name or current_user.username }} — Mening profilim">
         <span class="nav-icon nav-avatar">{{ (current_user.full_name or current_user.username or '?')[0]|upper }}</span><span class="nav-text">{{ current_user.full_name or current_user.username }}</span>
-      </div>
+      </a>
       <a href="{{ url_for('logout') }}" class="nav-item" title="Chiqish">
         <span class="nav-icon">{{ navicon('logout') }}</span><span class="nav-text">Chiqish</span>
       </a>
@@ -371,7 +371,7 @@
        sahifa/hisob tanlash "sehrgar" ekrani) bu tab qatori ham chalg'itadi
        -- shuning uchun sidebar bilan birga shu ham o'chiriladi. #}
     {% if current_user.is_authenticated and not _hide_chrome %}
-      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list'] %}
+      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _settings_section_eps = ['settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered'] %}
@@ -381,6 +381,7 @@
         <a href="{{ url_for('leads_list') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('leads_list', 'lead_detail') }}">{{ navicon('leads') }}<span>Lidlar</span></a>
         <a href="{{ url_for('sold_customers_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'sold_customers_list' }}">{{ navicon('cart') }}<span>Sotilgan xaridorlar</span></a>
         <a href="{{ url_for('followups_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'followups_list' }}">{{ navicon('followup') }}<span>Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span></a>
+        {% if current_user.role == 'admin' %}<a href="{{ url_for('manager_daily_activity') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'manager_daily_activity' }}">{{ navicon('analytics') }}<span>Menejer faoliyati</span></a>{% endif %}
       </nav>
       {% elif request.endpoint in _monitoring_eps %}
       <nav class="page-subnav">

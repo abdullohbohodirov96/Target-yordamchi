@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Menejer faoliyati — Replix{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Menejer faoliyati</h1>
+    <p class="page-subtitle" style="margin-bottom:0">Har bir menejer tanlangan kun ichida nechta lead bilan ishlagani va nechtasini kvalifikatsiya qilgani.</p>
+  </div>
+  <div class="page-head-actions" style="display:flex; gap:8px">
+    <a href="{{ url_for('manager_daily_activity', date=yesterday) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == yesterday }}">Kecha</a>
+    <a href="{{ url_for('manager_daily_activity', date=today) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == today }}">Bugun</a>
+    <form method="get" style="display:flex; gap:6px; align-items:center">
+      <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
+    </form>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Menejer</th>
+        <th class="num">Gaplashgan lidlar</th>
+        <th class="num">Sifatli qilingan</th>
+        <th class="num">Sifatsiz qilingan</th>
+        <th class="num">Sotilgan</th>
+        <th class="num">Jami harakat</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.manager_name }}</td>
+        <td class="num"><strong>{{ r.contacted_count }}</strong></td>
+        <td class="num text-blue">{{ r.qualified }}</td>
+        <td class="num" style="color:var(--bad, #DC2626)">{{ r.unqualified }}</td>
+        <td class="num" style="color:var(--good, #16A34A)">{{ r.sold }}</td>
+        <td class="num text-dim">{{ r.events }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-faint" style="text-align:center; padding:24px 0">Bu kunda hech qanday lead bilan ishlanmagan.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<p class="text-faint" style="font-size:12.5px; margin-top:12px">
+  "Gaplashgan lidlar" -- shu kun ichida kamida bir marta statusi/izohi saqlangan ALOHIDA lidlar soni
+  (bitta lead bir necha marta saqlansa ham bir marta hisoblanadi). "Jami harakat" -- barcha saqlashlar soni (takrorlar bilan).
+</p>
+{% endblock %}

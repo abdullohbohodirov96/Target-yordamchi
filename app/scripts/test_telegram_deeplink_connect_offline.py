@@ -147,7 +147,12 @@ def test_personal_start_deeplink_links_manager_via_private_chat():
             })
         assert resp.status_code == 200
         assert len(sent) == 1 and sent[0][0] == 777001
-        assert "shaxsan ulandi" in sent[0][1]
+        # 2026-09, foydalanuvchi so'rovi ("menejer topilganda ... muvaffaqiyatli
+        # ulandingiz degan xabar kelsin"): tasdiqlash matni endi ANIQ qaysi
+        # hisobga (ism/rol/kompaniya) ulanganini ko'rsatadi -- eski qisqa
+        # "shaxsan ulandi" iborasi shu kengaytirilgan matn bilan almashtirildi
+        # (`app.py: _consume_telegram_link_token()`ga qarang).
+        assert "Muvaffaqiyatli ulandingiz" in sent[0][1]
 
         session = db_module.get_session()
         try:
@@ -296,7 +301,7 @@ def test_reused_token_only_works_once():
                 "message": {"chat": {"id": 333444, "type": "private"}, "text": f"/start {token}", "from": {"id": 333444}}
             })
         assert len(sent) == 2
-        assert "shaxsan ulandi" in sent[0][1]
+        assert "Muvaffaqiyatli ulandingiz" in sent[0][1]
         # Ikkinchi urinish token allaqachon iste'mol qilingani uchun ODDIY (notanish chat) oqimga tushadi.
         assert sent[1][1] == app_module._REGISTER_HELP_TEXT
 

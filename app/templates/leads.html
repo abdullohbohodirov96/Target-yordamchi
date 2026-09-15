@@ -59,6 +59,13 @@
 </div>
 {% endif %}
 
+{% if incomplete_count and incomplete_count > 0 %}
+<div class="flash flash-info" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
+  <span>⚠️ <strong>{{ incomplete_count }}</strong> ta lidda ism yoki telefon raqami yo'q (chala to'ldirilgan) -- menejerlar ularni to'ldirishi kerak.</span>
+  <a href="{{ url_for('leads_incomplete_export') }}" class="text-blue" style="white-space:nowrap">Excel ro'yxatini yuklab olish ↓</a>
+</div>
+{% endif %}
+
 <form method="get" class="searchbar" style="padding:0; margin-bottom:14px">
   <div class="search-input-wrap" style="max-width:320px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
