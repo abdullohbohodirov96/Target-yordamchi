@@ -623,6 +623,21 @@
 
   {% if current_user.is_authenticated and company_ai_enabled %}
   <div id="ai-assistant-root">
+    {% if company_business_profile_nudge %}
+    {# 2026-09, foydalanuvchi so'rovi ("agar to'ldirilmagan bo'lsa...
+       yordamchi... o'zingiz biznesingiz haqida tanishtiring degan narsa
+       chiqqan"): AI-yordamchi tugmasi yonida, panel ochilmasdan turib
+       o'zi chiqadigan taklif bubble'i -- bosilsa biznes-profil sahifasiga
+       o'tkazadi, "x" bosilsa shu brauzer sessiyasida qayta chiqmaydi. #}
+    <a href="{{ url_for('settings_business_profile') }}" id="ai-nudge-bubble" class="ai-nudge-bubble" hidden>
+      <button type="button" id="ai-nudge-dismiss" aria-label="Yopish" onclick="event.preventDefault(); event.stopPropagation();">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <strong>Biznesingiz haqida hali tanishmadik! 👋</strong>
+      <span>2 daqiqada bir nechta savolga javob bering — shundan keyin men SIZNING biznesingizga mos, aniq maslahat bera boshlayman (umumiy javob emas).</span>
+      <span class="ai-nudge-cta">Tanishtirish &rarr;</span>
+    </a>
+    {% endif %}
     <button id="ai-assistant-toggle" type="button" aria-label="AI yordamchi">
       <img src="{{ url_for('static', filename='brand/logo-icon-white.png') }}" alt="" width="30" height="30">
     </button>
@@ -734,6 +749,32 @@
           input.focus();
         });
     });
+
+    // 2026-09, foydalanuvchi so'rovi ("yordamchi... o'zingiz biznesingiz
+    // haqida tanishtiring degan narsa chiqqan"): biznes profili hali
+    // to'ldirilmagan bo'lsa, sahifa ochilgandan bir oz keyin (darhol EMAS
+    // -- odam avval sahifani ko'rib olsin) o'zi chiqadigan taklif bubble.
+    // Faqat shu BRAUZER SESSIYASIDA (yopilsa yoki bosilsa) qayta chiqmaydi
+    // -- keyingi kirishda (agar hali to'ldirilmagan bo'lsa) yana ko'rinadi.
+    var nudge = document.getElementById('ai-nudge-bubble');
+    var nudgeDismiss = document.getElementById('ai-nudge-dismiss');
+    if (nudge) {
+      var NUDGE_KEY = 'rx_bp_nudge_dismissed';
+      var dismissed = false;
+      try { dismissed = sessionStorage.getItem(NUDGE_KEY) === '1'; } catch (e) {}
+      if (!dismissed) {
+        setTimeout(function () {
+          if (panel.hidden) nudge.hidden = false;
+        }, 1800);
+      }
+      function dismissNudge() {
+        nudge.hidden = true;
+        try { sessionStorage.setItem(NUDGE_KEY, '1'); } catch (e) {}
+      }
+      if (nudgeDismiss) nudgeDismiss.addEventListener('click', dismissNudge);
+      nudge.addEventListener('click', dismissNudge);
+      toggleBtn.addEventListener('click', dismissNudge);
+    }
   })();
   </script>
   {% endif %}

@@ -873,6 +873,31 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   #ai-assistant-toggle { animation: none; }
 }
 
+/* 2026-09, foydalanuvchi so'rovi: biznes profili to'ldirilmagan bo'lsa,
+   AI-yordamchi tugmasi ustida o'zi chiqadigan taklif bubble'i. */
+.ai-nudge-bubble[hidden] { display: none; }
+.ai-nudge-bubble {
+  position: absolute; right: 0; bottom: 66px; width: 280px; max-width: calc(100vw - 44px);
+  display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; padding-right: 30px;
+  background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(15,23,42,0.16); text-decoration: none; cursor: pointer;
+  animation: fadeInUp 0.25s ease-out;
+}
+.ai-nudge-bubble strong { font-size: 13.5px; color: var(--ink); }
+.ai-nudge-bubble span { font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
+.ai-nudge-bubble .ai-nudge-cta { color: var(--blue); font-weight: 600; }
+.ai-nudge-bubble:hover { box-shadow: 0 14px 36px rgba(15,23,42,0.22); }
+#ai-nudge-dismiss {
+  position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%;
+  background: none; border: none; color: var(--text-faint); display: flex; align-items: center;
+  justify-content: center; cursor: pointer; padding: 0;
+}
+#ai-nudge-dismiss:hover { background: var(--border-light); color: var(--text); }
+#ai-nudge-dismiss svg { width: 13px; height: 13px; }
+@media (max-width: 480px) {
+  .ai-nudge-bubble { right: -6px; width: calc(100vw - 28px); }
+}
+
 /* MUHIM: `hidden` atributi HAR DOIM display:none bo'lishi kerak -- pastdagi
    `display:flex` qoidasi faqat `[hidden]` YO'Q holatda ishlaydi, aks holda
    panel JS orqali yopib bo'lmay qolardi (ID selektor UA'ning [hidden]

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ "Kompaniyangiz haqida" if is_onboarding else "Kompaniya ma'lumotlari" }} — Replix{% endblock %}
+{% block content %}
+
+{% if is_onboarding %}
+<div class="page-head">
+  <div>
+    <h1>Xush kelibsiz! Endi kompaniyangiz haqida bilib olaylik</h1>
+    <p class="page-subtitle" style="margin-bottom:0">
+      Quyidagi savollarga javob bering -- AI-yordamchi va Targetolog agenti shu ma'lumotlar asosida
+      SIZNING biznesingizga moslashgan (umumiy emas, aqlli) javob va tahlil beradi. Hammasi ixtiyoriy
+      va keyin ham Sozlamalar &rarr; Kompaniya ma'lumotlaridan istalgan vaqt o'zgartirish mumkin.
+    </p>
+  </div>
+</div>
+{% else %}
+<div class="page-head">
+  <div>
+    <h1>Kompaniya ma'lumotlari</h1>
+    <p class="page-subtitle" style="margin-bottom:0">
+      Bu ma'lumotlar AI-yordamchi va Targetolog agentiga kompaniyangizni chuqurroq tushunib, HAR DOIM
+      shu brendga moslashgan (umumiy emas) javob va tahlil berishga yordam beradi. To'liq ixtiyoriy --
+      to'ldirmasangiz ham platforma odatdagidek ishlayveradi.
+    </p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="max-width:640px">
+  <form method="post" style="display:flex; flex-direction:column; gap:20px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="field" style="margin:0">
+      <label>Biznes yo'nalishi</label>
+      <select name="business_category">
+        <option value="">— tanlang —</option>
+        {% for key, label in business_categories %}
+        <option value="{{ key }}" {{ 'selected' if business_category == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">
+        Ro'yxatdan eng yaqin yo'nalishni tanlang -- mos kelmasa, "Boshqa"ni tanlab, pastdagi izohda aniqlashtiring.
+      </p>
+    </div>
+
+    <div class="field" style="margin:0">
+      <label>Qo'shimcha izoh (ixtiyoriy)</label>
+      <input type="text" name="business_category_note" value="{{ business_category_note or '' }}" placeholder="Masalan: aniq nima sotasiz yoki qanday xizmat turi">
+      <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">
+        Yo'nalishingizni bir jumlada aniqroq tasvirlab bering -- ro'yxatdagi nomi yetarli bo'lmasa.
+      </p>
+    </div>
+
+    {% for key, label, placeholder, helper in business_questions %}
+    <div class="field" style="margin:0">
+      <label>{{ label }}</label>
+      <input type="text" name="bp_{{ key }}" value="{{ business_profile_answers.get(key, '') }}" placeholder="{{ placeholder }}">
+      <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">{{ helper }}</p>
+    </div>
+    {% endfor %}
+
+    <div style="display:flex; gap:16px; align-items:center; margin-top:4px">
+      <button type="submit" class="btn">{{ "Davom etish" if is_onboarding else "Saqlash" }}</button>
+      {% if is_onboarding %}
+      <a href="{{ url_for('connect_accounts') }}" class="text-faint" style="font-size:13px">O'tkazib yuborish, keyinroq to'ldiraman</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

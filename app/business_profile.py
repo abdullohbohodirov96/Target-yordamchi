@@ -5,21 +5,37 @@ bo'yicha... qo'shimcha izoh... kamida beshta savol... imenno kompaniya
 haqida to'liq tushunib olish uchun AI va shu bo'yicha javob bersin har
 doim."
 
-Bu modul UCHTA narsani beradi:
+2026-09 QAYTA ISHLASH (foydalanuvchi, ikkinchi so'rov: "biznes
+ochayotganda... yaratish bosgandan keyin, otdelno oyinda chiqib kelsin...
+kamida beshta savol... nechta sku... nastroykaga qo'shimcha joy qo'shish
+kerak... kompaniya ma'lumotlari... agar to'ldirilmagan bo'lsa... yordamchi
+sms chiqib kelsin"): endi bu profil (1) ro'yxatdan o'tishning O'ZIDA EMAS
+(u yerda faqat hisob yaratiladi), balki hisob yaratilgandan KEYIN alohida
+qadam sifatida (`/xush-kelibsiz/biznes-profili`) so'raladi, (2) Sozlamalar
+bo'limida O'ZINING alohida kartasiga ega ("Kompaniya ma'lumotlari",
+`/sozlamalar/kompaniya-malumotlari` -- endi "settings" tarif-moduliga
+BOG'LIQ EMAS, aks holda "Sinov" tarifidagi yangi kompaniyalar buni
+UMUMAN to'ldira olmasdi), (3) to'ldirilmagan bo'lsa, AI-yordamchi vidjeti
+(`app.py`dagi `_ai_widget_nudge_text()`) proaktiv taklif ko'rsatadi.
+
+Bu modul TO'RTTA narsani beradi:
   1. `BUSINESS_CATEGORIES` — biznes yo'nalishi dropdown ro'yxati (keng
      qamrovli, O'zbekistondagi tipik SMB'lar bo'yicha).
   2. `BUSINESS_PROFILE_QUESTIONS` — kompaniya haqida AI to'liq tushunishi
-     uchun kerakli 6 ta savol (foydalanuvchi "kamida beshta" dedi).
+     uchun kerakli savollar (key, savol matni, misol/placeholder,
+     PASTDAGI tushuntirish matni -- 4 ta element, foydalanuvchi
+     "aniq savol bo'lsin... pastda tushuntirish bo'lsin" dedi).
   3. `business_profile_summary_text(company)` — Company obyektidan
      Targetolog/Marketolog agent (`orchestrator.py`) VA web/Telegram
      AI-yordamchisi (`app.py`) promptiga qo'shiladigan tayyor matn bo'lagi.
+  4. `is_profile_filled(company)` — profil HECH BO'LMAGANDA bitta narsa
+     (yo'nalish yoki savollardan biri) bilan to'ldirilganmi -- AI-yordamchi
+     vidjetining proaktiv eslatmasi shu asosida ko'rsatiladi/yashiriladi.
 
 Ma'lumotning o'zi `db.py`dagi `Company.business_category` /
 `business_category_note` / `business_profile_answers` (JSON) ustunlarida
-saqlanadi. Ro'yxatdan o'tishda (`/signup`) HAM, Sozlamalar -> Umumiy'da
-(`/sozlamalar/umumiy`, action=`set_business_profile`) HAM to'ldirish/
-tahrirlash mumkin — ikkalasi ham ATAYLAB IXTIYORIY (bo'sh qoldirsa AI
-profilsiz, oddiy ishlayveradi -- signup tezligini buzmaslik uchun)."""
+saqlanadi. To'ldirish ATAYLAB HAMON IXTIYORIY (bo'sh qoldirsa AI profilsiz,
+oddiy ishlayveradi) -- lekin endi ko'proq ko'rinadigan/qulay joyda so'raladi."""
 
 import json
 
@@ -56,25 +72,38 @@ BUSINESS_CATEGORIES = [
 
 # 2026-09, foydalanuvchi so'rovi: "ikkita-uchta savollar... kamida beshta
 # savol bo'lsin, imenno kompaniya haqida to'liq tushunib olish uchun ai".
-# 6 ta savol -- Targetolog agentiga eng ko'p kerak bo'ladigan narsalar
-# (nima sotiladi, kimga, qancha narxda, eng ko'p so'raladigani, raqobat,
-# erkin qo'shimcha) atayin shu tartibda tanlangan.
+# 2026-09 QAYTA ISHLASH: "nechta sku" savoli qo'shildi (7 ta savol endi) --
+# Targetolog agentiga eng ko'p kerak bo'ladigan narsalar (nima sotiladi,
+# kimga, qancha narxda, nechta turdagi mahsulot, eng ko'p so'raladigani,
+# raqobat, erkin qo'shimcha) atayin shu tartibda tanlangan. Har bir savol
+# ENDI 4 ta elementdan iborat: (key, savol, misol/placeholder, PASTDA
+# ko'rsatiladigan tushuntirish -- "aniq savol bo'lsin... pastda
+# tushuntirish bo'lsin nimagaligini va nima haqida yozish kerakligini").
 BUSINESS_PROFILE_QUESTIONS = [
     ("product_or_service", "Nima soting yoki qanday xizmat ko'rsatasiz?",
-     "Masalan: erkaklar oyoq kiyimi, 30 dan ortiq model, o'rtacha narxda"),
+     "Masalan: erkaklar oyoq kiyimi, 30 dan ortiq model, o'rtacha narxda",
+     "AI reklama matni va javoblarni shu mahsulot/xizmatga moslab yozadi -- qancha aniqroq yozsangiz, shuncha aniqroq javob beradi."),
     ("target_audience", "Mijozlaringiz odatda kimlar (yosh, jins, hudud)?",
-     "Masalan: 20-40 yosh, ko'proq ayollar, Toshkent shahri"),
+     "Masalan: 20-40 yosh, ko'proq ayollar, Toshkent shahri",
+     "Reklama auditoriyasini va murojaat ohangini shu mijoz portretiga qarab tanlashga yordam beradi."),
+    ("sku_count", "Nechta xil mahsulot turi (SKU/model)ingiz bor?",
+     "Masalan: 45 ta model, yoki \"1 ta xizmat turi\"",
+     "Assortiment kattaligi -- keng assortimentda AI umumiy reklama g'oyalarini, tor assortimentda esa aniq mahsulot bo'yicha chuqur tahlilni taklif qiladi."),
     ("price_range", "O'rtacha chek/narx oralig'ingiz qancha?",
-     "Masalan: 150 000 - 500 000 so'm"),
+     "Masalan: 150 000 - 500 000 so'm",
+     "Narx segmentini bilish AI'ga byudjet/ROI tahlilida va reklama uslubini (ekonom yoki premium) tanlashda yordam beradi."),
     ("best_seller", "Eng ko'p sotiladigan yoki so'raladigan mahsulot/xizmatingiz qaysi?",
-     "Masalan: klassik model, u eng ko'p buyurtma qilinadi"),
+     "Masalan: klassik model, u eng ko'p buyurtma qilinadi",
+     "Yangi reklama g'oyalari va nimani ko'proq targetga qo'yish kerakligi bo'yicha maslahatlar shu javob asosida beriladi."),
     ("competitors", "Asosiy raqobatchilaringiz kimlar (bilsangiz)?",
-     "Masalan: shahardagi 2-3 ta do'kon nomi yoki brend"),
+     "Masalan: shahardagi 2-3 ta do'kon nomi yoki brend",
+     "AI sizni raqobatchilardan ajratib turadigan afzalliklarni topib, reklama matnida shu farqni ta'kidlashga harakat qiladi."),
     ("extra_notes", "AI yana nimani bilishi kerak (aksiya, afzallik, o'ziga xos jihat)?",
-     "Masalan: bepul yetkazib berish, 1 yillik kafolat"),
+     "Masalan: bepul yetkazib berish, 1 yillik kafolat",
+     "Yuqoridagi savollarga sig'magan, lekin mijozga muhim bo'lgan har qanday qo'shimcha ma'lumot -- shu yerga yozing."),
 ]
 
-_QUESTION_KEYS = {key for key, _, _ in BUSINESS_PROFILE_QUESTIONS}
+_QUESTION_KEYS = {key for key, *_ in BUSINESS_PROFILE_QUESTIONS}
 _CATEGORY_LABELS = dict(BUSINESS_CATEGORIES)
 
 
@@ -123,7 +152,7 @@ def business_profile_summary_text(company) -> "str | None":
         lines.append(f"- Biznes yo'nalishi: {category}" + (f" — {note}" if note else ""))
     elif note:
         lines.append(f"- Qo'shimcha izoh: {note}")
-    for key, label, _ in BUSINESS_PROFILE_QUESTIONS:
+    for key, label, *_ in BUSINESS_PROFILE_QUESTIONS:
         value = (answers.get(key) or "").strip()
         if value:
             lines.append(f"- {label} {value}")
@@ -134,3 +163,17 @@ def business_profile_summary_text(company) -> "str | None":
         "# KOMPANIYA BIZNES PROFILI (admin o'zi kiritgan, HAR DOIM shuni hisobga ol)\n"
         + "\n".join(lines)
     )
+
+
+def is_profile_filled(company) -> bool:
+    """`company`ning biznes profilida HECH BO'LMAGANDA bitta narsa
+    (yo'nalish YOKI savollardan biri) to'ldirilganmi -- AI-yordamchi
+    vidjetining proaktiv eslatmasini ko'rsatish/yashirish uchun (2026-09,
+    foydalanuvchi so'rovi: "agar to'ldirilmagan bo'lsa... yordamchi
+    tanishtiring degan sms chiqarsin")."""
+    if company is None:
+        return False
+    if getattr(company, "business_category", None):
+        return True
+    answers = parse_business_profile_answers(getattr(company, "business_profile_answers", None))
+    return bool(answers)

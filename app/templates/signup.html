@@ -46,32 +46,6 @@
         <div class="field"><label>{{ t('signup.password2') }}</label><input type="password" name="password2" required minlength="6"></div>
       </div>
 
-      <details style="margin:18px 0 4px">
-        <summary class="text-blue" style="cursor:pointer; font-size:13px; list-style:none">+ Kompaniya haqida qo'shimcha ma'lumot (ixtiyoriy — keyin ham to'ldirish mumkin)</summary>
-        <p class="page-subtitle" style="margin:10px 0 14px">Bu ma'lumotlar AI-yordamchi va Targetolog agentiga kompaniyangizni chuqurroq tushunib, aniqroq tahlil va maslahat berishga yordam beradi. Hozir to'ldirmasangiz ham bo'ladi — keyin Sozlamalar bo'limida to'ldirishingiz mumkin.</p>
-        <div class="auth-form-grid">
-          <div class="field full">
-            <label>Biznes yo'nalishi</label>
-            <select name="business_category">
-              <option value="">— tanlang —</option>
-              {% for key, label in business_categories %}
-              <option value="{{ key }}" {{ 'selected' if form.business_category == key }}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field full">
-            <label>Qo'shimcha izoh (ixtiyoriy)</label>
-            <input type="text" name="business_category_note" value="{{ form.business_category_note }}" placeholder="Masalan: aniq nima sotasiz yoki qanday xizmat turi">
-          </div>
-          {% for key, label, placeholder in business_questions %}
-          <div class="field full">
-            <label>{{ label }}</label>
-            <input type="text" name="bp_{{ key }}" value="{{ form.business_profile_answers.get(key, '') }}" placeholder="{{ placeholder }}">
-          </div>
-          {% endfor %}
-        </div>
-      </details>
-
       <button type="submit" class="block">{{ t('signup.submit') }}</button>
     </form>
 

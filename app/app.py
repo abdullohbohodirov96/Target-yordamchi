@@ -1719,12 +1719,6 @@ def signup():
     form_values = {
         "company_name": "", "admin_username": "", "admin_full_name": "",
         "email": "", "plan": requested_plan,
-        # 2026-09, foydalanuvchi so'rovi ("registratsiya bo'limida...
-        # kompaniya haqida ma'lumotlarni qo'shish mumkin bo'lsin"):
-        # IXTIYORIY biznes-profil maydonlari -- xato bo'lib forma qayta
-        # ko'rsatilganda kiritilgan qiymatlar yo'qolib qolmasligi uchun.
-        "business_category": "", "business_category_note": "",
-        "business_profile_answers": {},
     }
 
     if request.method == "POST":
@@ -1734,20 +1728,9 @@ def signup():
         email = request.form.get("email", "").strip().lower() or None
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
-        business_category = request.form.get("business_category", "").strip() or None
-        if business_category not in dict(business_profile.BUSINESS_CATEGORIES):
-            business_category = None
-        business_category_note = request.form.get("business_category_note", "").strip() or None
-        business_profile_answers = {
-            key: request.form.get(f"bp_{key}", "").strip()
-            for key, _, _ in business_profile.BUSINESS_PROFILE_QUESTIONS
-        }
         form_values.update({
             "company_name": company_name, "admin_username": admin_username,
             "admin_full_name": admin_full_name, "email": email or "", "plan": requested_plan,
-            "business_category": business_category or "",
-            "business_category_note": business_category_note or "",
-            "business_profile_answers": business_profile_answers,
         })
 
         session = get_session()
@@ -1783,9 +1766,11 @@ def signup():
                     name=company_name, email=email, plan=requested_plan,
                     is_active=True, source="self_signup",
                     paid_until=now + dt.timedelta(days=plan_def.period_days) if plan_def.period_days else now + dt.timedelta(days=_SIGNUP_GRACE_DAYS),
-                    business_category=business_category,
-                    business_category_note=business_category_note,
-                    business_profile_answers=business_profile.serialize_business_profile_answers(business_profile_answers),
+                    # 2026-09 QAYTA ISHLASH (foydalanuvchi: "yaratish
+                    # bosgandan keyin, otdelno oyinda chiqib kelsin"):
+                    # biznes-profil ENDI shu yerda EMAS -- hisob
+                    # yaratilgach, pastdagi redirect uni ALOHIDA qadamga
+                    # (`onboarding_business_profile`) yo'naltiradi.
                 )
                 session.add(c)
                 session.commit()
@@ -1812,15 +1797,18 @@ def signup():
                         f"{_SIGNUP_GRACE_DAYS} kun ichida to'lovni yakunlang (\"To'lov\" sahifasida).",
                         "success",
                     )
-                return redirect(url_for("connect_accounts"))
+                # 2026-09 QAYTA ISHLASH (foydalanuvchi: "biznes ochayotganda,
+                # och bo'lgandan keyin, yaratish bosgandan keyin, otdelno
+                # oyinda chiqib kelsin va u yerda savollar bo'lsin"): endi
+                # to'g'ridan-to'g'ri `connect_accounts`ga EMAS, avval
+                # ALOHIDA biznes-profil qadamiga yo'naltiriladi -- o'sha
+                # sahifa "Davom etish" (yoki "O'tkazib yuborish") bilan
+                # `connect_accounts`ga o'tkazadi (pastda, `onboarding_business_profile`).
+                return redirect(url_for("onboarding_business_profile"))
         finally:
             session.close()
 
-    return render_template(
-        "signup.html", plans=plans.PLAN_LIST, form=form_values,
-        business_categories=business_profile.BUSINESS_CATEGORIES,
-        business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
-    )
+    return render_template("signup.html", plans=plans.PLAN_LIST, form=form_values)
 
 
 # ---------------------------------------------------------------------------
@@ -1926,6 +1914,52 @@ def connect_accounts():
         recent_capi_events=recent_capi_events,
         capi_sent_7d=capi_sent_7d, capi_failed_7d=capi_failed_7d,
     )
+
+
+# ---------------------------------------------------------------------------
+# Kompaniya biznes profili -- 2026-09 QAYTA ISHLASH (foydalanuvchi so'rovi:
+# "biznes ochayotganda... yaratish bosgandan keyin, otdelno oyinda chiqib
+# kelsin va u yerda savollar bo'lsin... nastroykaga qo'shimcha joy qo'shish
+# kerak... kompaniya ma'lumotlari"). BITTA view ikkita URL/nom bilan
+# ishlaydi:
+#   - `/xush-kelibsiz/biznes-profili` (endpoint: onboarding_business_profile)
+#     -- signup()dan KEYIN avtomatik yo'naltiriladi, "Davom etish"/
+#     "O'tkazib yuborish" `connect_accounts`ga olib boradi.
+#   - `/sozlamalar/kompaniya-malumotlari` (endpoint: settings_business_profile)
+#     -- Sozlamalar bo'limidagi doimiy karta, istalgan vaqt tahrirlash uchun.
+# ATAYLAB `@module_required("settings")` EMAS, faqat `@admin_required` --
+# "Sinov" tarifida "settings" moduli UMUMAN yo'q (`plans.py`), aks holda
+# yangi ro'yxatdan o'tgan (har doim "Sinov"dan boshlaydigan) kompaniya bu
+# qadamni UMUMAN o'tolmay qolardi.
+# ---------------------------------------------------------------------------
+@app.route("/xush-kelibsiz/biznes-profili", methods=["GET", "POST"], endpoint="onboarding_business_profile")
+@app.route("/sozlamalar/kompaniya-malumotlari", methods=["GET", "POST"], endpoint="settings_business_profile")
+@login_required
+@admin_required
+def business_profile_view():
+    is_onboarding = request.endpoint == "onboarding_business_profile"
+    session = get_session()
+    try:
+        if request.method == "POST":
+            _handle_settings_post(session, "set_business_profile")
+            if is_onboarding:
+                return redirect(url_for("connect_accounts"))
+            return redirect(url_for("settings_business_profile"))
+
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        return render_template(
+            "business_profile_form.html",
+            is_onboarding=is_onboarding,
+            business_categories=business_profile.BUSINESS_CATEGORIES,
+            business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
+            business_category=(company_row.business_category if company_row else None),
+            business_category_note=(company_row.business_category_note if company_row else None),
+            business_profile_answers=business_profile.parse_business_profile_answers(
+                company_row.business_profile_answers if company_row else None
+            ),
+        )
+    finally:
+        session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -5031,6 +5065,12 @@ def _inject_plan_upsell():
             "sidebar_plan": plan_def,
             "sidebar_plan_days_left": days_left,
             "sidebar_plan_next": plans.next_plan_up(company.plan),
+            # 2026-09, foydalanuvchi so'rovi ("agar to'ldirilmagan bo'lsa...
+            # yordamchi... o'zingiz biznesingiz haqida tanishtiring degan
+            # narsa chiqqan"): AI-yordamchi vidjeti yonida proaktiv taklif
+            # bubble'i -- FAQAT admin uchun (faqat admin to'ldira oladi) va
+            # FAQAT biznes profili hali umuman bo'sh bo'lsa.
+            "company_business_profile_nudge": not business_profile.is_profile_filled(company),
         })
     return result
 
@@ -6262,7 +6302,7 @@ def _handle_settings_post(session, action):
             company_row.business_category_note = request.form.get("business_category_note", "").strip() or None
             answers = {
                 key: request.form.get(f"bp_{key}", "").strip()
-                for key, _, _ in business_profile.BUSINESS_PROFILE_QUESTIONS
+                for key, *_ in business_profile.BUSINESS_PROFILE_QUESTIONS
             }
             company_row.business_profile_answers = business_profile.serialize_business_profile_answers(answers)
             session.commit()
@@ -6392,6 +6432,10 @@ def settings_hub():
             "module_toggle_count": module_toggle_count,
             "ai_plan_supports": bool(company and plans.get_plan(company.plan).ai_enabled),
             "ai_features_disabled": bool(company and company.ai_features_disabled),
+            # 2026-09, foydalanuvchi so'rovi ("kompaniya ma'lumotlari...
+            # to'ldirish kerak degan narsa bo'lsin"): Sozlamalar kartasida
+            # ham "to'ldirilmagan" belgisi ko'rsatish uchun.
+            "business_profile_filled": business_profile.is_profile_filled(company),
         }
 
     return render_template(
@@ -6420,13 +6464,6 @@ def settings_general():
             moizvonki_configured=bool(company_row and company_row.is_moizvonki_configured()),
             moizvonki_api_address=(company_row.moizvonki_api_address if company_row else None),
             moizvonki_user_name=(company_row.moizvonki_user_name if company_row else None),
-            business_categories=business_profile.BUSINESS_CATEGORIES,
-            business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
-            business_category=(company_row.business_category if company_row else None),
-            business_category_note=(company_row.business_category_note if company_row else None),
-            business_profile_answers=business_profile.parse_business_profile_answers(
-                company_row.business_profile_answers if company_row else None
-            ),
         )
     finally:
         session.close()

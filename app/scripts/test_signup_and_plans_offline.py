@@ -86,7 +86,13 @@ def test_signup_creates_trial_company_and_logs_in():
         r = _signup(client, company_name="Sinov MChJ", admin_username="sinov_admin1", plan="trial")
         assert r.status_code == 200
         html = r.get_data(as_text=True)
-        assert "Akkauntlarni ulash" in html, "signup'dan keyin /connect-accounts'ga yo'naltirilishi kerak"
+        # 2026-09 QAYTA ISHLASH: signup ENDI to'g'ridan-to'g'ri
+        # connect_accounts'ga EMAS, avval alohida biznes-profil qadamiga
+        # (`/xush-kelibsiz/biznes-profili`) yo'naltiradi -- shu yerdan
+        # "Davom etish" yoki "O'tkazib yuborish" connect_accounts'ga olib
+        # boradi (`test_business_profile_offline.py`da batafsil tekshirilgan).
+        assert "Xush kelibsiz" in html, "signup'dan keyin biznes-profil onboarding qadamiga yo'naltirilishi kerak"
+        assert 'href="/connect-accounts"' in html, "onboarding sahifasida connect-accounts'ga o'tish yo'li bo'lishi kerak"
 
         session = db_module.get_session()
         try:

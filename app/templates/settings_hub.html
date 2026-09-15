@@ -22,6 +22,20 @@
   </a>
 
   {% if current_user.role == 'admin' %}
+  <a href="{{ url_for('settings_business_profile') }}" class="settings-section-card">
+    <span class="settings-section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M6 21V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13M9 21v-5h6v5M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/></svg>
+    </span>
+    <span class="settings-section-body">
+      <span class="settings-section-title" style="justify-content:space-between; width:100%">
+        <span>Kompaniya ma'lumotlari
+        {% if summary and not summary.business_profile_filled %}<span class="badge badge-color-bad" style="margin-left:6px">to'ldirilmagan</span>{% endif %}</span>
+      </span>
+      <span class="settings-section-desc">Biznesingiz haqida savollar -- AI-yordamchi va Targetolog agenti javoblarni shu brendga moslab beradi.</span>
+    </span>
+    <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+  </a>
+
   <a href="{{ url_for('settings_cpl') }}" class="settings-section-card">
     <span class="settings-section-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
