@@ -1738,3 +1738,137 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .container.with-sidebar .ap-bottombar { left: 68px; transition: left 0.16s ease; }
 .container.with-sidebar.sidebar-pinned .ap-bottombar { left: 240px; }
 @media (max-width: 720px) { .container.with-sidebar .ap-bottombar, .container.with-sidebar.sidebar-pinned .ap-bottombar { left: 0; } }
+
+/* ===========================================================================
+   KREATIV STUDIYA (2026-09, AI rasm-generatsiya -- `cs-` prefiksi).
+   Avtopilot (`ap-`) bo'limi bilan bir xil tokenlar: --card/--border/--radius,
+   --blue/--blue-bg aksent, --text-dim/--text-faint matnlar. Kichik
+   tugmalar/badge'lar uchun `ap-mini-btn`/`ap-modal-msg` QAYTA ishlatiladi
+   (ikkala JS fayl bir xil uslubda). Sahifalar: galereya (kartochka grid),
+   shablonlar galereyasi, boshlash sahifasi (ikki karta), muharrir
+   (canvas + o'ng panel), brend kit formasi.
+   =========================================================================== */
+.cs-app { display: flex; flex-direction: column; gap: 14px; }
+.cs-quota-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); font-size: 13px;
+}
+.cs-quota-label { font-weight: 600; color: var(--ink); }
+.cs-quota-chip { font-size: 12px; color: var(--text-dim); padding: 4px 10px; border-radius: 999px; background: var(--border-light); white-space: nowrap; }
+.cs-quota-chip.warn { background: var(--warn-bg); color: var(--warn); }
+
+/* ---- Nisbat konteynerlari (thumbnail'lar) ---- */
+.cs-aspect-1-1 { aspect-ratio: 1 / 1; }
+.cs-aspect-4-5 { aspect-ratio: 4 / 5; }
+.cs-aspect-9-16 { aspect-ratio: 9 / 16; }
+
+/* ---- Galereya (kreativlar) ---- */
+/* Pastki padding: suzuvchi AI-yordamchi tugmasi (o'ng-past burchak) oxirgi
+   qatordagi kartaning tugmalarini to'sib qo'ymasin (vizual tekshiruvda topildi). */
+.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; padding-bottom: 72px; }
+.cs-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.cs-card-thumb { position: relative; display: block; background: var(--border-light); overflow: hidden; max-height: 320px; }
+.cs-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs-card-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; font-size: 12.5px; color: var(--text-faint); }
+.cs-card-status { position: absolute; top: 8px; left: 8px; }
+.cs-card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.cs-card-title { font-weight: 600; color: var(--ink); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-card-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--text-faint); }
+.cs-card-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.cs-inline-form { display: inline; margin: 0; }
+.cs-empty { text-align: left; }
+.cs-empty h2 { margin-bottom: 8px; }
+
+/* ---- Shablonlar galereyasi ---- */
+.cs-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.cs-tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; padding-bottom: 72px; }
+.cs-tpl-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; transition: box-shadow 0.12s, transform 0.12s; }
+.cs-tpl-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.cs-tpl-thumb { position: relative; background: var(--border-light); overflow: hidden; max-height: 360px; }
+.cs-tpl-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs-tpl-aspect { display: inline-block; margin-left: 6px; background: var(--border-light); color: var(--text-dim); font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; vertical-align: 1px; }
+.cs-tpl-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.cs-tpl-name { font-weight: 700; color: var(--ink); font-size: 13.5px; }
+.cs-tpl-desc { font-size: 12px; color: var(--text-dim); line-height: 1.45; flex: 1; }
+.cs-tpl-actions { margin: 6px 0 0; }
+
+/* ---- Boshlash sahifasi ---- */
+.cs-start-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.cs-start-card { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.cs-start-card h2 { margin: 0; }
+.cs-start-card p { margin: 0; font-size: 13px; line-height: 1.5; }
+.cs-start-icon { font-size: 28px; line-height: 1; }
+.cs-start-preview { width: 160px; max-width: 100%; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--border-light); }
+.cs-start-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs-start-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+
+/* ---- Muharrir: tuzilma ---- */
+.cs-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.cs-layout.cs-layout-single { grid-template-columns: minmax(0, 1fr); }
+.cs-main { min-width: 0; padding: 18px 20px 22px; }
+.cs-side { position: sticky; top: 12px; padding: 14px 16px; max-height: calc(100vh - 40px); overflow-y: auto; }
+.cs-side-section { margin-bottom: 18px; }
+.cs-side-section:last-child { margin-bottom: 0; }
+.cs-side-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cs-side .ap-field { margin-bottom: 10px; }
+.cs-side .ap-field textarea, .cs-side .ap-field select, .cs-side .ap-field input[type="number"] { width: 100%; padding: 7px 10px; font-size: 13px; font-family: inherit; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); }
+.cs-side .ap-field input[type="color"] { width: 100%; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.cs-side .ap-field input[type="range"] { width: 100%; accent-color: var(--blue); }
+.cs-pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+
+/* ---- Brif (savol-javob) ---- */
+.cs-brief { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.cs-brief-head { display: flex; gap: 12px; align-items: flex-start; }
+.cs-brief-head .ap-sparkle { font-size: 22px; line-height: 1.2; }
+.cs-brief-head h2 { margin: 0 0 4px; }
+.cs-brief-head p { margin: 0; font-size: 12.5px; line-height: 1.45; }
+.cs-q-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.cs-q-step { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
+.cs-q-text { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.4; }
+.cs-q-card textarea { width: 100%; padding: 10px 12px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); resize: vertical; }
+.cs-q-card textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.cs-q-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cs-answers { display: grid; grid-template-columns: 1fr; gap: 6px 12px; font-size: 13px; margin: 0; }
+.cs-answers dt { color: var(--text-faint); font-weight: 500; font-size: 12px; }
+.cs-answers dd { margin: 0 0 6px; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-spinner-card { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-radius: var(--radius-lg); background: var(--blue-bg); color: var(--blue); font-size: 13.5px; font-weight: 500; }
+.cs-spinner { width: 18px; height: 18px; border: 2.5px solid rgba(11,99,245,0.25); border-top-color: var(--blue); border-radius: 50%; animation: btn-spin 0.7s linear infinite; flex-shrink: 0; }
+
+/* ---- Canvas ---- */
+.cs-editor { display: flex; flex-direction: column; gap: 12px; }
+.cs-editor-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-faint); line-height: 1.45; }
+.cs-canvas-wrap { display: flex; justify-content: center; background: repeating-conic-gradient(var(--border-light) 0% 25%, #fff 0% 50%) 50% / 18px 18px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.cs-canvas { display: block; max-width: 100%; box-shadow: var(--shadow-md); border-radius: 4px; touch-action: none; outline: none; }
+.cs-canvas:focus { box-shadow: 0 0 0 3px var(--blue-bg), var(--shadow-md); }
+
+/* ---- Qatlamlar ro'yxati ---- */
+.cs-layer-list { display: flex; flex-direction: column; gap: 3px; }
+.cs-layer-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; font-size: 12.5px; min-width: 0; }
+.cs-layer-row:hover { background: var(--border-light); }
+.cs-layer-row.selected { background: var(--blue-bg); border-color: #C7DBFD; }
+.cs-layer-row.hidden-layer .cs-layer-text, .cs-layer-row.hidden-layer .cs-layer-type { color: var(--text-faint); text-decoration: line-through; }
+.cs-layer-eye { background: none; border: none; box-shadow: none; padding: 0; width: 20px; height: 20px; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.cs-layer-eye:hover { transform: none; filter: none; box-shadow: none; color: var(--ink); background: none; }
+.cs-layer-eye svg { width: 14px; height: 14px; }
+.cs-layer-type { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); flex-shrink: 0; width: 74px; }
+.cs-layer-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.cs-result-thumb { display: block; width: 140px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--border-light); }
+.cs-result-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---- Brend kit formasi ---- */
+.cs-logo-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.cs-logo-preview { width: 120px; height: 120px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: var(--radius); background: repeating-conic-gradient(var(--border-light) 0% 25%, #fff 0% 50%) 50% / 16px 16px; overflow: hidden; font-size: 12px; text-align: center; padding: 6px; }
+.cs-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.cs-color-row { display: flex; align-items: center; gap: 10px; }
+.cs-color-row input[type="color"] { width: 46px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; flex-shrink: 0; }
+.cs-color-row input[type="text"] { width: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+
+@media (max-width: 1100px) { .cs-layout { grid-template-columns: minmax(0, 1fr) 300px; } }
+@media (max-width: 900px) {
+  .cs-layout { grid-template-columns: 1fr; }
+  .cs-side { position: static; max-height: none; }
+  .cs-start-grid { grid-template-columns: 1fr; }
+}
+/* Avtopilot media bo'limidagi "Kreativ studiyadan tanlash" kartasi (havola) */
+.ap-media-creative { text-decoration: none; text-align: center; padding: 8px; font-size: 11.5px; line-height: 1.3; }
+.ap-media-creative-icon { font-size: 22px; line-height: 1; }

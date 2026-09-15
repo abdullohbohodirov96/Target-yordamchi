@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Brend kit — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Kreativ studiya: brend kit -- logotip (PNG/JPG/WEBP, shaffof
+   fon uchun PNG tavsiya) + ikkita brend rangi. Logotip AI yaratgan rasmga
+   dasturiy ravishda (Pillow) qo'yiladi, ranglar AI fon promptida hisobga
+   olinadi. `business_profile_form.html` uslubida oddiy forma. #}
+
+<div class="page-head">
+  <div>
+    <h1>Brend kit</h1>
+    <p class="page-subtitle" style="margin-bottom:0">
+      Logotip va brend ranglari -- Kreativ studiya AI yaratgan har bir reklama rasmiga logotipingizni aniq (fayl sifatida, AI chizmaydi) qo'yadi va ranglaringizni fon uslubida hisobga oladi. Ixtiyoriy: logotipsiz ham rasm yaratiladi, shunchaki logotip qatlami bo'sh qoladi.
+    </p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ back_url }}" class="btn btn-outline">&larr; Orqaga</a>
+  </div>
+</div>
+
+<div class="card" style="max-width:640px">
+  <form method="post" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:20px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="field" style="margin:0">
+      <label>Logotip</label>
+      <div class="cs-logo-row">
+        <div class="cs-logo-preview" id="cs-logo-preview">
+          {% if brand.logo_url %}<img src="{{ brand.logo_url }}" alt="Logotip" id="cs-logo-img">{% else %}<span class="text-faint" id="cs-logo-empty">Logotip yuklanmagan</span><img alt="" id="cs-logo-img" hidden>{% endif %}
+        </div>
+        <div style="flex:1; min-width:0">
+          <input type="file" name="logo" id="cs-logo-input" accept="image/png,image/jpeg,image/webp" {{ 'disabled' if current_user.role != 'admin' }}>
+          <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">PNG (shaffof fon -- tavsiya etiladi), JPG yoki WEBP, 8 MB gacha. Yangi fayl eskisini almashtiradi.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ap-grid-2">
+      <div class="field" style="margin:0">
+        <label>Asosiy rang</label>
+        <div class="cs-color-row">
+          <input type="color" name="primary_color" id="cs-primary" value="{{ brand.primary_color or '#0B63F5' }}" {{ 'disabled' if current_user.role != 'admin' }}>
+          <input type="text" id="cs-primary-hex" value="{{ brand.primary_color or '' }}" placeholder="#RRGGBB" readonly>
+          {% if not brand.primary_color %}<span class="text-faint" style="font-size:12px">hali tanlanmagan</span>{% endif %}
+        </div>
+      </div>
+      <div class="field" style="margin:0">
+        <label>Ikkinchi rang</label>
+        <div class="cs-color-row">
+          <input type="color" name="secondary_color" id="cs-secondary" value="{{ brand.secondary_color or '#7C22F0' }}" {{ 'disabled' if current_user.role != 'admin' }}>
+          <input type="text" id="cs-secondary-hex" value="{{ brand.secondary_color or '' }}" placeholder="#RRGGBB" readonly>
+          {% if not brand.secondary_color %}<span class="text-faint" style="font-size:12px">hali tanlanmagan</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <p class="text-faint" style="font-size:12px; margin:-8px 0 0; line-height:1.45">Rang tanlagichda bir marta bosib tanlang -- saqlashda ikkala rang ham yoziladi. AI fon promptiga "brend rang aksentlari" sifatida qo'shiladi.</p>
+
+    {% if current_user.role == 'admin' %}
+    <div style="display:flex; gap:16px; align-items:center; margin-top:4px">
+      <button type="submit" class="btn">Saqlash</button>
+      <a href="{{ url_for('creative_list') }}" class="text-faint" style="font-size:13px">Kreativ studiyaga o'tish</a>
+    </div>
+    {% else %}
+    <div class="hint-box" style="margin:0">Brend kitni faqat admin o'zgartira oladi.</div>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+(function () {
+  var input = document.getElementById('cs-logo-input');
+  var img = document.getElementById('cs-logo-img');
+  var empty = document.getElementById('cs-logo-empty');
+  if (input && img) {
+    input.addEventListener('change', function () {
+      if (!input.files || !input.files[0]) { return; }
+      img.src = URL.createObjectURL(input.files[0]);
+      img.hidden = false;
+      if (empty) { empty.hidden = true; }
+    });
+  }
+  [['cs-primary', 'cs-primary-hex'], ['cs-secondary', 'cs-secondary-hex']].forEach(function (pair) {
+    var c = document.getElementById(pair[0]); var t = document.getElementById(pair[1]);
+    if (c && t) { c.addEventListener('input', function () { t.value = c.value.toUpperCase(); }); }
+  });
+})();
+</script>
+{% endblock %}

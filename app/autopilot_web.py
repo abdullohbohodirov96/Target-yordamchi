@@ -516,6 +516,34 @@ def media_patch_for_row(media_row, variant_index: "int | None" = None) -> dict:
     }}}
 
 
+def media_from_creative_asset(session, draft, creative_asset, manager_id: "int | None") -> "db.CampaignDraftMedia":
+    """2026-09, Kreativ studiya integratsiyasi: tayyor `CreativeAsset`ning
+    yakuniy PNG'ini (`creative_studio.asset_image_bytes`) qoralama mediasi
+    sifatida saqlaydi (`campaign_media.save_uploaded_media` -- oddiy
+    yuklash bilan bir xil yo'l), `creative_asset_id` bog'lanishini yozadi va
+    audit-jurnalga `media_selected` yozadi (commit qiladi). Meta'ga yuklash
+    va `ad.media` patch'i chaqiruvchida (`try_upload_to_meta` +
+    `apply_and_persist_patch`) -- xuddi qo'lda yuklashdagidek."""
+    import creative_studio
+    if creative_asset is None or creative_asset.company_id != draft.company_id:
+        raise campaign_media.MediaError("Kreativ topilmadi.")
+    if creative_asset.status != "ready" or not creative_asset.final_storage_path:
+        raise campaign_media.MediaError("Bu kreativ hali tayyor emas -- avval rasmni yaratib, saqlang.")
+    try:
+        data = creative_studio.asset_image_bytes(creative_asset)
+    except creative_studio.CreativeError as e:
+        raise campaign_media.MediaError(str(e)) from e
+    row = campaign_media.save_uploaded_media(
+        session, company_id=draft.company_id, draft_id=draft.id, file_storage_or_bytes=data,
+        filename=f"kreativ_{creative_asset.id}.png", content_type="image/png",
+    )
+    row.creative_asset_id = creative_asset.id
+    log_event(session, draft, actor="user", action="media_selected", scope="ad",
+              details={"media_id": row.id, "creative_asset_id": creative_asset.id, "source": "creative_studio"}, manager_id=manager_id)
+    session.commit()
+    return row
+
+
 def try_upload_to_meta(session, media_row, company) -> "str | None":
     """Yuklangan faylni Meta'ga yuborishga urinadi; xato bo'lsa xabar
     qaytaradi (sahifa yiqilmaydi -- foydalanuvchi keyin qayta urinadi)."""

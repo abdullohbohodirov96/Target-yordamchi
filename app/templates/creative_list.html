@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Kreativ studiya — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Kreativ studiya (AI rasm-generatsiya): kompaniyaning barcha
+   kreativlari -- kartochkalar grid (thumbnail + holat + sana). Yuqorida
+   "Yangi kreativ" (AI yoki shablon) va "Shablonlar" tugmalari, kvota
+   ko'rsatkichi. `?from_autopilot=<draft_id>` bilan ochilsa (Avtopilot media
+   bo'limidan kelingan) -- har bir TAYYOR kreativda "Bu reklamada ishlatish"
+   tugmasi chiqadi (POST /avtopilot/<id>/media/from-kreativ), so'ng
+   Avtopilotga qaytariladi. #}
+
+<div class="page-head">
+  <div>
+    <h1>Kreativ studiya</h1>
+    <p class="page-subtitle" style="margin-bottom:0">AI reklama rasmini kompaniyangiz haqidagi ma'lumotlardan yaratadi (yoki 20 ta tayyor shablondan boshlang), matn/logotipni brauzerda tahrirlaysiz, PNG/PDF yuklab olasiz yoki to'g'ridan-to'g'ri Avtopilotda ishlatasiz.</p>
+  </div>
+  <div class="page-head-actions">
+    {% if from_autopilot %}
+    <a href="{{ url_for('autopilot_review', draft_id=from_autopilot) }}" class="btn btn-outline">&larr; Avtopilotga qaytish</a>
+    {% endif %}
+    <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">Shablonlar</a>
+    <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      Yangi kreativ
+    </a>
+  </div>
+</div>
+
+{% if from_autopilot %}
+<div class="hint-box good" style="margin:0 0 16px">
+  Avtopilot qoralamasi #{{ from_autopilot }} uchun rasm tanlayapsiz{% if aspect %} (tavsiya etilgan nisbat: {{ aspect }}){% endif %}. Tayyor kreativda "Bu reklamada ishlatish" tugmasini bosing yoki yangisini yarating.
+</div>
+{% endif %}
+
+<div class="cs-quota-bar" id="cs-quota">
+  <span class="cs-quota-label">{{ quota.label }}</span>
+  {% if not quota.can_generate %}
+  <span class="text-faint" style="font-size:12px">AI generatsiya hozir yopiq -- shablondan boshlash bepul ishlaydi.</span>
+  <a href="{{ url_for('pricing') }}" class="ap-mini-btn primary" style="text-decoration:none">Tarifni oshiring</a>
+  {% endif %}
+  <a href="{{ url_for('settings_brand_kit') }}?next={{ url_for('creative_list') }}" class="ap-mini-btn" style="text-decoration:none;margin-left:auto">Brend kit (logo, ranglar)</a>
+</div>
+
+<div class="cs-app" id="cs-list" data-csrf="{{ csrf_token() }}" data-from-autopilot="{{ from_autopilot or '' }}" data-autopilot-url="{{ url_for('autopilot_review', draft_id=from_autopilot) if from_autopilot else '' }}">
+  {% if assets %}
+  <div class="cs-grid">
+    {% for a in assets %}
+    <div class="cs-card" data-asset-id="{{ a.id }}">
+      <a href="{{ url_for('creative_editor', asset_id=a.id) }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="cs-card-thumb cs-aspect-{{ a.aspect|replace(':', '-') }}">
+        {% if a.thumbnail_url %}
+        <img src="{{ a.thumbnail_url }}" alt="{{ a.title }}" loading="lazy">
+        {% else %}
+        <span class="cs-card-placeholder">
+          {% if a.status == 'collecting_brief' %}Savol-javob davom etmoqda{% elif a.status == 'generating' %}AI yaratmoqda…{% elif a.status == 'failed' %}Xato -- qayta urinib ko'ring{% else %}Rasm yo'q{% endif %}
+        </span>
+        {% endif %}
+      </a>
+      <div class="cs-card-body">
+        <div class="cs-card-title" title="{{ a.title }}">{{ a.title }}</div>
+        <div class="cs-card-meta">
+          <span class="badge badge-color-{{ a.status_color }}">{{ a.status_label }}</span>
+          <span class="badge badge-color-{{ 'blue' if a.kind == 'ai_generated' else 'dim' }}">{{ a.kind_label }}</span>
+          <span>{{ a.aspect }}</span>
+          {% if a.template_name %}<span title="Shablon">{{ a.template_name }}</span>{% endif %}
+          <span>{{ a.updated_at.strftime('%d.%m.%Y %H:%M') if a.updated_at else '—' }}</span>
+        </div>
+        <div class="cs-card-actions">
+          <a href="{{ url_for('creative_editor', asset_id=a.id) }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none">{{ 'Tahrirlash' if a.is_ready else 'Davom etish' }}</a>
+          {% if a.is_ready %}
+          <a href="{{ url_for('creative_export_png', asset_id=a.id) }}" class="ap-mini-btn" style="text-decoration:none">PNG</a>
+          {% if from_autopilot %}
+          <button type="button" class="ap-mini-btn primary cs-use-btn" data-asset-id="{{ a.id }}">Bu reklamada ishlatish</button>
+          {% endif %}
+          {% endif %}
+          <form method="post" action="{{ url_for('creative_delete', asset_id=a.id) }}" class="cs-inline-form" onsubmit="return confirm('Kreativni o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="ap-mini-btn danger">O'chirish</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card cs-empty">
+    <h2>Hali kreativ yo'q</h2>
+    <p class="page-subtitle" style="margin-bottom:14px">Ikki yo'l bor: <strong>AI bilan yaratish</strong> -- kompaniyangiz haqida 1-4 ta savolga javob berasiz, AI matnsiz fon rasmini yaratadi, sarlavha/chaqiriq/logotip ustiga aniq shrift bilan qo'yiladi. Yoki <strong>shablondan boshlash</strong> -- 20 ta tayyor dizayndan birini tanlab, o'z mahsulot fotosi va matningiz bilan moslashtirasiz (AI kvotasi sarflanmaydi).</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">✨ AI bilan yaratish</a>
+      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">🖼️ Shablonlarni ko'rish</a>
+    </div>
+  </div>
+  {% endif %}
+  <div id="cs-list-msg" class="ap-modal-msg" hidden></div>
+</div>
+
+<script src="{{ url_for('static', filename='creative_studio.js') }}?v={{ asset_v('creative_studio.js') }}"></script>
+{% endblock %}

@@ -18,7 +18,7 @@
    JS uni bitta `store`ga yozadi va hammasini qayta chizadi (bitta haqiqat
    manbai: forma ham, chat ham, tasdiqlar ham). #}
 
-<div class="ap-app" id="ap-app" data-csrf="{{ csrf_token() }}" data-is-admin="{{ '1' if current_user.role == 'admin' else '0' }}" data-connect-url="{{ url_for('connect_accounts') }}" data-list-url="{{ url_for('autopilot_list') }}" data-pricing-url="{{ url_for('pricing') }}">
+<div class="ap-app" id="ap-app" data-csrf="{{ csrf_token() }}" data-is-admin="{{ '1' if current_user.role == 'admin' else '0' }}" data-connect-url="{{ url_for('connect_accounts') }}" data-list-url="{{ url_for('autopilot_list') }}" data-pricing-url="{{ url_for('pricing') }}" data-creative-url="{{ url_for('creative_list') }}">
   <div class="ap-topbar" id="ap-topbar"></div>
   <div id="ap-banner"></div>
   <div id="ap-warnings"></div>

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.title }} — Kreativ studiya — Replix{% endblock %}
+{# Umumiy suzuvchi AI-yordamchi tugmasi muharrirning o'ng panelidagi
+   tugmalarni to'sib qo'ymasin (Avtopilot sahifasidagi kabi yashiriladi). #}
+{% block extra_head %}<style>#ai-assistant-root{display:none !important}</style>{% endblock %}
+{% block content %}
+
+{# 2026-09, Kreativ studiya -- ASOSIY sahifa (`autopilot_review.html`ga
+   o'xshash tuzilma): butun sahifa `static/creative_studio.js` (vanilla JS)
+   tomonidan `#cs-data` JSON'idan chiziladi. Holatga qarab:
+     - collecting_brief: savol-javob kartasi (bitta-bittadan, "Keyingisi",
+       oxirida "✨ Yaratish");
+     - generating: spinner (POST /generate sinxron -- JS javobni kutadi);
+     - ready: chapda <canvas> muharrir (matnsiz fon + qatlamlar JS
+       tomonidan chiziladi, sichqoncha bilan sudrash/o'lcham), o'ngda
+       tanlangan qatlam xususiyatlari + Saqlash / Qayta generatsiya /
+       PNG / PDF / Avtopilotda ishlatish;
+     - failed: xato matni + "Qayta urinish".
+   Server har javobda TO'LIQ yangilangan asset JSON'ini qaytaradi
+   (`creative_web.serialize_asset`), JS uni bitta `store`ga yozadi. #}
+
+<div class="cs-app" id="cs-app" data-csrf="{{ csrf_token() }}">
+  <div class="ap-topbar" id="cs-topbar"></div>
+  <div id="cs-banner"></div>
+  <div class="cs-layout" id="cs-layout">
+    <section class="panel cs-main" id="cs-main"></section>
+    <aside class="panel cs-side" id="cs-side" aria-label="Xususiyatlar"></aside>
+  </div>
+</div>
+
+<script id="cs-data" type="application/json">{{ asset_json|tojson }}</script>
+<script src="{{ url_for('static', filename='creative_studio.js') }}?v={{ asset_v('creative_studio.js') }}"></script>
+{% endblock %}

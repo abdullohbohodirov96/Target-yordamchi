@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Shablonlar — Kreativ studiya — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Kreativ studiya: 20 ta TAYYOR shablon (`creative_templates.py`,
+   preview -- `static/creative_templates/<key>.png`, Pillow bilan bir marta
+   chizilgan, tashqi so'rov yo'q). "Shundan boshlash" -> /kreativ/yangi
+   (template_key bilan) -- u yerda AI fon YOKI shablon foni + o'z mahsulot
+   fotosi tanlanadi. #}
+
+<div class="page-head">
+  <div>
+    <h1>Tayyor shablonlar</h1>
+    <p class="page-subtitle" style="margin-bottom:0">20 ta original dizayn -- shablonni tanlang, keyin AI fon yaratadi yoki o'z mahsulot fotongizni qo'yasiz; matn, logotip va ranglar avtomatik kompaniyangizga moslanadi, muharrirda hammasini o'zgartirish mumkin.</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('creative_list') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">&larr; Kreativlar</a>
+  </div>
+</div>
+
+<div class="cs-filter" id="cs-tpl-filter">
+  <button type="button" class="ap-mini-btn primary" data-cat="">Hammasi</button>
+  {% set _cat_labels = {'universal':'Universal','sale':'Aksiya','luxury':'Premium','tech':'Texnologiya','food':'Oziq-ovqat','real_estate':"Ko'chmas mulk",'fashion':'Moda','testimonial':'Ishonch','urgency':'Shoshilinch','features':'Xususiyatlar','launch':'Yangi mahsulot','seasonal':'Bayram','b2b':'B2B','beauty':"Go'zallik",'auto':'Avto','education':"Ta'lim",'collage':'Kollaj','story':'Story'} %}
+  {% for c in categories %}
+  <button type="button" class="ap-mini-btn" data-cat="{{ c }}">{{ _cat_labels.get(c, c) }}</button>
+  {% endfor %}
+</div>
+
+<div class="cs-tpl-grid" id="cs-tpl-grid">
+  {% for t in templates %}
+  <div class="cs-tpl-card" data-cat="{{ t.category }}">
+    <div class="cs-tpl-thumb cs-aspect-{{ t.aspect_default|replace(':', '-') }}">
+      <img src="{{ t.preview_url }}" alt="{{ t.name }}" loading="lazy">
+    </div>
+    <div class="cs-tpl-body">
+      <div class="cs-tpl-name">{{ t.name }} <span class="cs-tpl-aspect" title="{{ t.aspect_label }}">{{ t.aspect_default }}</span></div>
+      <div class="cs-tpl-desc">{{ t.description }}</div>
+      <form method="get" action="{{ url_for('creative_new') }}" class="cs-tpl-actions">
+        <input type="hidden" name="template_key" value="{{ t.key }}">
+        {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
+        <button type="submit" class="btn ap-btn-sm">Shundan boshlash</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+(function () {
+  var filter = document.getElementById('cs-tpl-filter');
+  if (!filter) { return; }
+  filter.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-cat]');
+    if (!b) { return; }
+    filter.querySelectorAll('button').forEach(function (x) { x.classList.remove('primary'); });
+    b.classList.add('primary');
+    var cat = b.dataset.cat;
+    document.querySelectorAll('#cs-tpl-grid .cs-tpl-card').forEach(function (card) {
+      card.hidden = !!cat && card.dataset.cat !== cat;
+    });
+  });
+})();
+</script>
+{% endblock %}

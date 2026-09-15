@@ -131,6 +131,9 @@
      Campaign -> Ad Set -> Ad rejasini tuzadi -- ikonka: raketa (avtomatik
      "uchirish" ma'nosida), boshqa bandlardan ataylab farqli. #}
   {% elif name == 'autopilot' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.7-.7-.7-2-.7-3 0z"/><path d="M12 15l-3-3 2.5-5.5A9 9 0 0121.5 2.5 9 9 0 0117.5 12.5L12 15z"/><path d="M9 12H4l2.5-3.5L9 9"/><path d="M12 15v5l3.5-2.5L15 15"/><circle cx="16" cy="8" r="1.5"/></svg>
+  {# 2026-09, Kreativ studiya (AI rasm-generatsiya) sidebar bandi -- ikonka:
+     palitra (dizayn/rang ma'nosida), Avtopilot raketasidan ataylab farqli. #}
+  {% elif name == 'creative' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18c1.2 0 2-.9 2-2 0-.6-.3-1-.6-1.4-.3-.4-.4-.8-.4-1.1 0-1 .8-1.8 1.8-1.8H17a4 4 0 004-4c0-4.4-4-7.7-9-7.7z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
   {% elif name == 'radar' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12L12 4.3"/><path d="M12 12l4.4 2.6"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="17.3" cy="7.2" r="1.1" fill="currentColor" stroke="none"/></svg>
   {% endif %}{% endmacro %}
 
@@ -174,6 +177,7 @@
       {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _autopilot_eps = ['autopilot_list', 'autopilot_new', 'autopilot_review', 'autopilot_import'] %}
+      {% set _creative_eps = ['creative_list', 'creative_templates_gallery', 'creative_new', 'creative_editor'] %}
       {% set _lead_analytics_eps = ['lead_analytics_page'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
       {% set _competitors_eps = ['competitors_settings', 'competitor_detail'] %}
@@ -242,6 +246,14 @@
       {% if has_module(current_user, 'target') %}
       <a href="{{ url_for('autopilot_list') }}" class="nav-item {{ 'active' if request.endpoint in _autopilot_eps }}" data-tooltip="Avtopilot (Meta Ads)" aria-label="Avtopilot">
         <span class="nav-icon">{{ navicon('autopilot') }}</span><span class="nav-text">Avtopilot</span>
+      </a>
+      {% endif %}
+      {# 2026-09, Kreativ studiya (foydalanuvchi so'rovi: "AI reklama rasmini
+         yaratsin, shablonlar, brauzerda tahrirlash, PNG/PDF, Avtopilotda
+         ishlatish") -- Avtopilot kabi 'target' moduliga bog'liq. #}
+      {% if has_module(current_user, 'target') %}
+      <a href="{{ url_for('creative_list') }}" class="nav-item {{ 'active' if request.endpoint in _creative_eps }}" data-tooltip="Kreativ studiya (AI rasm)" aria-label="Kreativ studiya">
+        <span class="nav-icon">{{ navicon('creative') }}</span><span class="nav-text">Kreativ studiya</span>
       </a>
       {% endif %}
       {# 2026-09, foydalanuvchi so'rovi ("lead analyticsni alohida bo'lim

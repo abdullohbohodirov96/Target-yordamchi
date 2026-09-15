@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Yangi kreativ — Kreativ studiya — Replix{% endblock %}
+{% block content %}
+
+{# 2026-09, Kreativ studiya: boshlash sahifasi -- ikkita katta karta.
+   (1) "AI bilan yaratish": brif savol-javobidan boshlab OpenAI fon + matn
+       qatlamlari (kvota sarflanadi; shablon oldindan tanlangan bo'lsa uning
+       uslubi/qatlamlari ishlatiladi).
+   (2) "Shablondan boshlash": OpenAI'SIZ, shablon foni (yoki o'z mahsulot
+       fotosi) + kompaniya profilidan matnlar -- darhol tayyor, kvota
+       sarflanmaydi. Shablon tanlanmagan bo'lsa galereyaga havola. #}
+
+<div class="page-head">
+  <div>
+    <h1>Yangi kreativ</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{% if template %}Tanlangan shablon: <strong>{{ template.name }}</strong> -- {{ template.description }}{% else %}Qaysi yo'ldan boshlaymiz?{% endif %}</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('creative_list') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">&larr; Kreativlar</a>
+  </div>
+</div>
+
+<div class="cs-quota-bar">
+  <span class="cs-quota-label">{{ quota.label }}</span>
+  {% if not quota.can_generate %}<a href="{{ url_for('pricing') }}" class="ap-mini-btn primary" style="text-decoration:none">Tarifni oshiring</a>{% endif %}
+</div>
+
+<div class="cs-start-grid">
+  <form method="post" class="card cs-start-card" id="cs-start-ai">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="mode" value="ai">
+    {% if template %}<input type="hidden" name="template_key" value="{{ template.key }}">{% endif %}
+    {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
+    <div class="cs-start-icon">✨</div>
+    <h2>AI bilan yaratish</h2>
+    <p class="text-dim">AI kompaniyangiz haqidagi ma'lumotlardan (biznes profili{% if template %} + "{{ template.name }}" uslubi{% endif %}) foydalanadi. Ma'lumot yetmasa avval 1-4 ta savol so'raydi, keyin matnsiz fon rasmini yaratadi; sarlavha, chaqiriq va logotip ustiga aniq shrift bilan qo'yiladi.</p>
+    <div class="field" style="margin:0">
+      <label>Rasm nisbati</label>
+      <select name="aspect">
+        {% for key, label in aspects.items() %}
+        <option value="{{ key }}" {{ 'selected' if (template and template.aspect_default == key) or (not template and key == '1:1') }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if not quota.can_generate %}
+    <div class="ap-modal-msg warn" style="margin:0">{{ quota.label }}. AI generatsiya uchun <a href="{{ url_for('pricing') }}">tarifni oshiring</a> -- yoki o'ngdagi shablon yo'lidan foydalaning.</div>
+    {% endif %}
+    <div class="cs-start-actions">
+      <button type="submit" class="btn ap-btn-ai" {{ 'disabled' if not quota.can_generate }}>✨ Boshlash (savol-javob)</button>
+      <span class="text-faint" style="font-size:12px">1 ta AI generatsiya sarflanadi</span>
+    </div>
+  </form>
+
+  <form method="post" enctype="multipart/form-data" class="card cs-start-card" id="cs-start-tpl">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="mode" value="template">
+    {% if template %}<input type="hidden" name="template_key" value="{{ template.key }}">{% endif %}
+    {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
+    <div class="cs-start-icon">🖼️</div>
+    <h2>Shablondan boshlash</h2>
+    {% if template %}
+    <div class="cs-start-preview cs-aspect-{{ template.aspect_default|replace(':', '-') }}">
+      <img src="{{ url_for('static', filename='creative_templates/' ~ template.key ~ '.png') }}" alt="{{ template.name }}">
+    </div>
+    <p class="text-dim">AI kvotasi sarflanmaydi: shablon foni (yoki o'z mahsulot fotongiz) + kompaniya profilidan olingan matnlar bilan rasm DARHOL tayyor bo'ladi. Keyin muharrirda matn/logotipni o'zgartirasiz; xohlasangiz AI fon ham qo'shasiz.</p>
+    <div class="field" style="margin:0">
+      <label>Mahsulot fotosi (ixtiyoriy, JPG/PNG/WEBP 30 MB gacha)</label>
+      <input type="file" name="product_image" accept="image/*">
+      <p class="text-faint" style="font-size:12px; margin:6px 0 0">Berilmasa shablonning o'z rangli foni ishlatiladi.</p>
+    </div>
+    <div class="field" style="margin:0">
+      <label>Rasm nisbati</label>
+      <select name="aspect">
+        {% for key, label in aspects.items() %}
+        <option value="{{ key }}" {{ 'selected' if template.aspect_default == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="cs-start-actions">
+      <button type="submit" class="btn">Shablondan yaratish</button>
+      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="text-faint" style="font-size:12.5px">Boshqa shablon tanlash</a>
+    </div>
+    {% else %}
+    <p class="text-dim">20 ta tayyor dizayn (aksiya, premium, oziq-ovqat, ko'chmas mulk, Story va h.k.) -- shablonni tanlang, o'z mahsulot fotongiz va matningiz bilan moslang. AI kvotasi sarflanmaydi.</p>
+    <div class="cs-start-actions">
+      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">Shablonlar galereyasi &rarr;</a>
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

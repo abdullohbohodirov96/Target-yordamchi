@@ -30,6 +30,10 @@
   var CONNECT_URL = root.dataset.connectUrl;
   var PRICING_URL = root.dataset.pricingUrl;
   var LIST_URL = root.dataset.listUrl;
+  // 2026-09, Kreativ studiya: media bo'limidagi "Kreativ studiyadan tanlash"
+  // havolasi (galereya `?from_autopilot=<id>` bilan ochiladi, tanlangan rasm
+  // `POST /avtopilot/<id>/media/from-kreativ` orqali qaytadi).
+  var CREATIVE_URL = root.dataset.creativeUrl;
 
   var store = {
     draft: JSON.parse(document.getElementById('ap-data').textContent),
@@ -779,6 +783,16 @@
   }
 
   // ---- Media
+  function currentAspect() {
+    // Kreativ studiya uchun tavsiya etilgan nisbat: faqat Story/Reels
+    // joylashuvlari tanlangan bo'lsa 9:16, aks holda 1:1 (lenta).
+    var pl = ((state().adset || {}).targeting || {}).placements || {};
+    if (pl.mode === 'manual') {
+      var pos = (pl.facebook_positions || []).concat(pl.instagram_positions || []);
+      if (pos.length && pos.every(function (p) { return p === 'story' || p === 'reels'; })) { return '9:16'; }
+    }
+    return '1:1';
+  }
   function renderMediaSection() {
     var d = store.draft;
     var media = d.media || [];
@@ -813,6 +827,13 @@
       add.appendChild(input);
       add.appendChild(h('span', { text: 'Yuklash' }));
       grid.appendChild(add);
+      if (CREATIVE_URL) {
+        // Kreativ studiya galereyasi -- tayyor AI rasmni shu qoralamaga tanlash
+        var fromCs = h('a', { class: 'ap-media-item ap-media-add ap-media-creative', href: CREATIVE_URL + '?from_autopilot=' + d.id + '&aspect=' + encodeURIComponent(currentAspect()), title: 'AI yaratgan yoki shablondan tayyorlangan rasmni tanlash' }, [
+          h('span', { class: 'ap-media-creative-icon', text: '🎨' }), h('span', { text: 'Kreativ studiyadan tanlash' })
+        ]);
+        grid.appendChild(fromCs);
+      }
     }
     var selected = media.filter(function (m) { return m.selected; })[0];
     sec.appendChild(fieldWrap('ad.media', 'Reklama vizuali', grid, { hint: selected ? 'Tanlangan: ' + (selected.index + 1) + '-media (' + selected.filename + '). Chatda "2-rasmni tanla" deb ham yozsangiz bo\'ladi.' : 'Rasm yoki video yuklang -- AI rasm yaratmaydi. JPG/PNG/WEBP 30 MB, MP4/MOV 50 MB gacha.' }));

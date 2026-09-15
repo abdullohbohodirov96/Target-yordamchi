@@ -68,6 +68,11 @@ import ai_campaign_planner
 import campaign_media
 import meta_publish
 import autopilot_web
+# 2026-09, Kreativ studiya (AI rasm-generatsiya): OpenAI fon + Pillow
+# matn/logo qatlamlari, 20 ta shablon, PNG/PDF eksport, Autopilot mediasi.
+import creative_studio
+import creative_templates
+import creative_web
 from phone_utils import phone_key9
 
 logging.basicConfig(level=logging.INFO)
@@ -7557,6 +7562,53 @@ def autopilot_media_select(draft_id: int, media_id: int):
         session.close()
 
 
+@app.route("/avtopilot/<int:draft_id>/media/from-kreativ", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_media_from_creative(draft_id: int):
+    """2026-09, Kreativ studiya: tayyor kreativni (JSON {"creative_asset_id"})
+    shu qoralama mediasi qilib qo'shadi va `ad.media`ga tanlaydi -- xuddi
+    qo'lda yuklash + tanlash kabi (Meta'ga yuklash urinib ko'riladi)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    body = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        try:
+            asset_id = int(body.get("creative_asset_id"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Kreativ tanlanmagan."}), 400
+        asset = session.get(db.CreativeAsset, asset_id)
+        if asset is None or asset.company_id != company.id:
+            return jsonify({"error": "Kreativ topilmadi."}), 404
+        assets = autopilot_web.safe_meta_assets(company)
+        try:
+            row = autopilot_web.media_from_creative_asset(session, draft, asset, _autopilot_manager_id())
+        except campaign_media.MediaError as e:
+            return jsonify({"error": str(e)}), 400
+        upload_err = autopilot_web.try_upload_to_meta(session, row, company)
+        existing = autopilot_web.media_for_draft(session, draft)
+        idx = next((m["index"] for m in existing if m["id"] == row.id), None)
+        try:
+            autopilot_web.apply_and_persist_patch(
+                session, draft, autopilot_web.media_patch_for_row(row, idx), source="USER_OVERRIDDEN",
+                manager_id=_autopilot_manager_id(), actor="user", action="media_selected",
+                details={"media_id": row.id, "creative_asset_id": asset.id, "upload_error": upload_err}, company=company, assets=assets,
+            )
+        except campaign_draft.DraftPatchError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"ok": True, "media_id": row.id, "upload_error": upload_err, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "media-from-kreativ")
+    finally:
+        session.close()
+
+
 @app.route("/avtopilot/media/<int:media_id>")
 @login_required
 @module_required("target")
@@ -7812,6 +7864,377 @@ def autopilot_search_interests():
     except Exception as e:  # noqa: BLE001
         return jsonify({"results": [], "error": meta_api.safe_error_message(e)})
     return jsonify({"results": hits})
+
+
+# ---------------------------------------------------------------------------
+# Kreativ studiya (2026-09, foydalanuvchi so'rovi: "Autopilot'da rasmni
+# foydalanuvchi qo'lda yuklaydi -- endi AI (OpenAI) orqali to'liq reklama
+# rasmi yaratilsin: avval kompaniya haqida savol-javob (ma'lumot yetmasa),
+# keyin generatsiya; 20 ta tayyor shablon; brauzerda tahrirlash (matn/logo
+# pozitsiyasi); PNG/PDF yuklab olish; tayyor rasmni Avtopilot media
+# bosqichida tanlash").
+#
+# Oqim: /kreativ (galereya) -> /kreativ/yangi (AI yoki shablon) ->
+# /kreativ/<id> (holatga qarab: savol-javob / muharrir) -> POST brief /
+# generate / layers -> eksport yoki Avtopilotga tanlash
+# (POST /avtopilot/<draft_id>/media/from-kreativ, yuqorida).
+#
+# Qoidalar (Avtopilot bilan bir xil): server HAR javobda TO'LIQ yangilangan
+# asset JSON'ini qaytaradi (`creative_web.serialize_asset`), JS uni bitta
+# `store`ga yozib hammasini qayta chizadi; xatolar o'zbekcha JSON
+# {"error": ...} (kvota tugasa `quota_exceeded: True`); boshqa kompaniya
+# kreativi -- 404; ruxsat -- 'target' moduli (Avtopilot kabi), yozish
+# amallari uchun qo'shimcha admin talab qilinmaydi (menejer ham rasm
+# yaratadi). Brend kit (logo/ranglar) -- Sozlamalar > Brend, faqat admin
+# o'zgartiradi. Katta yordamchilar `creative_web.py`/`creative_studio.py`da.
+# ---------------------------------------------------------------------------
+
+def _creative_load_asset(session, asset_id: int, company):
+    """Kreativni yuklaydi -- tenant-filtr avtomatik (`_COMPANY_SCOPED_MODELS`),
+    ustiga yana `company_id` tekshiruvi; topilmasa 404 (xuddi `_autopilot_load_draft`)."""
+    asset = session.get(db.CreativeAsset, asset_id)
+    if asset is None or company is None or asset.company_id != company.id:
+        abort(404)
+    return asset
+
+
+def _creative_urls(asset, from_autopilot: "str | None") -> dict:
+    urls = {
+        "base": url_for("creative_editor", asset_id=asset.id),
+        "image": url_for("creative_image_file", asset_id=asset.id),
+        "base_image": url_for("creative_base_image_file", asset_id=asset.id),
+        "export_png": url_for("creative_export_png", asset_id=asset.id),
+        "export_pdf": url_for("creative_export_pdf", asset_id=asset.id),
+        "list": url_for("creative_list"), "templates": url_for("creative_templates_gallery"), "new": url_for("creative_new"),
+        "brand_settings": url_for("settings_brand_kit"), "brand_logo": url_for("brand_logo_file"), "pricing": url_for("pricing"),
+    }
+    if from_autopilot and str(from_autopilot).isdigit():
+        urls["from_autopilot_draft_id"] = int(from_autopilot)
+        urls["autopilot"] = url_for("autopilot_review", draft_id=int(from_autopilot))
+    return urls
+
+
+def _creative_payload(session, asset, company) -> dict:
+    ctx = company_context_module.build_company_context(company, session)
+    return creative_web.serialize_asset(
+        asset, creative_studio.get_brand_kit(session, company.id), creative_web.quota_info(session, company),
+        ctx=ctx, urls=_creative_urls(asset, request.args.get("from_autopilot")),
+    )
+
+
+def _creative_error(e: Exception, session=None, asset=None, company=None):
+    """`CreativeError` -> 400 JSON (o'zbekcha) + TO'LIQ yangilangan asset
+    (holat 'failed'ga o'tgan bo'lishi mumkin -- JS buni ko'rsatadi)."""
+    payload, code = creative_web.error_payload(e)
+    if session is not None and asset is not None and company is not None:
+        try:
+            payload["asset"] = _creative_payload(session, asset, company)
+        except Exception:  # noqa: BLE001 -- xato javobini yana bir xato buzmasin
+            logger.exception("Kreativ studiya: xato javobida asset serializatsiyasi yiqildi")
+    return jsonify(payload), code
+
+
+@app.route("/kreativ")
+@login_required
+@module_required("target")
+def creative_list():
+    company = _current_company()
+    session = get_session()
+    try:
+        assets = creative_web.list_assets_for_company(session, company.id, lambda aid: url_for("creative_image_file", asset_id=aid)) if company else []
+        quota = creative_web.quota_info(session, company) if company else {}
+        from_autopilot = request.args.get("from_autopilot")
+        draft_id = int(from_autopilot) if from_autopilot and from_autopilot.isdigit() else None
+        return render_template("creative_list.html", assets=assets, quota=quota, from_autopilot=draft_id,
+                               aspect=request.args.get("aspect") or "")
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/shablonlar")
+@login_required
+@module_required("target")
+def creative_templates_gallery():
+    cards = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"))
+    return render_template("creative_templates_gallery.html", templates=cards, categories=creative_templates.TEMPLATE_CATEGORIES,
+                           from_autopilot=request.args.get("from_autopilot") or "")
+
+
+@app.route("/kreativ/yangi", methods=["GET", "POST"])
+@login_required
+@module_required("target")
+def creative_new():
+    """Boshlash: "AI bilan yaratish" (brifdan boshlab, `create_draft_asset`)
+    YOKI "Shablondan boshlash" (`create_from_template`, OpenAI'siz --
+    ixtiyoriy mahsulot fotosi bilan). POST -> yangi asset -> /kreativ/<id>."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    template_key = (request.values.get("template_key") or "").strip()
+    template = creative_templates.get_template(template_key) if template_key else None
+    from_autopilot = (request.values.get("from_autopilot") or "").strip()
+    session = get_session()
+    try:
+        quota = creative_web.quota_info(session, company)
+        if request.method == "POST":
+            mode = (request.form.get("mode") or "ai").strip()
+            aspect = (request.form.get("aspect") or "").strip()
+            try:
+                if template_key and template is None:
+                    raise creative_studio.CreativeError("Bunday shablon topilmadi.")
+                if mode == "template":
+                    if template is None:
+                        raise creative_studio.CreativeError("Shablon tanlanmagan.")
+                    f = request.files.get("product_image")
+                    product_bytes = f.read() if (f is not None and f.filename) else None
+                    asset = creative_studio.create_from_template(session, company, _autopilot_manager_id(), template["key"],
+                                                                 product_image_bytes=product_bytes, aspect=aspect or None)
+                    flash("Shablondan rasm tayyor -- matn va logotip joylashuvini muharrirda o'zgartiring.", "success")
+                else:
+                    asset = creative_studio.create_draft_asset(session, company, _autopilot_manager_id(),
+                                                               template_key=template["key"] if template else None, aspect=aspect or "1:1")
+            except creative_studio.CreativeError as e:
+                flash(str(e), "error")
+                return render_template("creative_new.html", template=template, quota=quota, from_autopilot=from_autopilot,
+                                       aspects=creative_web.ASPECT_LABELS), 400
+            target = url_for("creative_editor", asset_id=asset.id)
+            if from_autopilot.isdigit():
+                target += f"?from_autopilot={from_autopilot}"
+            return redirect(target)
+        return render_template("creative_new.html", template=template, quota=quota, from_autopilot=from_autopilot,
+                               aspects=creative_web.ASPECT_LABELS)
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>")
+@login_required
+@module_required("target")
+def creative_editor(asset_id: int):
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        payload = _creative_payload(session, asset, company)
+        return render_template("creative_editor.html", asset_json=payload, asset=payload)
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>/brief", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_brief_answer(asset_id: int):
+    """Bitta brif savoliga javob: JSON {"key": ..., "value": ...} (bo'sh
+    javob = ixtiyoriy savol o'tkazib yuborildi)."""
+    company = _current_company()
+    body = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        try:
+            creative_studio.submit_brief_answer(session, asset, str(body.get("key") or ""), str(body.get("value") or ""))
+        except creative_studio.CreativeError as e:
+            return _creative_error(e, session, asset, company)
+        return jsonify({"ok": True, "asset": _creative_payload(session, asset, company)})
+    finally:
+        session.close()
+
+
+def _creative_run_generation(asset_id: int, fn):
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        try:
+            fn(session, asset, company, plans.get_plan(company.plan))
+        except creative_studio.CreativeError as e:
+            return _creative_error(e, session, asset, company)
+        except Exception as e:  # noqa: BLE001 -- friendly 500 (xom matn/token yo'q)
+            logger.exception("Kreativ studiya: generatsiya kutilmagan xato (asset=%s)", asset_id)
+            return _creative_error(e, session, asset, company)
+        return jsonify({"ok": True, "asset": _creative_payload(session, asset, company)})
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>/generate", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_generate(asset_id: int):
+    """`generate_base_image` -- SINXRON (bir chaqiruvda tugaydi, JS kutadi).
+    Brif to'liq bo'lmasa / kvota tugagan bo'lsa friendly 400."""
+    return _creative_run_generation(asset_id, creative_studio.generate_base_image)
+
+
+@app.route("/kreativ/<int:asset_id>/regenerate", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_regenerate(asset_id: int):
+    """Yangi fon (kvota YANA sarflanadi), tahrirlangan qatlamlar saqlanadi."""
+    return _creative_run_generation(asset_id, creative_studio.regenerate_base_image)
+
+
+@app.route("/kreativ/<int:asset_id>/layers", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_save_layers(asset_id: int):
+    """JSON {"layers": [...]} -> tekshirib saqlaydi va server QAYTA chizadi
+    (OpenAI chaqirilmaydi, kvota sarflanmaydi)."""
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        try:
+            layers = creative_web.parse_layers_body(request.get_json(silent=True))
+            creative_studio.set_layers(session, asset, layers)
+        except creative_studio.CreativeError as e:
+            return _creative_error(e, session, asset, company)
+        return jsonify({"ok": True, "asset": _creative_payload(session, asset, company)})
+    finally:
+        session.close()
+
+
+def _creative_send_png(asset_id: int, *, base: bool = False, download: bool = False):
+    from flask import send_file
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        if base:
+            if not asset.base_image_storage_path:
+                abort(404)
+            path = creative_studio.CREATIVE_ROOT / asset.base_image_storage_path
+            if not path.exists():
+                abort(404)
+        else:
+            try:
+                path = creative_studio.export_png_path(asset)
+            except creative_studio.CreativeError:
+                abort(404)
+        name = f"replix_kreativ_{asset.id}.png"
+        # Rasm saqlashda o'zgaradi -- URL'da `?v=` kesh-buster bor, shuning
+        # uchun qisqa muddatli kesh xavfsiz (`conditional` ETag/Last-Modified bilan).
+        return send_file(str(path), mimetype="image/png", as_attachment=download, download_name=name if download else None,
+                         max_age=300, conditional=True)
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>/rasm.png")
+@login_required
+@module_required("target")
+def creative_image_file(asset_id: int):
+    """Yakuniy rasm (<img src> uchun)."""
+    return _creative_send_png(asset_id)
+
+
+@app.route("/kreativ/<int:asset_id>/fon.png")
+@login_required
+@module_required("target")
+def creative_base_image_file(asset_id: int):
+    """Matnsiz fon (muharrir canvas'i qatlamlarni shu ustiga o'zi chizadi)."""
+    return _creative_send_png(asset_id, base=True)
+
+
+@app.route("/kreativ/<int:asset_id>/eksport.png")
+@login_required
+@module_required("target")
+def creative_export_png(asset_id: int):
+    return _creative_send_png(asset_id, download=True)
+
+
+@app.route("/kreativ/<int:asset_id>/eksport.pdf")
+@login_required
+@module_required("target")
+def creative_export_pdf(asset_id: int):
+    from flask import send_file
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        try:
+            out = creative_studio.CREATIVE_ROOT / str(asset.company_id) / str(asset.id) / "export.pdf"
+            creative_studio.export_pdf(asset, out)
+        except creative_studio.CreativeError as e:
+            flash(str(e), "error")
+            return redirect(url_for("creative_editor", asset_id=asset.id))
+        return send_file(str(out), mimetype="application/pdf", as_attachment=True, download_name=f"replix_kreativ_{asset.id}.pdf", max_age=0)
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>/ochirish", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_delete(asset_id: int):
+    company = _current_company()
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        creative_studio.delete_asset(session, asset)
+        if request.is_json:
+            return jsonify({"ok": True})
+        flash("Kreativ o'chirildi.", "success")
+        return redirect(url_for("creative_list"))
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/brend", methods=["GET", "POST"])
+@login_required
+@module_required("target")
+def settings_brand_kit():
+    """Brend kit: logotip (PNG/JPG/WEBP, 8 MB) + ikkita rang. Ko'rish --
+    'target' modulidagi har kim (muharrirdan havola bor), o'zgartirish --
+    faqat admin (xuddi kompaniya ma'lumotlari kabi)."""
+    company = _current_company()
+    if company is None:
+        flash("Kompaniya topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    session = get_session()
+    try:
+        if request.method == "POST":
+            if current_user.role != "admin":
+                flash("Brend kitni faqat admin o'zgartira oladi.", "error")
+                return redirect(url_for("settings_brand_kit"))
+            try:
+                f = request.files.get("logo")
+                if f is not None and f.filename:
+                    creative_studio.save_brand_logo(session, company.id, f, f.filename, f.content_type)
+                creative_studio.save_brand_colors(session, company.id, request.form.get("primary_color"), request.form.get("secondary_color"))
+                flash("Brend kit saqlandi.", "success")
+            except creative_studio.CreativeError as e:
+                flash(str(e), "error")
+            return redirect(url_for("settings_brand_kit"))
+        kit = creative_studio.get_brand_kit(session, company.id)
+        brand = creative_web.brand_info(kit, url_for("brand_logo_file"))
+        if brand["logo_url"] and kit is not None and kit.updated_at:
+            brand["logo_url"] += f"?v={int(kit.updated_at.timestamp())}"
+        nxt = (request.args.get("next") or "").strip()
+        back_url = nxt if (nxt.startswith("/") and not nxt.startswith("//")) else url_for("settings_hub")
+        return render_template("brand_kit_form.html", brand=brand, back_url=back_url)
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/brend/logo")
+@login_required
+@module_required("target")
+def brand_logo_file():
+    """Kompaniya logotipi (faqat o'ziniki) -- forma preview + canvas uchun."""
+    from flask import send_file
+    company = _current_company()
+    session = get_session()
+    try:
+        kit = creative_studio.get_brand_kit(session, company.id) if company else None
+        path = creative_studio.brand_logo_file_path(kit)
+        if not path or not path.exists():
+            abort(404)
+        return send_file(str(path), mimetype=kit.logo_content_type or "image/png", max_age=300, conditional=True)
+    finally:
+        session.close()
 
 
 # ---------------------------------------------------------------------------
