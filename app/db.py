@@ -240,6 +240,20 @@ class Company(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     # ---------------------------------------------------------------------
+    # 2026-09, foydalanuvchi so'rovi ("registratsiya bo'limida va
+    # nastroykada... kompaniya haqida ma'lumotlarni qo'shish mumkin bo'lsin
+    # keyinchalik to'liq tahlil uchun... drop down... kamida beshta savol...
+    # AI to'liq tushunib olish uchun"): kompaniyaning O'Z biznes profili --
+    # Targetolog/Marketolog agent (`orchestrator.py`) VA web/Telegram
+    # AI-yordamchisi (`app.py`) HAR DOIM shu ma'lumotdan foydalanadi
+    # (qarang: `business_profile.py`). Ro'yxatdan o'tishda (`/signup`) HAM,
+    # Sozlamalar -> Umumiy'da HAM to'ldirish/tahrirlash mumkin -- ikkalasi
+    # ham ATAYLAB IXTIYORIY (bo'sh -- AI profilsiz, oddiy ishlayveradi).
+    business_category = Column(String(64), nullable=True)  # dropdown kaliti -- qarang business_profile.BUSINESS_CATEGORIES
+    business_category_note = Column(Text, nullable=True)  # tanlangan yo'nalish bo'yicha erkin izoh
+    business_profile_answers = Column(Text, nullable=True)  # JSON: {savol_key: javob} -- qarang business_profile.BUSINESS_PROFILE_QUESTIONS
+
+    # ---------------------------------------------------------------------
     # 2026-09, foydalanuvchi so'rovi ("tolov avtomatik otishi uchun ...
     # tekshirib boladigan qilish"): Payme SUBSCRIBE API orqali oylik obuna
     # to'lovini kartadan AVTOMATIK yechib olish. Xom karta raqami HECH

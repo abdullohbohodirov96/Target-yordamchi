@@ -36,6 +36,7 @@ import monthly_report
 import db
 import dashboard_data
 import tz_utils
+import business_profile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
@@ -2027,8 +2028,18 @@ def run_analysis_cycle_with_stats(dry_run: bool = False, chat_id: int | None = N
     access_token = company.get_meta_access_token() if company else None
     ad_account_id = getattr(company, "meta_ad_account_id", None) if company else None
     page_id = getattr(company, "meta_page_id", None) if company else None
+    # 2026-09, foydalanuvchi so'rovi ("kompaniya haqida ma'lumotlarni
+    # qo'shish mumkin bo'lsin keyinchalik to'liq tahlil uchun... AI va shu
+    # bo'yicha javob bersin har doim"): admin to'ldirgan biznes profili
+    # (nima sotiladi, kimga, narx oralig'i va h.k.) bo'lsa -- HAR BIR
+    # tahlil siklida Targetologga ham beriladi, shunda taklif qilinadigan
+    # byudjet/auditoriya/kreativ o'zgarishlari kompaniyaning HAQIQIY
+    # biznesiga mos keladi (profil bo'sh bo'lsa -- hech narsa qo'shilmaydi,
+    # eski xatti-harakat o'zgarmaydi).
+    profile_block = business_profile.business_profile_summary_text(company)
+    profile_prefix = f"{profile_block}\n\n---\n\n" if profile_block else ""
     return _run_pipeline(
-        f"Quyidagi ma'lumotlar asosida to'liq hisobni tahlil qilib action_plan tuzing:\n\n{data_json}",
+        f"{profile_prefix}Quyidagi ma'lumotlar asosida to'liq hisobni tahlil qilib action_plan tuzing:\n\n{data_json}",
         dry_run=dry_run,
         chat_id=chat_id,
         access_token=access_token, ad_account_id=ad_account_id, page_id=page_id,

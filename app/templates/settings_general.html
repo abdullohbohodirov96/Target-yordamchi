@@ -45,6 +45,41 @@
 </div>
 
 <div class="card" style="margin-top:18px">
+  <div style="margin-bottom:12px">
+    <strong>Kompaniya biznes profili</strong>
+    <p class="text-faint" style="font-size:12.5px; margin:4px 0 0">
+      Bu ma'lumotlar AI-yordamchi va Targetolog agentiga kompaniyangizni chuqurroq tushunib,
+      aniqroq tahlil va maslahat berishga yordam beradi. To'liq ixtiyoriy -- to'ldirmasangiz
+      ham platforma odatdagidek ishlayveradi.
+    </p>
+  </div>
+  <form method="post" style="display:flex; flex-direction:column; gap:14px; max-width:560px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="set_business_profile">
+    <div class="field" style="margin:0">
+      <label>Biznes yo'nalishi</label>
+      <select name="business_category">
+        <option value="">— tanlang —</option>
+        {% for key, label in business_categories %}
+        <option value="{{ key }}" {{ 'selected' if business_category == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" style="margin:0">
+      <label>Qo'shimcha izoh (ixtiyoriy)</label>
+      <input type="text" name="business_category_note" value="{{ business_category_note or '' }}" placeholder="Masalan: aniq nima sotasiz yoki qanday xizmat turi">
+    </div>
+    {% for key, label, placeholder in business_questions %}
+    <div class="field" style="margin:0">
+      <label>{{ label }}</label>
+      <input type="text" name="bp_{{ key }}" value="{{ business_profile_answers.get(key, '') }}" placeholder="{{ placeholder }}">
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn" style="align-self:flex-start">Saqlash</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:18px">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px">
     <strong>Mening qo'ng'iroqlarim (Moi Zvonki)</strong>
     {% if moizvonki_configured %}

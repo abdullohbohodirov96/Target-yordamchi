@@ -38,6 +38,7 @@ import kv_store
 import monthly_report
 import permissions
 import plans
+import business_profile
 import lang as lang_module
 import tz_utils
 import db
@@ -202,8 +203,17 @@ Agar pastdagi BILIM BAZASI'da so'ralgan savolga ANIQ javob TOPILMASA:
 Agar bilim bazasida yoki suhbat tarixida javob aniq bo'lsa -- oddiygina, ishonchli javob ber, [[UNANSWERED]] belgisini HECH QACHON qo'shma."""
 
 
-def _web_assistant_system_prompt() -> str:
-    return f"{WEB_ASSISTANT_PERSONA}\n\n---\n\n# BILIM BAZASI\n\n{KNOWLEDGE_BASE}"
+def _web_assistant_system_prompt(company=None) -> str:
+    """2026-09, foydalanuvchi so'rovi ("kompaniya haqida ma'lumotlarni...
+    AI va shu bo'yicha javob bersin har doim"): `company` berilsa (admin
+    Sozlamalar/ro'yxatdan o'tishda to'ldirgan bo'lsa), uning biznes profili
+    (`business_profile.py`) promptga QO'SHIMCHA bo'lim sifatida qo'shiladi
+    -- shu orqali yordamchi savolga javob berganda kompaniya nima sotishini,
+    kimga sotishini va h.k.ni hisobga oladi. Profil bo'sh bo'lsa -- hech
+    narsa qo'shilmaydi, xatti-harakat avvalgidek."""
+    profile_block = business_profile.business_profile_summary_text(company)
+    extra = f"\n\n---\n\n{profile_block}" if profile_block else ""
+    return f"{WEB_ASSISTANT_PERSONA}\n\n---\n\n# BILIM BAZASI\n\n{KNOWLEDGE_BASE}{extra}"
 
 
 def _log_unanswered_question(session, manager_name: str | None, question: str) -> None:
@@ -899,7 +909,7 @@ def _handle_company_free_text(chat_id: int, company: Company, user_text: str) ->
     try:
         snapshot = _company_ai_snapshot(company.id)
         prompt = (
-            f"{_web_assistant_system_prompt()}\n\n---\n\n"
+            f"{_web_assistant_system_prompt(company)}\n\n---\n\n"
             f"# \"{company.name}\" kompaniyasining bugungi qisqacha holati\n\n{snapshot}\n"
             "Faqat shu kompaniyaga oid savollarga javob ber. Reklama "
             "hisobini boshqarish (target yoqish/o'chirish/pauza) BU "
@@ -1413,7 +1423,7 @@ def api_assistant():
     unanswered = False
     if result is None:
         try:
-            result = orchestrator.call_light_chat(_web_assistant_system_prompt(), history, max_tokens=800)
+            result = orchestrator.call_light_chat(_web_assistant_system_prompt(company), history, max_tokens=800)
         except Exception as e:
             logger.exception("Web yordamchi: call_light_chat xatosi")
             result = orchestrator.friendly_error_message(e)
@@ -1614,6 +1624,12 @@ def signup():
     form_values = {
         "company_name": "", "admin_username": "", "admin_full_name": "",
         "email": "", "plan": requested_plan,
+        # 2026-09, foydalanuvchi so'rovi ("registratsiya bo'limida...
+        # kompaniya haqida ma'lumotlarni qo'shish mumkin bo'lsin"):
+        # IXTIYORIY biznes-profil maydonlari -- xato bo'lib forma qayta
+        # ko'rsatilganda kiritilgan qiymatlar yo'qolib qolmasligi uchun.
+        "business_category": "", "business_category_note": "",
+        "business_profile_answers": {},
     }
 
     if request.method == "POST":
@@ -1623,9 +1639,20 @@ def signup():
         email = request.form.get("email", "").strip().lower() or None
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
+        business_category = request.form.get("business_category", "").strip() or None
+        if business_category not in dict(business_profile.BUSINESS_CATEGORIES):
+            business_category = None
+        business_category_note = request.form.get("business_category_note", "").strip() or None
+        business_profile_answers = {
+            key: request.form.get(f"bp_{key}", "").strip()
+            for key, _, _ in business_profile.BUSINESS_PROFILE_QUESTIONS
+        }
         form_values.update({
             "company_name": company_name, "admin_username": admin_username,
             "admin_full_name": admin_full_name, "email": email or "", "plan": requested_plan,
+            "business_category": business_category or "",
+            "business_category_note": business_category_note or "",
+            "business_profile_answers": business_profile_answers,
         })
 
         session = get_session()
@@ -1661,6 +1688,9 @@ def signup():
                     name=company_name, email=email, plan=requested_plan,
                     is_active=True, source="self_signup",
                     paid_until=now + dt.timedelta(days=plan_def.period_days) if plan_def.period_days else now + dt.timedelta(days=_SIGNUP_GRACE_DAYS),
+                    business_category=business_category,
+                    business_category_note=business_category_note,
+                    business_profile_answers=business_profile.serialize_business_profile_answers(business_profile_answers),
                 )
                 session.add(c)
                 session.commit()
@@ -1691,7 +1721,11 @@ def signup():
         finally:
             session.close()
 
-    return render_template("signup.html", plans=plans.PLAN_LIST, form=form_values)
+    return render_template(
+        "signup.html", plans=plans.PLAN_LIST, form=form_values,
+        business_categories=business_profile.BUSINESS_CATEGORIES,
+        business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -5955,6 +5989,30 @@ def _handle_settings_post(session, action):
                 "success",
             )
 
+    elif action == "set_business_profile":
+        # 2026-09, foydalanuvchi so'rovi ("nastroykada... kompaniya haqida
+        # ma'lumotlarni qo'shish mumkin bo'lsin"): xuddi ro'yxatdan o'tish
+        # sahifasidagi bilan bir xil maydonlar -- shu yerda istalgan vaqtda
+        # to'ldirish/tahrirlash mumkin. `business_profile.py`dagi ro'yxatlar
+        # bilan bir xil manba (`BUSINESS_CATEGORIES`/`BUSINESS_PROFILE_QUESTIONS`).
+        company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        if company_row is not None:
+            category = request.form.get("business_category", "").strip() or None
+            if category not in dict(business_profile.BUSINESS_CATEGORIES):
+                category = None
+            company_row.business_category = category
+            company_row.business_category_note = request.form.get("business_category_note", "").strip() or None
+            answers = {
+                key: request.form.get(f"bp_{key}", "").strip()
+                for key, _, _ in business_profile.BUSINESS_PROFILE_QUESTIONS
+            }
+            company_row.business_profile_answers = business_profile.serialize_business_profile_answers(answers)
+            session.commit()
+            g.pop("_company_cache", None)
+            flash("Kompaniya biznes profili saqlandi -- Targetolog va AI-yordamchi endi shundan foydalanadi.", "success")
+        else:
+            flash("Kompaniya topilmadi.", "error")
+
     elif action == "toggle_ai_features":
         company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
         if company_row is not None:
@@ -6104,6 +6162,13 @@ def settings_general():
             moizvonki_configured=bool(company_row and company_row.is_moizvonki_configured()),
             moizvonki_api_address=(company_row.moizvonki_api_address if company_row else None),
             moizvonki_user_name=(company_row.moizvonki_user_name if company_row else None),
+            business_categories=business_profile.BUSINESS_CATEGORIES,
+            business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
+            business_category=(company_row.business_category if company_row else None),
+            business_category_note=(company_row.business_category_note if company_row else None),
+            business_profile_answers=business_profile.parse_business_profile_answers(
+                company_row.business_profile_answers if company_row else None
+            ),
         )
     finally:
         session.close()
