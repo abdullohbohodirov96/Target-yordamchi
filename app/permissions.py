@@ -27,8 +27,15 @@ MODULES = [
     ("leads", "Lidlar"),
     ("analytics", "Analitika (hisobotlar)"),
     ("target", "Target (Meta Ads + SMM hisobot + Instagram xabarlar)"),
+    # 2026-09, tariflar qayta ko'rib chiqilganda ("target"dan AJRATILDI):
+    # ilgari Lid tahlili (`lead_analytics_page`) "target" moduli ichida
+    # edi -- ya'ni "Sinov" (trial) tarifida ham ochiq bo'lib qolgan edi.
+    # Foydalanuvchi aniq so'radi: "lead analytics... trailga, eng oddiy
+    # variantga qo'shmang... pro darajadan chiqib kelaversin" -- shuning
+    # uchun endi ALOHIDA modul, faqat pullik tariflarda (`plans.py`).
+    ("lead_analytics", "Lid tahlili (chuqur CRM/voronka tahlili)"),
     ("individual_check", "Individual tekshirish (qo'ng'iroq nazorati)"),
-    ("settings", "Sozlamalar (voronka, kvalifikatsiya savollari, doimiy vazifalar)"),
+    ("settings", "Sozlamalar (voronka, kvalifikatsiya savollari, doimiy vazifalar, raqobatchilar)"),
 ]
 
 MODULE_KEYS = {key for key, _ in MODULES}

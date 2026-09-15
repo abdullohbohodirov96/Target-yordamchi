@@ -227,24 +227,38 @@
       <a href="{{ url_for('target_page') }}" class="nav-item {{ 'active' if request.endpoint in _marketing_eps }}" data-tooltip="Marketing (Target, SMM)" aria-label="Marketing">
         <span class="nav-icon">{{ navicon('target') }}</span><span class="nav-text">Marketing</span>
       </a>
+      {% endif %}
       {# 2026-09, foydalanuvchi so'rovi ("lead analyticsni alohida bo'lim
          qilib chiqaz"): ilgari "Lead Analytics" Marketing guruhi ichida,
          page-subnav'dagi (Target/Lead Analytics/SMM) bitta tab sifatida
          ko'rinardi -- endi Instagram DM/Chat kabi sidebar'da ALOHIDA,
-         mustaqil bandga ega (o'z sahifasi, subnav'siz). Ruxsat sharti
-         o'zgarmadi -- 'target' modulining bir qismi (permissions.py'da
-         "Target (Meta Ads + SMM hisobot + Instagram xabarlar)" izohiga
-         qarang), shuning uchun yangi modul/ruxsat qo'shilmadi. #}
+         mustaqil bandga ega (o'z sahifasi, subnav'siz).
+
+         2026-09 YANA YANGILANDI (tariflar qayta ko'rib chiqilganda):
+         ilgari ruxsat sharti 'target' modulining bir qismi edi (ya'ni
+         Sinov/trial tarifida ham ochiq bo'lib qolgan) -- foydalanuvchi
+         aniq so'radi: "lead analytics... trailga qo'shmang". Endi
+         MUSTAQIL 'lead_analytics' moduliga bog'liq (permissions.py),
+         shuning uchun bu blok endi 'target'dan ALOHIDA, o'zining shartiga
+         ega -- Marketing guruhi ko'rinmasa ham (masalan kelajakda
+         alohida boshqarilsa), Lead Analytics o'z ruxsatiga qarab
+         mustaqil ko'rinadi/yashiriladi. #}
+      {% if has_module(current_user, 'lead_analytics') %}
       <a href="{{ url_for('lead_analytics_page') }}" class="nav-item {{ 'active' if request.endpoint in _lead_analytics_eps }}" data-tooltip="Lead Analytics" aria-label="Lead Analytics">
         <span class="nav-icon">{{ navicon('chart') }}</span><span class="nav-text">Lead Analytics</span>
       </a>
+      {% endif %}
       {# 2026-09, foydalanuvchi so'rovi ("Instagram xabarlarni chat ga
          ozgartir ikonkalani tog'riab chiq"): band nomi "Chat"ga
          o'zgartirildi (kelajakda boshqa kanallar ham shu bo'limga
          qo'shilishi mumkinligini hisobga olib), ikonka ham Instagram
          logotipsimon shakldan umumiy suhbat (message) ikonkasiga
          almashtirildi -- endpoint/marshrut (`instagram_dm`) O'ZGARMAYDI,
-         faqat ko'rinadigan nom. #}
+         faqat ko'rinadigan nom. Ruxsat sharti -- 'target' moduli (Lead
+         Analytics endi yuqorida ALOHIDA shartga ajratilgan bo'lsa ham,
+         Chat/Instagram DM hamon "Target (Meta Ads + SMM hisobot +
+         Instagram xabarlar)" ta'rifining bir qismi bo'lib qoladi). #}
+      {% if has_module(current_user, 'target') %}
       <a href="{{ url_for('instagram_dm') }}" class="nav-item {{ 'active' if request.endpoint in _ig_dm_eps }}" data-tooltip="Chat" aria-label="Chat">
         <span class="nav-icon">{{ navicon('message') }}{% if ig_dm_unanswered_count %}<span class="nav-icon-dot"></span>{% endif %}</span><span class="nav-text">Chat{% if ig_dm_unanswered_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ ig_dm_unanswered_count }}</span>{% endif %}</span>
       </a>

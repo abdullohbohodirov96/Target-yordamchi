@@ -210,6 +210,86 @@ def test_companies_admin_view_shows_signup_source():
     print("OK: /companies platforma egasiga qaysi kompaniya o'zi ro'yxatdan o'tgani (source) ko'rinadi")
 
 
+def test_trial_plan_blocks_lead_analytics_and_competitors():
+    """2026-09, tariflar qayta ko'rib chiqilganda qo'shildi: foydalanuvchi
+    so'rovi ("lead analytics... trailga qo'shmang... adalibrary ham") --
+    Lead Analytics endi ALOHIDA `lead_analytics` moduliga bog'liq (ilgari
+    "target"ning bir qismi edi, shuning uchun sinovda ham ochiq bo'lib
+    qolgan edi); Raqobatchilar (`settings` moduli) sinovda hech qachon
+    ochiq bo'lmagan, shu yerda ham tasdiqlanadi."""
+    with app_module.app.test_client() as client:
+        _signup(client, company_name="Sinov LA MChJ", admin_username="sinov_la_admin", plan="trial")
+        r = client.get("/lead-analytics", follow_redirects=True)
+        assert r.status_code == 200
+        assert "mavjud emas" in r.get_data(as_text=True)
+
+        r2 = client.get("/settings/competitors", follow_redirects=True)
+        assert r2.status_code == 200
+        assert "mavjud emas" in r2.get_data(as_text=True)
+
+        # Sidebar'da ham ko'rinmasligi kerak (dashboard sahifasida tekshiramiz).
+        # E'tibor: shunchaki "Lead Analytics" matnini qidirish yaroqsiz --
+        # bu ibora boshqa sahifalarda (masalan taqvim-tanlagich JS'idagi
+        # HTML izohda) ham uchraydi va yolg'on ijobiy beradi. Shuning uchun
+        # ANIQ sidebar havolasi (data-tooltip) tekshiriladi.
+        html = client.get("/").get_data(as_text=True)
+        assert 'data-tooltip="Lead Analytics"' not in html
+        assert 'data-tooltip="Raqobatchilar"' not in html
+    print("OK: 'sinov' tarifida Lead Analytics VA Raqobatchilar (Ad Library) ADMIN uchun ham yopiq")
+
+
+def test_start_plan_unlocks_lead_analytics_and_competitors_with_limit():
+    with app_module.app.test_client() as client:
+        _signup(client, company_name="Boshlangich LA MChJ", admin_username="boshlangich_la_admin", plan="start")
+        r = client.get("/lead-analytics")
+        assert r.status_code == 200
+        assert "mavjud emas" not in r.get_data(as_text=True)
+
+        html = client.get("/").get_data(as_text=True)
+        assert 'data-tooltip="Lead Analytics"' in html
+        assert 'data-tooltip="Raqobatchilar"' in html
+    print("OK: 'boshlang'ich' ($20) tarifida Lead Analytics va Raqobatchilar ochiq")
+
+
+def test_competitor_limit_enforced_per_plan():
+    """3 (start) / 10 (business) / cheksiz (unlimited) -- foydalanuvchi
+    aniq shu progressiyani so'radi."""
+    with app_module.app.test_client() as client:
+        _signup(client, company_name="Limit3 MChJ", admin_username="limit3_admin", plan="start")
+        for i in range(3):
+            r = client.post("/settings/competitors", data={
+                "action": "add", "name": f"Raqobatchi {i}",
+            }, follow_redirects=True)
+            assert r.status_code == 200
+            # Jinja HTML-escape qiladi (apostrof -> `&#39;`), shuning uchun
+            # apostrofsiz barqaror qism tekshiriladi.
+            assert "raqobatchilar ro" in r.get_data(as_text=True) and "shildi" in r.get_data(as_text=True)
+        r4 = client.post("/settings/competitors", data={
+            "action": "add", "name": "Raqobatchi 4-limitdan tashqari",
+        }, follow_redirects=True)
+        assert r4.status_code == 200
+        html4 = r4.get_data(as_text=True)
+        assert "limitga yetdingiz" in html4
+        assert "Raqobatchi 4-limitdan tashqari" not in html4
+        assert "(3 / 3)" in html4
+    print("OK: 'boshlang'ich' tarifida 3 tadan ortiq raqobatchi qo'shib bo'lmaydi")
+
+
+def test_pricing_page_lists_lead_analytics_and_competitor_rows():
+    with app_module.app.test_client() as client:
+        html = client.get("/tariflar").get_data(as_text=True)
+        assert "Lid tahlili" in html
+        assert "Raqobatchilar kuzatuvi" in html
+        assert "3 tagacha raqobatchi" in html
+        assert "10 tagacha raqobatchi" in html
+        assert "Cheksiz" in html
+
+        landing_html = client.get("/").get_data(as_text=True)
+        assert "Lid tahlili" in landing_html
+        assert "Raqobatchilar kuzatuvi" in landing_html
+    print("OK: /tariflar va bosh sahifa Lid tahlili + Raqobatchilar (limitlar bilan) qatorlarini ko'rsatadi")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

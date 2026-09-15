@@ -444,7 +444,29 @@ def module_required(key: str):
     return decorator
 
 
-app.jinja_env.globals["has_module"] = permissions.has_module
+def _has_module_for_plan(user, key: str) -> bool:
+    """Shablonlar (`base.html` sidebar/subnav) uchun `has_module` global
+    funksiyasi -- `permissions.has_module()` (menejer/admin ruxsati)ga
+    QO'SHIMCHA kompaniya TARIFINI ham tekshiradi (`plans.modules_for_plan`),
+    xuddi `module_required()` dekoratoridagi ikki bosqichli tekshiruv kabi.
+
+    2026-09, tariflar qayta ko'rib chiqilganda TOPILGAN NUQSON tuzatildi:
+    ilgari sidebar FAQAT `permissions.has_module()`dan foydalanardi -- bu
+    ADMIN uchun tarifdan qat'iy nazar har doim True qaytaradi. Natijada
+    masalan "sinov" tarifidagi admin sidebar'da "Raqobatchilar"/"Lid
+    tahlili" havolalarini KO'RARDI, lekin bosganda `module_required()`
+    ularni /tariflar'ga uloqtirardi -- "o'lik" (ishlamaydigan) havola.
+    Endi sidebar HAM xuddi marshrut kabi tarifni hisobga oladi, shu
+    sabab foydalanuvchi tarifida YO'Q bo'lim umuman ko'rinmaydi."""
+    if not permissions.has_module(user, key):
+        return False
+    company = _current_company()
+    if company is None:
+        return True
+    return key in plans.modules_for_plan(company.plan)
+
+
+app.jinja_env.globals["has_module"] = _has_module_for_plan
 app.jinja_env.globals["get_plan"] = plans.get_plan
 app.jinja_env.globals["current_year"] = lambda: dt.datetime.utcnow().year
 
@@ -3277,7 +3299,7 @@ def target_page():
 
 @app.route("/lead-analytics")
 @login_required
-@module_required("target")
+@module_required("lead_analytics")
 def lead_analytics_page():
     period = request.args.get("period", "last_30d")
     level = request.args.get("level", "campaign")
@@ -6689,9 +6711,28 @@ def competitors_settings():
                     if existing:
                         flash(f"\"{name}\" allaqachon kuzatuv ro'yxatida bor.", "error")
                     else:
-                        session.add(Competitor(name=name, domain=domain, search_term=search_term, company_id=current_user.company_id))
-                        session.commit()
-                        flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
+                        # 2026-09, tariflar qayta ko'rib chiqilganda qo'shildi
+                        # (foydalanuvchi so'rovi: "uchtagacha ham raqobatchini
+                        # belgilash mumkin bo'lsin birinchi boshlang'ich
+                        # tarifda... keyingisi o'n tagacha... keyingisida
+                        # cheksiz"): `manager_limit` tekshiruvidagi bilan BIR
+                        # XIL naqsh -- `session.query(Competitor).count()`
+                        # allaqachon joriy kompaniyaga (tenant-filtr orqali)
+                        # cheklangan, shuning uchun qo'shimcha `company_id`
+                        # filtri shart emas.
+                        company_row = _current_company()
+                        limit = plans.competitor_limit_for_plan(company_row.plan if company_row else None)
+                        current_count = session.query(Competitor).count()
+                        if limit is not None and current_count >= limit:
+                            plan_name = plans.get_plan(company_row.plan if company_row else None).name
+                            flash(
+                                f"\"{plan_name}\" tarifida {limit} tagacha raqobatchi kuzatish mumkin -- "
+                                f"limitga yetdingiz. Ko'proq raqobatchi uchun tarifni yangilang.", "error",
+                            )
+                        else:
+                            session.add(Competitor(name=name, domain=domain, search_term=search_term, company_id=current_user.company_id))
+                            session.commit()
+                            flash(f"{name} raqobatchilar ro'yxatiga qo'shildi.", "success")
             elif action == "toggle":
                 comp_id = request.form.get("competitor_id", "")
                 c = session.get(Competitor, int(comp_id)) if comp_id.isdigit() else None
@@ -6734,10 +6775,13 @@ def competitors_settings():
             })
     finally:
         session.close()
+    company_row = _current_company()
+    competitor_limit = plans.competitor_limit_for_plan(company_row.plan if company_row else None)
     return render_template(
         "competitors.html", competitors=rows, query_term=query_term,
         search_results=search_results, search_error=search_error,
         rotation_days=competitor_analytics.ROTATION_DAYS,
+        competitor_limit=competitor_limit,
     )
 
 

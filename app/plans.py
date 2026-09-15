@@ -28,6 +28,22 @@ Mavjud `Company.plan` ustuni (trial|start|business|unlimited) O'ZGARTIRILMAYDI
 o'qiydi. Company #1 (platforma egasining o'z biznesi) hamon "unlimited"da
 turadi (`db.ensure_default_company()`) -- shuning uchun bu gating ESKI
 ishlashga ta'sir qilmaydi.
+
+2026-09 YANA YANGILANDI, foydalanuvchi so'rovi ("lead analytics qo'shdik,
+adalibrary qo'shdik... trailga, eng oddiy variantga qo'shmang... pro
+darajadan chiqib kelaversin... uchtagacha ham raqobatchini belgilash
+mumkin bo'lsin birinchi boshlang'ich tarifda... keyingisi o'n tagacha...
+keyingisida cheksiz"):
+  - "Lid tahlili" (Lead Analytics, `lead_analytics` moduli -- ilgari
+    "target" ichida bo'lgani uchun sinovda ham ochiq edi) va
+    "Raqobatchilar" (Ad Library kuzatuvi, `settings` moduli) ENDI
+    ikkalasi ham "Sinov" (trial) tarifida YO'Q -- faqat pullik
+    tariflardan (Boshlang'ich, $20 dan) boshlab ochiladi.
+  - Raqobatchilar kuzatuvi endi sondan cheklangan (`competitor_limit`):
+    Boshlang'ich -- 3 tagacha, Biznes -- 10 tagacha, Ekspert -- cheksiz.
+    Bu DB xarajati (`CompetitorAd`/`CompetitorAnalysis` qatorlari va har
+    {ROTATION_DAYS} kunda BITTA raqobatchiga ketadigan Meta Ad Library +
+    AI-tahlil xarajati) tarifga mutanosib bo'lishi uchun.
 """
 
 from dataclasses import dataclass
@@ -43,6 +59,7 @@ class Plan:
     modules: frozenset            # permissions.MODULE_KEYS'dan qaysi biri ochiq
     manager_limit: "int | None"   # None = cheksiz
     leads_limit: "int | None"     # CRM'dagi jami lidlar soni chegarasi; None = cheksiz
+    competitor_limit: "int | None"  # Raqobatchilar (Ad Library) kuzatuv soni; None = cheksiz, 0 = modul yopiq
     ai_enabled: bool              # Ichki AI-yordamchi (real vaqtda savol-javob)
     can_connect_meta_ads: bool    # False bo'lsa -- connect-accounts sahifasida faqat Instagram maydoni ko'rinadi
     highlight: bool               # narxlar sahifasida "Eng ommabop" belgisi
@@ -62,7 +79,8 @@ PLANS = {
         key="trial", name="Sinov", price_usd=None, period_days=5,
         tagline="5 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring",
         modules=frozenset({"dashboard", "leads", "target", "analytics"}),
-        manager_limit=1, leads_limit=100, ai_enabled=False, can_connect_meta_ads=False, highlight=False,
+        manager_limit=1, leads_limit=100, competitor_limit=0,
+        ai_enabled=False, can_connect_meta_ads=False, highlight=False,
         features=(
             "5 kun bepul, karta shart emas",
             "Faqat Instagram akkauntini ulash",
@@ -70,18 +88,22 @@ PLANS = {
             "Lidlar bazasi va asosiy CRM voronkasi (100 tagacha lid)",
             "1 ta admin hisob",
             "Ichki AI-yordamchi kiritilmagan",
+            "Lid tahlili va Raqobatchilar (Ad Library) kiritilmagan",
         ),
     ),
     "start": Plan(
         key="start", name="Boshlang'ich", price_usd=20, period_days=None,
         tagline="Kichik jamoalar uchun to'liq CRM + target monitoring",
-        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings"}),
-        manager_limit=2, leads_limit=1000, ai_enabled=False, can_connect_meta_ads=True, highlight=False,
+        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "lead_analytics"}),
+        manager_limit=2, leads_limit=1000, competitor_limit=3,
+        ai_enabled=False, can_connect_meta_ads=True, highlight=False,
         features=(
             "Sinovdagi hammasi",
             "To'liq Meta Ads hisoblar (bir nechta kampaniya) ulash",
             "Meta Conversions API (CAPI) -- konversiya signalini qaytarish",
             "SMM hisobot va Instagram xabarlar",
+            "Lid tahlili (CRM/voronka bo'yicha chuqur tahlil)",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 3 tagacha",
             "Voronka, majburiy vazifalar, qo'shimcha maydonlar sozlamalari",
             "1 000 tagacha lid (CRM)",
             "2 tagacha menejer/admin hisob",
@@ -91,10 +113,12 @@ PLANS = {
     "business": Plan(
         key="business", name="Biznes", price_usd=60, period_days=None,
         tagline="O'sayotgan sotuv jamoalari uchun — AI bilan kuchaytirilgan",
-        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
-        manager_limit=4, leads_limit=5000, ai_enabled=True, can_connect_meta_ads=True, highlight=True,
+        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check", "lead_analytics"}),
+        manager_limit=4, leads_limit=5000, competitor_limit=10,
+        ai_enabled=True, can_connect_meta_ads=True, highlight=True,
         features=(
             "Boshlang'ichdagi hammasi",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 10 tagacha",
             "Qo'ng'iroq audio nazorati (Individual tekshirish)",
             "Ichki AI-yordamchi (real vaqtda savol-javob va hisobot)",
             "5 000 tagacha lid (CRM)",
@@ -105,10 +129,12 @@ PLANS = {
     "unlimited": Plan(
         key="unlimited", name="Ekspert", price_usd=150, period_days=None,
         tagline="Yirik jamoalar va ko'p filiallar uchun — cheksiz",
-        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check"}),
-        manager_limit=None, leads_limit=None, ai_enabled=True, can_connect_meta_ads=True, highlight=False,
+        modules=frozenset({"dashboard", "leads", "target", "analytics", "settings", "individual_check", "lead_analytics"}),
+        manager_limit=None, leads_limit=None, competitor_limit=None,
+        ai_enabled=True, can_connect_meta_ads=True, highlight=False,
         features=(
             "Biznesdagi hammasi",
+            "Cheksiz raqobatchilar kuzatuvi (Meta Ad Library)",
             "Cheksiz lidlar (CRM)",
             "Cheksiz menejer/admin hisoblar",
             "Cheksiz qo'ng'iroq audio arxivi",
@@ -150,6 +176,15 @@ def _count_or_unlimited(value, unit):
     return "Cheksiz" if value is None else f"{value} tagacha {unit}"
 
 
+def _competitor_limit_display(p: "Plan"):
+    """Raqobatchilar (Ad Library) qatori uchun: `settings` moduli yopiq
+    bo'lsa -- umuman kirish yo'q (X). Ochiq bo'lsa -- `competitor_limit`
+    (None = cheksiz, son = shuncha tagacha)."""
+    if "settings" not in p.modules:
+        return False
+    return _count_or_unlimited(p.competitor_limit, "raqobatchi")
+
+
 FEATURE_MATRIX = [
     {"label": "CRM va lidlar bazasi",
      "values": {p.key: _count_or_unlimited(p.leads_limit, "lid") for p in PLAN_LIST}},
@@ -159,6 +194,9 @@ FEATURE_MATRIX = [
     {"label": "Meta Conversions API (CAPI)",
      "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
     {"label": "SMM hisobot (obunachi, qamrov, postlar statistikasi)", "values": _has("target")},
+    {"label": "Lid tahlili (CRM/voronka bo'yicha chuqur tahlil)", "values": _has("lead_analytics")},
+    {"label": "Raqobatchilar kuzatuvi (Meta Ad Library)",
+     "values": {p.key: _competitor_limit_display(p) for p in PLAN_LIST}},
     {"label": "Analitika va hisobotlar", "values": _has("analytics")},
     {"label": "Sozlamalar (voronka, vazifalar, qo'shimcha maydonlar)", "values": _has("settings")},
     {"label": "Qo'ng'iroq audio nazorati (Individual tekshirish)", "values": _has("individual_check")},
@@ -187,6 +225,13 @@ def manager_limit_for_plan(key: "str | None") -> "int | None":
 
 def leads_limit_for_plan(key: "str | None") -> "int | None":
     return get_plan(key).leads_limit
+
+
+def competitor_limit_for_plan(key: "str | None") -> "int | None":
+    """Raqobatchi (Ad Library) kuzatuv soni chegarasi. `None` -- cheksiz
+    (yoki `settings` moduli yopiq bo'lsa, real cheklov ahamiyatsiz, chunki
+    Raqobatchilar sahifasining o'ziga kirish yo'q)."""
+    return get_plan(key).competitor_limit
 
 
 def ai_enabled_for_plan(key: "str | None") -> bool:

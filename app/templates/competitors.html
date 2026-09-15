@@ -102,7 +102,16 @@
   {% endif %}
 </div>
 
-<h2 style="margin-bottom:14px">Kuzatuvdagi raqobatchilar{% if competitors %} <span class="text-faint" style="font-weight:500; font-size:14px">({{ competitors|length }})</span>{% endif %}</h2>
+{# 2026-09, tariflar qayta ko'rib chiqilganda qo'shildi: tarifga qarab
+   raqobatchi soni cheklangan (`competitor_limit`) -- foydalanuvchi
+   qancha joy qolganini oldindan ko'rishi kerak. #}
+<h2 style="margin-bottom:4px">Kuzatuvdagi raqobatchilar{% if competitors %} <span class="text-faint" style="font-weight:500; font-size:14px">({{ competitors|length }}{% if competitor_limit is not none %} / {{ competitor_limit }}{% endif %})</span>{% endif %}</h2>
+{% if competitor_limit is not none %}
+<p class="page-subtitle" style="margin-top:0; margin-bottom:14px">
+  Joriy tarifingizda {{ competitor_limit }} tagacha raqobatchi kuzatish mumkin.
+  {% if competitors|length >= competitor_limit %}Limitga yetdingiz -- ko'proq raqobatchi uchun <a href="{{ url_for('payment_page') }}">tarifni yangilang</a>.{% endif %}
+</p>
+{% endif %}
 {% if competitors %}
 <div class="cp-grid">
   {% for c in competitors %}
