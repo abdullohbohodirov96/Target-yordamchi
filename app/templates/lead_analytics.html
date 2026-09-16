@@ -40,7 +40,11 @@
   <div class="card" style="max-width:520px; margin-bottom:20px">
     <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
     <p class="page-subtitle" style="margin-top:-6px">Lead Analytics uchun avval reklama hisobingizni ulang.</p>
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+    {% else %}
+    <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+    {% endif %}
   </div>
 {% elif data.error %}
   <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>

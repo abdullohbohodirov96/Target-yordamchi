@@ -27,7 +27,11 @@
     SMM statistikasi ko'rinishi uchun avval Facebook sahifangiz (va unga ulangan Instagram Business
     akkauntingiz) ulanishi kerak.
   </p>
+  {% if current_user.role == 'admin' %}
   <a href="{{ url_for('connect_accounts') }}" class="btn">Akkauntni ulash</a>
+  {% else %}
+  <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+  {% endif %}
 </div>
 {% endif %}
 

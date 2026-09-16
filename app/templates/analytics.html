@@ -36,7 +36,14 @@
 <div class="card" style="max-width:520px; margin-bottom:20px">
   <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
   <p class="page-subtitle" style="margin-top:-6px">Target xarajat/lead ma'lumotlarini ko'rish uchun avval reklama hisobingizni ulang.</p>
+  {# 2026-09, interfeys auditi: connect_accounts route'i admin_required --
+     ilgari menejerga ham ko'rinib, bosganda dashboard'ga qaytarib
+     yuborardi. #}
+  {% if current_user.role == 'admin' %}
   <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+  {% else %}
+  <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+  {% endif %}
 </div>
 {% elif target_data and target_data.error %}
 <div class="flash flash-error" style="margin-bottom:20px">Meta API'dan ma'lumot olishda xatolik: {{ target_data.error }}</div>

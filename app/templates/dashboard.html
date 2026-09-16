@@ -211,7 +211,11 @@
       <div class="kpidash-card-title">Target (Meta reklama)</div>
     </div>
     <p class="page-subtitle" style="margin:0 0 10px">Hali Meta (Facebook/Instagram) hisobingiz ulanmagan.</p>
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('connect_accounts') }}" class="btn" style="display:inline-block">Akkauntni ulash</a>
+    {% else %}
+    <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+    {% endif %}
   </div>
   {% endif %}
 
