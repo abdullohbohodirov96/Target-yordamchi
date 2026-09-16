@@ -488,6 +488,13 @@
     var KEY = 'target_crm_sidebar_pinned';
     var pinned = false;
     try { pinned = localStorage.getItem(KEY) === '1'; } catch (e) {}
+    // 2026-09 mobil audit: tor (<=720px, telefon) ekranda "mahkamlangan"
+    // holat E'TIBORSIZ qoldiriladi -- aks holda sidebar 240px kenglikda
+    // doimiy ochiq qolib (backdrop'siz, `.container` margin'i esa 0),
+    // kontentning chap yarmini yopib qo'yardi. localStorage'dagi qiymat
+    // O'CHIRILMAYDI -- katta ekranga qaytganda avvalgi holat tiklanadi.
+    var mobileMq = window.matchMedia ? window.matchMedia('(max-width: 720px)') : null;
+    if (mobileMq && mobileMq.matches) pinned = false;
 
     // Tor (mobil, <=720px) ekranda menyu ochilganda orqa fon (backdrop)
     // ham ko'rsatiladi -- CSS shu klass bo'lmasa buni faqat shu kenglikda
@@ -504,6 +511,15 @@
       pinBtn.classList.toggle('pinned', pinned);
     }
     applyPinned();
+    // Planshet burilganda (masalan 800px -> 600px) ham xuddi shu qoida.
+    if (mobileMq && mobileMq.addEventListener) {
+      mobileMq.addEventListener('change', function (ev) {
+        var stored = false;
+        try { stored = localStorage.getItem(KEY) === '1'; } catch (e) {}
+        pinned = ev.matches ? false : stored;
+        applyPinned();
+      });
+    }
 
     sidebar.addEventListener('mouseenter', function () {
       if (!pinned) setOpen(true);

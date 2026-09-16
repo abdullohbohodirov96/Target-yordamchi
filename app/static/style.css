@@ -311,7 +311,9 @@ a { color: inherit; text-decoration: none; }
    ishlaydi va bu tugma keraksiz. */
 .mobile-menu-btn {
   display: none; position: fixed; top: 12px; left: 12px; z-index: 31;
-  width: 40px; height: 40px; align-items: center; justify-content: center;
+  /* 2026-09 mobil audit: 40px -> 44px (sensorli ekran uchun minimal
+     qulay bosish maydoni 44x44px). */
+  width: 44px; height: 44px; align-items: center; justify-content: center;
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;
   color: var(--ink); box-shadow: var(--shadow-sm); padding: 0; cursor: pointer;
 }
@@ -320,6 +322,22 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 720px) {
   .mobile-menu-btn { display: flex; }
   .container.with-sidebar { padding-top: 68px; }
+  /* 2026-09 mobil audit (foydalanuvchi: "telefonda muammosiz ishlaydigan
+     qil"): telefonda menyu -- yon "drawer", "mahkamlash" (pin) tugmasi
+     bu yerda ma'nosiz va XAVFLI edi: bosilsa sidebar 240px kenglikda DOIMIY
+     ochiq qolib, backdrop'siz kontentning chap yarmini yopib qo'yardi
+     (yopishning yagona yo'li -- yana shu tugmani topib bosish). Endi
+     telefonda tugma ko'rsatilmaydi, JS ham (base.html) tor ekranda
+     saqlangan "pinned" holatni e'tiborsiz qoldiradi. */
+  .sidebar-pin { display: none; }
+  /* Drawer juda tor telefonda (320-360px) ham orqada backdrop uchun joy qoldirsin. */
+  .sidebar.open { width: min(260px, 82vw); }
+  /* Skrinshotda topildi: "hamburger" tugmasi (fixed, chap-yuqori, z-index
+     31) ochiq drawer'ning logotipi USTIDA turib, uni yopib qo'yardi.
+     Logotip endi tugmaning o'ng tomonida joylashadi -- tugma esa ochiq
+     holatda "yopish" vazifasini ham bajaradi. */
+  .sidebar-top { padding-left: 66px; min-height: 64px; display: flex; align-items: center; }
+  .sidebar-bottom { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* 2026-09, "CEO dashboard + impersonatsiya" ishi: platforma egasi mijoz
@@ -620,14 +638,20 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
 .filters a:hover:not(.active) { background: var(--border-light); color: var(--ink); }
 
 /* ---------- Table ---------- */
-.table-scroll { overflow-x: auto; }
+/* Keng jadval faqat O'Z konteynerida yon tomonga suriladi (butun sahifa
+   emas). `-webkit-overflow-scrolling` -- iOS'da barmoq bilan silliq
+   surish; `overscroll-behavior-x` -- jadval chetiga yetganda surish
+   butun sahifaga "sakrab" o'tmasin. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 thead th {
   text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-faint); padding: 11px 16px; border-bottom: 1px solid var(--border); white-space: nowrap;
   background: var(--bg);
 }
-thead th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Raqamli katak (summa "1 250 000 so'm", foiz, sana) hech qachon bir necha
+   qatorga bo'linmasin -- tor ekranda jadval o'rniga yon surish ishlaydi. */
+thead th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-light); color: var(--text); }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.1s; }
@@ -1049,39 +1073,119 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .modal-body { padding: 22px; }
 @media (max-width: 640px) {
   .modal-overlay { padding: 0; }
-  .modal-dialog { max-width: 100%; max-height: 100vh; height: 100%; border-radius: 0; }
+  /* 2026-09 mobil audit: `100vh` mobil Safari/Chrome'da manzil paneli
+     bilan birga hisoblanadi -- dialogning pastki qismi (odatda "Saqlash"
+     tugmasi) ekrandan tashqarida qolardi. `100dvh` (dinamik viewport)
+     buni to'g'ri hisoblaydi; eski brauzerlar uchun `100vh` zaxira. */
+  .modal-dialog {
+    max-width: 100%; border-radius: 0;
+    height: 100vh; max-height: 100vh;
+    height: 100dvh; max-height: 100dvh;
+  }
+  .modal-header { padding: 14px 16px; }
+  .modal-body { padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  /* Yopish tugmasi -- 30px edi, 44px bosish maydoni. */
+  .modal-close { padding: 12px; margin: -12px; }
+  .modal-body .ap-modal-actions, .modal-body .cs-style-actions { flex-wrap: wrap; }
+  .modal-body .ap-modal-actions .btn, .modal-body .ap-modal-actions button { flex: 1 1 auto; }
 }
 
 /* Sahifa boshidagi "+ Yangi qo'shish" tugmasi (modalni ochadi) --
    `.page-head` ichida sarlavha bilan yonma-yon joylashadi. */
 .page-head-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
-/* ---------- Umumiy mobil moslashuv (telefon ekranlari) ---------- */
+/* ---------- Umumiy mobil moslashuv (telefon ekranlari) ----------
+   2026-09 mobil audit (foydalanuvchi: "telefonda muammosiz ishlaydigan
+   qil, katta bo'lib ketmasin, detallar qulay bo'lsin, telefonda ishlatish
+   qiyinroq bo'lib qolgan"). Bu blokda FAQAT o'lcham/joylashuv/overflow
+   tuzatiladi -- ranglar, shrift, komponent ko'rinishi (desktop) o'zgarmaydi.
+   Topilgan va tuzatilgan aniq muammolar:
+   (1) inline `style="grid-template-columns: repeat(4, 1fr)"` (analytics,
+       individual_check, sold_customers) media-query'dan USTUN bo'lgani uchun
+       telefonda 4-5 ta KPI karta bitta qatorga siqilib, raqamlar kesilardi;
+   (2) `.page-head` ichidagi tugma qatori (`display:flex` inline, wrap yo'q --
+       leads.html/dashboard.html) sana-tanlagich + 2 tugma bilan 360px'ga
+       sig'may, oxirgi tugma ekrandan tashqarida kesilib qolardi;
+   (3) kalendar-sana tanlagich (`.la-dp-menu`) 150px + 84vw kenglikda,
+       o'ng chetga bog'langan absolute -- telefonda chap tomoni ekrandan
+       chiqib ketardi, tezkor tanlovlar (presetlar) umuman ko'rinmas edi
+       (alohida blok, pastda);
+   (4) iOS Safari: input shrifti 16px'dan kichik bo'lsa fokusda butun
+       sahifani KATTALASHTIRADI (zoom) -- keyin sahifa yon tomonga
+       "suzib" qoladi. Telefonda barcha kiritish maydonlari 16px;
+   (5) bosish maydonlari (filtr pill 30px, sana tugmasi 34px, kalendar
+       kunlari ~28px, modal yopish 30px) 40-44px'ga keltirildi;
+   (6) "katta bo'lib ketgan" elementlar: marketplace ikonkasi (80px),
+       ulash CTA, wizard/muharrir ichki padding'lari telefonda ixchamlashdi. */
 @media (max-width: 640px) {
-  .container { padding: 16px 12px 48px; }
+  .container { padding: 16px 14px 56px; }
   .brand { font-size: 13.5px; gap: 6px; }
 
-  h1 { font-size: 17px; }
-  .page-head { gap: 8px; }
+  h1 { font-size: 18px; }
+  .page-subtitle { font-size: 12.5px; margin-bottom: 14px; }
+  .page-head { gap: 10px; margin-bottom: 16px; }
+  /* (2) tugma qatorlari yangi qatorga o'tsin, kesilmasin */
+  .page-head > div, .page-head-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .page-head .page-subtitle { max-width: 100%; }
+  .page-head-actions { gap: 8px; }
+  /* inline `style="display:flex; justify-content:space-between"` flash'lar
+     (leads.html) -- havola yangi qatorga o'tsin, kesilmasin */
+  .flash { flex-wrap: wrap; }
 
   .card { padding: 14px; }
   .card[style*="max-width"] { max-width: 100% !important; }
 
-  .kpi-grid { gap: 8px; }
+  /* (1) inline grid-template-columns'dan ustun kelish uchun !important */
+  .kpi-grid { gap: 8px; grid-template-columns: repeat(2, 1fr) !important; max-width: 100% !important; }
   .kpi-card { padding: 11px 12px; }
-  .kpi-value { font-size: 17px; }
+  .kpi-label { font-size: 10.5px; }
+  .kpi-value { font-size: 17px; overflow-wrap: anywhere; }
 
   thead th, tbody td { padding: 9px 10px; font-size: 12.5px; }
 
   .search-input-wrap { max-width: 100% !important; }
 
-  .login-shell { margin: -16px -12px; padding: 16px; }
+  /* (4) iOS avto-zoom'ning oldini olish: 16px */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
+  select, textarea, #ai-assistant-form input { font-size: 16px; }
+  form input[type="text"], form input[type="password"], form input[type="number"],
+  form input[type="date"], form input[type="datetime-local"],
+  form input[type="tel"], form input[type="email"], form input[type="url"],
+  form select, form textarea { padding: 9px 12px; }
+  form .field { margin-bottom: 14px; }
+  form label { font-size: 12.5px; }
+
+  /* (5) bosish maydonlari */
+  .filters { gap: 8px; }
+  .filters a { padding: 8px 14px; font-size: 13px; min-height: 36px; display: inline-flex; align-items: center; }
+  .pill-group a { padding: 8px 12px; min-height: 36px; display: inline-flex; align-items: center; }
+  .date-picker-trigger { padding: 9px 13px; min-height: 40px; }
+  .date-picker-menu { max-width: calc(100vw - 28px); }
+  .date-picker-menu a { padding: 9px 10px; }
+  .toggle-all-btn { padding: 9px 14px; min-height: 40px; }
+  .tabs { gap: 16px; }
+  .page-subnav { margin-bottom: 16px; }
+  .page-subnav-item { padding: 10px 12px 11px; }
+  .page-subnav-secondary .page-subnav-item { padding: 7px 12px; min-height: 34px; }
+  .cp-star-btn, .ap-mini-btn { min-height: 34px; }
+  .badge { padding: 3px 9px; }
+  /* Jadval ichidagi matnli havolalar ("Tahrirlash", "CRM ko'rish") 14px
+     balandlikda edi -- ko'rinishini o'zgartirmasdan bosish maydoni
+     kengaytiriladi (padding + teskari margin, joylashuv siljimaydi). */
+  tbody td > a.text-blue, tbody td > button.text-blue, tbody td > a.text-dim {
+    display: inline-block; padding: 8px 6px; margin: -8px -6px;
+  }
+
+  .kv { flex-wrap: wrap; gap: 2px 10px; }
+  .kv dd { min-width: 0; overflow-wrap: anywhere; }
+
+  .login-shell { margin: -16px -14px; padding: 16px; }
   .login-card { padding: 26px 20px 22px; }
 
-  #ai-assistant-root { right: 14px; bottom: 14px; }
+  #ai-assistant-root { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   #ai-assistant-toggle { width: 48px; height: 48px; }
-  #ai-assistant-toggle svg { width: 22px; height: 22px; }
-  #ai-assistant-panel { bottom: 58px; height: 70vh; max-height: calc(100vh - 110px); }
+  #ai-assistant-toggle svg, #ai-assistant-toggle img { width: 24px; height: 24px; }
+  #ai-assistant-panel { bottom: 58px; height: 70vh; max-height: calc(100vh - 110px); max-height: calc(100dvh - 110px); }
 
   .kpidash { gap: 10px; margin-top: 12px; }
   .kpidash-card { padding: 13px 14px; }
@@ -1090,6 +1194,110 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   .daystrip-cell { flex-basis: 30%; min-width: 30%; max-width: none; }
   .tier-grid { grid-template-columns: repeat(2, 1fr); }
   .stat-box-row { grid-template-columns: 1fr 1fr; }
+
+  /* (6) "katta bo'lib ketgan" elementlar telefonda ixcham */
+  .settings-section-grid { gap: 10px; }
+  .settings-section-card { padding: 14px; gap: 12px; }
+  .settings-section-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .wizard-title { font-size: 20px; }
+  .wizard-select { padding: 11px 12px; font-size: 16px; }
+  .btn-connect-cta { display: block; width: 100%; text-align: center; padding: 12px 18px; font-size: 14.5px; }
+  .ap-editor-body, .cs-main { padding: 14px 14px 18px; }
+  .ap-dropzone { padding: 18px 14px; }
+  .ap-wizard-step { padding: 14px 0; }
+  .ap-wizard-actions { flex-wrap: wrap; }
+  .ap-wizard-actions .btn, .ap-wizard-actions button { flex: 1 1 auto; text-align: center; }
+  /* Yopishqoq pastki panel telefonda 2 qatorga o'raladi -- kontent ostida
+     yetarli bo'sh joy bo'lsin (oxirgi maydon panel tagida qolmasin). */
+  .ap-app { padding-bottom: 150px; }
+  .ap-bottombar { padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .ap-bottombar-right { width: 100%; }
+  .ap-bottombar-right .btn, .ap-bottombar-right button { flex: 1 1 auto; text-align: center; }
+  .ap-tooltip-wrap[data-tip]:hover::after { max-width: calc(100vw - 40px); }
+  .cs-q-card { padding: 14px; }
+  .cs-q-text { font-size: 14px; }
+  .cs-side { padding: 12px 14px; }
+  .cs-chat-log { max-height: 320px; padding: 12px; }
+  .cs-chat-form { padding: 10px 12px; }
+  .cs-canvas-wrap { padding: 8px; }
+  .cs-logo-preview { width: 96px; height: 96px; }
+  .cp-search-form .field { min-width: 0; flex-basis: 100%; }
+  .cp-search-form button { width: 100%; }
+  .cp-result-ad { padding-left: 14px; }
+  .cp-result-actions { width: 100%; justify-content: flex-end; }
+  .dm-bubble { max-width: 86%; }
+  .dm-thread-header, .dm-messages, .dm-composer { padding-left: 12px; padding-right: 12px; }
+  .dm-templates { padding-left: 12px; padding-right: 12px; }
+  .dm-thread-panel { height: 70vh; height: 70dvh; min-height: 420px; }
+  .ap-topbar { padding: 10px 12px; }
+  .ap-topbar-actions { width: 100%; }
+  .ap-topbar-actions .btn, .ap-topbar-actions button { flex: 1 1 auto; text-align: center; }
+  .ap-chat-log { max-height: 280px; }
+  .copy-field .copy-btn { width: 100%; }
+  .impersonation-banner { font-size: 12px; gap: 8px; padding: 0 10px; }
+  .impersonation-banner > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .impersonation-banner-exit { flex-shrink: 0; }
+}
+
+/* ---------- Kalendar-sana tanlagich telefonda (yuqoridagi (3)-band) ----------
+   Ilgari: `.la-dp-menu` absolute, o'ng chetga bog'langan, ichida yonma-yon
+   presetlar (150px) + ikki oylik taqvim (84vw) -- 360px telefonda ~450px
+   kenglik, chap qismi ekrandan tashqarida (html overflow-x:hidden bilan
+   kesilgan), presetlarga umuman yetib bo'lmasdi. Endi telefonda menyu
+   viewport'ga nisbatan (`position: fixed`) ekran kengligi bo'ylab ochiladi,
+   presetlar tepada gorizontal chip qatori, ikki oy ustma-ust, ichida
+   vertikal surish. `.la-dp` ota-elementi transform'siz -- fixed to'g'ri
+   ishlaydi (`.container` animatsiyasi tugagach transform yo'q). */
+@media (max-width: 640px) {
+  .la-dp-menu {
+    position: fixed; left: 12px; right: 12px; top: 64px;
+    flex-direction: column; max-height: calc(100vh - 84px); max-height: calc(100dvh - 84px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch; z-index: 60;
+  }
+  body:has(.impersonation-banner) .la-dp-menu { top: 104px; }
+  .la-dp-presets {
+    flex-direction: row; flex-wrap: wrap; gap: 6px; min-width: 0;
+    border-right: none; border-bottom: 1px solid var(--border-light); padding: 10px;
+  }
+  .la-dp-presets button {
+    padding: 7px 12px; min-height: 34px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12.5px; white-space: nowrap;
+  }
+  .la-dp-presets button.active { border-color: var(--blue); }
+  .la-dp-cal { width: auto; max-width: none; padding: 10px; }
+  .la-dp-cal-months { flex-direction: column; gap: 14px; }
+  .la-dp-cal-nav button { width: 32px; height: 32px; }
+  .la-dp-cal-nav .la-dp-cal-nav-spacer { width: 32px; }
+  .la-dp-cal-wd { font-size: 11px; }
+  .la-dp-cal-day { padding: 9px 0; font-size: 13.5px; min-height: 36px; }
+  .la-dp-cal-footer { flex-wrap: wrap; gap: 8px; }
+  .la-dp-cal-inputs { flex: 1 1 100%; }
+  .la-dp-cal-inputs input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+  .la-dp-cal-footer .btn { flex: 1 1 100%; padding: 10px 16px !important; font-size: 14px !important; }
+}
+
+/* ---------- Planshet (641-900px): sidebar hali ham hover-rail (68px),
+   lekin sensorli ekranda bosish maydonlari va grid'lar telefondagi
+   kabi qulay bo'lsin. ---------- */
+@media (min-width: 641px) and (max-width: 900px) {
+  .container { padding: 22px 18px 56px; }
+  .kpi-grid[style*="grid-template-columns"] { grid-template-columns: repeat(3, 1fr) !important; }
+  .page-head > div, .page-head-actions { flex-wrap: wrap; }
+  .filters a { padding: 7px 14px; min-height: 34px; display: inline-flex; align-items: center; }
+  .page-subnav-secondary .page-subnav-item { padding: 7px 12px; min-height: 34px; }
+  .ap-mini-btn { min-height: 32px; }
+  .date-picker-trigger { min-height: 38px; }
+  .la-dp-cal { width: 480px; max-width: calc(100vw - 200px); }
+  .la-dp-cal-day { padding: 8px 0; }
+}
+/* Sensorli qurilmada (sichqoncha yo'q) hover-effektlar qotib qolmasin va
+   asosiy tugmalar bosishga qulay balandlikda bo'lsin -- desktop'da
+   o'zgarish yo'q. */
+@media (pointer: coarse) {
+  .btn:not(.ap-mini-btn):not(.ap-btn-sm):not(.cp-star-btn), button.block, .btn.block { min-height: 42px; }
+  .kpi-card:hover, .settings-section-card:hover, .app-card:hover, .cp-card:hover,
+  .cs-tpl-card:hover, .cs-inline-tpl-card:hover { transform: none; }
+  button:hover, .btn:hover { transform: none; }
 }
 
 /* 2026-09, tariflar tizimi -- sidebar pastidagi "tarifni oshirish" taklifi
@@ -1192,7 +1400,17 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 @media (max-width: 640px) {
   .app-grid { gap: 10px; }
-  .app-card { padding: 12px; flex-basis: 128px; min-height: unset; }
+  .app-card { padding: 14px 12px 12px; flex-basis: 140px; min-height: unset; }
+  /* 2026-09 mobil audit: desktop uchun 80px'ga kattalashtirilgan ikonka
+     telefonda 2 ustunli (~160px) kartaning yarmini egallab, "katta bo'lib
+     ketgan" ko'rinardi -- telefonda 56px, matn ham mutanosib. */
+  .app-icon { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; margin-bottom: 10px; }
+  .app-icon svg { width: 26px; height: 26px; }
+  .app-icon-lg { width: 64px; height: 64px; border-radius: 16px; font-size: 20px; }
+  .app-icon-lg svg { width: 30px; height: 30px; }
+  .app-card-name { font-size: 14.5px; }
+  .app-card-sub { font-size: 12.5px; }
+  .app-detail-head { gap: 12px; }
   .copy-field { flex-direction: column; }
 }
 
@@ -1874,7 +2092,9 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-inline-tpl-hover { position: absolute; inset: auto 0 0 0; padding: 6px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(11, 99, 245, 0.88); opacity: 0; transition: opacity 0.12s; }
 .cs-inline-tpl-thumb:hover .cs-inline-tpl-hover, .cs-inline-tpl-thumb:focus-visible .cs-inline-tpl-hover { opacity: 1; }
 .cs-inline-tpl-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
-.cs-inline-tpl-name { font-weight: 700; color: var(--ink); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-inline-tpl-name { font-weight: 700; color: var(--ink); font-size: 12.5px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cs-inline-tpl-name-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-inline-tpl-name .cs-tpl-aspect { flex-shrink: 0; margin-left: 0; }
 .cs-inline-tpl-body .ap-mini-btn { align-self: flex-start; }
 
 /* 2026-09: birinchi marta uslub tanlash oynasi (chiplar + namuna rasm

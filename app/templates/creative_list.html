@@ -118,7 +118,10 @@
             <span class="cs-inline-tpl-hover">Shundan boshlash</span>
           </button>
           <div class="cs-inline-tpl-body">
-            <div class="cs-inline-tpl-name" title="{{ t.description }}">{{ t.name }} <span class="cs-tpl-aspect">{{ t.aspect_default }}</span></div>
+            {# 2026-09 mobil audit: nom uzun bo'lsa nisbat belgisi (1:1/4:5)
+               kartaning o'ng chetidan kesilib qolardi -- endi nom alohida
+               span'da qisqaradi (ellipsis), belgi doim ko'rinadi. #}
+            <div class="cs-inline-tpl-name" title="{{ t.description }}"><span class="cs-inline-tpl-name-text">{{ t.name }}</span> <span class="cs-tpl-aspect">{{ t.aspect_default }}</span></div>
             <button type="submit" class="ap-mini-btn primary">Shundan boshlash</button>
           </div>
         </form>
