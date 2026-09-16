@@ -182,15 +182,23 @@
     </div>
 
     <nav class="sidebar-nav">
-      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
-      {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
+      {# 2026-09, "backend'da bor, interfeysga ulanmagan" auditi: har bir
+         bo'limning ICHKI sahifalari (yangi lid / Excel import, bitta audio
+         qo'shish, voronka / kvalifikatsiya savollari / doimiy vazifalar /
+         kompaniya ma'lumotlari / brend kit) ilgari bu ro'yxatlarda YO'Q edi
+         -- ularga kirganda sidebar'da hech qaysi band "active" bo'lmay,
+         tepadagi guruh subnav'i ham yo'qolib qolardi ("qayerdaman?" konteksti
+         uzilardi). Endi har biri o'z guruhiga tegishli. Pastdagi
+         (page-subnav) ro'yxatlar ham shu bilan bir xil bo'lishi SHART. #}
+      {% set _crm_eps = ['leads_list', 'lead_detail', 'lead_new', 'leads_import', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
+      {% set _monitoring_eps = ['analytics_page', 'individual_check', 'individual_check_upload_audio'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _autopilot_eps = ['autopilot_list', 'autopilot_new', 'autopilot_review', 'autopilot_import'] %}
       {% set _creative_eps = ['creative_list', 'creative_templates_gallery', 'creative_new', 'creative_editor'] %}
       {% set _lead_analytics_eps = ['lead_analytics_page'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
       {% set _competitors_eps = ['competitors_settings', 'competitor_detail'] %}
-      {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
+      {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_business_profile', 'settings_brand_kit', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'funnel_settings', 'custom_fields_settings', 'standing_tasks_settings', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {# 2026-09, foydalanuvchi so'rovi ("habarlani alohida panelga chiqaz
          side barga"): ilgari "Instagram xabarlar" Marketing guruhi ichida,
          page-subnav'dagi bir tab sifatida ko'rinardi -- endi u sidebar'da
@@ -355,7 +363,7 @@
         </span>
       </a>
       {% endif %}
-      <a href="{{ url_for('my_profile') }}" class="nav-item nav-user-info" title="{{ current_user.full_name or current_user.username }} — Mening profilim">
+      <a href="{{ url_for('my_profile') }}" class="nav-item nav-user-info {{ 'active' if request.endpoint == 'my_profile' }}" title="{{ current_user.full_name or current_user.username }} — Mening profilim">
         <span class="nav-icon nav-avatar">{{ (current_user.full_name or current_user.username or '?')[0]|upper }}</span><span class="nav-text">{{ current_user.full_name or current_user.username }}</span>
       </a>
       <a href="{{ url_for('logout') }}" class="nav-item" title="Chiqish">
@@ -408,15 +416,16 @@
        sahifa/hisob tanlash "sehrgar" ekrani) bu tab qatori ham chalg'itadi
        -- shuning uchun sidebar bilan birga shu ham o'chiriladi. #}
     {% if current_user.is_authenticated and not _hide_chrome %}
-      {% set _crm_eps = ['leads_list', 'lead_detail', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
-      {% set _monitoring_eps = ['analytics_page', 'individual_check'] %}
+      {# Yuqoridagi sidebar ro'yxatlari bilan BIR XIL (auditdagi izohga qarang). #}
+      {% set _crm_eps = ['leads_list', 'lead_detail', 'lead_new', 'leads_import', 'sold_customers_list', 'followups_list', 'manager_daily_activity'] %}
+      {% set _monitoring_eps = ['analytics_page', 'individual_check', 'individual_check_upload_audio'] %}
       {% set _marketing_eps = ['target_page', 'smm_report'] %}
       {% set _autopilot_eps = ['autopilot_list', 'autopilot_new', 'autopilot_review', 'autopilot_import'] %}
-      {% set _settings_section_eps = ['settings_general', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered'] %}
+      {% set _settings_section_eps = ['settings_general', 'settings_business_profile', 'settings_brand_kit', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'funnel_settings', 'custom_fields_settings', 'standing_tasks_settings'] %}
       {% set _boshqaruv_eps = ['settings_hub'] + _settings_section_eps + ['managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {% if request.endpoint in _crm_eps and has_module(current_user, 'leads') %}
       <nav class="page-subnav">
-        <a href="{{ url_for('leads_list') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('leads_list', 'lead_detail') }}">{{ navicon('leads') }}<span>Lidlar</span></a>
+        <a href="{{ url_for('leads_list') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('leads_list', 'lead_detail', 'lead_new', 'leads_import') }}">{{ navicon('leads') }}<span>Lidlar</span></a>
         <a href="{{ url_for('sold_customers_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'sold_customers_list' }}">{{ navicon('cart') }}<span>Sotilgan xaridorlar</span></a>
         <a href="{{ url_for('followups_list') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'followups_list' }}">{{ navicon('followup') }}<span>Qayta aloqa{% if followups_due_count %} <span class="badge badge-color-bad" style="margin-left:4px">{{ followups_due_count }}</span>{% endif %}</span></a>
         {% if current_user.role == 'admin' %}<a href="{{ url_for('manager_daily_activity') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'manager_daily_activity' }}">{{ navicon('analytics') }}<span>Menejer faoliyati</span></a>{% endif %}
@@ -424,7 +433,7 @@
       {% elif request.endpoint in _monitoring_eps %}
       <nav class="page-subnav">
         {% if has_module(current_user, 'analytics') %}<a href="{{ url_for('analytics_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'analytics_page' }}">{{ navicon('analytics') }}<span>Analitika</span></a>{% endif %}
-        {% if has_module(current_user, 'individual_check') %}<a href="{{ url_for('individual_check') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'individual_check' }}">{{ navicon('headphones') }}<span>Audio</span></a>{% endif %}
+        {% if has_module(current_user, 'individual_check') %}<a href="{{ url_for('individual_check') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('individual_check', 'individual_check_upload_audio') }}">{{ navicon('headphones') }}<span>Audio</span></a>{% endif %}
       </nav>
       {% elif request.endpoint in _marketing_eps and has_module(current_user, 'target') %}
       <nav class="page-subnav">
@@ -444,14 +453,22 @@
       </nav>
       {% if request.endpoint in _settings_section_eps and has_module(current_user, 'settings') %}
       <nav class="page-subnav page-subnav-secondary">
+        {# Tartib va ruxsatlar `settings_hub.html` kartalari bilan bir xil:
+           admin-only bo'limlar admin'ga, brend kit esa faqat 'target'
+           moduli yoqilgan kompaniyada (route `module_required("target")`). #}
         <a href="{{ url_for('settings_general') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_general' }}"><span>Umumiy</span></a>
         {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('settings_business_profile') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_business_profile' }}"><span>Kompaniya ma'lumotlari</span></a>
+        {% if has_module(current_user, 'target') %}<a href="{{ url_for('settings_brand_kit') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_brand_kit' }}"><span>Brend kit</span></a>{% endif %}
         <a href="{{ url_for('settings_cpl') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_cpl' }}"><span>CPL chegaralari</span></a>
         <a href="{{ url_for('settings_telegram') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_telegram' }}"><span>Telegram</span></a>
         <a href="{{ url_for('settings_modules') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_modules' }}"><span>Funksiyalar</span></a>
         <a href="{{ url_for('settings_ai') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_ai' }}"><span>AI</span></a>
         <a href="{{ url_for('settings_unanswered') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'settings_unanswered' }}"><span>Javobsiz savollar</span></a>
         {% endif %}
+        <a href="{{ url_for('funnel_settings') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'funnel_settings' }}"><span>Voronka</span></a>
+        <a href="{{ url_for('custom_fields_settings') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'custom_fields_settings' }}"><span>Kvalifikatsiya savollari</span></a>
+        <a href="{{ url_for('standing_tasks_settings') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'standing_tasks_settings' }}"><span>Doimiy vazifalar</span></a>
       </nav>
       {% endif %}
       {% endif %}

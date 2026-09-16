@@ -177,6 +177,71 @@ def test_manager_without_module_permission_does_not_see_that_group_subnav():
     print("OK: 'target' moduliga/admin huquqiga ega bo'lmagan menejerga tegishli bandlar subnav'da ham yashirin")
 
 
+def _secondary_subnav(html: str) -> str:
+    m = re.search(r'<nav class="page-subnav page-subnav-secondary">.*?</nav>', html, re.S)
+    assert m, "Sozlamalar ichki (pill) subnav'i ko'rinmadi"
+    return m.group(0)
+
+
+def test_inner_pages_keep_their_group_subnav():
+    """2026-09 interfeys auditi: bo'limning ICHKI sahifalari (yangi lid,
+    Excel import, voronka, kvalifikatsiya savollari, doimiy vazifalar,
+    kompaniya ma'lumotlari, brend kit, bitta audio qo'shish) ilgari hech
+    qaysi guruhga kirmas -- ularda subnav yo'qolib, sidebar'da hech narsa
+    "active" bo'lmasdi. Endi har biri o'z guruhida."""
+    with app_module.app.test_client() as client:
+        r = _login(client, "subnav_admin")
+        assert r.status_code == 302
+
+        # CRM ichki sahifalari -> CRM subnav, "Lidlar" active
+        for path in ("/leads/new", "/leads/import"):
+            r2 = client.get(path, follow_redirects=False)
+            assert r2.status_code == 200, (path, r2.status_code)
+            html = r2.get_data(as_text=True)
+            _check_html(html, path)
+            assert 'class="page-subnav"' in html, f"{path}: CRM subnav yo'q"
+            assert re.search(r'class="page-subnav-item active">.*?<span>Lidlar</span>', html, re.S), f"{path}: 'Lidlar' active emas"
+            assert re.search(r'class="nav-item active"[^>]*aria-label="CRM"', html), f"{path}: sidebar'da CRM active emas"
+
+        # Sozlamalar ichki sahifalari -> Boshqaruv subnav + pill qatorida o'zi active
+        expect = {
+            "/settings/funnel": "Voronka",
+            "/settings/fields": "Kvalifikatsiya savollari",
+            "/settings/tasks": "Doimiy vazifalar",
+            "/sozlamalar/kompaniya-malumotlari": "Kompaniya ma'lumotlari",
+            "/sozlamalar/brend": "Brend kit",
+        }
+        for path, label in expect.items():
+            r2 = client.get(path, follow_redirects=False)
+            assert r2.status_code == 200, (path, r2.status_code)
+            html = r2.get_data(as_text=True)
+            _check_html(html, path)
+            assert 'class="page-subnav"' in html and "Menejerlar" in html, f"{path}: Boshqaruv subnav yo'q"
+            assert re.search(r'class="nav-item active"[^>]*aria-label="Boshqaruv"', html), f"{path}: sidebar'da Boshqaruv active emas"
+            sec = _secondary_subnav(html)
+            assert re.search(r'class="page-subnav-item active"><span>' + re.escape(label) + r'</span>', sec), f"{path}: '{label}' pill active emas"
+    print("OK: ichki sahifalar (yangi lid, import, voronka, savollar, vazifalar, kompaniya, brend) o'z guruhi subnav'ini saqlaydi")
+
+
+def test_manager_settings_pills_respect_permissions():
+    """Admin-only pill'lar (Kompaniya ma'lumotlari, Brend kit, CPL, ...)
+    oddiy menejerga ko'rinmaydi; umumiy sozlamalar (Voronka va h.k.)
+    ko'rinadi."""
+    with app_module.app.test_client() as client:
+        r = _login(client, "subnav_manager")
+        assert r.status_code == 302
+        r2 = client.get("/settings/funnel", follow_redirects=False)
+        assert r2.status_code == 200, r2.status_code
+        html = r2.get_data(as_text=True)
+        _check_html(html, "funnel_settings (manager)")
+        sec = _secondary_subnav(html)
+        for admin_only in ("Kompaniya ma'lumotlari", "Brend kit", "CPL chegaralari", "Javobsiz savollar"):
+            assert admin_only not in sec, f"menejerga admin-only pill ko'rindi: {admin_only}"
+        for common in ("Umumiy", "Voronka", "Kvalifikatsiya savollari", "Doimiy vazifalar"):
+            assert common in sec, f"menejerga umumiy pill ko'rinmadi: {common}"
+    print("OK: menejer uchun Sozlamalar pill'lari ruxsatga mos (admin-only'lar yashirin)")
+
+
 def run_all():
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

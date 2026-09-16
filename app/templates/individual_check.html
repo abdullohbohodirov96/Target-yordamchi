@@ -77,8 +77,16 @@
       <h2 style="margin:0">Qo'ng'iroq sessiyalari</h2>
       <p class="page-subtitle" style="margin:4px 0 0">Sessiya umumiy davomiyligi <strong>{{ min_real_talk_seconds }} soniya</strong>dan kam bo'lsa — "shubhali" deb belgilanadi.</p>
     </div>
+    {# 2026-09, interfeys auditi: audio yuklash (`individual_check_upload_audio`)
+       va chegara saqlash (`individual_check_set_threshold`) route'lari
+       `admin_required` -- ilgari tugma/forma modulga ruxsati bor MENEJERGA
+       ham ko'rinar, bosganda "faqat admin uchun" xabari bilan dashboard'ga
+       qaytarib yuborardi. Endi faqat admin'ga ko'rsatiladi. #}
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
+    {% endif %}
   </div>
+  {% if current_user.role == 'admin' %}
   <form method="post" action="{{ url_for('individual_check_set_threshold') }}" style="padding:0 16px 16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="days" value="{{ days }}">
@@ -89,6 +97,9 @@
     <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">
     <button type="submit" class="btn">Saqlash</button>
   </form>
+  {% else %}
+  <p class="page-subtitle" style="padding:0 16px 16px; margin-top:10px">Chegarani faqat admin o'zgartira oladi.</p>
+  {% endif %}
   <div class="table-scroll">
   <table>
     <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th><th>Yozuv</th></tr></thead>
