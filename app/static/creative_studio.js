@@ -939,4 +939,91 @@
       });
     });
   }
+
+  // ==================================================================
+  // BIRINCHI MARTA USLUB TANLASH (onboarding) + "Uslubni sozlash" qayta
+  // kirish (2026-09, foydalanuvchi fikri: "AI o'zi taxmin qilmasin, qaysi
+  // uslubni yoqtirishimizni so'rasin"). Uchala yo'l ham (yorliq tanlash /
+  // namuna rasm yuklash / o'tkazib yuborish) TENG darajada ixtiyoriy --
+  // birortasi ham bloklamaydi. `#cs-style-data`dagi `show`/`force_show`
+  // (Sozlamalardan `?open_style=1` bilan qayta chaqirilganda) bo'lsagina
+  // oyna avtomatik ochiladi.
+  // ==================================================================
+  var styleDataEl = document.getElementById('cs-style-data');
+  if (styleDataEl) {
+    var styleData = JSON.parse(styleDataEl.textContent);
+    var styleModal = document.getElementById('cs-style-modal');
+    var styleListEl = document.getElementById('cs-list');
+    var styleCsrf = styleListEl ? styleListEl.dataset.csrf : '';
+    var selectedStyles = ((styleData.current || {}).styles || []).slice();
+    var styleGrid = document.getElementById('cs-style-grid');
+    var styleSaveBtn = document.getElementById('cs-style-save');
+    var styleRefInput = document.getElementById('cs-style-ref-input');
+    var styleRefBtn = document.getElementById('cs-style-ref-upload');
+    var styleMsgEl = document.getElementById('cs-style-msg');
+    var styleSkipBtn = document.getElementById('cs-style-skip');
+    var styleCloseBtn = document.getElementById('cs-style-modal-close');
+
+    function styleMsg(text, cls) {
+      if (!styleMsgEl) { return; }
+      if (!text) { styleMsgEl.hidden = true; return; }
+      styleMsgEl.hidden = false; styleMsgEl.className = 'ap-modal-msg ' + (cls || 'ok'); styleMsgEl.textContent = text;
+    }
+    function closeStyleModal() { if (styleModal) { styleModal.classList.remove('open'); } }
+    function openStyleModal() { if (styleModal) { styleModal.classList.add('open'); } }
+    function renderStyleChips() {
+      if (!styleGrid) { return; }
+      styleGrid.innerHTML = '';
+      (styleData.options || []).forEach(function (opt) {
+        var active = selectedStyles.indexOf(opt.key) >= 0;
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'cs-style-chip' + (active ? ' active' : '');
+        chip.style.setProperty('--cs-style-accent', opt.accent || '#0B63F5');
+        chip.textContent = opt.label;
+        chip.addEventListener('click', function () {
+          var idx = selectedStyles.indexOf(opt.key);
+          if (idx >= 0) { selectedStyles.splice(idx, 1); }
+          else { if (selectedStyles.length >= 3) { selectedStyles.shift(); } selectedStyles.push(opt.key); }
+          renderStyleChips();
+        });
+        styleGrid.appendChild(chip);
+      });
+      if (styleSaveBtn) { styleSaveBtn.disabled = !selectedStyles.length; }
+    }
+    function stylePostJson(url, body) {
+      return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': styleCsrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { throw new Error(j.error || 'Xatolik (' + r.status + ')'); } return j; }); });
+    }
+
+    if (styleSaveBtn) {
+      styleSaveBtn.addEventListener('click', function () {
+        styleSaveBtn.disabled = true;
+        stylePostJson(styleData.urls.styles, { styles: selectedStyles }).then(function () {
+          styleMsg('Tanlovingiz saqlandi.', 'ok');
+          setTimeout(closeStyleModal, 700);
+        }).catch(function (e) { styleMsg(e.message, 'err'); styleSaveBtn.disabled = false; });
+      });
+    }
+    if (styleRefInput && styleRefBtn) {
+      styleRefInput.addEventListener('change', function () { styleRefBtn.disabled = !styleRefInput.files.length; });
+      styleRefBtn.addEventListener('click', function () {
+        if (!styleRefInput.files.length) { return; }
+        styleRefBtn.disabled = true; styleRefBtn.textContent = 'Yuklanmoqda…';
+        var fd = new FormData(); fd.append('reference', styleRefInput.files[0]);
+        fetch(styleData.urls.reference, { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': styleCsrf }, body: fd })
+          .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { throw new Error(j.error || 'Xatolik (' + r.status + ')'); } return j; }); })
+          .then(function () { styleMsg('Namuna rasm yuklandi.', 'ok'); styleRefBtn.textContent = 'Yuklash'; setTimeout(closeStyleModal, 700); })
+          .catch(function (e) { styleMsg(e.message, 'err'); styleRefBtn.disabled = false; styleRefBtn.textContent = 'Yuklash'; });
+      });
+    }
+    if (styleSkipBtn) {
+      styleSkipBtn.addEventListener('click', function () { stylePostJson(styleData.urls.skip, {}).then(closeStyleModal).catch(closeStyleModal); });
+    }
+    if (styleCloseBtn) { styleCloseBtn.addEventListener('click', closeStyleModal); }
+    if (styleModal) { styleModal.addEventListener('click', function (e) { if (e.target === styleModal) { closeStyleModal(); } }); }
+
+    renderStyleChips();
+    if (styleData.show || styleData.force_show) { openStyleModal(); }
+  }
 })();

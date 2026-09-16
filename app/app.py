@@ -8086,12 +8086,28 @@ def creative_list():
         quota = creative_web.quota_info(session, company) if company else {}
         from_autopilot = request.args.get("from_autopilot")
         draft_id = int(from_autopilot) if from_autopilot and from_autopilot.isdigit() else None
+        brand_kit = creative_studio.get_brand_kit(session, company.id) if company else None
+        preferred_styles = brand_kit.get_preferred_styles() if brand_kit is not None else None
         # 2026-09, foydalanuvchi so'rovi: shablonlar alohida sahifaga
-        # yashirilmasin -- asosiy sahifada ham ko'rinsin (bir bosishda tanlash).
-        templates = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"))
+        # yashirilmasin -- asosiy sahifada ham ko'rinsin (bir bosishda tanlash);
+        # kompaniya uslub tanlovi bo'lsa -- shu uslubga mos shablonlar oldinga.
+        templates = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"), preferred_styles=preferred_styles)
+        # 2026-09, "birinchi marta kirganda uslub tanlash": kompaniya hali
+        # tanlamagan/o'tkazib yubormagan bo'lsa (`style_onboarded_at` bo'sh)
+        # oyna avtomatik ochiladi; `?open_style=1` -- Sozlamalar (Brend kit)
+        # sahifasidagi "Uslubni sozlash" havolasi orqali istalgan payt qayta.
+        style_onboarding = creative_web.style_onboarding_payload(brand_kit, urls={
+            "styles": url_for("creative_style_preference"),
+            "reference": url_for("creative_style_reference_upload"),
+            "skip": url_for("creative_style_skip"),
+            "settings": url_for("settings_brand_kit"),
+        }) if company else None
+        if style_onboarding is not None:
+            style_onboarding["force_show"] = bool(request.args.get("open_style"))
         return render_template("creative_list.html", assets=assets, quota=quota, from_autopilot=draft_id,
                                aspect=request.args.get("aspect") or "", templates=templates,
-                               templates_initial=creative_web.INLINE_TEMPLATES_INITIAL)
+                               templates_initial=creative_web.INLINE_TEMPLATES_INITIAL,
+                               style_onboarding=style_onboarding)
     finally:
         session.close()
 
@@ -8100,9 +8116,77 @@ def creative_list():
 @login_required
 @module_required("target")
 def creative_templates_gallery():
-    cards = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"))
-    return render_template("creative_templates_gallery.html", templates=cards, categories=creative_templates.TEMPLATE_CATEGORIES,
-                           from_autopilot=request.args.get("from_autopilot") or "")
+    company = _current_company()
+    session = get_session()
+    try:
+        brand_kit = creative_studio.get_brand_kit(session, company.id) if company else None
+        preferred_styles = brand_kit.get_preferred_styles() if brand_kit is not None else None
+        cards = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"), preferred_styles=preferred_styles)
+        return render_template("creative_templates_gallery.html", templates=cards, categories=creative_templates.TEMPLATE_CATEGORIES,
+                               from_autopilot=request.args.get("from_autopilot") or "")
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/uslub", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_style_preference():
+    """Birinchi marta uslub tanlash (yoki Sozlamalar'dan qayta): JSON
+    {"styles": ["minimalism", "luxury", ...]} -- ko'pi bilan 3 tasi,
+    noma'lum tag'lar e'tiborsiz qoldiriladi (`save_style_preference`)."""
+    company = _current_company()
+    if company is None:
+        return jsonify({"error": "Kompaniya topilmadi."}), 400
+    body = request.get_json(silent=True) or {}
+    styles = body.get("styles") if isinstance(body.get("styles"), list) else []
+    session = get_session()
+    try:
+        kit = creative_studio.save_style_preference(session, company.id, [str(s) for s in styles])
+        return jsonify({"ok": True, "brand": creative_web.brand_info(kit, url_for("brand_logo_file"), style_reference_url=url_for("brand_style_reference_file"))})
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/uslub/rasm", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_style_reference_upload():
+    """Uslub namunasi (reference) rasmi -- keyingi generatsiyalar shu
+    rasmning rang palitrasi/yorug'lik/kayfiyatiga yaqinlashtiriladi
+    (ANIQ nusxa EMAS, `creative_studio.save_style_reference_image`)."""
+    company = _current_company()
+    if company is None:
+        return jsonify({"error": "Kompaniya topilmadi."}), 400
+    f = request.files.get("reference")
+    if f is None or not f.filename:
+        return jsonify({"error": "Rasm tanlanmadi."}), 400
+    session = get_session()
+    try:
+        try:
+            kit = creative_studio.save_style_reference_image(session, company.id, f, f.filename, f.content_type)
+        except creative_studio.CreativeError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"ok": True, "brand": creative_web.brand_info(kit, url_for("brand_logo_file"), style_reference_url=url_for("brand_style_reference_file"))})
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/uslub/otkazib-yuborish", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_style_skip():
+    """Foydalanuvchi uslub tanlashni ATAYLAB o'tkazib yubordi -- majburiy
+    emas, faqat oyna qayta avtomatik chiqmasligi uchun belgi qo'yiladi."""
+    company = _current_company()
+    if company is None:
+        return jsonify({"error": "Kompaniya topilmadi."}), 400
+    session = get_session()
+    try:
+        creative_studio.skip_style_onboarding(session, company.id)
+        return jsonify({"ok": True})
+    finally:
+        session.close()
 
 
 @app.route("/kreativ/yangi", methods=["GET", "POST"])
@@ -8483,9 +8567,11 @@ def settings_brand_kit():
                 flash(str(e), "error")
             return redirect(url_for("settings_brand_kit"))
         kit = creative_studio.get_brand_kit(session, company.id)
-        brand = creative_web.brand_info(kit, url_for("brand_logo_file"))
+        brand = creative_web.brand_info(kit, url_for("brand_logo_file"), style_reference_url=url_for("brand_style_reference_file"))
         if brand["logo_url"] and kit is not None and kit.updated_at:
             brand["logo_url"] += f"?v={int(kit.updated_at.timestamp())}"
+        if brand["style_reference_url"] and kit is not None and kit.updated_at:
+            brand["style_reference_url"] += f"?v={int(kit.updated_at.timestamp())}"
         nxt = (request.args.get("next") or "").strip()
         back_url = nxt if (nxt.startswith("/") and not nxt.startswith("//")) else url_for("settings_hub")
         return render_template("brand_kit_form.html", brand=brand, back_url=back_url)
@@ -8509,6 +8595,26 @@ def brand_logo_file():
         if not path or not path.exists():
             abort(404)
         mimetype = "image/png" if path.suffix.lower() == ".png" else (kit.logo_content_type or "image/png")
+        return send_file(str(path), mimetype=mimetype, max_age=300, conditional=True)
+    finally:
+        session.close()
+
+
+@app.route("/sozlamalar/brend/uslub-rasm")
+@login_required
+@module_required("target")
+def brand_style_reference_file():
+    """Kompaniyaning uslub namunasi (reference) rasmi -- Sozlamalar
+    (Brend kit) sahifasidagi preview va onboarding oynasidagi holat uchun."""
+    from flask import send_file
+    company = _current_company()
+    session = get_session()
+    try:
+        kit = creative_studio.get_brand_kit(session, company.id) if company else None
+        path = creative_studio.brand_style_reference_path(kit)
+        if not path or not path.exists():
+            abort(404)
+        mimetype = kit.style_reference_content_type or "image/jpeg"
         return send_file(str(path), mimetype=mimetype, max_age=300, conditional=True)
     finally:
         session.close()

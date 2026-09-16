@@ -1433,7 +1433,27 @@ class CompanyBrandKit(Base):
     <company_id>/logo.<ext>` ostida saqlanadi (`logo_storage_path` -- shu
     ildizga nisbatan, `campaign_media.MEDIA_ROOT`dan ALOHIDA). Ranglar --
     "#RRGGBB" (ixtiyoriy; bo'lsa AI fon promptida va shablon ranglarida
-    hisobga olinadi)."""
+    hisobga olinadi).
+
+    2026-09, "birinchi marta kirganda uslub tanlash" (foydalanuvchi fikri:
+    "AI o'zi taxmin qilmasin, avval qaysi uslubni yoqtirishimizni so'rasin"):
+      - `preferred_styles`  -- JSON ro'yxat, 2-3 ta `creative_studio.
+        STYLE_TAGS`dan tag (masalan '["minimalism","luxury"]') --
+        `build_image_prompt()`ga QO'SHIMCHA (additive) ko'rsatma sifatida
+        ta'sir qiladi, tanlangan shablon/brifni ALMASHTIRMAYDI.
+      - `style_reference_storage_path`/`style_reference_content_type` --
+        ixtiyoriy namuna (reference) rasm, logotip bilan BIR XIL ildizda
+        (`BRAND_ROOT/<company_id>/style_ref.<ext>`), lekin fon-tozalash
+        (`_ensure_clean_logo`) QO'LLANMAYDI -- bu haqiqiy foto, logotip
+        emas. Mavjud bo'lsa `_request_openai_image_edit()` shu rasmning
+        rang palitrasi/yorug'lik/kayfiyatiga yaqinlashtiradi (ANIQ nusxa
+        EMAS -- OpenAI kompozitsiyani qayta yaratadi).
+      - `style_onboarded_at` -- birinchi marta ko'rsatilgan/tanlangan/
+        o'tkazib yuborilgan payt (NULL bo'lsa web-agent onboarding oynasini
+        avtomatik ko'rsatadi, keyin bir marta o'rnatilgach QAYTA
+        ko'rsatilmaydi -- lekin `creative_studio.save_style_preference()`/
+        `skip_style_onboarding()`/`save_style_reference_image()` orqali
+        Sozlamalar'dan istalgan payt qayta chaqirilishi mumkin)."""
     __tablename__ = "company_brand_kits"
 
     id = Column(Integer, primary_key=True)
@@ -1442,7 +1462,23 @@ class CompanyBrandKit(Base):
     logo_content_type = Column(String(64), nullable=True)
     primary_color = Column(String(9), nullable=True)
     secondary_color = Column(String(9), nullable=True)
+    preferred_styles = Column(Text, nullable=True)  # JSON ro'yxat (styles tag'lari)
+    style_reference_storage_path = Column(Text, nullable=True)
+    style_reference_content_type = Column(String(64), nullable=True)
+    style_onboarded_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+
+    def get_preferred_styles(self) -> list:
+        if not self.preferred_styles:
+            return []
+        try:
+            parsed = json.loads(self.preferred_styles)
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    def set_preferred_styles(self, styles: list) -> None:
+        self.preferred_styles = json.dumps(styles or [], ensure_ascii=False)
 
 
 class CreativeAsset(Base):

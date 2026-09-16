@@ -1864,6 +1864,22 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-inline-tpl-name { font-weight: 700; color: var(--ink); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-inline-tpl-body .ap-mini-btn { align-self: flex-start; }
 
+/* 2026-09: birinchi marta uslub tanlash oynasi (chiplar + namuna rasm
+   yuklash) -- `creative_list.html`/`creative_studio.js`, umumiy
+   `.modal-overlay`/`.modal-dialog` ustiga quriladi. */
+.cs-style-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+.cs-style-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1.5px solid var(--border); background: var(--card); border-radius: 999px;
+  padding: 7px 14px 7px 10px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cs-style-chip::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--cs-style-accent, #0B63F5); flex-shrink: 0; }
+.cs-style-chip.active { border-color: transparent; background: var(--cs-style-accent, #0B63F5); color: #fff; }
+.cs-style-chip.active::before { background: #fff; }
+.cs-style-ref-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.cs-style-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
 /* ---- Shablonlar galereyasi ---- */
 .cs-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .cs-tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; padding-bottom: 72px; }

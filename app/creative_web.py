@@ -71,14 +71,42 @@ def quota_info(session, company) -> dict:
     return st
 
 
-def brand_info(brand_kit, logo_url: "str | None" = None) -> dict:
-    """Brend kit JSON'i (muharrir canvas'i logotipni chizishi uchun URL)."""
+def brand_info(brand_kit, logo_url: "str | None" = None, *, style_reference_url: "str | None" = None) -> dict:
+    """Brend kit JSON'i (muharrir canvas'i logotipni chizishi uchun URL).
+    2026-09: uslub tanlovi/namunasi holati ham shu yerga qo'shildi --
+    Sozlamalar (Brend kit) sahifasi va Kreativ studiya muharriri shu
+    BITTA funksiyadan foydalanadi."""
     has_logo = bool(creative_studio.brand_logo_file_path(brand_kit))
+    preferred = brand_kit.get_preferred_styles() if brand_kit is not None else []
+    has_reference = bool(creative_studio.brand_style_reference_path(brand_kit))
     return {
         "has_logo": has_logo,
         "logo_url": logo_url if has_logo else None,
         "primary_color": getattr(brand_kit, "primary_color", None),
         "secondary_color": getattr(brand_kit, "secondary_color", None),
+        "preferred_styles": preferred,
+        "preferred_style_labels": [creative_studio.STYLE_LABELS.get(s, s) for s in preferred],
+        "has_style_reference": has_reference,
+        "style_reference_url": (style_reference_url if has_reference else None),
+        "style_onboarded": bool(getattr(brand_kit, "style_onboarded_at", None)),
+    }
+
+
+def style_onboarding_payload(brand_kit, *, urls: dict) -> dict:
+    """Kreativ studiya ro'yxat sahifasidagi bir martalik "qaysi uslubni
+    yoqtirasiz?" oynasi uchun: ko'rsatish kerakmi (`style_onboarded_at`
+    hali bo'sh), tanlanadigan uslub yorliqlari (`STYLE_TAGS`), joriy
+    holat va amal URL'lari (tanlov saqlash / namuna yuklash / o'tkazib
+    yuborish). `app.py` `force_show`ni Sozlamalardan qayta chaqirish
+    uchun (`?open_style=1`) alohida qo'shadi."""
+    return {
+        "show": not bool(getattr(brand_kit, "style_onboarded_at", None)),
+        "options": creative_studio.style_tag_options(),
+        "current": {
+            "styles": brand_kit.get_preferred_styles() if brand_kit is not None else [],
+            "has_reference": bool(creative_studio.brand_style_reference_path(brand_kit)),
+        },
+        "urls": urls,
     }
 
 
@@ -215,13 +243,23 @@ def list_assets_for_company(session, company_id: int, image_url_builder=None, *,
 INLINE_TEMPLATES_INITIAL = 8
 
 
-def template_cards(preview_url_builder=None) -> list[dict]:
+def template_cards(preview_url_builder=None, preferred_styles: "list | None" = None) -> list[dict]:
     """20 ta shablon galereyasi: nom, tavsif, kategoriya, standart nisbat,
-    preview (`static/creative_templates/<key>.png`)."""
+    preview (`static/creative_templates/<key>.png`). 2026-09: `preferred_styles`
+    berilsa (kompaniyaning onboarding'da tanlagan `CompanyBrandKit.
+    preferred_styles`i) -- shablon `styles`i shu tanlov bilan MOS
+    kelganlar RO'YXAT BOSHIGA chiqariladi (`sorted()` BARQAROR -- teng
+    guruh ichida asl tartib saqlanadi), lekin HECH QAYSI shablon
+    YASHIRILMAYDI -- bu faqat qayta tartiblash, filtr emas."""
+    preferred = {s for s in (preferred_styles or [])}
+    templates = creative_templates.CREATIVE_TEMPLATES
+    if preferred:
+        templates = sorted(templates, key=lambda t: 0 if (preferred & set(t.get("styles") or [])) else 1)
     out = []
-    for t in creative_templates.CREATIVE_TEMPLATES:
+    for t in templates:
         out.append({
             "key": t["key"], "name": t["name"], "description": t["description"], "category": t["category"],
+            "styles": t.get("styles") or [],
             "aspect_default": t["aspect_default"], "aspect_label": ASPECT_LABELS.get(t["aspect_default"], t["aspect_default"]),
             "default_cta": t.get("default_cta"),
             "preview_url": preview_url_builder(t["key"]) if preview_url_builder else None,

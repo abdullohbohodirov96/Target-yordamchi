@@ -74,12 +74,69 @@ OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
 # Xarajatni nazorat qilish uchun standart "medium" ("high" emas).
 OPENAI_IMAGE_QUALITY = os.environ.get("OPENAI_IMAGE_QUALITY", "medium")
 OPENAI_IMAGES_URL = "https://api.openai.com/v1/images/generations"
+# 2026-09, uslub namunasiga asoslangan generatsiya (`_request_openai_image_edit`)
+# -- faqat `gpt-image-*` modellar bu endpoint'ni shu multipart shaklda
+# qo'llab-quvvatlaydi (dall-e-* UCHUN ishlatilmaydi -- chaqiruvchi tomonda tekshiriladi).
+OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
 _OPENAI_IMAGE_TIMEOUT = 180
 
 ALLOWED_LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 _LOGO_EXT_TO_TYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 MAX_LOGO_BYTES = 8 * 1024 * 1024
 MAX_PRODUCT_IMAGE_BYTES = 30 * 1024 * 1024
+# 2026-09, uslub namunasi (reference) rasmi -- haqiqiy foto, logotipdan
+# kattaroq bo'lishi normal, shuning uchun chegara ham kattaroq.
+MAX_STYLE_REFERENCE_BYTES = 15 * 1024 * 1024
+
+# ---------------------------------------------------------------------------
+# USLUB TAKSONOMIYASI (2026-09, foydalanuvchi fikri: "AI o'zi taxmin
+# qilmasin, birinchi marta kirganda qaysi uslubni yoqtirishimizni
+# so'rasin"). Kichik, QOTIRILGAN lug'at -- 20 ta tayyor shablonning HAR
+# BIRIGA (`creative_templates.CREATIVE_TEMPLATES[i]["styles"]`) VA
+# kompaniyaning saqlangan tanloviga (`CompanyBrandKit.preferred_styles`)
+# BIR XIL tag'lar ishlatiladi, shuning uchun ular shu yerda -- BITTA
+# joyda -- aniqlanadi (creative_templates.py bu modulni import
+# QILMAYDI, aylanma import bo'lmasin, lekin string tag'lar bir xil).
+# `category` (shablonning SOHA yorlig'i -- sale/luxury/tech/food) bilan
+# ARALASHTIRILMASIN: bu yerdagi tag'lar VIZUAL til (rang/kompozitsiya
+# kayfiyati), bittasi biznes, ikkinchisi dizayn.
+# ---------------------------------------------------------------------------
+STYLE_TAGS = ["minimalism", "maximalism", "luxury", "playful", "bold", "corporate", "elegant", "warm"]
+
+STYLE_LABELS = {
+    "minimalism": "Minimalizm", "maximalism": "Maksimalizm", "luxury": "Hashamatli",
+    "playful": "O'ynoqi", "bold": "Jasur", "corporate": "Korporativ",
+    "elegant": "Nafis", "warm": "Iliq",
+}
+
+# UI'da chip/swatch rangi (Onboarding oynasida, real namuna surat o'rniga
+# -- vaqt byudjeti tejash uchun rangli belgi yetarli).
+STYLE_ACCENTS = {
+    "minimalism": "#94A3B8", "maximalism": "#DB2777", "luxury": "#C9A227",
+    "playful": "#FF6B6B", "bold": "#DC2626", "corporate": "#1E3A5F",
+    "elegant": "#8B5E34", "warm": "#E76F51",
+}
+
+# `build_image_prompt()`ga QO'SHIMCHA (additive) ko'rsatma sifatida
+# qo'shiladigan inglizcha uslub-tavsif iborasi (2026-09). Tanlangan
+# shablonning o'z `style_prompt`i har doim BIRINCHI/asosiy bo'lib qoladi --
+# bu faqat o'sha ustiga qo'shiladigan nozik ishora, ALMASHTIRMAYDI.
+STYLE_DESCRIPTORS = {
+    "minimalism": "minimalist, clean, generous negative space, understated elegance",
+    "maximalism": "rich, dense, vibrant, maximalist layered composition",
+    "luxury": "luxurious, premium, upscale mood, refined materials and finishes",
+    "playful": "playful, cheerful, fun, energetic and approachable mood",
+    "bold": "bold, high-contrast, vivid, attention-grabbing visual energy",
+    "corporate": "professional, corporate, polished, trustworthy business aesthetic",
+    "elegant": "elegant, refined, graceful, softly sophisticated",
+    "warm": "warm, cozy, inviting tones, soft natural warmth",
+}
+
+
+def style_tag_options() -> list[dict]:
+    """UI (onboarding oynasi/sozlamalar) uchun: [{"key","label","accent"}]
+    `STYLE_TAGS` tartibida."""
+    return [{"key": k, "label": STYLE_LABELS[k], "accent": STYLE_ACCENTS[k]} for k in STYLE_TAGS]
 
 ASPECTS = ("1:1", "4:5", "9:16")
 ASSET_KINDS = ("ai_generated", "template", "upload")
@@ -414,6 +471,47 @@ def save_brand_colors(session, company_id: int, primary: "str | None", secondary
     return kit
 
 
+# ---------------------------------------------------------------------------
+# BIRINCHI MARTA USLUB TANLASH -- ONBOARDING (2026-09). Uchala yo'l ham
+# TENG darajada ixtiyoriy -- birortasi ham majburiy emas, "O'tkazib
+# yuborish" har doim ochiq (`skip_style_onboarding`). Har uchalasi ham
+# `style_onboarded_at`ni o'rnatadi -- web-agent shu maydon NULL bo'lsagina
+# onboarding oynasini avtomatik ko'rsatadi (bir marta ko'rsatilgach qayta
+# avtomatik chiqmaydi, lekin Sozlamalar'dan istalgan payt qayta chaqirish
+# mumkin -- `app.py`dagi `/kreativ?open_style=1`).
+# ---------------------------------------------------------------------------
+
+def save_style_preference(session, company_id: int, styles: list) -> "db.CompanyBrandKit":
+    """Foydalanuvchi tanlagan uslub yorliqlarini saqlaydi: noma'lum tag'lar
+    (STYLE_TAGS'da yo'q) xato bermasdan e'tiborsiz qoldiriladi, ko'pi bilan
+    3 tasi (takrorlanmagan holda) saqlanadi, `style_onboarded_at`
+    o'rnatiladi."""
+    clean: list[str] = []
+    for raw in (styles or []):
+        tag = str(raw or "").strip().lower()
+        if tag in STYLE_TAGS and tag not in clean:
+            clean.append(tag)
+        if len(clean) >= 3:
+            break
+    kit = _get_or_create_brand_kit(session, company_id)
+    kit.set_preferred_styles(clean)
+    kit.style_onboarded_at = dt.datetime.utcnow()
+    kit.updated_at = dt.datetime.utcnow()
+    session.commit()
+    return kit
+
+
+def skip_style_onboarding(session, company_id: int) -> "db.CompanyBrandKit":
+    """Foydalanuvchi uslub tanlashni ATAYLAB o'tkazib yubordi -- hech qanday
+    tanlov/namuna MAJBURLANMAYDI, faqat `style_onboarded_at` o'rnatiladi
+    (oyna qayta avtomatik chiqmasin)."""
+    kit = _get_or_create_brand_kit(session, company_id)
+    kit.style_onboarded_at = dt.datetime.utcnow()
+    kit.updated_at = dt.datetime.utcnow()
+    session.commit()
+    return kit
+
+
 def brand_logo_file_path(brand_kit) -> "Path | None":
     """Render/ko'rsatish uchun logotipning diskdagi yo'li (brend kit/
     logotip bo'lmasa `None`). Fon kesilgan `logo_clean.png` bo'lsa (yoki
@@ -435,6 +533,65 @@ def brand_logo_original_path(brand_kit) -> "Path | None":
     if brand_kit is None or not getattr(brand_kit, "logo_storage_path", None):
         return None
     return storage_backend.ensure_local(BRAND_ROOT, brand_kit.logo_storage_path, key_prefix="brand_kit")
+
+
+# ---------------------------------------------------------------------------
+# USLUB NAMUNASI (reference) RASMI (2026-09, foydalanuvchi so'zlari bilan:
+# "yaqin turishi kerak, yonma-yon" -- uslubga YAQINLASHTIRISH, ANIQ nusxa
+# EMAS). `save_brand_logo()` bilan BIR XIL naqsh (joylashuv, hajm/tur
+# tekshiruvi, R2'ga yuklash), lekin `_ensure_clean_logo()` (fon kesish)
+# QO'LLANMAYDI -- bu haqiqiy fotosurat, belgi/ikonka emas.
+# ---------------------------------------------------------------------------
+
+def save_style_reference_image(session, company_id: int, file_storage_or_bytes, filename: str, content_type: "str | None") -> "db.CompanyBrandKit":
+    """Uslub namunasi rasmini tekshiradi (PNG/JPG/WEBP, max
+    `MAX_STYLE_REFERENCE_BYTES`), `BRAND_ROOT/<company_id>/style_ref.<ext>`ga
+    saqlaydi (R2'ga ham), `CompanyBrandKit.style_reference_*`ni yangilaydi
+    va `style_onboarded_at`ni o'rnatadi (onboarding oynasi qayta
+    ko'rsatilmasin). Eski namuna (boshqa kengaytmali bo'lsa ham) o'chiriladi."""
+    ct = _detect_logo_type(filename, content_type)
+    if ct not in ALLOWED_LOGO_TYPES:
+        raise CreativeError("Uslub namunasi rasmi faqat PNG, JPG yoki WEBP formatida bo'lishi mumkin.")
+    data = _read_bytes(file_storage_or_bytes)
+    if not data:
+        raise CreativeError("Fayl bo'sh.")
+    if len(data) > MAX_STYLE_REFERENCE_BYTES:
+        raise CreativeError(f"Rasm juda katta -- chegara {MAX_STYLE_REFERENCE_BYTES // (1024 * 1024)} MB.")
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as img:
+            img.verify()
+    except Exception as e:  # noqa: BLE001 -- buzilgan/soxta rasm
+        raise CreativeError("Rasmni o'qib bo'lmadi -- fayl buzilgan yoki rasm emas.") from e
+
+    ext = ALLOWED_LOGO_TYPES[ct]
+    rel_dir = Path(str(company_id))
+    abs_dir = Path(BRAND_ROOT) / rel_dir
+    abs_dir.mkdir(parents=True, exist_ok=True)
+    for old in list(abs_dir.glob("style_ref.*")):
+        try:
+            storage_backend.delete_object(f"brand_kit/{rel_dir / old.name}")
+            old.unlink()
+        except OSError:
+            pass
+    (abs_dir / f"style_ref{ext}").write_bytes(data)
+    storage_backend.upload_file(abs_dir / f"style_ref{ext}", f"brand_kit/{rel_dir / f'style_ref{ext}'}")
+
+    kit = _get_or_create_brand_kit(session, company_id)
+    kit.style_reference_storage_path = str(rel_dir / f"style_ref{ext}")
+    kit.style_reference_content_type = ct
+    kit.style_onboarded_at = dt.datetime.utcnow()
+    kit.updated_at = dt.datetime.utcnow()
+    session.commit()
+    return kit
+
+
+def brand_style_reference_path(brand_kit) -> "Path | None":
+    """Uslub namunasi rasmining diskdagi yo'li (bo'lmasa `None`) --
+    `brand_logo_original_path()` uslubida, R2'dan self-heal bilan."""
+    if brand_kit is None or not getattr(brand_kit, "style_reference_storage_path", None):
+        return None
+    return storage_backend.ensure_local(BRAND_ROOT, brand_kit.style_reference_storage_path, key_prefix="brand_kit")
 
 
 # ---------------------------------------------------------------------------
@@ -949,6 +1106,14 @@ def build_image_prompt(ctx: dict, brief_answers: dict, template: "dict | None") 
     colors = [c for c in (brand.get("primary_color"), brand.get("secondary_color")) if c]
     if colors:
         lines.append(f"Brand color accents to incorporate subtly: {', '.join(colors)}.")
+    # 2026-09, onboarding'da tanlangan doimiy uslub tanlovi -- QO'SHIMCHA
+    # (additive) nozik ishora, yuqoridagi shablon/standart "Visual style"
+    # qatorini ALMASHTIRMAYDI (aniq shablon tanlovi -- kuchliroq signal,
+    # doimiy tanlov -- shunchaki bezak yo'nalishi).
+    preferred_styles = [s for s in (brand.get("preferred_styles") or []) if s in STYLE_DESCRIPTORS]
+    if preferred_styles:
+        nudge = "; ".join(STYLE_DESCRIPTORS[s] for s in preferred_styles)
+        lines.append(f"Company's preferred visual style (subtle additional guidance, keep the visual style above as primary): {nudge}.")
     lines.append(
         "STRICT: no text, no words, no letters, no numbers, no typography, no captions, no logos, "
         "no watermarks, no signs with writing anywhere in the image. Leave clean negative space for overlay text. "
@@ -1044,6 +1209,77 @@ def _request_openai_image(prompt: str, size: str) -> "tuple[bytes, str | None]":
         raise CreativeError(_OPENAI_GENERIC_MSG)
     response_id = payload.get("id") or (str(payload["created"]) if payload.get("created") else None)
     return data, response_id
+
+
+def _request_openai_image_edit(prompt: str, size: str, reference_image_bytes: bytes, reference_content_type: "str | None") -> "tuple[bytes, str | None]":
+    """OpenAI Images EDITS API'siga (`/v1/images/edits`, multipart/form-data)
+    POST -- uslub namunasi rasmini `image` maydonida yuboradi. Bu rasmning
+    rang palitrasi/yorug'lik/kompozitsiya KAYFIYATIGA yaqinlashtiradi --
+    OpenAI fon rasmini QAYTADAN yaratadi, bu ANIQ NUSXA EMAS (piksel-piksel
+    o'xshash rasm va'da qilinmaydi, faqat uslub yo'naltiriladi). Xato
+    ishlov berish `_request_openai_image()` bilan BIR XIL (o'zbekcha
+    `CreativeError`, xom matn faqat logda) -- chaqiruvchi (`_run_generation`)
+    HAR QANDAY xatoda (shu jumladan bu funksiya ko'targan `CreativeError`)
+    oddiy (referencesiz) generatsiyaga o'tadi, hech qachon generatsiyani
+    to'xtatmaydi. `call_analysis._openai_request()` JSON'dan tashqari
+    `data=`/`files=` (multipart) parametrlarini ham qo'llab-quvvatlaydi --
+    shuning uchun xuddi shu umumiy qayta-urinish/xato-aniqlash qatlami
+    orqali chaqiriladi (alohida xom `requests.post` YOZILMAYDI)."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise CreativeError(
+            "OPENAI_API_KEY sozlanmagan -- AI rasm-generatsiya ishlamaydi. "
+            "Administrator sozlab qo'ysin (shablondan foydalanish mumkin)."
+        )
+    # DIQQAT: Content-Type QO'LGA sozlanmaydi -- multipart bo'lgani uchun
+    # `requests` o'zi to'g'ri boundary bilan sarlavhani qo'yadi (JSON
+    # yo'lidan farqli, u yerda `_request_openai_image()` qo'lda sozlaydi).
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {"model": OPENAI_IMAGE_MODEL, "prompt": prompt, "size": size, "n": 1, "quality": OPENAI_IMAGE_QUALITY}
+    ext = ALLOWED_LOGO_TYPES.get((reference_content_type or "").split(";")[0].strip().lower(), ".png")
+    files = {"image": (f"style_reference{ext}", reference_image_bytes, reference_content_type or "image/png")}
+    try:
+        resp = _openai_request("POST", OPENAI_IMAGE_EDITS_URL, headers=headers, data=data, files=files, timeout=_OPENAI_IMAGE_TIMEOUT)
+    except requests.RequestException as e:
+        logger.error("creative_studio: OpenAI (images/edits) tarmoq xatosi: %s", e)
+        raise CreativeError(_OPENAI_GENERIC_MSG) from e
+    if resp.status_code == 429 and _is_quota_exhausted_response(resp):
+        logger.error("creative_studio: OpenAI (images/edits) kredit tugagan: %s", _extract_openai_error(resp))
+        raise CreativeError(_OPENAI_CREDIT_MSG)
+    if resp.status_code != 200:
+        raw = _extract_openai_error(resp)
+        logger.error("creative_studio: OpenAI images/edits xatosi HTTP %s: %s", resp.status_code, raw)
+        if resp.status_code == 400 and any(m in raw.lower() for m in _SAFETY_MARKERS):
+            raise CreativeError(
+                "AI bu brif bo'yicha rasm yaratishdan bosh tortdi (xavfsizlik qoidalari). "
+                "Mahsulot tavsifi yoki uslub izohini o'zgartirib qayta urinib ko'ring."
+            )
+        raise CreativeError(_OPENAI_GENERIC_MSG)
+    try:
+        payload = resp.json()
+        item = (payload.get("data") or [])[0]
+    except Exception as e:  # noqa: BLE001 -- kutilmagan javob shakli
+        logger.error("creative_studio: OpenAI (images/edits) javobini o'qib bo'lmadi: %s", e)
+        raise CreativeError(_OPENAI_GENERIC_MSG) from e
+    out = None
+    if item.get("b64_json"):
+        try:
+            out = base64.b64decode(item["b64_json"])
+        except Exception as e:  # noqa: BLE001
+            logger.error("creative_studio: b64 dekod xatosi (images/edits): %s", e)
+            raise CreativeError(_OPENAI_GENERIC_MSG) from e
+    elif item.get("url"):
+        try:
+            r = requests.get(item["url"], timeout=60)
+            r.raise_for_status()
+            out = r.content
+        except requests.RequestException as e:
+            logger.error("creative_studio: rasm URL yuklab bo'lmadi (images/edits): %s", e)
+            raise CreativeError(_OPENAI_GENERIC_MSG) from e
+    if not out:
+        raise CreativeError(_OPENAI_GENERIC_MSG)
+    response_id = payload.get("id") or (str(payload["created"]) if payload.get("created") else None)
+    return out, response_id
 
 
 # ---------------------------------------------------------------------------
@@ -1773,6 +2009,7 @@ def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> 
         "primary_color": getattr(brand_kit, "primary_color", None),
         "secondary_color": getattr(brand_kit, "secondary_color", None),
         "has_logo": bool(brand_logo_file_path(brand_kit)),
+        "preferred_styles": brand_kit.get_preferred_styles() if brand_kit is not None else [],
     }
     missing = missing_questions(ctx, asset.get_brief_answers())
     if missing:
@@ -1792,7 +2029,29 @@ def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> 
     try:
         prompt = build_image_prompt(ctx, asset.get_brief_answers(), template)
         asset.prompt_used = prompt
-        data, response_id = _request_openai_image(prompt, _size_for_aspect(asset.aspect))
+        size = _size_for_aspect(asset.aspect)
+        # 2026-09, "uslubga yaqin turishi kerak" (foydalanuvchi so'zi bilan --
+        # namuna rasm bilan "yonma-yon"): agar kompaniyada uslub namunasi
+        # rasmi bo'lsa VA model `images/edits`ni qo'llab-quvvatlasa
+        # (`gpt-image-*`, dall-e-* EMAS), fon o'sha rasmning rang palitrasi/
+        # yorug'lik/kayfiyatiga YAQINLASHTIRILGAN holda so'raladi. Bu ANIQ
+        # nusxa EMAS -- OpenAI kompozitsiyani qaytadan yaratadi, faqat uslub
+        # yo'naltiriladi. ISHLAMASA (har qanday sabab -- tarmoq, format,
+        # xavfsizlik) -- log ogohlantirish bilan ODDIY (referencesiz)
+        # generatsiyaga o'tiladi, generatsiya HECH QACHON shu sabab bilan
+        # to'xtamaydi.
+        data = None
+        response_id = None
+        if OPENAI_IMAGE_MODEL.startswith("gpt-image") and getattr(brand_kit, "style_reference_storage_path", None):
+            try:
+                ref_path = storage_backend.ensure_local(BRAND_ROOT, brand_kit.style_reference_storage_path, key_prefix="brand_kit")
+                if ref_path.exists():
+                    data, response_id = _request_openai_image_edit(prompt, size, ref_path.read_bytes(), brand_kit.style_reference_content_type)
+            except Exception as e:  # noqa: BLE001 -- reference yo'li ishlamasa oddiy generatsiyaga o'tiladi
+                logger.warning("creative_studio: uslub namunasiga asoslangan generatsiya ishlamadi (asset=%s), oddiy generatsiyaga o'tildi: %s", asset.id, e)
+                data = None
+        if data is None:
+            data, response_id = _request_openai_image(prompt, size)
         # OpenAI qaytargan baytlarni PNG sifatida qayta saqlaymiz (format
         # kafolati -- webp/jpeg kelsa ham base.png doim PNG bo'ladi).
         from PIL import Image

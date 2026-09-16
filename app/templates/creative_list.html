@@ -134,5 +134,44 @@
   {% endif %}
 </div>
 
+{# 2026-09, "AI o'zi taxmin qilmasin, qaysi uslubni yoqtirishimizni
+   so'rasin": kompaniya Kreativ studiyaga BIRINCHI marta kirganda (yoki
+   Sozlamalar > Brend kit'dagi "Uslubni sozlash" orqali istalgan payt)
+   ko'rsatiladigan bir martalik oyna -- 2-3 ta uslub yorlig'i TANLASH
+   YOKI namuna rasm YUKLASH, ikkalasi ham ixtiyoriy, "O'tkazib yuborish"
+   har doim ochiq. Chiplar/holat -- `creative_studio.js` orqali shu JSON
+   ma'lumotidan chiziladi. #}
+{% if style_onboarding %}
+<script id="cs-style-data" type="application/json">{{ style_onboarding|tojson }}</script>
+<div class="modal-overlay" id="cs-style-modal">
+  <div class="modal-dialog" style="max-width:560px">
+    <div class="modal-header">
+      <h2>Qaysi uslubni yoqtirasiz?</h2>
+      <button type="button" class="modal-close" id="cs-style-modal-close" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="text-faint" style="margin-top:0">AI kelajakdagi reklama rasmlarini shu tanlovga moslab yaratadi -- shablon yoki brifingizni almashtirmaydi, faqat qo'shimcha ko'rsatma bo'ladi. To'liq ixtiyoriy: istalgan vaqt o'tkazib yuborishingiz yoki keyinroq Sozlamalar &gt; Brend kit'dan o'zgartirishingiz mumkin.</p>
+      <div class="cs-style-grid" id="cs-style-grid"></div>
+      <div class="cs-style-actions" style="margin-top:14px">
+        <button type="button" class="btn ap-btn-sm" id="cs-style-save" disabled>Tanlovni saqlash</button>
+        <span class="text-faint" style="font-size:12px">2-3 tasini tanlang</span>
+      </div>
+      <div style="margin:20px 0; border-top:1px solid var(--border-light)"></div>
+      <p class="text-faint" style="margin:0 0 8px">Yoki yoqtirgan uslubingizni ko'rsatuvchi bitta rasm yuklang -- AI kelajakdagi fonlarni shu rasmning rang palitrasi, yorug'lik va kayfiyatiga yaqinlashtiradi. <strong>Muhim:</strong> bu aynan shu rasmning nusxasi EMAS -- AI fonni qaytadan yaratadi, faqat uslubni shunga yo'naltiradi.</p>
+      <div class="cs-style-ref-row">
+        <input type="file" id="cs-style-ref-input" accept="image/png,image/jpeg,image/webp">
+        <button type="button" class="ap-mini-btn" id="cs-style-ref-upload" disabled>Yuklash</button>
+      </div>
+      <div id="cs-style-msg" class="ap-modal-msg" hidden></div>
+      <div class="cs-style-actions" style="margin-top:18px; justify-content:flex-end">
+        <button type="button" class="ap-mini-btn" id="cs-style-skip">O'tkazib yuborish</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script src="{{ url_for('static', filename='creative_studio.js') }}?v={{ asset_v('creative_studio.js') }}"></script>
 {% endblock %}

@@ -1083,6 +1083,167 @@ def test_r2_storage_backend_wired():
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# 14) (2026-09) Birinchi marta uslub tanlash (onboarding): uslub yorlig'i
+#     tanlash / o'tkazib yuborish / namuna rasm yuklash, `build_image_
+#     prompt()`ga QO'SHIMCHA (additive) ta'sir, `template_cards()` tartibi.
+# ---------------------------------------------------------------------------
+def test_style_onboarding_and_prompt_nudge():
+    import company_context
+    import creative_web
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Style Co")
+
+        # --- save_style_preference: noto'g'ri tag tashlab yuboriladi, ko'pi bilan 3 tasi
+        kit = creative_studio.save_style_preference(session, c.id, ["minimalism", "yoq_tag", "luxury", "bold", "warm"])
+        check("save_style_preference: noto'g'ri tag tashlanadi, 3 tasi saqlanadi", kit.get_preferred_styles() == ["minimalism", "luxury", "bold"])
+        check("save_style_preference: style_onboarded_at o'rnatildi", kit.style_onboarded_at is not None)
+        kit_dup = creative_studio.save_style_preference(session, c.id, ["luxury", "luxury", "minimalism"])
+        check("save_style_preference: takrorlanuvchi tag bitta bo'lib qoladi", kit_dup.get_preferred_styles() == ["luxury", "minimalism"])
+
+        # --- skip_style_onboarding: faqat onboarded_at, tanlov TEGILMAYDI
+        c2 = _company(session, "Skip Style Co")
+        kit2 = creative_studio.skip_style_onboarding(session, c2.id)
+        check("skip_style_onboarding: onboarded_at o'rnatildi, tanlov bo'sh (majburlanmagan)", kit2.style_onboarded_at is not None and kit2.get_preferred_styles() == [])
+
+        # --- save_style_reference_image: logotip bilan bir xil tekshiruv naqshi
+        c3 = _company(session, "Ref Style Co")
+        kit3 = creative_studio.save_style_reference_image(session, c3.id, _rgba_png_bytes(), "ref.png", "image/png")
+        ref_path = creative_studio.brand_style_reference_path(kit3)
+        check("save_style_reference_image: fayl saqlandi (style_ref.*)", ref_path is not None and ref_path.exists() and ref_path.name.startswith("style_ref"))
+        check("save_style_reference_image: style_onboarded_at o'rnatildi", kit3.style_onboarded_at is not None)
+        for fname, ct, data in (("virus.exe", "application/octet-stream", b"MZ.."), ("x.png", "image/png", b"notpng"), ("", "image/png", b"")):
+            try:
+                creative_studio.save_style_reference_image(session, c3.id, data, fname, ct)
+                check(f"uslub namunasi rad etiladi: {fname!r}", False)
+            except creative_studio.CreativeError:
+                check(f"uslub namunasi rad etiladi: {fname!r}", True)
+        with mock.patch.object(creative_studio, "MAX_STYLE_REFERENCE_BYTES", 10):
+            try:
+                creative_studio.save_style_reference_image(session, c3.id, _rgba_png_bytes(), "big.png", "image/png")
+                check("uslub namunasi hajm chegarasi", False)
+            except creative_studio.CreativeError as e:
+                check("uslub namunasi hajm chegarasi", "katta" in str(e))
+
+        # --- build_image_prompt: additive nudge, shablon style_prompt ustuvor
+        ctx = company_context.build_company_context(c, session)
+        ctx["brand_kit"] = {"primary_color": None, "secondary_color": None, "has_logo": False, "preferred_styles": ["minimalism", "luxury"]}
+        template = creative_templates.get_template("luxury_dark")
+        prompt = creative_studio.build_image_prompt(ctx, {"focus": "Soat"}, template)
+        template_anchor = template["style_prompt"].split(",")[0]
+        check("build_image_prompt: shablonning o'z style_prompt'i mavjud", template_anchor in prompt)
+        check("build_image_prompt: preferred_styles descriptor'lari qo'shilgan", creative_studio.STYLE_DESCRIPTORS["minimalism"] in prompt and creative_studio.STYLE_DESCRIPTORS["luxury"] in prompt)
+        check("build_image_prompt: nudge shablon uslubidan KEYIN (additive, almashtirmaydi)", prompt.index(creative_studio.STYLE_DESCRIPTORS["minimalism"]) > prompt.index(template_anchor))
+        ctx_no_pref = dict(ctx, brand_kit={"has_logo": False})
+        prompt_no_pref = creative_studio.build_image_prompt(ctx_no_pref, {"focus": "Soat"}, template)
+        check("build_image_prompt: preferred_styles yo'q bo'lsa descriptor qo'shilmaydi", creative_studio.STYLE_DESCRIPTORS["minimalism"] not in prompt_no_pref)
+
+        # --- template_cards(): mos uslub oldinga, HECH BIRI yo'qolmaydi
+        cards_pref = creative_web.template_cards(None, preferred_styles=["luxury"])
+        check("template_cards: hammasi 20 ta (filtrlanmagan, faqat qayta tartiblangan)", len(cards_pref) == 20)
+        luxury_idx = [i for i, t in enumerate(cards_pref) if "luxury" in (t["styles"] or [])]
+        other_idx = [i for i, t in enumerate(cards_pref) if "luxury" not in (t["styles"] or [])]
+        check("template_cards: mos uslubli shablon(lar) oldinga chiqarilgan", luxury_idx and other_idx and max(luxury_idx) < min(other_idx))
+        cards_nopref = creative_web.template_cards(None)
+        check("template_cards: preferred_styles bo'lmasa asl tartib saqlanadi", [t["key"] for t in cards_nopref] == [t["key"] for t in creative_templates.CREATIVE_TEMPLATES])
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# 15) (2026-09) "Yaqin turishi kerak, yonma-yon" -- uslub namunasiga
+#     asoslangan generatsiya (`images/edits`, multipart) + har qanday
+#     xatoda ODDIY generatsiyaga MUAMMOSIZ qaytish (`_run_generation`).
+# ---------------------------------------------------------------------------
+def test_reference_conditioned_generation():
+    import requests as _requests
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Edit Co", plan="business")
+        plan = plans.PLANS["business"]
+
+        # --- _request_openai_image_edit: muvaffaqiyat -- multipart (data/files), JSON emas
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()) as req:
+            data, resp_id = creative_studio._request_openai_image_edit("test prompt", "1024x1024", _png_bytes(4, 4), "image/png")
+        check("_request_openai_image_edit: PNG bayt qaytardi", isinstance(data, (bytes, bytearray)) and data[:4] != b"")
+        check("_request_openai_image_edit: to'g'ri endpoint (images/edits)", req.call_args.args[1] == creative_studio.OPENAI_IMAGE_EDITS_URL)
+        check("_request_openai_image_edit: multipart (data+files), json_body EMAS", req.call_args.kwargs.get("json_body") is None and req.call_args.kwargs.get("data") is not None and req.call_args.kwargs.get("files") is not None)
+        check("_request_openai_image_edit: data'da model/prompt/size", req.call_args.kwargs["data"]["model"] == creative_studio.OPENAI_IMAGE_MODEL and req.call_args.kwargs["data"]["prompt"] == "test prompt" and req.call_args.kwargs["data"]["size"] == "1024x1024")
+        check("_request_openai_image_edit: 'image' fayli files'da", "image" in req.call_args.kwargs["files"])
+
+        # --- kredit tugagan (429)
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_FakeResp(429, {"error": {"code": "insufficient_quota", "message": "quota"}})):
+            try:
+                creative_studio._request_openai_image_edit("p", "1024x1024", _png_bytes(), "image/png")
+                check("_request_openai_image_edit: kredit tugagan -> xato", False)
+            except creative_studio.CreativeError as e:
+                check("_request_openai_image_edit: kredit tugagan -> friendly xabar (balans)", "balans" in str(e))
+
+        # --- tarmoq xatosi
+        with mock.patch.object(creative_studio, "_openai_request", side_effect=_requests.exceptions.ConnectionError("boom sk-secret")):
+            try:
+                creative_studio._request_openai_image_edit("p", "1024x1024", _png_bytes(), "image/png")
+                check("_request_openai_image_edit: tarmoq xatosi -> CreativeError", False)
+            except creative_studio.CreativeError as e:
+                check("_request_openai_image_edit: tarmoq xatosi -> CreativeError (xom matn yo'q)", "sk-secret" not in str(e))
+
+        # --- xavfsizlik rad etishi (HTTP 400 + content_policy)
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_FakeResp(400, {"error": {"message": "content_policy violation RAW"}})):
+            try:
+                creative_studio._request_openai_image_edit("p", "1024x1024", _png_bytes(), "image/png")
+                check("_request_openai_image_edit: xavfsizlik rad etish -> xato", False)
+            except creative_studio.CreativeError as e:
+                check("_request_openai_image_edit: xavfsizlik rad etish -> friendly xabar", "xavfsizlik" in str(e) and "RAW" not in str(e))
+
+        # --- OPENAI_API_KEY yo'q
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+            try:
+                creative_studio._request_openai_image_edit("p", "1024x1024", _png_bytes(), "image/png")
+                check("_request_openai_image_edit: API kaliti yo'q -> xato", False)
+            except creative_studio.CreativeError as e:
+                check("_request_openai_image_edit: API kaliti yo'q -> CreativeError", "OPENAI_API_KEY" in str(e))
+
+        # --- _run_generation: uslub namunasi bor, edit ISHLAMASA -> ODDIY generatsiyaga tushadi, asset baribir ready
+        creative_studio.save_style_reference_image(session, c.id, _rgba_png_bytes(), "ref.png", "image/png")
+        a = creative_studio.create_draft_asset(session, c, None)
+        creative_studio.submit_brief_answer(session, a, "focus", "Test mahsulot")
+        with mock.patch.object(creative_studio, "_request_openai_image_edit", side_effect=RuntimeError("edit endpoint down")) as edit_mock, \
+                mock.patch.object(creative_studio, "_request_openai_image", return_value=(_png_bytes(4, 4), "resp-plain")) as plain_mock:
+            creative_studio.generate_base_image(session, a, c, plan)
+        check("_run_generation: edit ishlamasa -- oddiy generatsiyaga tushadi (ikkalasi ham 1 marta)", edit_mock.call_count == 1 and plain_mock.call_count == 1)
+        check("_run_generation: edit muvaffaqiyatsiz bo'lsa ham asset 'ready'ga yetadi", a.status == "ready" and a.error_message is None)
+
+        # --- _run_generation: uslub namunasi bor, edit ISHLASA -> edit ishlatiladi, oddiy yo'l chaqirilmaydi
+        a2 = creative_studio.create_draft_asset(session, c, None)
+        creative_studio.submit_brief_answer(session, a2, "focus", "Test mahsulot 2")
+        with mock.patch.object(creative_studio, "_request_openai_image_edit", return_value=(_png_bytes(4, 4), "resp-edit")) as edit_mock2, \
+                mock.patch.object(creative_studio, "_request_openai_image") as plain_mock2:
+            creative_studio.generate_base_image(session, a2, c, plan)
+        check("_run_generation: edit ishlaganda edit ishlatiladi, oddiy yo'l chaqirilmaydi", edit_mock2.call_count == 1 and plain_mock2.call_count == 0)
+        check("_run_generation: edit natijasi bilan ham status ready", a2.status == "ready")
+
+        # --- dall-e-* model -- reference yo'li UMUMAN chaqirilmaydi (qo'llab-quvvatlanmaydi, skip)
+        with mock.patch.object(creative_studio, "OPENAI_IMAGE_MODEL", "dall-e-3"):
+            a3 = creative_studio.create_draft_asset(session, c, None)
+            creative_studio.submit_brief_answer(session, a3, "focus", "Test mahsulot 3")
+            with mock.patch.object(creative_studio, "_request_openai_image_edit") as edit_mock3, \
+                    mock.patch.object(creative_studio, "_request_openai_image", return_value=(_png_bytes(4, 4), "resp-dalle")) as plain_mock3:
+                creative_studio.generate_base_image(session, a3, c, plan)
+        check("_run_generation: dall-e-* modelda reference yo'li chaqirilmaydi", edit_mock3.call_count == 0 and plain_mock3.call_count == 1)
+
+        # --- uslub namunasi YO'Q kompaniya -- edit umuman chaqirilmaydi
+        c_noref = _company(session, "No Ref Co", plan="business")
+        a4 = creative_studio.create_draft_asset(session, c_noref, None)
+        creative_studio.submit_brief_answer(session, a4, "focus", "Test mahsulot 4")
+        with mock.patch.object(creative_studio, "_request_openai_image_edit") as edit_mock4, \
+                mock.patch.object(creative_studio, "_request_openai_image", return_value=(_png_bytes(4, 4), "resp-noref")) as plain_mock4:
+            creative_studio.generate_base_image(session, a4, c_noref, plan)
+        check("_run_generation: uslub namunasi yo'q -- edit yo'li chaqirilmaydi", edit_mock4.call_count == 0 and plain_mock4.call_count == 1)
+    finally:
+        session.close()
+
+
 test_templates()
 test_missing_questions_and_placeholders()
 test_quota()
@@ -1097,6 +1258,8 @@ test_price_features_and_default_layout_variants()
 test_brief_agent_flow()
 test_chat_edit_layers()
 test_r2_storage_backend_wired()
+test_style_onboarding_and_prompt_nudge()
+test_reference_conditioned_generation()
 
 print()
 if failures:

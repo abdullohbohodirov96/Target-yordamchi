@@ -15,7 +15,14 @@ AYNAN shu koordinatalarni ishlatadi):
   {
     "key": "minimal_clean",            # unique, snake_case
     "name": "Minimalist toza",         # o'zbekcha ko'rinadigan nom
-    "category": "universal",           # filtrlash yorlig'i
+    "category": "universal",           # filtrlash yorlig'i -- QAYSI BIZNESGA mos (sale/luxury/tech/food/...)
+    "styles": ["minimalism"],          # 2026-09: 1-3 ta VIZUAL uslub yorlig'i (creative_studio.STYLE_TAGS'dan) --
+                                        # QANDAY ko'rinishda (minimalism/maximalism/luxury/playful/bold/corporate/
+                                        # elegant/warm); "category" bilan ARALASHTIRILMASIN -- bittasi soha, bittasi
+                                        # uslub, bir shablon ikkalasiga ham ega bo'lishi mumkin (masalan luxury_dark:
+                                        # category="luxury" VA styles=["minimalism","luxury"]). Foydalanuvchining
+                                        # onboarding'da tanlagan `CompanyBrandKit.preferred_styles`i bilan mos
+                                        # kelgan shablonlar `creative_web.template_cards()`da OLDINGA chiqariladi.
     "description": "...",              # 1 gap, o'zbekcha
     "style_prompt": "...",             # OpenAI FON-rasm promptiga qo'shiladigan INGLIZCHA uslub
     "background": {"type": "solid"|"gradient", "colors": [...], "direction": "vertical"|"horizontal"|"diagonal"},
@@ -77,6 +84,7 @@ CREATIVE_TEMPLATES = [
         "key": "minimal_clean",
         "name": "Minimalist toza",
         "category": "universal",
+        "styles": ["minimalism"],
         "description": "Oq-och kulrang fon, ko'p bo'sh joy, mahsulot markazda -- har qanday biznes uchun.",
         "style_prompt": f"clean minimalist studio background, soft white and light grey tones, soft diffused lighting, plenty of negative space at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "solid", "colors": ["#F4F4F2"]},
@@ -93,6 +101,7 @@ CREATIVE_TEMPLATES = [
         "key": "bold_sale",
         "name": "Katta chegirma",
         "category": "sale",
+        "styles": ["bold", "maximalism"],
         "description": "Yorqin qizil-sariq, katta aksiya belgisi -- chegirma va aksiyalar uchun.",
         "style_prompt": f"vibrant energetic background in bright red and warm yellow tones, dynamic light rays, bold commercial sale mood, clean empty area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#E63946", "#F4A261"], "direction": "diagonal"},
@@ -114,6 +123,7 @@ CREATIVE_TEMPLATES = [
         "key": "luxury_dark",
         "name": "Premium qorong'i",
         "category": "luxury",
+        "styles": ["minimalism", "luxury"],
         "description": "Qora fon, oltin aksent, nafis markazlashgan matn -- premium mahsulotlar uchun.",
         "style_prompt": f"luxurious dark background, deep black with subtle gold light reflections, elegant premium product photography mood, dramatic rim lighting, empty dark space at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#0B0B0F", "#1F1A12"], "direction": "vertical"},
@@ -130,6 +140,7 @@ CREATIVE_TEMPLATES = [
         "key": "tech_gradient",
         "name": "Texnologik gradient",
         "category": "tech",
+        "styles": ["bold", "minimalism"],
         "description": "Ko'k-binafsha gradient, zamonaviy va raqamli uslub -- elektronika, IT, xizmatlar.",
         "style_prompt": f"modern technology background, deep blue to violet gradient, subtle glowing geometric shapes and light particles, futuristic clean feel, empty area at the bottom left for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#1E3A8A", "#7C3AED"], "direction": "diagonal"},
@@ -146,6 +157,7 @@ CREATIVE_TEMPLATES = [
         "key": "warm_food",
         "name": "Issiq taom",
         "category": "food",
+        "styles": ["warm"],
         "description": "To'q sariq-jigarrang iliq tonlar -- restoran, kafe, oziq-ovqat uchun.",
         "style_prompt": f"warm appetizing food photography background, rustic wooden table, warm orange and brown tones, soft natural window light, shallow depth of field, clear space at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#7A2E0E", "#E76F51"], "direction": "vertical"},
@@ -163,6 +175,7 @@ CREATIVE_TEMPLATES = [
         "key": "real_estate_clean",
         "name": "Ko'chmas mulk",
         "category": "real_estate",
+        "styles": ["corporate", "minimalism"],
         "description": "Oq-kulrang professional uslub, katta rasm zonasi, pastda ma'lumot paneli.",
         "style_prompt": f"bright modern architecture background, clean apartment interior or building exterior, white and light grey tones, natural daylight, professional real estate photography, lower part kept plain for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#E2E8F0", "#F8FAFC"], "direction": "vertical"},
@@ -181,6 +194,7 @@ CREATIVE_TEMPLATES = [
         "key": "fashion_editorial",
         "name": "Moda jurnali",
         "category": "fashion",
+        "styles": ["elegant", "minimalism"],
         "description": "Vertikal katta rasm, minimal matn, bej fon -- kiyim-kechak va aksessuarlar.",
         "style_prompt": f"editorial fashion photography background, neutral beige and cream studio backdrop, soft directional light, elegant minimal composition with the subject slightly off-center, clean space at the bottom left for overlay text, {_NO_TEXT}",
         "background": {"type": "solid", "colors": ["#EFE9E1"]},
@@ -197,6 +211,7 @@ CREATIVE_TEMPLATES = [
         "key": "before_after_split",
         "name": "Avval / Keyin",
         "category": "testimonial",
+        "styles": ["bold"],
         "description": "Ikkiga bo'lingan (chap/o'ng) kompozitsiya, AVVAL/KEYIN belgilari -- natija ko'rsatish uchun.",
         "style_prompt": f"split composition background divided vertically into two halves, left half muted and dull grey tones, right half bright and vivid, symmetric layout, plain area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#4B5563", "#F3F4F6"], "direction": "horizontal"},
@@ -217,6 +232,7 @@ CREATIVE_TEMPLATES = [
         "key": "countdown_urgency",
         "name": "Shoshiling!",
         "category": "urgency",
+        "styles": ["bold"],
         "description": "Qizil-qora, 'vaqt tugayapti' uslubi -- muddatli aksiyalar uchun.",
         "style_prompt": f"dramatic dark red and black background, urgent high-contrast mood, spotlight beam on the center, subtle motion blur streaks, clean dark area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#B91C1C", "#111111"], "direction": "vertical"},
@@ -235,6 +251,7 @@ CREATIVE_TEMPLATES = [
         "key": "testimonial_quote",
         "name": "Mijoz fikri",
         "category": "testimonial",
+        "styles": ["elegant", "warm"],
         "description": "Och fon, katta qo'shtirnoq bezagi, mijoz sharhi matni -- ishonch uyg'otish uchun.",
         "style_prompt": f"soft warm cream background with gentle paper texture, calm and trustworthy mood, subtle light vignette, very simple and airy, large empty center area for overlay text, {_NO_TEXT}",
         "background": {"type": "solid", "colors": ["#FDF6EC"]},
@@ -253,6 +270,7 @@ CREATIVE_TEMPLATES = [
         "key": "feature_grid",
         "name": "Xususiyatlar 2x2",
         "category": "features",
+        "styles": ["maximalism", "playful"],
         "description": "Yuqorida sarlavha, pastda 4 ta xususiyat bloki (2x2) -- afzalliklarni sanab o'tish uchun.",
         "style_prompt": f"fresh mint green and white background, clean flat product presentation, soft even lighting, subject in the upper center, lower half kept plain for overlay blocks, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#D1FAE5", "#ECFDF5"], "direction": "vertical"},
@@ -272,6 +290,7 @@ CREATIVE_TEMPLATES = [
         "key": "new_arrival",
         "name": "Yangi mahsulot",
         "category": "launch",
+        "styles": ["playful", "bold"],
         "description": "Yorqin qizil-sariq gradient, 'YANGI' belgisi urg'usi -- yangi kelgan mahsulotlar uchun.",
         "style_prompt": f"bright playful background, coral red to sunny yellow gradient, confetti-like bokeh light spots, fresh product launch mood, plain area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#FF6B6B", "#FFD93D"], "direction": "diagonal"},
@@ -289,6 +308,7 @@ CREATIVE_TEMPLATES = [
         "key": "seasonal_promo",
         "name": "Bayram aksiyasi",
         "category": "seasonal",
+        "styles": ["warm", "elegant"],
         "description": "Iliq bayramona ranglar, oltin chegara bezagi -- mavsumiy/bayram aksiyalari uchun.",
         "style_prompt": f"festive warm background, deep burgundy and amber tones, soft golden bokeh lights, cozy celebratory atmosphere, gift-like elegant mood, plain area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#7F1D1D", "#B45309"], "direction": "diagonal"},
@@ -310,6 +330,7 @@ CREATIVE_TEMPLATES = [
         "key": "corporate_professional",
         "name": "Korporativ B2B",
         "category": "b2b",
+        "styles": ["corporate"],
         "description": "To'q ko'k-kulrang, jiddiy va ishonchli uslub -- B2B xizmatlar, ulgurji savdo.",
         "style_prompt": f"professional corporate background, deep navy blue and slate grey tones, subtle abstract geometric lines, modern office atmosphere, restrained and trustworthy, plain dark area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#0F2942", "#1E3A5F"], "direction": "vertical"},
@@ -332,6 +353,7 @@ CREATIVE_TEMPLATES = [
         "key": "beauty_soft",
         "name": "Go'zallik pastel",
         "category": "beauty",
+        "styles": ["elegant", "minimalism"],
         "description": "Yumshoq pushti-pastel tonlar, nozik uslub -- go'zallik salonlari, kosmetika.",
         "style_prompt": f"soft pastel pink beauty background, silky smooth gradients, delicate light and airy feel, gentle glow, feminine cosmetic photography mood, plain area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#FCE7F3", "#FBCFE8"], "direction": "vertical"},
@@ -348,6 +370,7 @@ CREATIVE_TEMPLATES = [
         "key": "auto_dynamic",
         "name": "Avto dinamik",
         "category": "auto",
+        "styles": ["bold"],
         "description": "Qora-qizil, diagonal dinamik kompozitsiya -- avtomobil, ehtiyot qismlar, sport.",
         "style_prompt": f"dynamic automotive background, black asphalt and dark metal tones with red light streaks, diagonal motion energy, dramatic low-angle lighting, plain dark area at the bottom right for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#000000", "#7F1D1D"], "direction": "diagonal"},
@@ -365,6 +388,7 @@ CREATIVE_TEMPLATES = [
         "key": "education_friendly",
         "name": "Ta'lim do'stona",
         "category": "education",
+        "styles": ["playful"],
         "description": "Ochiq sariq-ko'k, do'stona va samimiy uslub -- o'quv markazlari, kurslar.",
         "style_prompt": f"friendly bright education background, light yellow and sky blue tones, cheerful classroom or study desk atmosphere, soft cartoon-like shapes, optimistic mood, plain area at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#FEF3C7", "#BFDBFE"], "direction": "diagonal"},
@@ -383,6 +407,7 @@ CREATIVE_TEMPLATES = [
         "key": "collage_multi",
         "name": "Kollaj (bir nechta mahsulot)",
         "category": "collage",
+        "styles": ["maximalism"],
         "description": "2x2 rasm zonasi + pastda umumiy matn -- bir nechta mahsulotni birga ko'rsatish uchun.",
         "style_prompt": f"flat lay composition of several products arranged in a neat 2 by 2 grid on a light grey surface, top-down view, even soft lighting, equal spacing between items, lower part of the frame kept plain for overlay text, {_NO_TEXT}",
         "background": {"type": "solid", "colors": ["#F1F5F9"]},
@@ -404,6 +429,7 @@ CREATIVE_TEMPLATES = [
         "key": "story_fullbleed",
         "name": "Story to'liq ekran",
         "category": "story",
+        "styles": ["minimalism", "elegant"],
         "description": "9:16 Story/Reels uchun: to'liq ekran rasm, pastda qorong'i gradient va matn.",
         "style_prompt": f"vertical full-frame lifestyle background for a mobile story, subject in the upper two thirds, rich natural colors, cinematic lighting, lower third gradually darker and plain for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#334155", "#0F172A"], "direction": "vertical"},
@@ -421,6 +447,7 @@ CREATIVE_TEMPLATES = [
         "key": "price_tag_highlight",
         "name": "Narx yorlig'i",
         "category": "sale",
+        "styles": ["bold", "minimalism"],
         "description": "Narxni KATTA ko'rsatadigan sariq yorliq elementi -- aniq narxli takliflar uchun.",
         "style_prompt": f"clean commercial background in fresh sky blue tones, product centered with soft shadow, bright even studio lighting, simple and clear, empty area on the right side and bottom for overlay price tag and text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#0EA5E9", "#0369A1"], "direction": "vertical"},
