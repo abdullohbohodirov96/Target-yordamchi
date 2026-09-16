@@ -1474,6 +1474,15 @@ class CreativeAsset(Base):
     aspect = Column(String(8), nullable=False, default="1:1")  # 1:1 | 4:5 | 9:16
     brief_answers_json = Column(Text, nullable=True)
     missing_fields_json = Column(Text, nullable=True)
+    # 2026-09, foydalanuvchi fikri ("savollar bir xil shablon bo'lmasin, AI
+    # ishlasin"): statik 5 ta savol o'rniga AI agent bilan navbatma-navbat
+    # suhbat (`creative_brief_agent.py`) -- bu ustun shu suhbatning butun
+    # tarixini ({"role": "agent"|"user", "text", ...} ro'yxati) saqlaydi,
+    # chunki har javob ALOHIDA HTTP so'rov (server holatsiz). Suhbat
+    # tugagach natija baribir `brief_answers_json`ga (yuqoridagi, ESKI
+    # tekis lug'at ko'rinishida) yoziladi -- pastki oqim (generatsiya, AI
+    # kopirayter) o'zgarishsiz qoladi.
+    brief_conversation_json = Column(Text, nullable=False, default="[]")
     prompt_used = Column(Text, nullable=True)
     openai_response_id = Column(String(128), nullable=True)
     base_image_storage_path = Column(Text, nullable=True)
@@ -1502,6 +1511,18 @@ class CreativeAsset(Base):
 
     def set_layers(self, layers: list) -> None:
         self.layers_json = json.dumps(layers or [], ensure_ascii=False)
+
+    def get_brief_conversation(self) -> list:
+        if not self.brief_conversation_json:
+            return []
+        try:
+            parsed = json.loads(self.brief_conversation_json)
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    def set_brief_conversation(self, conversation: list) -> None:
+        self.brief_conversation_json = json.dumps(conversation or [], ensure_ascii=False)
 
 
 class ImageGenerationUsage(Base):

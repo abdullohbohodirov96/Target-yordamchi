@@ -96,13 +96,13 @@
       asset: JSON.parse(document.getElementById('cs-data').textContent),
       serverLayers: null,   // oxirgi saqlangan qatlamlar (bekor qilish uchun)
       selected: -1,         // tanlangan qatlam indeksi
-      busy: null,           // null | 'brief' | 'generating' | 'saving' | 'using'
+      busy: null,           // null | 'brief' | 'generating' | 'saving' | 'using' | 'chatedit'
       msg: null,            // {text, cls}
       dirty: false,
-      editKey: null,        // brif: qayta tahrirlanayotgan savol kaliti
       baseImg: null, baseSrc: null,
       logoImg: null, logoSrc: null,
-      drag: null
+      drag: null,
+      editChat: []          // "AI bilan tezkor o'zgartirish" -- faqat shu sahifa sessiyasida (serverda saqlanmaydi)
     };
     store.serverLayers = JSON.parse(JSON.stringify(store.asset.layers || []));
     var LAYER_LABELS = { text: 'Matn', badge: 'Tugma/belgi', panel: 'Panel', logo: 'Logotip' };
@@ -208,77 +208,63 @@
     }
 
     // ==================================================================
-    // BRIF (savol-javob)
+    // BRIF (AI SUHBAT -- 2026-09, foydalanuvchi fikri: "savollar bir xil
+    // shablon bo'lmasin, agent ishlasin" -- statik 5 ta savol o'rniga
+    // AI agent navbatma-navbat, foydalanuvchi aytganiga qarab, keyingi
+    // savolni o'zi tanlaydi; `asset.brief_conversation` -- transkript)
     // ==================================================================
-    function pendingQuestions() {
-      var qs = store.asset.questions || [];
-      if (store.editKey) { return qs.filter(function (q) { return q.key === store.editKey; }); }
-      return qs.filter(function (q) { return !q.answered; });
-    }
+    function briefReady() { return !((store.asset.missing_questions || []).length); }
     function renderBrief(main) {
       var a = store.asset;
-      var qs = a.questions || [];
-      var pending = pendingQuestions();
-      var required = (a.missing_questions || []).map(function (q) { return q.key; });
       var wrap = h('div', { class: 'cs-brief' });
       wrap.appendChild(h('div', { class: 'cs-brief-head' }, [
         h('span', { class: 'ap-sparkle', text: '✨' }),
-        h('div', {}, [h('h2', { text: 'Rasm haqida bir nechta savol' }), h('p', { class: 'text-faint', text: 'AI kompaniya profilingizni allaqachon biladi -- bu javoblar rasmni aynan shu reklamaga moslaydi. Ixtiyoriy savollarni o\'tkazib yuborish mumkin.' })])
+        h('div', {}, [h('h2', { text: 'AI bilan suhbat' }), h('p', { class: 'text-faint', text: 'AI kompaniya profilingizni allaqachon biladi -- savolga qisqa javob yozing, u aynan shu reklamaga mos keyingi savolni o\'zi tanlaydi (shablon savol emas).' })])
       ]));
-
       if (store.busy === 'generating') { main.appendChild(wrap); wrap.appendChild(spinnerCard('AI rasm yaratmoqda… bir necha soniya (odatda 10-30 s).')); return; }
 
-      if (pending.length) {
-        var q = pending[0];
-        var idx = qs.indexOf(q);
-        var card = h('div', { class: 'cs-q-card' });
-        card.appendChild(h('div', { class: 'cs-q-step', text: (idx + 1) + ' / ' + qs.length + (q.required || required.indexOf(q.key) >= 0 ? ' · majburiy' : ' · ixtiyoriy') }));
-        card.appendChild(h('div', { class: 'cs-q-text', text: q.question }));
-        var input = h('textarea', { rows: 3, placeholder: q.placeholder || '', maxlength: 500, id: 'cs-q-input' });
-        input.value = q.answer || '';
-        card.appendChild(input);
-        var actions = h('div', { class: 'cs-q-actions' });
-        var isReq = q.required || required.indexOf(q.key) >= 0;
-        var submit = function (value) {
-          if (isReq && !value.trim()) { setMsg('Bu savolga javob majburiy -- AI aynan nimani chizishni bilishi kerak.', 'warn'); input.focus(); return; }
-          store.busy = 'brief'; store.editKey = null; renderMain();
-          api('/brief', { method: 'POST', body: { key: q.key, value: value } }).then(function () { store.busy = null; setMsg(null); renderMain(); })
-            .catch(function (e) { store.busy = null; setMsg(e.message, 'err'); renderMain(); });
-        };
-        var next = h('button', { type: 'button', class: 'btn ap-btn-sm', text: pending.length > 1 || store.editKey ? 'Keyingisi →' : 'Tugatish →', disabled: store.busy === 'brief' });
-        next.addEventListener('click', function () { submit(input.value); });
-        actions.appendChild(next);
-        if (!isReq) { actions.appendChild(miniBtn('O\'tkazib yuborish', function () { submit(''); }, { disabled: store.busy === 'brief' })); }
-        if (store.editKey) { actions.appendChild(miniBtn('Bekor', function () { store.editKey = null; renderMain(); })); }
-        if (!required.length && !store.editKey) {
-          actions.appendChild(h('span', { style: 'flex:1' }));
-          actions.appendChild(miniBtn('Qolganini o\'tkazib, darhol yaratish', generate, { cls: 'primary', disabled: !(a.quota || {}).can_generate }));
-        }
-        card.appendChild(actions);
-        input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(input.value); } });
-        wrap.appendChild(card);
-        setTimeout(function () { input.focus(); }, 0);
-      } else {
-        var sum = h('div', { class: 'cs-q-card' });
-        sum.appendChild(h('div', { class: 'cs-q-step', text: 'Hammasi tayyor' }));
-        sum.appendChild(h('div', { class: 'cs-q-text', text: 'Javoblaringiz:' }));
-        var dl = h('dl', { class: 'cs-answers' });
-        qs.forEach(function (q) {
-          dl.appendChild(h('dt', { text: q.question.split('?')[0] + '?' }));
-          var dd = h('dd', {}, [h('span', { text: q.answer ? q.answer : '—' }), ' ', miniBtn('O\'zgartirish', function () { store.editKey = q.key; renderMain(); })]);
-          dl.appendChild(dd);
-        });
-        sum.appendChild(dl);
-        var act = h('div', { class: 'cs-q-actions' });
+      var card = h('div', { class: 'cs-chat-card' });
+      var log = h('div', { class: 'cs-chat-log', id: 'cs-brief-chat-log' });
+      var conv = a.brief_conversation || [];
+      if (!conv.length && store.busy !== 'brief') { log.appendChild(h('div', { class: 'cs-chat-msg cs-chat-msg-agent', text: 'Savol tayyorlanmoqda…' })); }
+      conv.forEach(function (t) {
+        log.appendChild(h('div', { class: 'cs-chat-msg ' + (t.role === 'user' ? 'cs-chat-msg-user' : 'cs-chat-msg-agent'), text: t.text }));
+      });
+      if (store.busy === 'brief') { log.appendChild(h('div', { class: 'cs-chat-typing', text: 'AI yozmoqda…' })); }
+      card.appendChild(log);
+
+      if (briefReady()) {
         var can = (a.quota || {}).can_generate;
+        var act = h('div', { class: 'cs-q-actions', style: 'padding:12px 16px' });
         var gen = h('button', { type: 'button', class: 'btn ap-btn-sm ap-btn-ai', text: '✨ Yaratish', disabled: !can, title: can ? '1 ta AI generatsiya sarflanadi' : (a.quota || {}).label });
         gen.addEventListener('click', generate);
         act.appendChild(gen);
         act.appendChild(h('span', { class: 'text-faint', style: 'font-size:12px', text: can ? '1 ta AI generatsiya sarflanadi (' + (a.quota || {}).label + ')' : 'AI generatsiya yopiq -- tarifni oshiring' }));
-        sum.appendChild(act);
-        wrap.appendChild(sum);
+        card.appendChild(act);
+      } else {
+        var lastTurn = conv.length ? conv[conv.length - 1] : null;
+        var form = h('form', { class: 'cs-chat-form', id: 'cs-brief-chat-form' });
+        var input = h('textarea', { rows: 2, placeholder: (lastTurn && lastTurn.placeholder) || 'Javobingizni yozing…', maxlength: 1000, id: 'cs-brief-chat-input', disabled: store.busy === 'brief' });
+        var send = h('button', { type: 'submit', class: 'btn ap-btn-sm', text: 'Yuborish', disabled: store.busy === 'brief' });
+        form.appendChild(input); form.appendChild(send);
+        var submit = function () {
+          var v = input.value.trim();
+          if (!v || store.busy) { return; }
+          input.value = '';
+          store.asset.brief_conversation = (store.asset.brief_conversation || []).concat([{ role: 'user', text: v }]);
+          store.busy = 'brief'; renderMain();
+          api('/brief', { method: 'POST', body: { message: v } }).then(function () { store.busy = null; setMsg(null); renderMain(); })
+            .catch(function (e) { store.busy = null; setMsg(e.message, 'err'); renderMain(); });
+        };
+        form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
+        input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
+        card.appendChild(form);
+        setTimeout(function () { input.focus(); }, 0);
       }
+      wrap.appendChild(card);
       main.appendChild(wrap);
+      var logEl = document.getElementById('cs-brief-chat-log');
+      if (logEl) { logEl.scrollTop = logEl.scrollHeight; }
     }
 
     function spinnerCard(text) {
@@ -347,7 +333,7 @@
           h('div', { class: 'card ap-err-card' }, [h('h2', { text: 'Rasm yaratilmadi' }), h('p', { text: a.error_message || 'Noma\'lum xato.' })]),
           h('div', { class: 'cs-q-actions' }, [
             bigBtn('Qayta urinish', function () { if (a.has_base_image) { doRegenerate(); } else { generate(); } }, { icon: 'refresh', disabled: !(a.quota || {}).can_generate, cls: 'ap-btn-ai' }),
-            miniBtn('Javoblarni o\'zgartirish', function () { store.editKey = ((a.questions || [])[0] || {}).key || null; store.asset.status = 'collecting_brief'; renderMain(); }),
+            miniBtn('Javoblarni o\'zgartirish', function () { store.asset.status = 'collecting_brief'; renderMain(); }),
             h('a', { href: a.urls.templates || '#', class: 'ap-mini-btn', text: 'Shablondan boshlash', style: 'text-decoration:none' })
           ])
         ]);
@@ -690,6 +676,11 @@
       }
       side.appendChild(h('div', { class: 'cs-side-section' }, [h('h3', { class: 'ap-section-title', text: 'Eksport' }), exp, store.dirty ? h('div', { class: 'ap-field-hint', text: 'Eksport oxirgi SAQLANGAN holatni beradi -- avval "Saqlash"ni bosing.' }) : null]));
 
+      // ---- AI bilan tezkor o'zgartirish (2026-09, foydalanuvchi so'rovi:
+      // OpenAI'ni qayta chaqirmasdan, oddiy tilda "logotipni kattaroq
+      // qil" kabi buyruq bilan tuzatish -- kvota sarflanmaydi).
+      side.appendChild(renderChangeChatSection());
+
       // ---- Targetga ochish (2026-09): tayyor kreativdan Avtopilot qoralamasi
       if (!a.from_autopilot && a.urls.target_create) { side.appendChild(renderTargetSection()); }
 
@@ -800,6 +791,50 @@
       return api('/layers', { method: 'POST', body: { layers: store.asset.layers } }).then(function () {
         store.busy = null; setMsg('Saqlandi -- yakuniy rasm qayta chizildi.', 'ok'); render();
       }).catch(function (e) { store.busy = null; setMsg('Saqlanmadi: ' + e.message, 'err'); renderSide(); throw e; });
+    }
+
+    // "AI bilan tezkor o'zgartirish" -- allaqachon tayyor rasmni erkin
+    // matndagi buyruq bilan tuzatish (masalan "logotipni kattaroq qil",
+    // "sarlavhani qisqartir"): POST /ozgartir -- LLM MAVJUD qatlamlar
+    // ustidan kichik patch beradi, server QAYTA chizadi (OpenAI CHAQIRIL-
+    // MAYDI, kvota sarflanmaydi). Suhbat faqat shu sahifa sessiyasida
+    // (`store.editChat`) -- brif suhbatidan farqli, serverda saqlanmaydi.
+    function renderChangeChatSection() {
+      var sec = h('div', { class: 'cs-side-section' }, [h('h3', { class: 'ap-section-title', text: 'AI bilan tezkor o\'zgartirish' })]);
+      sec.appendChild(h('div', { class: 'ap-field-hint', style: 'margin-bottom:8px', text: 'Masalan: "logotipni kattaroq qil", "sarlavhani qisqartir", "fonni to\'qroq qil". OpenAI qayta chaqirilmaydi -- tez va bepul.' }));
+      if (store.editChat.length) {
+        var log = h('div', { class: 'cs-chat-log cs-chat-log-sm' });
+        store.editChat.forEach(function (m) {
+          log.appendChild(h('div', { class: 'cs-chat-msg ' + (m.role === 'user' ? 'cs-chat-msg-user' : 'cs-chat-msg-agent') + (m.err ? ' err' : ''), text: m.text }));
+        });
+        if (store.busy === 'chatedit') { log.appendChild(h('div', { class: 'cs-chat-typing', text: 'AI yozmoqda…' })); }
+        sec.appendChild(log);
+      }
+      var form = h('form', { class: 'cs-chat-form' });
+      var busy = store.busy === 'chatedit';
+      var input = h('textarea', { rows: 2, placeholder: 'Nimani o\'zgartiray?', maxlength: 500, disabled: busy });
+      var send = h('button', { type: 'submit', class: 'btn ap-btn-sm', text: 'Yuborish', disabled: busy });
+      form.appendChild(input); form.appendChild(send);
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var v = input.value.trim();
+        if (!v || store.busy) { return; }
+        input.value = '';
+        store.editChat.push({ role: 'user', text: v });
+        store.busy = 'chatedit'; renderSide();
+        api('/ozgartir', { method: 'POST', body: { message: v } }).then(function (r) {
+          store.busy = null;
+          store.editChat.push({ role: 'ai', text: r.reply || 'O\'zgartirildi.' });
+          store.selected = -1; render();
+        }).catch(function (e2) {
+          store.busy = null;
+          store.editChat.push({ role: 'ai', text: e2.message, err: true });
+          renderSide();
+        });
+      });
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.dispatchEvent(new Event('submit', { cancelable: true })); } });
+      sec.appendChild(form);
+      return sec;
     }
 
     // "Targetga ochish": maqsad + kunlik byudjet (+ hudud, profilda bo'lmasa)

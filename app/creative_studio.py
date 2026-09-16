@@ -598,6 +598,84 @@ def submit_brief_answer(session, asset: "db.CreativeAsset", key: str, value: str
 
 
 # ---------------------------------------------------------------------------
+# AI BRIF SUHBATI (2026-09, foydalanuvchi fikri: "savollar bir xil shablon
+# bo'lmasin, agent ishlasin") -- ESKI statik `CREATIVE_BRIEF_QUESTIONS`/
+# `submit_brief_answer()`/`missing_questions()` YUQORIDA ATAYLAB
+# TEGILMAGAN (hali ham to'g'ri ishlaydi, boshqa kod ular bilan bog'liq --
+# pastga qarang), lekin YANGI asset'lar uchun ASOSIY oqim ENDI shu:
+# `start_brief()` -> [`answer_brief()` bir nechta marta] -> "done" bo'lsa
+# `brief_answers_json` ESKI tekis lug'at shaklida to'ladi (yuqoridagi
+# `submit_brief_answer` bilan BIR XIL natija) -- `_run_generation()`,
+# `fallback_placeholder_values()`, AI kopirayter O'ZGARISHSIZ ishlaydi.
+# Haqiqiy savol-tanlash mantig'i -- `creative_brief_agent.py` (LLM).
+# ---------------------------------------------------------------------------
+
+def _apply_brief_step(session, asset: "db.CreativeAsset", conversation: list, step: dict) -> None:
+    """`creative_brief_agent.next_step()` natijasini suhbatga qo'shadi va
+    commit qiladi: savol bo'lsa -- 'agent' burilishi; 'done' bo'lsa --
+    `brief_answers_json` (ESKI tekis shakl) to'ldiriladi, telefon (bo'lsa)
+    profilga backfill qilinadi (`submit_brief_answer` bilan bir xil
+    xatti-harakat), `missing_fields_json` QAYTA hisoblanadi (LLM xatosiga
+    qaramay, generatsiya qattiq talablarsiz hech qachon ishga tushmaydi --
+    `_refresh_missing` ESKI, sof deterministik tekshiruvni ishlatadi)."""
+    conversation = list(conversation or [])
+    if step.get("done"):
+        brief = step.get("brief") if isinstance(step.get("brief"), dict) else {}
+        answers = {k: str(brief.get(k) or "").strip() for k in ("focus", "offer_text", "cta_preference", "style_notes", "phone")}
+        phone = answers.get("phone")
+        if phone:
+            company = _load_company(session, asset)
+            if company is not None and not (getattr(company, "phone", None) or "").strip():
+                company.phone = phone
+                logger.info("creative_studio: kompaniya %s telefoni AI brif suhbatidan to'ldirildi", company.id)
+        asset.set_brief_answers(answers)
+        conversation.append({"role": "agent", "text": "Rahmat! Ma'lumot yetarli -- pastdagi tugmani bosib rasmni yarating."})
+        asset.set_brief_conversation(conversation)
+        _refresh_missing(session, asset)
+    else:
+        conversation.append({"role": "agent", "text": step.get("question") or "", "placeholder": step.get("placeholder")})
+        asset.set_brief_conversation(conversation)
+    asset.updated_at = dt.datetime.utcnow()
+    session.commit()
+
+
+def start_brief(session, asset: "db.CreativeAsset", ctx: dict) -> dict:
+    """Yangi (AI) asset yaratilgach BIR MARTA chaqiriladi (`create_draft_asset`
+    dan keyin, yoki eski/holati 'collecting_brief' bo'lgan lekin suhbati
+    hali boshlanmagan asset uchun "self-heal" sifatida GET marshrutida) --
+    suhbat bo'sh bo'lsa BIRINCHI savolni oladi va saqlaydi. Suhbat
+    allaqachon boshlangan bo'lsa -- idempotent (LLM QAYTA chaqirilmaydi)."""
+    import creative_brief_agent
+    conversation = asset.get_brief_conversation()
+    if conversation:
+        return {"done": False, "question": None, "placeholder": None, "brief": None}
+    step = creative_brief_agent.next_step(ctx or {}, [])
+    _apply_brief_step(session, asset, conversation, step)
+    return step
+
+
+def answer_brief(session, asset: "db.CreativeAsset", message: str, ctx: "dict | None" = None) -> dict:
+    """Foydalanuvchining erkin matndagi javobini suhbatga qo'shadi va
+    `creative_brief_agent.next_step()` orqali keyingi qadamni oladi --
+    yangi savol (saqlanadi, UI ko'rsatadi) yoki "done" (`brief_answers_json`
+    ESKI tekis shaklda to'ladi, `missing_fields_json` qayta hisoblanadi --
+    keyingi qadam allaqachon mavjud `/generate` marshruti, bu funksiya
+    faqat brifni "tayyor" qilib qo'yadi)."""
+    import creative_brief_agent
+    message = (message or "").strip()[:1000]
+    if not message:
+        raise CreativeError("Javob bo'sh -- biror narsa yozing.")
+    if ctx is None:
+        company = _load_company(session, asset)
+        ctx = company_context_module.build_company_context(company, session) if company is not None else {}
+    conversation = list(asset.get_brief_conversation())
+    conversation.append({"role": "user", "text": message})
+    step = creative_brief_agent.next_step(ctx or {}, conversation)
+    _apply_brief_step(session, asset, conversation, step)
+    return step
+
+
+# ---------------------------------------------------------------------------
 # PROMPT + PLACEHOLDER QIYMATLARI
 # ---------------------------------------------------------------------------
 
@@ -1052,6 +1130,126 @@ def set_layers(session, asset, layers: list[dict]) -> "db.CreativeAsset":
     asset.updated_at = dt.datetime.utcnow()
     session.commit()
     return asset
+
+
+# ---------------------------------------------------------------------------
+# CHAT ORQALI TEZKOR TAHRIR ("logotipni kattaroq qil", "sarlavhani
+# qisqartir" -- 2026-09, foydalanuvchi so'rovi). MUHIM: bu OpenAI rasm
+# generatsiyasini QAYTA CHAQIRMAYDI -- LLM faqat MAVJUD qatlamlar ustidan
+# kichik, tekshirilgan patch beradi, qolgani `set_layers()` (sof Pillow,
+# tez, kvota sarflamaydi) orqali ketadi. `check_quota()`/`increment_usage()`
+# bu yo'lda HECH QAERDA chaqirilmaydi.
+# ---------------------------------------------------------------------------
+
+class LayerEditUnavailableError(CreativeError):
+    """AI tahrir agenti (LLM) ishlamadi -- qatlamlar TEGILMAYDI."""
+
+
+_LAYER_EDIT_ALLOWED_FIELDS = {"text", "color", "bg_color", "align", "size_ratio", "opacity", "font", "gradient", "hidden", "x", "y", "w", "h"}
+_LAYER_EDIT_UNAVAILABLE_MSG = (
+    "AI tahrir agenti hozir javob bera olmadi. Birozdan keyin qayta urinib ko'ring yoki qatlamlarni qo'lda tahrirlang."
+)
+
+_LAYER_EDIT_SYSTEM = """Sen Replix Kreativ studiyasining TEZKOR TAHRIR AGENTISAN. Foydalanuvchi tabiiy tilda buyruq
+beradi (masalan "logotipni kattaroq qil", "sarlavhani qisqartir", "fon rangini to'qroq qil"), sen buni MAVJUD
+qatlamlar ustidan STRUKTURALI patch'ga aylantirasan -- YANGI rasm CHIZMAYSAN, faqat berilgan qatlamlarning
+xususiyatlarini o'zgartirasan. FAQAT JSON qaytar (izohsiz, ``` belgisiz):
+{"changes": [{"layer_id": "...", "field": "...", "value": ...}, ...], "reply": "<qisqa o'zbekcha javob>"}
+
+QOIDALAR:
+- "layer_id" FAQAT pastda berilgan MAVJUD qatlamlar ro'yxatidagi "id" bo'lishi kerak -- yangi id o'ylab topma.
+- Ruxsat etilgan "field" qiymatlari: text, color, bg_color, align, size_ratio, opacity, font, gradient, hidden,
+  x, y, w, h (x/y/w/h -- 0..1 nisbiy koordinata, rasmning chap-yuqori burchagidan).
+- "kattaroq/kichikroq qil" -- shu qatlamning "w" VA "h"ni mutanosib oshir/kamayt (masalan 20% kattaroq -> ikkalasini
+  ham ~1.2 barobar, lekin 0..1 oralig'idan chiqmasin).
+- Rang so'ralsa -- matn uchun "color", fon/panel/tugma uchun "bg_color", "#RRGGBB" formatida.
+- "matnni qisqartir/uzunroq/kuchliroq yoz" -- "text" maydoniga YANGI matn yoz (haqiqiy faktlarni O'YLAB TOPMA,
+  faqat mavjud matnni qisqartir/uslubini o'zgartir).
+- "yashir/olib tashla" -- {"field": "hidden", "value": true}; "qaytar/ko'rsat" -- {"field": "hidden", "value": false}.
+- Qaysi qatlamga tegishli ekanligi aniq aytilmasa -- eng mos qatlamni TANLA (masalan "sarlavha" -> id="headline"
+  yoki eng katta shriftli "text" turi; "tugma"/"chaqiriq" -> "badge" turi).
+- Bir nechta qatlamga tegishli bo'lsa -- barchasi uchun alohida element qo'sh (masalan "hammasini oqqa bo'ya").
+- reply -- 1 qisqa o'zbekcha jumla, nima o'zgarganini ayt."""
+
+
+def _layer_edit_llm(system_prompt: str, user_content: str) -> dict:
+    """`_llm()` yupqa o'rami (`ai_campaign_planner`/`creative_brief_agent`
+    bilan bir xil naqsh) -- import chaqiruv paytida emas."""
+    import orchestrator
+    try:
+        return orchestrator._call_agent(system_prompt, user_content)
+    except (orchestrator.TargetologFormatError, orchestrator.AgentUnavailableError) as e:
+        logger.warning("creative_studio: tahrir agenti LLM javob bermadi (%s)", type(e).__name__)
+        raise LayerEditUnavailableError(_LAYER_EDIT_UNAVAILABLE_MSG) from e
+
+
+def _layer_edit_user_content(ctx: dict, layers: list, message: str) -> str:
+    lines = [
+        company_context_module.company_context_prompt_block(ctx or {}),
+        "",
+        "# HOZIRGI QATLAMLAR (JSON)",
+        json.dumps(layers, ensure_ascii=False),
+        "",
+        "# FOYDALANUVCHI BUYRUG'I",
+        message,
+        "",
+        "Yuqoridagi qoidalar bo'yicha FAQAT JSON qaytar.",
+    ]
+    return "\n".join(lines)
+
+
+def chat_edit_layers(session, asset: "db.CreativeAsset", ctx: dict, message: str) -> "tuple[db.CreativeAsset, str]":
+    """Erkin matndagi tahrir buyrug'ini (masalan "logotipni kattaroq qil")
+    LLM orqali kichik, TEKSHIRILGAN patch'ga aylantiradi va qo'llaydi:
+      1. `asset.get_layers()`ning NUSXASI olinadi (LLM xato bersa asl
+         qatlamlar TEGILMAYDI).
+      2. LLM'dan `{"changes": [{"layer_id","field","value"}, ...], "reply"}`
+         so'raladi.
+      3. Har bir element TEKSHIRILADI: `layer_id` MAVJUD qatlamda bo'lishi
+         SHART, `field` `_LAYER_EDIT_ALLOWED_FIELDS`dan bo'lishi SHART
+         (`type`/`id` kabi strukturaviy maydonlar HECH QACHON o'zgarmaydi)
+         -- mos kelmagani jimgina (log bilan) tashlab yuboriladi, qolgan
+         to'g'ri elementlar baribir qo'llanadi.
+      4. Kamida bitta o'zgarish qo'llanmasa -- `CreativeError` (qatlamlar
+         tegilmagan).
+      5. `set_layers()` (sanitize + `_render_asset` -- sof Pillow, OpenAI
+         CHAQIRILMAYDI, kvota sarflanmaydi) -- xuddi qo'lda tahrirlagandek.
+    Qaytaradi: (yangilangan asset, LLM'ning qisqa o'zbekcha javobi)."""
+    message = (message or "").strip()[:500]
+    if not message:
+        raise CreativeError("Buyruq bo'sh -- nimani o'zgartirishni yozing.")
+    if not asset.final_storage_path:
+        raise CreativeError("Avval rasmni generatsiya qiling -- keyin tahrirlash mumkin.")
+    layers = copy.deepcopy(asset.get_layers())
+    if not layers:
+        raise CreativeError("Bu rasmda qatlamlar yo'q -- avval qatlam qo'shing.")
+
+    raw = _layer_edit_llm(_LAYER_EDIT_SYSTEM, _layer_edit_user_content(ctx or {}, layers, message))
+    if not isinstance(raw, dict):
+        raise LayerEditUnavailableError(_LAYER_EDIT_UNAVAILABLE_MSG)
+    reply = str(raw.get("reply") or "").strip()
+    changes = raw.get("changes") if isinstance(raw.get("changes"), list) else []
+
+    by_id = {l.get("id"): l for l in layers if isinstance(l, dict) and l.get("id")}
+    applied = 0
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        layer_id = item.get("layer_id")
+        field = item.get("field")
+        if layer_id not in by_id:
+            logger.warning("creative_studio: chat tahrir -- noma'lum layer_id rad etildi: %r", layer_id)
+            continue
+        if field not in _LAYER_EDIT_ALLOWED_FIELDS:
+            logger.warning("creative_studio: chat tahrir -- ruxsat etilmagan field rad etildi: %r", field)
+            continue
+        by_id[layer_id][field] = item.get("value")
+        applied += 1
+    if not applied:
+        raise CreativeError(reply or "AI hech qanday o'zgartirish taklif qilmadi -- buyruqni aniqroq yozing.")
+
+    set_layers(session, asset, layers)
+    return asset, (reply or "O'zgartirildi.")
 
 
 # ---------------------------------------------------------------------------

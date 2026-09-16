@@ -57,6 +57,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TMPDIR, 'test_creative_s
 
 from PIL import Image  # noqa: E402
 
+import orchestrator  # noqa: E402
 import db as db_module  # noqa: E402
 import plans  # noqa: E402
 import creative_templates  # noqa: E402
@@ -730,6 +731,153 @@ def test_ai_copywriter_and_phone():
         session.close()
 
 
+def test_brief_agent_flow():
+    """2026-09, foydalanuvchi fikri ("savollar bir xil shablon bo'lmasin,
+    agent ishlasin"): `creative_studio.start_brief`/`answer_brief`
+    (LLM -- `orchestrator._call_agent` mock) -- suhbat saqlanadi, "done"
+    bo'lgach `brief_answers_json` ESKI tekis shaklda to'ladi (telefon
+    profilga backfill bilan birga) va pastki oqim (`generate_base_image`)
+    HECH QANDAY o'zgarishsiz ishlaydi (flat-dict shartnoma saqlangan)."""
+    import company_context
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Armatura Co", plan="business", full_profile=False, phone=None)
+        ctx = company_context.build_company_context(c, session)
+        asset = creative_studio.create_draft_asset(session, c, None)
+        check("yangi asset: suhbat hali bo'sh", asset.get_brief_conversation() == [])
+
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"done": False, "question": "Qaysi mahsulotga urg'u berilsin?", "placeholder": "Masalan: armatura"}) as m:
+            step = creative_studio.start_brief(session, asset, ctx)
+        conv = asset.get_brief_conversation()
+        check("start_brief: birinchi savol saqlandi", step["done"] is False and len(conv) == 1 and conv[0]["role"] == "agent" and "mahsulotga" in conv[0]["text"])
+        with mock.patch.object(orchestrator, "_call_agent") as m2:
+            creative_studio.start_brief(session, asset, ctx)
+        check("start_brief idempotent -- ikkinchi chaqiruvda LLM chaqirilmadi", m2.call_count == 0)
+
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"done": False, "question": "Qaysi diametr/turdagi armatura, narxi qancha?", "placeholder": None}):
+            step2 = creative_studio.answer_brief(session, asset, "Armatura sotamiz", ctx=ctx)
+        conv2 = asset.get_brief_conversation()
+        check("answer_brief: user+agent burilish qo'shildi (2 -> 4)", len(conv2) == 3 and conv2[1]["role"] == "user" and conv2[1]["text"] == "Armatura sotamiz")
+        check("hali done emas", step2["done"] is False)
+        check("brif hali to'liq emas -- missing_fields o'zgarmagan", "focus" in json.loads(asset.missing_fields_json))
+
+        brief = {"focus": "Armatura 12mm, GOST 5781", "offer_text": "-10% chegirma", "cta_preference": "", "style_notes": "", "phone": "+998 90 123 45 67"}
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"done": True, "brief": brief}):
+            step3 = creative_studio.answer_brief(session, asset, "12mm, GOST 5781, -10% chegirma, +998901234567", ctx=ctx)
+        check("done bo'lgach step3 done=True", step3["done"] is True)
+        answers = asset.get_brief_answers()
+        check("brief_answers_json ESKI tekis shaklda, 5 ta kalit", set(answers.keys()) == {"focus", "offer_text", "cta_preference", "style_notes", "phone"})
+        check("focus/phone to'g'ri o'tdi", answers["focus"] == "Armatura 12mm, GOST 5781" and answers["phone"] == "+998 90 123 45 67")
+        check("missing_fields_json bo'sh (generatsiyaga tayyor)", json.loads(asset.missing_fields_json) == [])
+        check("telefon kompaniya profiliga backfill qilindi", c.phone == "+998 90 123 45 67")
+        check("yopilish burilishi qo'shildi", asset.get_brief_conversation()[-1]["role"] == "agent")
+
+        # Pastki oqim (generatsiya) O'ZGARISHSIZ ishlaydi -- flat-dict shartnoma saqlangan
+        plan = plans.PLANS["business"]
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()) as req:
+            creative_studio.generate_base_image(session, asset, c, plan)
+        check("AI suhbatdan keyin ham generatsiya muvaffaqiyatli", asset.status == "ready" and req.call_count == 1)
+        check("headline AI suhbat brifidan (fallback, AI kopirayter offline)", any("Armatura" in (l.get("text") or "") for l in asset.get_layers()))
+
+        # Xavfsizlik to'ri: telefon yo'q kompaniya -- LLM "done" desa ham rad etiladi
+        c2 = _company(session, "No Phone Armatura", plan="business", full_profile=False, phone=None)
+        ctx2 = company_context.build_company_context(c2, session)
+        asset2 = creative_studio.create_draft_asset(session, c2, None)
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"done": False, "question": "Mahsulot?", "placeholder": None}):
+            creative_studio.start_brief(session, asset2, ctx2)
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"done": True, "brief": {"focus": "Armatura", "offer_text": "", "cta_preference": "", "style_notes": "", "phone": ""}}):
+            step4 = creative_studio.answer_brief(session, asset2, "Armatura", ctx=ctx2)
+        check("qattiq to'r: telefonsiz 'done' rad etildi (web-agent darajasida ham)", step4["done"] is False and "telefon" in step4["question"].lower())
+        check("qattiq to'r ishlaganda brief_answers_json TEGILMAYDI", asset2.get_brief_answers() == {})
+
+        # LLM UMUMAN ishlamasa -- suhbat qulflanib qolmaydi
+        c3 = _company(session, "LLM Down Co", plan="business", full_profile=False, phone=None)
+        ctx3 = company_context.build_company_context(c3, session)
+        asset3 = creative_studio.create_draft_asset(session, c3, None)
+        with mock.patch.object(orchestrator, "_call_agent", side_effect=orchestrator.AgentUnavailableError("down")):
+            step5 = creative_studio.start_brief(session, asset3, ctx3)
+        check("LLM ishlamasa ham start_brief ishlaydi (ESKI statik savol)", step5["done"] is False and step5["question"] == creative_studio._BRIEF_BY_KEY["focus"][1])
+    finally:
+        session.close()
+
+
+def test_chat_edit_layers():
+    """2026-09, foydalanuvchi so'rovi: "logotipni kattaroq qil" kabi
+    buyruqni OpenAI'ni QAYTA chaqirmasdan qo'llash (kvota sarflanmaydi,
+    faqat Pillow qayta chizadi). LLM -- `orchestrator._call_agent` mock."""
+    import company_context
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Layer Chat Co", plan="business")
+        plan = plans.PLANS["business"]
+        a = creative_studio.create_draft_asset(session, c, None, template_key="bold_sale", aspect="1:1")
+        creative_studio.submit_brief_answer(session, a, "focus", "Test mahsulot")
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()):
+            creative_studio.generate_base_image(session, a, c, plan)
+        check("chat_edit_layers testi uchun asset tayyor (ready)", a.status == "ready")
+        final = creative_studio.export_png_path(a)
+        before_bytes = final.read_bytes()
+        logo_id = next(l["id"] for l in a.get_layers() if l["type"] == "logo")
+        headline_id = next(l["id"] for l in a.get_layers() if l["id"] == "headline")
+        ctx = company_context.build_company_context(c, session)
+
+        # Happy path: valid o'zgarishlar (logotip hajmi + ko'rinadigan matn
+        # rangi -- piksellar aniq o'zgarishi uchun) + rad etilishi kerak
+        # bo'lganlar (strukturaviy field, noma'lum layer_id) aralash.
+        resp = {
+            "changes": [
+                {"layer_id": logo_id, "field": "w", "value": 0.4},
+                {"layer_id": logo_id, "field": "h", "value": 0.2},
+                {"layer_id": logo_id, "field": "type", "value": "text"},    # strukturaviy -- rad etilishi kerak
+                {"layer_id": "yoq_qatlam", "field": "text", "value": "x"},  # noma'lum layer_id -- rad etilishi kerak
+                {"layer_id": headline_id, "field": "color", "value": "#00FF00"},
+            ],
+            "reply": "Logotip kattalashtirildi.",
+        }
+        with mock.patch.object(orchestrator, "_call_agent", return_value=resp) as m, \
+             mock.patch.object(creative_studio, "check_quota") as qm, \
+             mock.patch.object(creative_studio, "increment_usage") as um, \
+             mock.patch.object(creative_studio, "_openai_request") as img_req:
+            asset2, reply = creative_studio.chat_edit_layers(session, a, ctx, "logotipni kattaroq qil")
+        check("chat_edit_layers: LLM 1 marta chaqirildi", m.call_count == 1)
+        check("chat_edit_layers: reply qaytdi", reply == "Logotip kattalashtirildi.")
+        new_logo = next(l for l in a.get_layers() if l["id"] == logo_id)
+        new_headline = next(l for l in a.get_layers() if l["id"] == headline_id)
+        check("ruxsat etilgan fieldlar (w/h) qo'llandi", abs(new_logo["w"] - 0.4) < 0.001 and abs(new_logo["h"] - 0.2) < 0.001)
+        check("ruxsat etilgan rang o'zgarishi qo'llandi", new_headline["color"] == "#00FF00")
+        check("strukturaviy field (type) O'ZGARMADI", new_logo["type"] == "logo")
+        check("asset qayta render qilindi (final fayl o'zgardi)", final.read_bytes() != before_bytes)
+        check("OpenAI rasm-generatsiyasi CHAQIRILMADI (kvota sarflanmaydi)", img_req.call_count == 0 and qm.call_count == 0 and um.call_count == 0)
+
+        # LLM ishlamasa -- qatlamlar TEGILMAYDI, friendly xato
+        snapshot = json.loads(json.dumps(a.get_layers()))
+        with mock.patch.object(orchestrator, "_call_agent", side_effect=orchestrator.AgentUnavailableError("down")):
+            try:
+                creative_studio.chat_edit_layers(session, a, ctx, "fonni qora qil")
+                check("LLM ishlamasa -> CreativeError", False)
+            except creative_studio.CreativeError as e:
+                check("LLM ishlamasa -> friendly xato (xom matn yo'q)", "down" not in str(e))
+        check("LLM ishlamasa -> qatlamlar BAYT-BAYTIGA o'zgarmadi", a.get_layers() == snapshot)
+
+        # Barcha o'zgarishlar rad etilsa (noma'lum layer_id) -> CreativeError, qatlamlar o'zgarmaydi
+        with mock.patch.object(orchestrator, "_call_agent", return_value={"changes": [{"layer_id": "yoq", "field": "text", "value": "x"}], "reply": "Mos qatlam topilmadi."}):
+            try:
+                creative_studio.chat_edit_layers(session, a, ctx, "nimadir noaniq narsani o'zgartir")
+                check("hech narsa qo'llanmasa -> CreativeError", False)
+            except creative_studio.CreativeError as e:
+                check("hech narsa qo'llanmasa -> reply xato sifatida", "topilmadi" in str(e).lower())
+        check("hech narsa qo'llanmasa -> qatlamlar o'zgarmadi", a.get_layers() == snapshot)
+
+        # Bo'sh buyruq
+        try:
+            creative_studio.chat_edit_layers(session, a, ctx, "   ")
+            check("bo'sh buyruq -> CreativeError", False)
+        except creative_studio.CreativeError:
+            check("bo'sh buyruq -> CreativeError", True)
+    finally:
+        session.close()
+
+
 def test_r2_storage_backend_wired():
     """2026-09, R2 doimiy saqlash: logotip/kreativ base+final rasmlari
     `storage_backend.upload_file`ga to'g'ri key bilan uzatilishi,
@@ -820,6 +968,8 @@ test_multitenant_isolation()
 test_plans()
 test_logo_background_removal()
 test_ai_copywriter_and_phone()
+test_brief_agent_flow()
+test_chat_edit_layers()
 test_r2_storage_backend_wired()
 
 print()

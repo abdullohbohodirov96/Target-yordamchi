@@ -8139,6 +8139,12 @@ def creative_new():
                 else:
                     asset = creative_studio.create_draft_asset(session, company, _autopilot_manager_id(),
                                                                template_key=template["key"] if template else None, aspect=aspect or "1:1")
+                    # 2026-09, foydalanuvchi fikri ("savollar bir xil shablon
+                    # bo'lmasin, agent ishlasin"): darhol AI-brif suhbatining
+                    # BIRINCHI savolini olamiz (LLM ishlamasa ham ichkarida
+                    # zaxira savolga tushadi -- hech qachon bloklamaydi).
+                    ctx0 = company_context_module.build_company_context(company, session)
+                    creative_studio.start_brief(session, asset, ctx0)
             except creative_studio.CreativeError as e:
                 flash(str(e), "error")
                 return render_template("creative_new.html", template=template, quota=quota, from_autopilot=from_autopilot,
@@ -8161,6 +8167,13 @@ def creative_editor(asset_id: int):
     session = get_session()
     try:
         asset = _creative_load_asset(session, asset_id, company)
+        # 2026-09, self-heal: eski (deploy'dan oldingi) yoki qandaydir
+        # sabab bilan suhbatsiz qolgan 'collecting_brief' asset -- birinchi
+        # ochilishda AI-brif suhbatining birinchi savoli olinadi (idempotent
+        # -- suhbat allaqachon bo'lsa hech narsa qilmaydi/LLM chaqirmaydi).
+        if asset.status == "collecting_brief" and not asset.get_brief_conversation():
+            ctx0 = company_context_module.build_company_context(company, session)
+            creative_studio.start_brief(session, asset, ctx0)
         payload = _creative_payload(session, asset, company)
         return render_template("creative_editor.html", asset_json=payload, asset=payload)
     finally:
@@ -8171,18 +8184,50 @@ def creative_editor(asset_id: int):
 @login_required
 @module_required("target")
 def creative_brief_answer(asset_id: int):
-    """Bitta brif savoliga javob: JSON {"key": ..., "value": ...} (bo'sh
-    javob = ixtiyoriy savol o'tkazib yuborildi)."""
+    """AI-brif suhbatiga erkin matndagi javob: JSON {"message": "..."}
+    (2026-09, YANGI -- AI agent keyingi savolni foydalanuvchi aytganiga
+    qarab o'zi tanlaydi, `creative_studio.answer_brief`). ESKI shakl --
+    {"key": ..., "value": ...} -- ORQAGA MOSLIK uchun hali ham qo'llab-
+    quvvatlanadi (`submit_brief_answer`, masalan deploy'dan oldin
+    boshlangan yoki JS eski keshi bilan ochilgan sahifalar uchun)."""
     company = _current_company()
     body = request.get_json(silent=True) or {}
     session = get_session()
     try:
         asset = _creative_load_asset(session, asset_id, company)
         try:
-            creative_studio.submit_brief_answer(session, asset, str(body.get("key") or ""), str(body.get("value") or ""))
+            if "message" in body:
+                ctx = company_context_module.build_company_context(company, session)
+                creative_studio.answer_brief(session, asset, str(body.get("message") or ""), ctx=ctx)
+            else:
+                creative_studio.submit_brief_answer(session, asset, str(body.get("key") or ""), str(body.get("value") or ""))
         except creative_studio.CreativeError as e:
             return _creative_error(e, session, asset, company)
         return jsonify({"ok": True, "asset": _creative_payload(session, asset, company)})
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/<int:asset_id>/ozgartir", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_chat_edit(asset_id: int):
+    """"AI bilan tezkor o'zgartirish" chat qutisi (2026-09, foydalanuvchi
+    so'rovi -- allaqachon tayyor rasmni "logotipni kattaroq qil" kabi
+    buyruq bilan tuzatish): `chat_edit_layers` -- OpenAI rasm-generatsiyasi
+    QAYTA chaqirilmaydi, faqat mavjud qatlamlar ustidan kichik patch +
+    Pillow qayta chizish (kvota sarflanmaydi). JSON {"message": "..."}."""
+    company = _current_company()
+    body = request.get_json(silent=True) or {}
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        try:
+            ctx = company_context_module.build_company_context(company, session)
+            _, reply = creative_studio.chat_edit_layers(session, asset, ctx, str(body.get("message") or ""))
+        except creative_studio.CreativeError as e:
+            return _creative_error(e, session, asset, company)
+        return jsonify({"ok": True, "reply": reply, "asset": _creative_payload(session, asset, company)})
     finally:
         session.close()
 

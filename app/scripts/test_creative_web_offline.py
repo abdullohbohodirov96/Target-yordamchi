@@ -65,6 +65,7 @@ import business_profile  # noqa: E402
 import orchestrator  # noqa: E402
 import meta_api  # noqa: E402
 import ai_campaign_planner  # noqa: E402
+import creative_brief_agent  # noqa: E402
 
 app_module.app.config["TESTING"] = True
 app_module.app.config["WTF_CSRF_ENABLED"] = False
@@ -77,6 +78,17 @@ failures = []
 
 # AI kopirayter (chat/completions) OFFLINE -- zaxira matn ishlatiladi.
 mock.patch.object(creative_studio, "_request_ad_copy", side_effect=RuntimeError("offline")).start()
+
+# 2026-09, AI-brif SUHBATI (statik forma o'rniga -- `creative_new`/
+# `creative_editor` marshrutlari endi HAR YANGI asset uchun avtomatik
+# `start_brief()`ni chaqiradi): butun modul davomida STANDART (baseline)
+# javob -- "hali savol bor" (LLM real tarmoqqa chiqmasin). Alohida
+# testlar o'z ichida `with mock.patch.object(creative_brief_agent,
+# "_llm", ...)` bilan vaqtincha qayta belgilaydi (bu baseline'ni
+# QOPLAYDI, blok tugagach yana standartga qaytadi).
+mock.patch.object(creative_brief_agent, "_llm", return_value={
+    "done": False, "question": "Aynan qaysi mahsulot/xizmatga urg'u berilsin?", "placeholder": "Masalan: armatura",
+}).start()
 
 
 def check(name, cond):
@@ -357,7 +369,8 @@ def test_multitenant():
     b = _client("cs_admin_b")
     for path, method in [(f"/kreativ/{ASSET_ID}", "GET"), (f"/kreativ/{ASSET_ID}/rasm.png", "GET"), (f"/kreativ/{ASSET_ID}/eksport.png", "GET"),
                          (f"/kreativ/{ASSET_ID}/eksport.pdf", "GET"), (f"/kreativ/{ASSET_ID}/brief", "POST"), (f"/kreativ/{ASSET_ID}/generate", "POST"),
-                         (f"/kreativ/{ASSET_ID}/layers", "POST"), (f"/kreativ/{ASSET_ID}/ochirish", "POST"), (f"/kreativ/{ASSET_ID}/target-yarat", "POST")]:
+                         (f"/kreativ/{ASSET_ID}/layers", "POST"), (f"/kreativ/{ASSET_ID}/ochirish", "POST"), (f"/kreativ/{ASSET_ID}/target-yarat", "POST"),
+                         (f"/kreativ/{ASSET_ID}/ozgartir", "POST")]:
         r = b.open(path, method=method, json={} if method == "POST" else None)
         check(f"B: A kreativi {method} {path.split(str(ASSET_ID))[-1] or '/'} -> 404", r.status_code == 404)
     html = b.get("/kreativ").get_data(as_text=True).replace("&#39;", "'")
@@ -589,6 +602,63 @@ def test_target_create():
         check("B: wizard A kreativini ko'rmaydi", 'id="ap-creative-banner"' not in b.get(f"/avtopilot/yangi?creative_asset_id={ASSET_ID}").get_data(as_text=True))
 
 
+def test_brief_chat_and_layer_edit():
+    """2026-09, foydalanuvchi fikri ("savollar bir xil shablon bo'lmasin,
+    agent ishlasin"): YANGI asset -> avtomatik AI-brif suhbati boshlanadi
+    (birinchi savol darhol JSON'da), erkin matndagi javoblar (`{"message":
+    ...}`) bilan davom etadi, "done" bo'lgach generatsiya ishlaydi -- ESKI
+    {"key","value"} shakli (`test_brief_flow`) bilan bir vaqtda (bir xil
+    marshrut) ishlashini buzmaydi. Shu bilan birga "AI bilan tezkor
+    o'zgartirish" (`/ozgartir`) -- OpenAI qayta chaqirilmasdan qatlam
+    tahrirlash."""
+    r = admin.post("/kreativ/yangi", data={"mode": "ai", "aspect": "1:1"})
+    aid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+    page = admin.get(f"/kreativ/{aid}")
+    data = _asset_json(page.get_data(as_text=True))
+    check("yaratilgach darhol AI-brif suhbatining 1-savoli bor", len(data["brief_conversation"]) == 1 and data["brief_conversation"][0]["role"] == "agent")
+    check("status hali collecting_brief", data["status"] == "collecting_brief")
+
+    r = admin.post(f"/kreativ/{aid}/brief", json={"message": "Armatura sotamiz, 12mm"})
+    d = r.get_json()
+    check("message javobi qabul qilindi, suhbat o'sdi", r.status_code == 200 and len(d["asset"]["brief_conversation"]) == 3)
+    check("user javobi suhbatda ko'rinadi", d["asset"]["brief_conversation"][1]["role"] == "user" and d["asset"]["brief_conversation"][1]["text"] == "Armatura sotamiz, 12mm")
+
+    with mock.patch.object(creative_brief_agent, "_llm", return_value={
+        "done": True, "brief": {"focus": "Armatura 12mm, GOST 5781", "offer_text": "", "cta_preference": "", "style_notes": "", "phone": "+998 90 111 22 33"},
+    }):
+        r = admin.post(f"/kreativ/{aid}/brief", json={"message": "GOST 5781, telefon +998 90 111 22 33"})
+    d = r.get_json()
+    check("'done' -> missing_questions bo'sh, brief_answers to'ldi", r.status_code == 200 and d["asset"]["missing_questions"] == [] and d["asset"]["brief_answers"]["focus"] == "Armatura 12mm, GOST 5781")
+    check("bo'sh message -> 400", admin.post(f"/kreativ/{aid}/brief", json={"message": "  "}).status_code == 400)
+
+    with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()) as req:
+        r = admin.post(f"/kreativ/{aid}/generate", json={})
+    check("AI-suhbat orqali to'ldirilgan brif bilan ham generatsiya ishlaydi", r.status_code == 200 and req.call_count == 1 and r.get_json()["asset"]["status"] == "ready")
+
+    # ESKI shakl ({"key","value"}) HAM shu marshrutda ishlayveradi (orqaga moslik)
+    r2 = admin.post("/kreativ/yangi", data={"mode": "ai", "aspect": "1:1"})
+    aid2 = int(r2.headers["Location"].rstrip("/").split("/")[-1])
+    r = admin.post(f"/kreativ/{aid2}/brief", json={"key": "focus", "value": "Eski shakl test"})
+    check("ESKI {'key','value'} shakli hali ishlaydi", r.status_code == 200 and r.get_json()["asset"]["brief_answers"]["focus"] == "Eski shakl test")
+
+    # AI bilan tezkor o'zgartirish (/ozgartir) -- kvota sarflanmasdan qatlam tahrir
+    before_json = _asset_json(admin.get(f"/kreativ/{aid}").get_data(as_text=True))
+    layers = before_json["layers"]
+    quota_before = before_json["quota"]["used"]
+    headline_id = next(l["id"] for l in layers if l["id"] == "headline")
+    with mock.patch.object(orchestrator, "_call_agent", return_value={"changes": [{"layer_id": headline_id, "field": "color", "value": "#00FF00"}], "reply": "Sarlavha rangi o'zgartirildi."}) as m, \
+         mock.patch.object(creative_studio, "_openai_request") as img_req:
+        r = admin.post(f"/kreativ/{aid}/ozgartir", json={"message": "sarlavha rangini yashil qil"})
+    d = r.get_json()
+    check("/ozgartir: 200, reply bor, OpenAI rasm chaqirilmagan", r.status_code == 200 and d.get("reply") and img_req.call_count == 0)
+    check("/ozgartir: qatlam o'zgardi", any(l["id"] == headline_id and l["color"] == "#00FF00" for l in d["asset"]["layers"]))
+    check("/ozgartir: kvota o'zgarmadi", d["asset"]["quota"]["used"] == quota_before)
+
+    with mock.patch.object(orchestrator, "_call_agent", side_effect=orchestrator.AgentUnavailableError("down")):
+        r = admin.post(f"/kreativ/{aid}/ozgartir", json={"message": "fonni qora qil"})
+    check("/ozgartir: LLM ishlamasa -> friendly 400", r.status_code == 400 and "AI tahrir" in r.get_json()["error"])
+
+
 def test_delete():
     r = admin.post(f"/kreativ/{TPL_ASSET_ID}/ochirish", json={})
     check("ochirish JSON 200", r.status_code == 200 and r.get_json()["ok"])
@@ -611,6 +681,7 @@ if __name__ == "__main__":
     test_autopilot_from_creative()
     test_brand_kit()
     test_target_create()
+    test_brief_chat_and_layer_edit()
     test_delete()
     if failures:
         print("\nXATOLAR:", failures)

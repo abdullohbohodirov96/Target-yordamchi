@@ -106,6 +106,19 @@ def brief_questions_for(ctx: dict, asset) -> "tuple[list[dict], list[dict]]":
     return all_q, [q for q in missing if q.get("required")]
 
 
+def serialize_brief_conversation(asset) -> list[dict]:
+    """AI-brif suhbati (2026-09, `creative_brief_agent.py`) -- JS chat UI
+    (`static/creative_studio.js`) shu ro'yxatni bubble'lar sifatida
+    chizadi: agent savoli chapda, foydalanuvchi javobi o'ngda."""
+    out = []
+    for turn in (asset.get_brief_conversation() if asset is not None else []):
+        if not isinstance(turn, dict):
+            continue
+        role = turn.get("role") if turn.get("role") in ("agent", "user") else "agent"
+        out.append({"role": role, "text": str(turn.get("text") or ""), "placeholder": turn.get("placeholder")})
+    return out
+
+
 # ---------------------------------------------------------------------------
 # SERIALIZATSIYA
 # ---------------------------------------------------------------------------
@@ -151,6 +164,10 @@ def serialize_asset(asset, brand_kit, quota: "dict | None", *, ctx: "dict | None
         "brief_answers": asset.get_brief_answers(),
         "questions": questions,
         "missing_questions": missing,
+        # 2026-09: AI-brif SUHBATI (statik `questions` ro'yxati o'rniga --
+        # ular yuqorida ORQAGA MOSLIK uchun saqlanadi, lekin JS endi
+        # ASOSAN shu ro'yxatni chat sifatida chizadi).
+        "brief_conversation": serialize_brief_conversation(asset),
         "layers": creative_studio.get_layers(asset),
         "image_url": (urls.get("image") + "?v=" + v) if (is_ready and urls.get("image")) else None,
         "base_image_url": (urls.get("base_image") + "?v=" + v) if (has_base and urls.get("base_image")) else None,
