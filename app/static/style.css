@@ -1723,6 +1723,69 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-modal-msg.warn { background: var(--warn-bg); color: var(--warn); }
 .ap-modal-msg ul { margin: 6px 0 0; padding-left: 18px; }
 
+/* 2026-09: nashr modalidagi "Darhol yoqilsin / Pauzada qolsin" tanlovi */
+.ap-launch-toggle { display: flex; gap: 6px 16px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.ap-launch-toggle > span:first-child { font-weight: 600; font-size: 13px; color: var(--ink); }
+.ap-launch-toggle label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; min-height: 28px; }
+.ap-launch-toggle input { accent-color: var(--blue); margin: 0; }
+
+/* 2026-09, "interfeys qiyinlashib qolgan": API qo'llamaydigan
+   imkoniyatlar ro'yxati yig'ilgan, xira blok (tahrir maydonlari bilan
+   bir xil og'irlikda emas). */
+.ap-unsupported-block { margin: 0 0 22px; }
+.ap-unsupported-block summary { cursor: pointer; font-size: 11.5px; color: var(--text-faint); list-style: none; display: flex; align-items: center; gap: 6px; padding: 4px 0; user-select: none; }
+.ap-unsupported-block summary::-webkit-details-marker { display: none; }
+.ap-unsupported-block summary::before { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--text-faint); transform: rotate(-90deg); transition: transform 0.15s ease; }
+.ap-unsupported-block[open] summary::before { transform: rotate(0); }
+.ap-unsupported-block summary:hover { color: var(--text-dim); }
+.ap-unsupported-block .ap-unsupported { margin-top: 6px; }
+
+/* 2026-09: Instant Form muharriri -- Ads Manager uslubidagi 3 blok
+   (Kirish / Savollar / Rahmat) va savol kartalari + yagona "yangi savol"
+   kompozitori. */
+.ap-lf-block { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px 14px 4px; margin-bottom: 14px; background: #fff; }
+.ap-lf-subhead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--ink); margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+.ap-lf-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--border-light); color: var(--text-dim); font-size: 11px; font-weight: 700; }
+.ap-lf-questions { display: flex; flex-direction: column; gap: 8px; }
+.ap-lf-q { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+.ap-lf-q.custom { background: #fff; }
+.ap-lf-q-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ap-lf-q-num { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--blue-bg); color: var(--blue); }
+.ap-lf-q-label { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-lf-q-head input[type="text"] { flex: 1; min-width: 0; padding: 7px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.ap-lf-q-head input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.ap-lf-q-kind { flex: 0 0 auto; font-size: 10.5px; color: var(--text-faint); background: var(--border-light); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.ap-lf-opts { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px 30px; }
+.ap-lf-opt { display: flex; align-items: center; gap: 8px; }
+.ap-lf-opt-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border); background: #fff; }
+.ap-lf-opt input[type="text"] { flex: 1; min-width: 0; padding: 6px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.ap-lf-opt input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.ap-lf-empty { font-size: 12.5px; color: var(--text-faint); padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; text-align: center; }
+.ap-lf-composer { border: 1px dashed var(--border); border-radius: 8px; padding: 10px; background: var(--bg); }
+.ap-lf-composer.open { border-style: solid; border-color: #C7DBFD; background: #fff; }
+.ap-lf-composer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ap-lf-composer-row select { flex: 1 1 260px; min-width: 0; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: #fff; color: var(--text); }
+.ap-lf-composer-row select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+.ap-lf-composer-row .ap-mini-btn { padding: 7px 14px; font-size: 12.5px; }
+/* Maxsus savol qoralamasi ochiq bo'lganda yuqoridagi "+ Qo'shish" yashiriladi --
+   global `button { display:inline-block }` UA'ning [hidden]ini yengib qo'yadi,
+   shuning uchun aniq qoida (xuddi #ai-assistant-panel[hidden] kabi). */
+.ap-lf-composer-row .ap-mini-btn[hidden] { display: none; }
+.ap-lf .ap-field-label:empty { display: none; }
+.ap-lf .ap-field-head:has(> .ap-field-label:empty) { justify-content: flex-end; }
+.ap-lf-draft { margin-top: 10px; padding: 12px; border-radius: 8px; background: var(--blue-bg); border: 1px solid #C7DBFD; }
+.ap-lf-draft-title { font-size: 12.5px; font-weight: 600; color: var(--blue); margin-bottom: 8px; }
+.ap-lf-draft .ap-field-label { display: block; margin-bottom: 4px; }
+.ap-lf-draft input[type="text"] { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: #fff; }
+.ap-lf-draft input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px #fff; }
+.ap-lf-draft .ap-lf-opts { margin-left: 0; }
+.ap-lf-draft .ap-lf-opt input[type="text"] { width: auto; }
+.ap-lf-draft-actions { display: flex; gap: 8px; margin-top: 12px; }
+.ap-lf-draft-actions .ap-mini-btn { padding: 7px 14px; font-size: 12.5px; }
+.ap-lf-draft .ap-field-error { margin-top: 8px; }
+.ap-lf-note { font-size: 11.5px; color: var(--text-faint); line-height: 1.45; margin: -4px 0 10px; }
+.ap-lf .ap-field-hint { margin-top: 8px; }
+
 @media (max-width: 1280px) { .ap-layout { grid-template-columns: 220px minmax(0, 1fr) 300px; } }
 @media (max-width: 1000px) {
   .ap-layout { grid-template-columns: 1fr; }

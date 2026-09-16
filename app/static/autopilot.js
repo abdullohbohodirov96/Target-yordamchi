@@ -46,7 +46,13 @@
     inflight: false,
     previewFmt: 'instagram_feed',
     previewCache: {},
-    typeahead: {}     // key -> results
+    typeahead: {},    // key -> results
+    // 2026-09: Instant Form "yangi savol" kompozitori -- HALI tasdiqlanmagan
+    // qoralama (type/label/options). Faqat lokal: serverga "Qo'shish"
+    // bosilgandagina ketadi. null = yopiq. `store`da saqlanadi, chunki
+    // fon autosave javobi butun editorni qayta chizadi -- yozilayotgan
+    // matn yo'qolmasin.
+    lfComposer: null
   };
   var LEVELS = ['campaign', 'adset', 'ad'];
   var LEVEL_LABELS = { campaign: 'Kampaniya', adset: 'Ad Set', ad: 'Reklama' };
@@ -300,6 +306,19 @@
   function unsupportedRow(item) {
     return h('div', { class: 'ap-unsupported' }, [h('span', { text: item.label }), h('span', { text: item.note })]);
   }
+  // 2026-09, foydalanuvchi so'rovi ("interfeys qiyinlashib qolgan"): "Ads
+  // Manager'da bor, lekin API orqali boshqarilmaydi" ro'yxati endi
+  // tahrirlanadigan maydonlar bilan bir xil og'irlikda turmaydi -- yig'ilgan
+  // (<details>), xira, kerak bo'lsa ochiladi. Ma'lumot yo'qolmadi, faqat
+  // ikkinchi darajaga tushdi.
+  function unsupportedBlock(items) {
+    if (!items || !items.length) { return null; }
+    var det = h('details', { class: 'ap-unsupported-block' }, [
+      h('summary', { text: 'Ads Manager\'da bor, lekin Meta API orqali boshqarilmaydi (' + items.length + ')' })
+    ]);
+    items.forEach(function (u) { det.appendChild(unsupportedRow(u)); });
+    return det;
+  }
   function sectionTitle(text, extra) { return h('h3', { class: 'ap-section-title' }, [text, extra]); }
 
   // Typeahead (hudud / qiziqish) -- Meta qidiruvi orqali; uydirma key yo'q
@@ -408,7 +427,17 @@
       el.appendChild(h('div', { class: 'hint-box', style: 'margin:0', text: 'Siz qoralamani faqat ko\'rishingiz mumkin -- tahrirlash, tasdiqlash va nashr qilish admin uchun.' }));
     }
     if (d.status === 'failed' && d.publish_error) {
-      el.appendChild(h('div', { class: 'card ap-err-card' }, [h('h2', { text: 'Nashr "' + (d.publish_step || '?') + '" bosqichida to\'xtadi' }), h('p', { text: d.publish_error + ' Tuzatib, "Meta\'ga nashr qilish"ni qayta bosing -- allaqachon yaratilgan qadamlar takrorlanmaydi.' })]));
+      var errCard = h('div', { class: 'card ap-err-card' }, [h('h2', { text: 'Nashr "' + (d.publish_step || '?') + '" bosqichida to\'xtadi' }), h('p', { text: d.publish_error + ' Tuzatib, "Meta\'ga nashr qilish"ni qayta bosing -- allaqachon yaratilgan qadamlar takrorlanmaydi.' })]);
+      if (d.last_meta_error_raw) {
+        // 2026-09: Meta'ning xom xatolik matni -- diagnostika uchun,
+        // yopiq holda (kerak bo'lganda ochiladi).
+        var det = h('details', { style: 'margin-top:8px' }, [
+          h('summary', { style: 'cursor:pointer;font-size:12px;color:var(--text-faint,#888)', text: 'Texnik tafsilot (Meta xabari)' }),
+          h('pre', { style: 'white-space:pre-wrap;word-break:break-word;font-size:11px;background:var(--bg-2,#f5f5f5);padding:8px;border-radius:6px;margin-top:6px', text: d.last_meta_error_raw })
+        ]);
+        errCard.appendChild(det);
+      }
+      el.appendChild(errCard);
     }
     var w = document.getElementById('ap-warnings');
     w.innerHTML = '';
@@ -460,7 +489,7 @@
   // ------------------------------------------------------------------
   // TABLAR + FORMA
   // ------------------------------------------------------------------
-  function setTab(tab) { store.tab = tab; renderTabs(); renderTree(); renderEditor(); renderBottombar(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function setTab(tab) { store.tab = tab; store.lfComposer = null; renderTabs(); renderTree(); renderEditor(); renderBottombar(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   function renderTabs() {
     var el = document.getElementById('ap-tabs');
     el.innerHTML = '';
@@ -517,16 +546,19 @@
     });
     sec.appendChild(fieldWrap('campaign.special_ad_categories', 'Maxsus reklama toifasi', catBox, { hint: 'Uy-joy/ish/kredit/siyosat reklamalari uchun Meta talab qiladi; oddiy biznes uchun bo\'sh qoldiring.' }));
     sec.appendChild(fieldWrap('campaign.budget_mode', 'Byudjet darajasi', h('input', { type: 'text', value: 'Ad Set darajasida (ABO)', disabled: true })));
-    sec.appendChild(fieldWrap('campaign.status', 'Holat', h('input', { type: 'text', value: 'PAUSED -- nashrdan keyin alohida "Faollashtirish" bilan yoqiladi', disabled: true })));
+    // 2026-09: standart -- nashr qilinishi bilan ACTIVE; nashr modalida
+    // "Pauzada qolsin"ni tanlasa PAUSED (qarang `openSummaryModal`).
+    var launchText = d.launch_active === false
+      ? 'PAUSED -- nashrdan keyin alohida "Faollashtirish" bilan yoqiladi'
+      : 'ACTIVE -- nashr qilinishi bilan darhol ishga tushadi (nashr oynasida o\'zgartirish mumkin)';
+    sec.appendChild(fieldWrap('campaign.status', 'Nashrdan keyingi holat', h('input', { type: 'text', value: launchText, disabled: true })));
     if (s.objective === 'SALES') {
       var pixels = d.assets.pixels || [];
       var pxText = d.connection.has_pixel ? 'Pixel ulangan' + (pixels.length ? ': ' + pixels.map(function (p) { return p.name || p.id; }).join(', ') : '') : 'Pixel tanlanmagan -- Sozlamalar > Ulanishlar';
       sec.appendChild(fieldWrap('campaign.pixel', 'Pixel (sotuv maqsadi uchun)', h('input', { type: 'text', value: pxText, disabled: true })));
     }
     wrap.appendChild(sec);
-    var un = h('div', { class: 'ap-section' }, [sectionTitle('Ads Manager\'da bor, lekin Meta API orqali boshqarilmaydi')]);
-    d.options.unsupported.filter(function (u) { return u.key === 'cbo' || u.key === 'ab_test'; }).forEach(function (u) { un.appendChild(unsupportedRow(u)); });
-    wrap.appendChild(un);
+    wrap.appendChild(unsupportedBlock(d.options.unsupported.filter(function (u) { return u.key === 'cbo' || u.key === 'ab_test'; })));
     return wrap;
   }
 
@@ -742,9 +774,7 @@
     if (s.objective === 'MESSAGES') { wrap.appendChild(renderMessagesEditor()); }
     if (s.objective === 'LEADS') { wrap.appendChild(renderLeadFormEditor()); }
 
-    var un = h('div', { class: 'ap-section' }, [sectionTitle('Ads Manager\'da bor, lekin Meta API orqali boshqarilmaydi')]);
-    d.options.unsupported.filter(function (u) { return u.key === 'advantage_plus_creative' || u.key === 'dynamic_creative'; }).forEach(function (u) { un.appendChild(unsupportedRow(u)); });
-    wrap.appendChild(un);
+    wrap.appendChild(unsupportedBlock(d.options.unsupported.filter(function (u) { return u.key === 'advantage_plus_creative' || u.key === 'dynamic_creative'; })));
 
     // Preview (inline)
     var pv = h('div', { class: 'ap-section' }, [sectionTitle('Ko\'rinish (preview)', miniBtn('Kattaroq ochish', openPreviewModal, { always: true }))]);
@@ -865,10 +895,25 @@
   }
 
   // ---- Lead forma (LEADS)
+  // 2026-09, foydalanuvchi so'rovi ("interfeys qiyinlashib qolgan", "savol
+  // qo'shishda tasdiqlash bosqichi bo'lsin"): bo'lim Ads Manager'dagi Instant
+  // Form muharriri kabi 3 ta aniq blokka bo'lindi -- (1) Kirish (sarlavha/
+  // matn), (2) Savollar, (3) Rahmat xabari. Yangi savol qo'shish endi BITTA
+  // kompozitor orqali: tur tanlanadi -> standart maydon darhol qo'shiladi,
+  // maxsus savol esa avval shu yerda to'ldirilib, "Qo'shish" bilan
+  // tasdiqlangandan keyingina ro'yxatga (va serverga) tushadi.
+  var LF_COMMON_TYPES = ['FULL_NAME', 'PHONE', 'FIRST_NAME', 'LAST_NAME', 'CITY'];
+  var LF_CUSTOM_TEXT = '__CUSTOM_TEXT__';
+  var LF_CUSTOM_CHOICE = '__CUSTOM_CHOICE__';
+
+  function lfSubhead(text, count) {
+    return h('div', { class: 'ap-lf-subhead' }, [h('span', { text: text }), count != null ? h('span', { class: 'ap-lf-count', text: String(count) }) : null]);
+  }
+
   function renderLeadFormEditor() {
     var d = store.draft;
     var lf = state().ad.lead_form || { mode: 'new', existing_form_id: null, new_form: {} };
-    var sec = h('div', { class: 'ap-section' }, [sectionTitle('Instant Form (lead forma)', miniBtn('AI matnlarni qayta yozsin', function () { regenerate('lead_form'); }, { cls: 'primary' }))]);
+    var sec = h('div', { class: 'ap-section ap-lf' }, [sectionTitle('Instant Form (lead forma)', miniBtn('AI matnlarni qayta yozsin', function () { regenerate('lead_form'); }, { cls: 'primary' }))]);
     var forms = (d.assets.lead_forms || []).map(function (f) { return { value: f.id, label: (f.name || 'Forma') + ' · ' + f.id }; });
     // 2026-09, foydalanuvchi so'rovi ("kompaniya, facebook, biznes, ads
     // menejer ulangan, ad account ulangan forumlar chiqib kelsin"): ulangan
@@ -882,90 +927,201 @@
       return sec;
     }
     var nf = lf.new_form || {};
-    sec.appendChild(fieldWrap('ad.lead_form.new_form.name', 'Forma nomi', textInput('ad', 'ad.lead_form.new_form.name', { maxlength: 100 })));
+
+    // (1) Kirish
+    var intro = h('div', { class: 'ap-lf-block' }, [lfSubhead('Kirish (forma ochilganda ko\'rinadi)')]);
+    intro.appendChild(fieldWrap('ad.lead_form.new_form.name', 'Forma nomi', textInput('ad', 'ad.lead_form.new_form.name', { maxlength: 100 }), { hint: 'Faqat Ads Manager\'da ko\'rinadi, mijozga emas.' }));
     var g = h('div', { class: 'ap-grid-2' });
     g.appendChild(fieldWrap('ad.lead_form.new_form.intro_headline', 'Kirish sarlavhasi', textInput('ad', 'ad.lead_form.new_form.intro_headline', { maxlength: 60 })));
     g.appendChild(fieldWrap('ad.lead_form.new_form.privacy_url', 'Maxfiylik siyosati havolasi', textInput('ad', 'ad.lead_form.new_form.privacy_url', { placeholder: 'https://…' }), { hint: 'Meta majburiy talab qiladi.' }));
-    sec.appendChild(g);
-    sec.appendChild(fieldWrap('ad.lead_form.new_form.intro_description', 'Kirish matni', textInput('ad', 'ad.lead_form.new_form.intro_description', { textarea: true, rows: 2, maxlength: 300 })));
+    intro.appendChild(g);
+    intro.appendChild(fieldWrap('ad.lead_form.new_form.intro_description', 'Kirish matni', textInput('ad', 'ad.lead_form.new_form.intro_description', { textarea: true, rows: 2, maxlength: 300 })));
+    sec.appendChild(intro);
+
+    // (2) Savollar
     // 2026-09, foydalanuvchi so'rovi ("ads menejerda instant forum
     // yaratayotganingda to'liq hali bor... multiplay choice bor va
-    // boshqalar... shularni hammasini to'liq qil"): savol turlari endi
+    // boshqalar... shularni hammasini to'liq qil"): savol turlari
     // SERVERDAN keladi (`campaign_draft.LEAD_QUESTION_TYPES_ORDER` -- Ads
     // Manager'dagi TO'LIQ standart maydonlar ro'yxati), VA "Maxsus savol"
-    // endi ikki ko'rinishda bo'lishi mumkin: erkin matn (javob yozadi) yoki
-    // bir nechta variant -- "multiple choice" (`q.options` massivi bo'lsa).
+    // ikki ko'rinishda: erkin matn (javob yozadi) yoki bir nechta variant --
+    // "multiple choice" (`q.options` massivi bo'lsa).
     var qtypeOptions = d.options.lead_question_types || [];
     var qtypeLabels = {};
     qtypeOptions.forEach(function (o) { qtypeLabels[o.value] = o.label; });
-
     var qs = nf.questions || [];
-    var list = h('div', { class: 'ap-list-editor' });
+    var qBlock = h('div', { class: 'ap-lf-block' }, [lfSubhead('Savollar', qs.length)]);
+    var list = h('div', { class: 'ap-lf-questions' });
     qs.forEach(function (q, i) {
-      var row = h('div', { class: 'ap-list-row' }, [h('span', { class: 'text-faint', text: (i + 1) + '.' })]);
+      var card = h('div', { class: 'ap-lf-q' + (q.type === 'CUSTOM' ? ' custom' : '') });
+      var head = h('div', { class: 'ap-lf-q-head' }, [h('span', { class: 'ap-lf-q-num', text: String(i + 1) })]);
       if (q.type === 'CUSTOM') {
-        var col = h('div', { style: 'flex:1;display:flex;flex-direction:column;gap:6px;min-width:0' });
-        var input = h('input', { type: 'text', value: q.label || '', disabled: !editable(), placeholder: 'Savol matni' });
+        var input = h('input', { type: 'text', value: q.label || '', disabled: !editable(), placeholder: 'Savol matni', maxlength: 100, 'aria-label': 'Savol matni', dataset: { path: 'ad.lead_form.new_form.questions.' + i + '.label' } });
         input.addEventListener('input', function () { var next = JSON.parse(JSON.stringify(qs)); next[i].label = input.value; queueChange('ad', 'ad.lead_form.new_form.questions', next); });
-        col.appendChild(input);
-        if (Array.isArray(q.options)) {
-          // "Bir nechta variant" (multiple choice) -- har bir variant alohida matn maydoni.
-          col.appendChild(h('span', { class: 'text-faint', style: 'font-size:11px', text: 'Bir nechta variant (multiple choice):' }));
-          var optWrap = h('div', { class: 'ap-list-editor', style: 'margin-left:4px' });
-          q.options.forEach(function (opt, oi) {
-            var orow = h('div', { class: 'ap-list-row' });
-            var oInput = h('input', { type: 'text', value: opt || '', disabled: !editable(), placeholder: (oi + 1) + '-variant' });
-            oInput.addEventListener('input', function () { var next = JSON.parse(JSON.stringify(qs)); next[i].options[oi] = oInput.value; queueChange('ad', 'ad.lead_form.new_form.questions', next); });
-            orow.appendChild(oInput);
-            if (editable()) {
-              orow.appendChild(miniBtn('✕', function () {
-                var next = JSON.parse(JSON.stringify(qs));
-                next[i].options = next[i].options.filter(function (_, j) { return j !== oi; });
-                queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
-              }, { cls: 'danger' }));
-            }
-            optWrap.appendChild(orow);
-          });
-          if (editable()) {
-            optWrap.appendChild(miniBtn('+ Variant qo\'shish', function () {
-              var next = JSON.parse(JSON.stringify(qs));
-              next[i].options = (next[i].options || []).concat(['']);
-              queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
-            }));
-          }
-          col.appendChild(optWrap);
-        }
-        row.appendChild(col);
+        head.appendChild(input);
+        head.appendChild(h('span', { class: 'ap-lf-q-kind', text: Array.isArray(q.options) ? 'Bir nechta variant' : 'Erkin matn' }));
       } else {
-        row.appendChild(h('span', { class: 'ap-list-fixed', text: qtypeLabels[q.type] || q.type }));
+        head.appendChild(h('span', { class: 'ap-lf-q-label', text: qtypeLabels[q.type] || q.type }));
+        head.appendChild(h('span', { class: 'ap-lf-q-kind', text: 'Standart maydon' }));
       }
-      row.appendChild(miniBtn('O\'chirish', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.filter(function (_, j) { return j !== i; }), { immediate: true, rerender: true }); }, { cls: 'danger' }));
-      list.appendChild(row);
+      if (editable()) {
+        head.appendChild(miniBtn('O\'chirish', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.filter(function (_, j) { return j !== i; }), { immediate: true, rerender: true }); }, { cls: 'danger', title: 'Savolni o\'chirish' }));
+      }
+      card.appendChild(head);
+      if (q.type === 'CUSTOM' && Array.isArray(q.options)) {
+        // "Bir nechta variant" (multiple choice) -- har bir variant alohida qator.
+        var optWrap = h('div', { class: 'ap-lf-opts' });
+        q.options.forEach(function (opt, oi) {
+          var orow = h('div', { class: 'ap-lf-opt' }, [h('span', { class: 'ap-lf-opt-dot' })]);
+          var oInput = h('input', { type: 'text', value: opt || '', disabled: !editable(), placeholder: (oi + 1) + '-variant', maxlength: 80, 'aria-label': (oi + 1) + '-variant', dataset: { path: 'ad.lead_form.new_form.questions.' + i + '.options.' + oi } });
+          oInput.addEventListener('input', function () { var next = JSON.parse(JSON.stringify(qs)); next[i].options[oi] = oInput.value; queueChange('ad', 'ad.lead_form.new_form.questions', next); });
+          orow.appendChild(oInput);
+          if (editable()) {
+            orow.appendChild(miniBtn('✕', function () {
+              var next = JSON.parse(JSON.stringify(qs));
+              next[i].options = next[i].options.filter(function (_, j) { return j !== oi; });
+              queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
+            }, { cls: 'danger', title: 'Variantni o\'chirish' }));
+          }
+          optWrap.appendChild(orow);
+        });
+        if (editable() && q.options.length < 12) {
+          optWrap.appendChild(h('div', {}, [miniBtn('+ Variant qo\'shish', function () {
+            var next = JSON.parse(JSON.stringify(qs));
+            next[i].options = (next[i].options || []).concat(['']);
+            queueChange('ad', 'ad.lead_form.new_form.questions', next, { immediate: true, rerender: true });
+          })]));
+        }
+        card.appendChild(optWrap);
+      }
+      list.appendChild(card);
     });
-    if (editable()) {
-      var usedTypes = {};
-      qs.forEach(function (q) { usedTypes[q.type] = true; });
-      var stdSelect = h('select', {}, [h('option', { value: '', text: 'Standart maydon tanlang…' })]);
-      qtypeOptions.forEach(function (o) {
-        if (o.value === 'CUSTOM' || usedTypes[o.value]) { return; }
-        stdSelect.appendChild(h('option', { value: o.value, text: o.label }));
-      });
-      var addRow = h('div', { class: 'ap-inline-actions', style: 'flex-wrap:wrap;align-items:center;gap:8px' });
-      addRow.appendChild(stdSelect);
-      addRow.appendChild(miniBtn('+ Qo\'shish', function () {
-        if (!stdSelect.value) { return; }
-        queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: stdSelect.value }]), { immediate: true, rerender: true });
-      }));
-      addRow.appendChild(miniBtn('+ Maxsus savol (erkin matn)', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: 'CUSTOM', label: 'Yangi savol?' }]), { immediate: true, rerender: true }); }, { cls: 'primary' }));
-      addRow.appendChild(miniBtn('+ Maxsus savol (bir nechta variant)', function () { queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: 'CUSTOM', label: 'Yangi savol?', options: ['', ''] }]), { immediate: true, rerender: true }); }, { cls: 'primary' }));
-      list.appendChild(addRow);
-    }
-    sec.appendChild(fieldWrap('ad.lead_form.new_form.questions', 'Savollar', list, { hint: 'Kamida 2 ta, telefon yoki email shart. Chatda "Lead formga byudjet degan savol qo\'sh" deb ham yozsangiz bo\'ladi.' }));
+    if (!qs.length) { list.appendChild(h('div', { class: 'ap-lf-empty', text: 'Hali savol yo\'q -- pastdan qo\'shing.' })); }
+    if (editable()) { list.appendChild(renderLeadFormComposer(qs, qtypeOptions)); }
+    // Yorliq bo'sh -- blok sarlavhasi ("Savollar N") allaqachon bor; faqat manba belgisi (AI/Siz) qoladi
+    qBlock.appendChild(fieldWrap('ad.lead_form.new_form.questions', '', list, { hint: 'Kamida 2 ta savol; Telefon shart (lid bilan bog\'lanish uchun). Chatda "Lead formga byudjet degan savol qo\'sh" deb ham yozsangiz bo\'ladi.' }));
+    // 2026-09, halollik: foydalanuvchi Ads Manager'dagi "conditional logic"
+    // (javobga qarab keyingi savolga sakrash / formani erta tugatish)ni
+    // so'radi. Meta Marketing API'ning ommaviy `leadgen_forms` endpointida
+    // bunday maydon YO'Q (faqat CSV asosidagi "cascading dropdown" bor, bu
+    // boshqa narsa). Soxta UI qurmaymiz -- qisqa, ochiq eslatma.
+    qBlock.appendChild(h('div', { class: 'ap-lf-note', text: 'Eslatma: Ads Manager\'dagi "javobga qarab savolni o\'tkazib yuborish" (conditional logic) Meta API orqali sozlanmaydi -- kerak bo\'lsa nashrdan keyin Ads Manager\'da qo\'shiladi.' }));
+    sec.appendChild(qBlock);
+
+    // (3) Rahmat xabari
+    var thanks = h('div', { class: 'ap-lf-block' }, [lfSubhead('Rahmat xabari (forma yuborilgandan keyin)')]);
     var g2 = h('div', { class: 'ap-grid-2' });
-    g2.appendChild(fieldWrap('ad.lead_form.new_form.thank_you_title', 'Rahmat sarlavhasi', textInput('ad', 'ad.lead_form.new_form.thank_you_title', { maxlength: 60 })));
-    g2.appendChild(fieldWrap('ad.lead_form.new_form.thank_you_body', 'Rahmat matni', textInput('ad', 'ad.lead_form.new_form.thank_you_body', { maxlength: 300 })));
-    sec.appendChild(g2);
+    g2.appendChild(fieldWrap('ad.lead_form.new_form.thank_you_title', 'Sarlavha', textInput('ad', 'ad.lead_form.new_form.thank_you_title', { maxlength: 60 })));
+    g2.appendChild(fieldWrap('ad.lead_form.new_form.thank_you_body', 'Matn', textInput('ad', 'ad.lead_form.new_form.thank_you_body', { maxlength: 300 })));
+    thanks.appendChild(g2);
+    sec.appendChild(thanks);
     return sec;
+  }
+
+  // Yangi savol kompozitori. Standart maydon -> darhol qo'shiladi (yozadigan
+  // narsa yo'q). Maxsus savol -> avval shu yerda to'ldiriladi (matn, variant-
+  // lar), faqat "Qo'shish" bosilganda ro'yxatga tushadi; tur o'zgartirilsa
+  // yoki boshqa tabga o'tilsa -- qoralama tashlab yuboriladi, serverga hech
+  // narsa ketmaydi.
+  function renderLeadFormComposer(qs, qtypeOptions) {
+    var usedTypes = {};
+    qs.forEach(function (q) { usedTypes[q.type] = true; });
+    var comp = store.lfComposer;
+    var wrap = h('div', { class: 'ap-lf-composer' + (comp ? ' open' : '') });
+    var typeSel = h('select', { 'aria-label': 'Savol turi', dataset: { path: 'lf.composer.type' } }, [h('option', { value: '', text: 'Savol turini tanlang…' })]);
+    var common = h('optgroup', { label: 'Asosiy maydonlar' });
+    var other = h('optgroup', { label: 'Boshqa maydonlar' });
+    qtypeOptions.forEach(function (o) {
+      // 2026-09, foydalanuvchi so'rovi: Email O'zbekistonda deyarli
+      // ishlatilmaydi -- yangi savol sifatida taklif qilinmaydi (Meta'dan
+      // import qilingan eski formada bo'lsa, ro'yxatda ko'rinishda qoladi).
+      if (o.value === 'CUSTOM' || o.value === 'EMAIL' || usedTypes[o.value]) { return; }
+      (LF_COMMON_TYPES.indexOf(o.value) >= 0 ? common : other).appendChild(h('option', { value: o.value, text: o.label }));
+    });
+    var custom = h('optgroup', { label: 'Maxsus savol' }, [
+      h('option', { value: LF_CUSTOM_TEXT, text: 'Maxsus savol — erkin matn javobi' }),
+      h('option', { value: LF_CUSTOM_CHOICE, text: 'Maxsus savol — bir nechta variant (multiple choice)' })
+    ]);
+    if (common.children.length) { typeSel.appendChild(common); }
+    if (other.children.length) { typeSel.appendChild(other); }
+    typeSel.appendChild(custom);
+    if (comp) { typeSel.value = comp.kind === 'choice' ? LF_CUSTOM_CHOICE : LF_CUSTOM_TEXT; }
+    var addBtn = miniBtn('+ Qo\'shish', function () {
+      var v = typeSel.value;
+      if (!v) { typeSel.focus(); return; }
+      if (v === LF_CUSTOM_TEXT || v === LF_CUSTOM_CHOICE) { return; } // kompozitor ochiq -- pastdagi "Qo'shish" bilan tasdiqlanadi
+      store.lfComposer = null;
+      queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([{ type: v }]), { immediate: true, rerender: true });
+    }, { cls: 'primary' });
+    typeSel.addEventListener('change', function () {
+      var v = typeSel.value;
+      if (v === LF_CUSTOM_TEXT || v === LF_CUSTOM_CHOICE) {
+        // Tur o'zgarsa qoralama noldan (yarim yozilgan matn aralashib ketmasin)
+        store.lfComposer = { kind: v === LF_CUSTOM_CHOICE ? 'choice' : 'text', label: '', options: ['', ''], error: null };
+        renderEditor();
+        var first = document.querySelector('[data-path="lf.composer.label"]');
+        if (first) { first.focus(); }
+      } else if (store.lfComposer) {
+        store.lfComposer = null;
+        renderEditor();
+      }
+      addBtn.hidden = (v === LF_CUSTOM_TEXT || v === LF_CUSTOM_CHOICE);
+    });
+    addBtn.hidden = !!comp;
+    wrap.appendChild(h('div', { class: 'ap-lf-composer-row' }, [typeSel, addBtn]));
+    if (!comp) { return wrap; }
+
+    // --- Maxsus savol qoralamasi (faqat lokal)
+    var box = h('div', { class: 'ap-lf-draft' });
+    box.appendChild(h('div', { class: 'ap-lf-draft-title', text: comp.kind === 'choice' ? 'Yangi savol — bir nechta variant' : 'Yangi savol — erkin matn javobi' }));
+    var labelId = 'lf-composer-label';
+    box.appendChild(h('label', { class: 'ap-field-label', for: labelId, text: 'Savol matni' }));
+    var labelInput = h('input', { type: 'text', id: labelId, value: comp.label, placeholder: 'Masalan: Qaysi xizmat qiziqtiradi?', maxlength: 100, dataset: { path: 'lf.composer.label' } });
+    labelInput.addEventListener('input', function () { comp.label = labelInput.value; comp.error = null; showErr(); });
+    box.appendChild(labelInput);
+    if (comp.kind === 'choice') {
+      box.appendChild(h('div', { class: 'ap-field-label', style: 'margin-top:10px', text: 'Javob variantlari (kamida 2 ta)' }));
+      var opts = h('div', { class: 'ap-lf-opts' });
+      comp.options.forEach(function (opt, oi) {
+        var orow = h('div', { class: 'ap-lf-opt' }, [h('span', { class: 'ap-lf-opt-dot' })]);
+        var oInput = h('input', { type: 'text', value: opt, placeholder: (oi + 1) + '-variant', maxlength: 80, 'aria-label': (oi + 1) + '-variant', dataset: { path: 'lf.composer.opt.' + oi } });
+        oInput.addEventListener('input', function () { comp.options[oi] = oInput.value; comp.error = null; showErr(); });
+        orow.appendChild(oInput);
+        if (comp.options.length > 2) {
+          orow.appendChild(miniBtn('✕', function () { comp.options.splice(oi, 1); renderEditor(); }, { cls: 'danger', title: 'Variantni o\'chirish' }));
+        }
+        opts.appendChild(orow);
+      });
+      if (comp.options.length < 12) {
+        opts.appendChild(h('div', {}, [miniBtn('+ Variant', function () {
+          comp.options.push(''); renderEditor();
+          var last = document.querySelector('[data-path="lf.composer.opt.' + (comp.options.length - 1) + '"]');
+          if (last) { last.focus(); }
+        })]));
+      }
+      box.appendChild(opts);
+    }
+    var errEl = h('div', { class: 'ap-field-error', id: 'lf-composer-error', role: 'alert', hidden: !comp.error, text: comp.error || '' });
+    function showErr() { errEl.hidden = !comp.error; errEl.textContent = comp.error || ''; }
+    box.appendChild(errEl);
+    var actions = h('div', { class: 'ap-lf-draft-actions' });
+    actions.appendChild(miniBtn('Qo\'shish', function () {
+      var label = (comp.label || '').trim();
+      if (!label) { comp.error = 'Savol matnini yozing.'; showErr(); labelInput.focus(); return; }
+      var q = { type: 'CUSTOM', label: label };
+      if (comp.kind === 'choice') {
+        var good = comp.options.map(function (o) { return (o || '').trim(); }).filter(Boolean);
+        if (good.length < 2) { comp.error = 'Kamida 2 ta variant yozing.'; showErr(); return; }
+        q.options = good;
+      }
+      store.lfComposer = null;
+      queueChange('ad', 'ad.lead_form.new_form.questions', qs.concat([q]), { immediate: true, rerender: true });
+      chatSystem('Savol qo\'shildi: "' + label + '"');
+    }, { cls: 'primary' }));
+    actions.appendChild(miniBtn('Bekor qilish', function () { store.lfComposer = null; renderEditor(); }));
+    box.appendChild(actions);
+    wrap.appendChild(box);
+    return wrap;
   }
 
   // ---- Preview
@@ -1180,11 +1336,43 @@
       });
       body.appendChild(dl);
       if (s.primary_text) { body.appendChild(h('div', { class: 'ap-field-hint', style: 'white-space:pre-wrap;margin-bottom:12px', text: s.primary_text })); }
+
+      // 2026-09, foydalanuvchi so'rovi: "srazu aktiv holatga chiqazadigan
+      // qilish kerak, pauzaga emas" -- standart ACTIVE, lekin Ads
+      // Manager'dagi kabi xohlasa PAUSED'ga o'tkazishi mumkin.
+      var launchActive = store.draft.launch_active !== false;
+      var launchWrap = h('div', { class: 'ap-launch-toggle', role: 'radiogroup', 'aria-label': 'Nashrdan keyingi holat' });
+      launchWrap.appendChild(h('span', { text: 'Nashr qilingach:' }));
+      var mkRadio = function (val, label) {
+        var lbl = h('label');
+        var inp = h('input', { type: 'radio', name: 'launch_status_toggle', value: val ? 'active' : 'paused', checked: launchActive === val, disabled: !IS_ADMIN });
+        inp.addEventListener('change', function () {
+          launchActive = val;
+          api('/launch-status', { method: 'POST', body: { active: val } }).catch(function (e) {
+            // Saqlanmasa -- foydalanuvchi bilsin (real pul sarfi shunga bog'liq)
+            launchActive = store.draft.launch_active !== false;
+            launchWrap.querySelectorAll('input').forEach(function (r) { r.checked = (r.value === 'active') === launchActive; });
+            chatSystem('Nashr holati saqlanmadi: ' + e.message, 'err');
+          });
+          okMsg.textContent = launchActive
+            ? 'Hammasi joyida. Kampaniya Meta\'da ACTIVE (darhol ishga tushadi) holatda yaratiladi.'
+            : 'Hammasi joyida. Kampaniya Meta\'da PAUSED holatda yaratiladi -- pul sarflanmaydi. Keyin "Faollashtirish" bilan yoqasiz.';
+        });
+        lbl.appendChild(inp); lbl.appendChild(h('span', { text: label }));
+        return lbl;
+      };
+      launchWrap.appendChild(mkRadio(true, 'Darhol yoqilsin (Active)'));
+      launchWrap.appendChild(mkRadio(false, 'Pauzada qolsin -- keyin qo\'lda yoqaman'));
+      body.appendChild(launchWrap);
+
       var reasons = data.reasons || [];
+      var okMsg = h('div', { class: 'ap-modal-msg ok', text: launchActive
+        ? 'Hammasi joyida. Kampaniya Meta\'da ACTIVE (darhol ishga tushadi) holatda yaratiladi.'
+        : 'Hammasi joyida. Kampaniya Meta\'da PAUSED holatda yaratiladi -- pul sarflanmaydi. Keyin "Faollashtirish" bilan yoqasiz.' });
       if (reasons.length) {
         body.appendChild(h('div', { class: 'ap-modal-msg err' }, ['Nashr qilib bo\'lmaydi:', h('ul', {}, reasons.map(function (r) { return h('li', { text: r }); }))]));
       } else {
-        body.appendChild(h('div', { class: 'ap-modal-msg ok', text: 'Hammasi joyida. Kampaniya Meta\'da PAUSED holatda yaratiladi -- pul sarflanmaydi. Keyin "Faollashtirish" bilan yoqasiz.' }));
+        body.appendChild(okMsg);
       }
       var actions = h('div', { class: 'ap-modal-actions' });
       var back = h('button', { type: 'button', class: 'btn btn-outline', text: 'Orqaga' });
@@ -1196,13 +1384,18 @@
         api('/publish', { method: 'POST', body: {} }).then(function (r) {
           body.innerHTML = '';
           var res = r.result || {};
-          body.appendChild(h('div', { class: 'ap-modal-msg ok', text: 'Kampaniya Meta\'da yaratildi (PAUSED). Campaign ' + res.campaign_id + ' · Ad Set ' + res.adset_id + ' · Ad ' + res.ad_id }));
+          var statusWord = launchActive ? 'ACTIVE' : 'PAUSED';
+          body.appendChild(h('div', { class: 'ap-modal-msg ok', text: 'Kampaniya Meta\'da yaratildi (' + statusWord + '). Campaign ' + res.campaign_id + ' · Ad Set ' + res.adset_id + ' · Ad ' + res.ad_id }));
           if (res.warnings && res.warnings.length) { body.appendChild(h('div', { class: 'ap-modal-msg warn' }, [h('ul', {}, res.warnings.map(function (w) { return h('li', { text: w }); }))])); }
           var a2 = h('div', { class: 'ap-modal-actions' });
           var close = h('button', { type: 'button', class: 'btn btn-outline', text: 'Yopish' }); close.addEventListener('click', function () { closeModal('ap-modal-summary'); });
-          var act = h('button', { type: 'button', class: 'btn ap-btn-good', text: 'Faollashtirish' }); act.addEventListener('click', function () { closeModal('ap-modal-summary'); openActivateModal(); });
-          a2.appendChild(close); a2.appendChild(act); body.appendChild(a2);
-          chatSystem('Meta\'ga chiqarildi (PAUSED).');
+          a2.appendChild(close);
+          if (!launchActive) {
+            var act = h('button', { type: 'button', class: 'btn ap-btn-good', text: 'Faollashtirish' }); act.addEventListener('click', function () { closeModal('ap-modal-summary'); openActivateModal(); });
+            a2.appendChild(act);
+          }
+          body.appendChild(a2);
+          chatSystem('Meta\'ga chiqarildi (' + statusWord + ').');
         }).catch(function (e) {
           body.appendChild(h('div', { class: 'ap-modal-msg err', text: e.message + (e.payload && e.payload.step ? ' (bosqich: ' + e.payload.step + ')' : '') }));
           back.disabled = false; go.disabled = false; go.textContent = 'Qayta urinish';

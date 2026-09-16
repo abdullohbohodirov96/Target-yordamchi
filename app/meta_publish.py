@@ -11,9 +11,12 @@ ASOSIY KAFOLATLAR:
     qadam oldidan yangilanadi -- jarayon o'rtada uzilsa (crash/tarmoq),
     qayta urinish ALLAQACHON yaratilgan qadamlarni o'tkazib yuboradi,
     dublikat kampaniya/adset/reklama HECH QACHON yaratilmaydi.
-  - Hammasi PAUSED holatda yaratiladi; ACTIVE qilish -- alohida, ANIQ
-    `activate_draft()` qadami (foydalanuvchi pul sarflanishini o'zi
-    boshlaydi).
+  - Standart holat ACTIVE (2026-09'dan): `draft.launch_active` (standart
+    True) ACTIVE bo'lsa, kampaniya/adset/reklama Meta'ga chiqarilishi bilan
+    DARHOL ishga tushadi. Foydalanuvchi review oynasida "Paused (qo'lda
+    yoqaman)"ni tanlasa (`launch_active=False`), avvalgidek PAUSED
+    yaratiladi va alohida, ANIQ `activate_draft()` qadami bilan keyinroq
+    yoqiladi.
   - Meta xatosi foydalanuvchiga XOM API matni bilan EMAS, tushunarli
     o'zbekcha xabar bilan ko'rsatiladi (`friendly_publish_error`); xom matn
     `last_meta_error_raw`da diagnostika uchun saqlanadi.
@@ -186,12 +189,18 @@ def _state_hash(state: dict) -> str:
     return hashlib.sha256(json.dumps(state or {}, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
 
 
-def _expected_snapshot(draft, state: dict) -> dict:
+def _expected_snapshot(draft, state: dict, *, status: "str | None" = None) -> dict:
     """Biz Meta'ga chiqargan (kutilayotgan) holatning qisqa ko'rinishi --
-    sinxronizatsiyada Meta'dagi haqiqiy holat bilan solishtiriladi."""
+    sinxronizatsiyada Meta'dagi haqiqiy holat bilan solishtiriladi.
+
+    `status` -- 2026-09: nashr paytida (`publish_draft`, verify qadami)
+    `draft.status` hali "publishing" bo'ladi, shuning uchun kutilgan holatni
+    chaqiruvchi o'zi beradi (`launch_status`); aks holda ACTIVE nashrdan
+    keyin "biz: PAUSED, Meta: ACTIVE" degan SOXTA ogohlantirish chiqardi."""
     adset = state.get("adset") or {}
     t = adset.get("targeting") or {}
-    status = "ACTIVE" if draft.status == "active" else "PAUSED"
+    if status is None:
+        status = "ACTIVE" if draft.status == "active" else "PAUSED"
     currency = adset.get("currency") or "UZS"
     budget = adset.get("daily_budget") if (adset.get("budget_type") or "daily") == "daily" else None
     return {
@@ -335,7 +344,8 @@ def _fail(session, draft, step: str, e: Exception, manager_id) -> PublishError:
 
 
 def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -> dict:
-    """Qoralamani Meta'ga chiqaradi (hammasi PAUSED). Qadamlar:
+    """Qoralamani Meta'ga chiqaradi (`draft.launch_active`ga qarab ACTIVE
+    yoki PAUSED holatda). Qadamlar:
     validate -> upload_media -> lead_form -> campaign -> adset -> creative ->
     ad -> verify. Har muvaffaqiyatli Meta yaratuvidan keyin ID DARHOL
     saqlanadi -- qayta urinish yaratilgan qadamlarni o'tkazib yuboradi.
@@ -344,6 +354,12 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     warnings: list[str] = []
     token = company.get_meta_access_token()
     ad_account_id = company.meta_ad_account_id
+    # 2026-09, foydalanuvchi so'rovi: standart holat endi ACTIVE -- kampaniya
+    # Meta'ga chiqarilishi bilan darhol ishga tushadi (avval doim PAUSED
+    # bo'lib, alohida "Faollashtirish" bosish kerak edi). Xohlasa, review
+    # oynasida PAUSED'ga o'tkazishi mumkin (`draft.launch_active=False`,
+    # `/avtopilot/<id>/launch-status`).
+    launch_status = "ACTIVE" if getattr(draft, "launch_active", True) else "PAUSED"
 
     # --- validate
     previous_step = draft.publish_step
@@ -420,7 +436,7 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     if not draft.meta_campaign_id:
         try:
             res = meta_api.create_campaign(
-                state["campaign"]["name"], state["campaign"]["meta_objective"], "PAUSED",
+                state["campaign"]["name"], state["campaign"]["meta_objective"], launch_status,
                 state["campaign"].get("special_ad_categories") or [],
                 access_token=token, ad_account_id=ad_account_id,
             )
@@ -442,7 +458,7 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
             res = meta_api.create_adset(
                 draft.meta_campaign_id, adset["name"], daily_cents, campaign_draft.to_meta_targeting(state),
                 adset["optimization_goal"], adset.get("billing_event") or "IMPRESSIONS",
-                adset.get("bid_strategy") or "LOWEST_COST_WITHOUT_CAP", "PAUSED",
+                adset.get("bid_strategy") or "LOWEST_COST_WITHOUT_CAP", launch_status,
                 _promoted_object(objective, page_id=page_id, pixel_id=pixel_id),
                 access_token=token, ad_account_id=ad_account_id,
                 lifetime_budget_cents=lifetime_cents, start_time=adset.get("start_time"), end_time=adset.get("end_time"),
@@ -474,7 +490,7 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     session.commit()
     if not draft.meta_ad_id:
         try:
-            res = meta_api.create_ad(draft.meta_adset_id, state["ad"]["name"], draft.meta_creative_id, "PAUSED", access_token=token, ad_account_id=ad_account_id)
+            res = meta_api.create_ad(draft.meta_adset_id, state["ad"]["name"], draft.meta_creative_id, launch_status, access_token=token, ad_account_id=ad_account_id)
         except Exception as e:  # noqa: BLE001
             raise _fail(session, draft, "ad", e, manager_id)
         draft.meta_ad_id = str(res.get("id"))
@@ -490,11 +506,11 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
         a = meta_api.get_adset_basic(draft.meta_adset_id, access_token=token)
         d = meta_api.get_ad_basic(draft.meta_ad_id, access_token=token)
         snapshot = _meta_snapshot(c, a, d)
-        warnings.extend(_diff_snapshots(_expected_snapshot(draft, state), snapshot))
+        warnings.extend(_diff_snapshots(_expected_snapshot(draft, state, status=launch_status), snapshot))
     except Exception as e:  # noqa: BLE001
         warnings.append("Nashrdan keyingi tekshiruv bajarilmadi: " + meta_api.safe_error_message(e))
 
-    draft.status = "published"
+    draft.status = "active" if launch_status == "ACTIVE" else "published"
     draft.sync_status = "synced"
     draft.publish_step = None
     draft.publish_error = None

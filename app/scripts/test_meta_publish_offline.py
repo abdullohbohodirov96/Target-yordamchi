@@ -4,7 +4,8 @@ to'ldirmasligi kerak"): `meta_publish.py` -- BARCHA `meta_api` chaqiruvlari
 mock qilinadi (tarmoq yo'q):
 
   1. To'liq tasdiqlangan qoralama -> campaign -> adset -> creative -> ad
-     tartibida, hammasi PAUSED, ID'lar bazada.
+     tartibida, standart ACTIVE (launch_active=True -> status "active"),
+     ID'lar bazada; launch_active=False -> hammasi PAUSED, status "published".
   2. Idempotent/davom ettirish: birinchi urinish "adset"da yiqiladi
      (meta_campaign_id saqlanadi, status failed, publish_step="adset",
      friendly xato); ikkinchi urinishda `create_campaign` QAYTA
@@ -197,6 +198,46 @@ def test_full_publish_and_activate():
     try:
         c = _company(session)
         d = _draft(session, c)
+        # 2026-09, foydalanuvchi so'rovi ("srazu aktiv holatga chiqazadigan
+        # qilish kerak"): STANDART -- launch_active=True -> hammasi ACTIVE,
+        # status darhol "active" (alohida activate qadami KERAK EMAS).
+        check("launch_active standart True", d.launch_active is True)
+        with MetaMock() as m:
+            res = meta_publish.publish_draft(session, d, c, manager_id=None)
+            order = [name for name, *_ in m.calls]
+            check("tartib campaign->adset->creative->ad", order == ["create_campaign", "create_adset", "create_ad_creative", "create_ad"])
+            check("standart: campaign ACTIVE bilan yaratildi", m.calls[0][1][2] == "ACTIVE")
+            check("standart: adset ACTIVE bilan yaratildi", m.calls[1][1][7] == "ACTIVE")
+            check("standart: ad ACTIVE bilan yaratildi", m.calls[3][1][3] == "ACTIVE")
+            check("standart: hammasi ACTIVE", all(v == "ACTIVE" for v in m.statuses.values()))
+            check("ID'lar bazada", (d.meta_campaign_id, d.meta_adset_id, d.meta_creative_id, d.meta_ad_id) == ("C1", "AS1", "CR1", "AD1"))
+            check("standart: status active, synced, step None", d.status == "active" and d.sync_status == "synced" and d.publish_step is None)
+            check("natija ID'lar", res["campaign_id"] == "C1" and res["ad_id"] == "AD1")
+            # `_expected_snapshot` nashr paytida `launch_status`ni oladi --
+            # aks holda "biz: PAUSED, Meta: ACTIVE" degan soxta ogohlantirish chiqardi
+            check("verify ogohlantirish yo'q (ACTIVE kutilgan holat bilan solishtirildi)", res["warnings"] == [])
+            snap = d.get_meta_snapshot()
+            check("snapshot ACTIVE", snap["meta"]["campaign"]["status"] == "ACTIVE")
+            try:
+                meta_publish.activate_draft(session, d, c)
+                check("allaqachon active -- activate rad", False)
+            except meta_publish.PublishError:
+                check("allaqachon active -- activate rad", True)
+            check("activate_object chaqirilmadi (allaqachon ACTIVE)", not any(n == "activate_object" for n, *_ in m.calls))
+    finally:
+        session.close()
+
+
+def test_full_publish_paused_then_activate():
+    """launch_active=False (foydalanuvchi "Pauzada qolsin"ni tanlagan) --
+    ESKI xatti-harakat saqlanadi: hammasi PAUSED, status "published", keyin
+    alohida `activate_draft` bilan yoqiladi."""
+    session = db_module.get_session()
+    try:
+        c = _company(session, name="Paused Co")
+        d = _draft(session, c)
+        d.launch_active = False
+        session.commit()
         with MetaMock() as m:
             res = meta_publish.publish_draft(session, d, c, manager_id=None)
             order = [name for name, *_ in m.calls]
@@ -266,7 +307,7 @@ def test_resume_after_failure_idempotent():
             names = [n for n, *_ in m.calls]
             check("create_campaign ikki urinishda BIR MARTA", names.count("create_campaign") == 1)
             check("create_adset ikkinchi urinishda muvaffaqiyatli", names.count("create_adset") == 2 and d.meta_adset_id == "AS1")
-            check("qayta urinish yakunlandi", d.status == "published" and res["ad_id"] == "AD1")
+            check("qayta urinish yakunlandi (standart ACTIVE -> status active)", d.status == "active" and res["ad_id"] == "AD1")
     finally:
         session.close()
 
@@ -387,8 +428,13 @@ def test_sync_detects_changes():
     try:
         c = _company(session, name="Sync Co")
         d = _draft(session, c)
+        # Bu ssenariy PAUSED nashr -> Meta'da qo'lda ACTIVE qilish haqida
+        # (2026-09: standart ACTIVE bo'lgani uchun aniq PAUSED tanlanadi)
+        d.launch_active = False
+        session.commit()
         with MetaMock() as m:
             meta_publish.publish_draft(session, d, c)
+            check("PAUSED nashrdan keyin status published", d.status == "published")
             check("nashrdan keyin synced", meta_publish.sync_draft_from_meta(session, d, c) == "synced")
             # Meta'da byudjet o'zgardi
             m.adset_budget = 30000000
@@ -409,6 +455,11 @@ def test_sync_detects_changes():
             m.statuses["AD1"] = "ACTIVE"
             st = meta_publish.sync_draft_from_meta(session, d, c)
             check("Meta ACTIVE -> meta_changed + status active", st == "meta_changed" and d.status == "active")
+            # Teskarisi: Meta'da kimdir PAUSED qilsa -> status published (yana faollashtirish mumkin)
+            meta_publish.sync_draft_from_meta(session, d, c)
+            m.statuses["C1"] = "PAUSED"
+            st2 = meta_publish.sync_draft_from_meta(session, d, c)
+            check("Meta PAUSED -> status published", st2 == "meta_changed" and d.status == "published")
         with mock.patch.object(meta_api, "get_campaign_basic", side_effect=meta_api.MetaAPIError({"message": "boom", "code": 190})):
             check("xato -> sync_error", meta_publish.sync_draft_from_meta(session, d, c) == "sync_error" and d.sync_status == "sync_error")
     finally:
@@ -510,6 +561,7 @@ def test_friendly_errors():
 
 
 test_full_publish_and_activate()
+test_full_publish_paused_then_activate()
 test_resume_after_failure_idempotent()
 test_blocked_without_approvals_and_plan()
 test_leads_publish_creates_form()

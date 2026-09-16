@@ -1043,6 +1043,12 @@ class CampaignDraft(Base):
     meta_creative_id = Column(String(64), nullable=True)
     meta_ad_id = Column(String(64), nullable=True)
     meta_lead_form_id = Column(String(64), nullable=True)
+    # 2026-09, foydalanuvchi so'rovi: avval hammasi doim PAUSED yaratilar
+    # edi (xavfsizlik uchun), lekin bu "test/darhol ishga tushirish"ga
+    # xalaqit berdi. Endi tanlov bor -- standart holat ACTIVE (darhol
+    # ishga tushadi), review modalida foydalanuvchi xohlasa PAUSED'ga
+    # o'tkazishi mumkin (`meta_publish.publish_draft`).
+    launch_active = Column(Boolean, nullable=False, default=True)
     publish_step = Column(String(32), nullable=True)
     publish_error = Column(Text, nullable=True)
     last_meta_error_raw = Column(Text, nullable=True)

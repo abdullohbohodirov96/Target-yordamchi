@@ -499,6 +499,35 @@ def test_multitenant_and_roles():
         check("menejer patch 403", m.post(f"/avtopilot/{DRAFT_ID}/patch", json={"scope": "campaign", "changes": {"campaign.name": "x"}}).status_code == 403)
         check("menejer ai-edit 403", m.post(f"/avtopilot/{DRAFT_ID}/ai-edit", json={"message": "x"}).status_code == 403)
         check("menejer wizard POST -> redirect (admin emas)", m.post("/avtopilot/yangi", data={"objective": "MESSAGES", "budget": "1"}).status_code in (302, 303))
+        check("menejer launch-status 403", m.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={"active": False}).status_code == 403)
+        check("B: A qoralamasiga launch-status 404", b.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={"active": False}).status_code == 404)
+
+
+# ---------------------------------------------------------------------------
+# 13b) Nashrdan keyingi holat (ACTIVE / PAUSED) -- 2026-09
+# ---------------------------------------------------------------------------
+def test_launch_status_toggle():
+    """`launch_active` serialize'da bor (standart True), `/launch-status`
+    uni o'zgartiradi va audit-jurnalga yozadi; `last_meta_error_raw` ham
+    JSON'da (nashr xatosi diagnostikasi uchun)."""
+    with _assets_mock(ASSETS):
+        r = admin.get(f"/avtopilot/{DRAFT_ID}/summary")
+        data = r.get_json()
+        r2 = admin.post(f"/avtopilot/{DRAFT_ID}/patch", json={"scope": "campaign", "changes": {"campaign.name": "Launch test"}})
+        dr = r2.get_json()["draft"]
+        check("serialize: launch_active kaliti bor va standart True", dr.get("launch_active") is True)
+        check("serialize: last_meta_error_raw kaliti bor", "last_meta_error_raw" in dr)
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={})
+        check("launch-status 'active'siz 400", r.status_code == 400 and "active" in r.get_json()["error"])
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={"active": False})
+        check("launch-status PAUSED -> 200, launch_active False", r.status_code == 200 and r.get_json()["draft"]["launch_active"] is False)
+        check("bazada launch_active False", _row(DRAFT_ID).launch_active is False)
+        evs = _events(DRAFT_ID)
+        check("audit: launch_status_changed yozildi", any(a == "launch_status_changed" and dd.get("active") is False for _actor, a, dd in evs))
+        before = dict(r.get_json()["draft"]["approvals"])
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={"active": True})
+        check("launch-status ACTIVE -> launch_active True", r.status_code == 200 and r.get_json()["draft"]["launch_active"] is True and _row(DRAFT_ID).launch_active is True)
+        check("launch-status tasdiqlarni BEKOR QILMAYDI (holat maydoni emas)", r.get_json()["draft"]["approvals"] == before)
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +608,7 @@ if __name__ == "__main__":
     test_publish_blocked_then_success_and_activate()
     test_import_flow()
     test_multitenant_and_roles()
+    test_launch_status_toggle()
     test_trial_company()
     test_regenerate_replan_archive_search()
     if failures:

@@ -7475,6 +7475,39 @@ def autopilot_approve(draft_id: int):
         session.close()
 
 
+@app.route("/avtopilot/<int:draft_id>/launch-status", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_launch_status(draft_id: int):
+    """{"active": true|false} -- nashr qilinganda kampaniya darhol ACTIVE
+    (standart, 2026-09) yoki PAUSED holatda yaratilsinmi, shuni tanlaydi.
+    Faqat hali nashr qilinmagan (yoki qayta nashr kutilayotgan) qoralama
+    uchun ma'noli -- lekin cheklov qo'yilmaydi (publish vaqtida joriy
+    qiymat o'qiladi)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    if "active" not in data:
+        return jsonify({"error": "'active' (true/false) kerak."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        draft.launch_active = bool(data.get("active"))
+        draft.updated_at = dt.datetime.utcnow()
+        autopilot_web.log_event(session, draft, actor="user", action="launch_status_changed", scope=None, details={"active": draft.launch_active}, manager_id=_autopilot_manager_id())
+        session.commit()
+        assets = autopilot_web.safe_meta_assets(company)
+        return jsonify({"ok": True, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "launch_status")
+    finally:
+        session.close()
+
+
 @app.route("/avtopilot/<int:draft_id>/media", methods=["POST"])
 @login_required
 @module_required("target")

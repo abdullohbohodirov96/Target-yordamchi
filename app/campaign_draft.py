@@ -544,7 +544,21 @@ def _coerce_list_item(path: str, item: dict) -> dict:
                 raw_options = item.get("options") or []
                 if not isinstance(raw_options, list):
                     raise DraftPatchError("Variantlar ro'yxat (list) bo'lishi kerak.")
-                options = [str(o).strip() for o in raw_options if str(o or "").strip()]
+                # 2026-09 bugfix: bo'sh variantlarni BU YERDA filtrlab
+                # tashlamaymiz -- foydalanuvchi "+ Variant qo'shish"ni
+                # bosganda bo'sh input qo'shiladi va keyin ichiga yozadi;
+                # har bir tugma bosilishida serverga darhol (immediate)
+                # patch ketadi, shu payt bo'sh variant filtrlansa,
+                # javob draft'ni almashtirganda (replaceDraft) hali
+                # yozilmagan bo'sh qator serverdan qaytgan holatda yo'qolib
+                # qoladi -- xuddi shu narsa "variant qo'shish ishlamayapti"
+                # xatosining sababi edi. Bo'sh/haqiqiy variantlar soni
+                # tekshiruvi endi FAQAT nashr qilishdan oldin
+                # (`_validate_lead_form`) qilinadi, bu yerda emas -- faqat
+                # matn normalizatsiya qilinadi, ro'yxat uzunligi saqlanadi.
+                options = [str(o).strip() for o in raw_options]
+                if len(options) > 12:
+                    raise DraftPatchError("Bir nechta variantli savolda ko'pi bilan 12 ta variant bo'lishi mumkin.")
                 out["options"] = options
         else:
             if item.get("key"):

@@ -118,7 +118,7 @@ QAT'IY QOIDALAR:
 - Har bir asosiy qaror uchun QISQA o'zbekcha tushuntirish (explanations) va ishonch (confidence 0-100).
 - Qiziqishlar: ko'pi bilan 5 ta NOM; agar keng auditoriya (broad) to'g'riroq bo'lsa -- bo'sh ro'yxat + advantage_audience=true.
 - MESSAGES maqsadida: messages.greeting (salomlashuv) va 4-5 ta quick_replies -- aynan shu biznesga mos savollar ("Narxi qancha?", "Manzilingiz qayerda?" kabi, lekin nishga moslab).
-- LEADS maqsadida: lead_form -- faqat KVALIFIKATSIYA savollari (3-5 ta, type: FULL_NAME|PHONE|EMAIL|CUSTOM); PHONE doim bo'lsin.
+- LEADS maqsadida: lead_form -- faqat KVALIFIKATSIYA savollari (3-5 ta, type: FULL_NAME|PHONE|CUSTOM); PHONE doim bo'lsin. EMAIL ISHLATMA -- O'zbekiston bozorida mijozlar SMS/qo'ng'iroq orqali bog'lanishni afzal ko'radi, email deyarli tekshirilmaydi.
 - Kampaniya nomi formati: "Replix | <Kompaniya> | <Maqsad> | <Shahar> | <OyYY>" (masalan "Replix | Nur Mebel | MESSAGES | Toshkent | Sep26").
 
 QAYTARILADIGAN JSON SXEMASI:

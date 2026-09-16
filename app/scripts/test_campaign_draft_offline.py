@@ -292,9 +292,50 @@ def test_lead_form_question_types_and_multiple_choice():
         check("noma'lum savol turi rad etiladi", True)
 
     # CUSTOM + options -> multiple choice savol
-    new, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Qaysi hajm kerak?", "options": ["Kichik", "O'rta", "Katta", "  "]}}}}, source="USER_OVERRIDDEN", field_sources={})
+    new, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Qaysi hajm kerak?", "options": ["Kichik", " O'rta ", "Katta", "  "]}}}}, source="USER_OVERRIDDEN", field_sources={})
     q = new["ad"]["lead_form"]["new_form"]["questions"][-1]
-    check("multiple-choice savolda options saqlandi (bo'sh qator tashlab yuborildi)", q.get("options") == ["Kichik", "O'rta", "Katta"])
+    # 2026-09 bugfix: bo'sh variant tahrir paytida SAQLANADI (uzunlik 4), faqat
+    # matn strip qilinadi -- filtrlash nashr-oldi validatsiyasida.
+    check("multiple-choice savolda options saqlandi (bo'sh qator ham -- tahrir paytida filtrlanmaydi)", q.get("options") == ["Kichik", "O'rta", "Katta", ""])
+
+    # 2026-09 REGRESSIYA ("+ Variant qo'shish ishlamayapti"): UI har bosishda
+    # `options: ["", ""]` bilan darhol patch yuboradi va serverdan qaytgan
+    # holat lokalni to'liq almashtiradi. Bo'sh variantlar shu yerda
+    # filtrlansa -- foydalanuvchi yozib ulgurmasdan qator yo'qolardi.
+    new_blank, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": [{"type": "PHONE"}, {"type": "CUSTOM", "label": "Qaysi xizmat?", "options": ["", ""]}]}}, source="USER_OVERRIDDEN", field_sources={})
+    q_blank = new_blank["ad"]["lead_form"]["new_form"]["questions"][-1]
+    check("REGRESSIYA: ikkita bo'sh variant patch'dan keyin 2 ta bo'lib qoladi (0 ga tushmaydi)", q_blank.get("options") == ["", ""])
+    # ... lekin shu holatda nashr qilib bo'lmaydi -- validatsiya "kamida 2 ta variant" deydi
+    s_blank = _filled_state("LEADS")
+    s_blank["ad"]["lead_form"]["new_form"] = {
+        "name": "Forma", "intro_headline": "", "intro_description": "",
+        "questions": new_blank["ad"]["lead_form"]["new_form"]["questions"],
+        "privacy_url": "https://example.uz/privacy", "thank_you_title": "", "thank_you_body": "",
+    }
+    errs_blank = cd.validate_state(s_blank)
+    check("REGRESSIYA: bo'sh variantlar bilan nashr-oldi validatsiya 'kamida 2 ta variant' deydi", any("kamida 2 ta variant" in e["message"] for e in errs_blank))
+    s_blank["ad"]["lead_form"]["new_form"]["questions"][-1]["options"] = ["Ta'mirlash", ""]
+    check("REGRESSIYA: 1 ta to'ldirilgan + 1 bo'sh -- hali ham xato", any("kamida 2 ta variant" in e["message"] for e in cd.validate_state(s_blank)))
+    s_blank["ad"]["lead_form"]["new_form"]["questions"][-1]["options"] = ["Ta'mirlash", "Sotib olish", ""]
+    check("REGRESSIYA: 2 ta to'ldirilgan + 1 bo'sh -- xatosiz (bo'sh e'tiborsiz)", not any("variant" in e["message"] for e in cd.validate_state(s_blank)))
+    cfg_blank = cd.lead_form_config_from_state(s_blank)
+    q_cfg = next(qq for qq in cfg_blank["questions"] if qq["type"] == "CUSTOM")
+    check("REGRESSIYA: Meta config'ga bo'sh variant KETMAYDI", [o["value"] for o in q_cfg["options"]] == ["Ta'mirlash", "Sotib olish"])
+    # 12 tadan ko'p variant rad etiladi
+    try:
+        cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Ko'p", "options": [str(i) for i in range(13)]}}}}, source="USER_OVERRIDDEN", field_sources={})
+        check("13 ta variant rad etiladi", False)
+    except cd.DraftPatchError as e:
+        check("13 ta variant rad etiladi", "12 ta" in str(e))
+    # EMAIL turi hali ham QABUL qilinadi (Meta'dan import qilingan eski forma
+    # buzilmasin) -- faqat UI'da yangi qo'shishda taklif qilinmaydi
+    new_email, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "EMAIL"}}}}, source="USER_OVERRIDDEN", field_sources={})
+    check("EMAIL turi backend'da hali ham qabul qilinadi (import uchun)", new_email["ad"]["lead_form"]["new_form"]["questions"][-1]["type"] == "EMAIL")
+    check("EMAIL yorlig'i saqlangan", cd.LEAD_QUESTION_TYPE_LABELS.get("EMAIL") == "Email")
+    # PHONE yolg'iz (EMAIL'siz) validatsiyadan o'tadi
+    s_ph = _filled_state("LEADS")
+    s_ph["ad"]["lead_form"]["new_form"] = {"name": "F", "intro_headline": "", "intro_description": "", "questions": [{"type": "FULL_NAME"}, {"type": "PHONE"}], "privacy_url": "https://example.uz/p", "thank_you_title": "", "thank_you_body": ""}
+    check("PHONE yolg'iz (EMAIL'siz) LEADS forma xatosiz", cd.validate_state(s_ph) == [])
 
     # options'siz CUSTOM -- hali ham erkin matnli savol (eski xatti-harakat)
     new2, _, _ = cd.apply_patch(s2, {"scope": "ad", "changes": {"lead_form.new_form.questions": {"$append": {"type": "CUSTOM", "label": "Izoh"}}}}, source="USER_OVERRIDDEN", field_sources={})

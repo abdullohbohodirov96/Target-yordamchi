@@ -328,6 +328,9 @@ def serialize_draft(draft, assets: "dict | None", ctx: "dict | None", *, session
         "objective_meta": campaign_draft.OBJECTIVE_META.get(objective, {}),
         "source": draft.source,
         "status": draft.status, "status_label": STATUS_LABELS.get(draft.status, draft.status),
+        # 2026-09: standart -- ACTIVE (darhol ishga tushadi); foydalanuvchi
+        # review oynasida PAUSED'ga o'tkazishi mumkin ("launch-status").
+        "launch_active": bool(getattr(draft, "launch_active", True)),
         "sync_status": draft.sync_status or "local", "sync_label": SYNC_LABELS.get(draft.sync_status or "local", draft.sync_status),
         "approvals": {"campaign": bool(draft.campaign_approved), "adset": bool(draft.adset_approved), "ad": bool(draft.ad_approved)},
         "all_approved": bool(draft.all_approved),
@@ -336,6 +339,11 @@ def serialize_draft(draft, assets: "dict | None", ctx: "dict | None", *, session
         "has_meta_ids": has_meta_ids,
         "is_editable": draft.status not in ("publishing", "archived"),
         "publish_step": draft.publish_step, "publish_error": draft.publish_error,
+        # 2026-09: Meta'dan qaytgan XOM xatolik matni ham UI'ga chiqariladi
+        # (avval faqat umumiy "tekshiring" degan qisqa xabar ko'rinardi --
+        # aniq sababni topish qiyin edi). Bu faqat o'z kompaniyasiga tegishli
+        # qoralama uchun, xavfsiz -- API kalitlar emas, Meta'ning javob matni.
+        "last_meta_error_raw": draft.last_meta_error_raw,
         "last_synced_at": _iso(draft.last_synced_at), "created_at": _iso(draft.created_at), "updated_at": _iso(draft.updated_at),
         "state": state,
         "field_sources": field_sources,
