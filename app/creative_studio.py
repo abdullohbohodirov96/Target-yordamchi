@@ -756,16 +756,20 @@ def fallback_placeholder_values(ctx: dict, brief_answers: dict, template: "dict 
 OPENAI_TEXT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 _OPENAI_COPY_TIMEOUT = 40
-_COPY_LIMITS = {"headline": 48, "subheadline": 80, "cta_text": 32}
+_COPY_LIMITS = {"headline": 48, "subheadline": 80, "cta_text": 32, "price_text": 24}
+_MAX_AI_FEATURES = 3
+_AI_FEATURE_CHAR_LIMIT = 28
 
 _COPY_SYSTEM_PROMPT = """Sen O'zbekiston bozori uchun Facebook/Instagram reklama rasmlariga matn yozadigan professional kopirayter san.
 Vazifa: kompaniya ma'lumotlari va mijozning XOM javoblaridan reklama rasmiga qo'yiladigan TOZA, SAVODLI, JOZIBALI o'zbekcha (lotin) matn tuzish.
 FAQAT JSON qaytar (izohsiz, ``` belgisiz):
-{"headline": "...", "subheadline": "...", "cta_text": "..."}
+{"headline": "...", "subheadline": "...", "cta_text": "...", "price_text": "...", "features": ["...", "..."]}
 QOIDALAR:
-- headline: 2-6 so'z, ko'pi bilan 40 belgi, o'qishga oson, reklama uslubida (masalan "Sifatli armatura — zavod narxida"). Mijozning xom so'zlarini AYNAN ko'chirma ("sotishimiz kerak", "reklama qilmoqchimiz" kabi ichki gaplar bo'lmasin) -- lekin haqiqiy faktlarni (mahsulot, aksiya, raqamlar) SAQLA, yangi va'da/raqam O'YLAB TOPMA.
+- headline: 2-6 so'z, ko'pi bilan 40 belgi, o'qishga oson, reklama uslubida (masalan "Sifatli armatura — zavod narxida"). Mijozning xom so'zlarini AYNAN ko'chirma ("sotishimiz kerak", "reklama qilmoqchimiz" kabi ichki gaplar bo'lmasin) -- lekin haqiqiy faktlarni (mahsulot, aksiya, raqamlar) SAQLA, yangi va'da/raqam O'YLAB TOPMA. Narxni headline ICHIGA QO'SHMA -- narx alohida "price_text" maydonida, o'z belgisida ko'rsatiladi.
 - subheadline: 1 qisqa gap, ko'pi bilan 70 belgi -- taklif/foyda/kafolat/yetkazib berish (aksiya bo'lsa, shuni). Aksiya ham, boshqa fakt ham bo'lmasa -- mahsulot haqida qisqa ishonchli gap.
 - cta_text: 2-4 so'z, buyruq maylida, AYNAN shu biznesga mos ("Buyurtma bering", "Narxini bilib oling", "Qo'ng'iroq qiling", "Navbatga yoziling", "Ko'rishga keling"). Umumiy "Batafsil" YOZMA. Agar mijoz o'zi chaqiriq matnini bergan bo'lsa -- uni AYNAN qaytar.
+- price_text: FAQAT pastda berilgan "Narx segmenti" satrida (yoki mijozning xom javoblarida ANIQ aytilgan narx bo'lsa, o'shanda) narx haqida ma'lumot bo'lsagina to'ldir -- shu narxni QISQA va JOZIBALI shaklga keltir (masalan "29.000 so'mdan boshlab", "300.000 so'mdan"). HECH QANDAY narx ma'lumoti berilmagan bo'lsa -- BO'SH satr "" qaytar, HECH QACHON raqam O'YLAB TOPMA yoki taxmin qilma.
+- features: ko'pi bilan 3 ta QISQA (har biri ko'pi bilan 28 belgi) afzallik/xususiyat iborasi -- FAQAT "Qo'shimcha (profil)" yoki mijozning taklif/uslub javoblarida ANIQ aytilgan narsalardan (masalan "bepul yetkazib berish" aytilgan bo'lsa -- "Bepul yetkazib berish" deb qisqa yoz -- bu xulosa, RUXSAT ETILGAN). Matnda sifat/tezlik/kafolat haqida hech qanday aniq ishora bo'lmasa -- BO'SH ro'yxat [] qaytar, "Yuqori sifat"/"Tez yetkazib berish" kabi umumiy iboralarni HECH NARSAGA ASOSLANMAGAN holda O'ZINGDAN O'YLAB TOPMA (bu soxta da'vo bo'ladi).
 - Apostroflar to'g'ri: o', g', so'm, ko'ring. Emoji, qo'shtirnoq, undov belgilarini ko'p ishlatma."""
 
 
@@ -821,14 +825,28 @@ def _parse_copy_json(text: str) -> "dict | None":
         v = data.get(key)
         if isinstance(v, str) and v.strip():
             out[key] = " ".join(v.strip().split())[:limit].strip(' "\'')
+    feats = data.get("features")
+    if isinstance(feats, list):
+        clean_feats = []
+        for f in feats:
+            if isinstance(f, str) and f.strip():
+                clean_feats.append(" ".join(f.strip().split())[:_AI_FEATURE_CHAR_LIMIT].strip(' "\''))
+            if len(clean_feats) >= _MAX_AI_FEATURES:
+                break
+        if clean_feats:
+            out["features"] = clean_feats
     return out or None
 
 
 def generate_ad_copy(ctx: dict, brief_answers: dict, template: "dict | None") -> "dict | None":
-    """AI kopirayter: {"headline", "subheadline", "cta_text"} (faqat
-    mavjud/bo'sh bo'lmagan kalitlar) yoki None (kalit sozlanmagan, kredit
-    tugagan, tarmoq/HTTP xatosi, JSON buzuq). HECH QACHON exception
-    ko'tarmaydi -- rasm generatsiyasi davom etadi (zaxira matn bilan)."""
+    """AI kopirayter: {"headline", "subheadline", "cta_text", "price_text",
+    "features": [...]} (faqat mavjud/bo'sh bo'lmagan kalitlar -- 2026-09,
+    "yarim ma'lumot berayapsiz" shikoyati: narx va afzalliklar ENDI alohida
+    maydon, AI ularni faqat berilgan real ma'lumotdan (narx segmenti,
+    mijoz javoblari) chiqaradi, hech qachon o'ylab topmaydi -- yo'q bo'lsa
+    bo'sh qaytaradi) yoki None (kalit sozlanmagan, kredit tugagan,
+    tarmoq/HTTP xatosi, JSON buzuq). HECH QACHON exception ko'tarmaydi --
+    rasm generatsiyasi davom etadi (zaxira matn bilan)."""
     if not os.environ.get("OPENAI_API_KEY"):
         return None
     body = {
@@ -864,10 +882,15 @@ def generate_ad_copy(ctx: dict, brief_answers: dict, template: "dict | None") ->
 def placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None", *, use_ai: bool = True) -> dict:
     """Shablon/standart qatlamlardagi `{{...}}` placeholder'lar uchun REAL
     matnlar: `fallback_placeholder_values` (deterministik) USTIGA AI
-    kopirayter natijasi (`generate_ad_copy`: headline/subheadline/cta_text)
-    qo'yiladi. Mijoz `cta_preference` bergan bo'lsa -- u har doim ustun.
-    AI ishlamasa -- faqat zaxira qiymatlar (generatsiya to'xtamaydi).
-    `use_ai=False` -- shablondan tezkor yaratish (OpenAI'siz va'dasi)."""
+    kopirayter natijasi (`generate_ad_copy`: headline/subheadline/cta_text/
+    price_text/features) qo'yiladi. Mijoz `cta_preference` bergan bo'lsa --
+    u har doim ustun. `price_text` -- AI bergan bo'lsa (bo'sh bo'lmasa)
+    zaxira (`price_range`dan) ustidan yoziladi. `features` -- AI ro'yxat
+    bergan bo'lsa (bo'sh bo'lmasa) `feature_1..4`ni TO'LIQ almashtiradi
+    (yaxshiroq iboralangan bo'lgani uchun), aks holda zaxira (`extra_notes`
+    vergul bo'yicha bo'lingan) qoladi. AI ishlamasa -- faqat zaxira
+    qiymatlar (generatsiya to'xtamaydi). `use_ai=False` -- shablondan
+    tezkor yaratish (OpenAI'siz va'dasi)."""
     values = fallback_placeholder_values(ctx, brief_answers, template)
     if not use_ai:
         return values
@@ -880,6 +903,12 @@ def placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None", 
     cta_pref = ((brief_answers or {}).get("cta_preference") or "").strip()
     if not cta_pref and copy_.get("cta_text"):
         values["cta_text"] = copy_["cta_text"]
+    if copy_.get("price_text"):
+        values["price_text"] = copy_["price_text"]
+    feats = copy_.get("features")
+    if isinstance(feats, list) and feats:
+        for i in range(4):
+            values[f"feature_{i + 1}"] = feats[i] if i < len(feats) else ""
     return values
 
 
@@ -1021,24 +1050,229 @@ def _request_openai_image(prompt: str, size: str) -> "tuple[bytes, str | None]":
 # QATLAMLAR (layers)
 # ---------------------------------------------------------------------------
 
-def default_layers() -> list[dict]:
-    """Shablon tanlanmagan holat uchun ODDIY standart qatlamlar
-    (headline/subheadline/cta_badge/logo) -- shablon sxemasi bilan bir xil."""
+# ---------------------------------------------------------------------------
+# SHABLONSIZ ("AI bilan yaratish") YO'L UCHUN BIR NECHTA BOY, XILMA-XIL
+# KOMPOZITSIYA (2026-09, foydalanuvchi shikoyati, skrinshot bilan: "dizayn
+# juda oddiy bo'lib qolyapti, har safar boshqacha bo'lsin, matn katta,
+# sifatli, to'liq ma'lumot -- narx, xususiyat -- bersin, yarim-yorti emas").
+#
+# Ilgari BU YO'L (shablon tanlanmagan -- eng ko'p ishlatiladigan yo'l)
+# doim BITTA qattiq `default_layers()`ni ishlatardi: 6 ta qatlam, headline
+# `size_ratio=0.062`, hech qachon narx/xususiyat ko'rsatilmasdi -- har bir
+# generatsiya BIR XIL ko'rinardi. Endi -- bir nechta ORIGINAL, real dizayn
+# fikri bilan qurilgan variant (`_LAYOUT_VARIANTS`), va `select_default_
+# layout()` ulardan qaysi biri HAQIQATAN mos kelishini (narx/xususiyat/
+# taklif/iqtibos ma'lumoti bormi) `placeholder_values()` natijasidan
+# ANIQLAYDI -- bo'sh joyga hech qachon bo'sh narx/xususiyat blokini
+# ko'rsatmaydi. Bir xil `asset.id` -- doim bir xil variant (qayta tahrirda
+# barqaror), turli `asset.id`lar -- turli variantlar (`random.Random`
+# asset id bilan "urug'lantirilgan" -- xuddi bir xil kompaniya uchun ham
+# har safar boshqacha ko'rinish).
+# ---------------------------------------------------------------------------
+
+def _v_text(id_, x, y, w, h, text, *, align="left", font="bold", size_ratio=0.06, color="#FFFFFF"):
+    return {"id": id_, "type": "text", "x": x, "y": y, "w": w, "h": h, "align": align,
+            "font": font, "size_ratio": size_ratio, "color": color, "text": text}
+
+
+def _v_badge(id_, x, y, w, h, text, *, bg_color="#111111", color="#FFFFFF", size_ratio=0.026, font="bold", align="center", opacity=1.0):
+    return {"id": id_, "type": "badge", "x": x, "y": y, "w": w, "h": h, "align": align,
+            "font": font, "size_ratio": size_ratio, "color": color, "bg_color": bg_color,
+            "opacity": opacity, "text": text}
+
+
+def _v_panel(id_, x, y, w, h, bg_color, *, opacity=1.0, gradient=False):
+    return {"id": id_, "type": "panel", "x": x, "y": y, "w": w, "h": h,
+            "bg_color": bg_color, "opacity": opacity, "gradient": gradient}
+
+
+def _v_logo(x, y, w, h, align="right"):
+    return {"id": "logo", "type": "logo", "x": x, "y": y, "w": w, "h": h, "align": align}
+
+
+def _v_phone(x, y, w, h, *, align="left", color="#FFFFFF", size_ratio=0.026, font="bold"):
+    # 2026-09: telefon (brif/profil) -- lid-reklama uchun odatiy element;
+    # raqam bo'lmasa qatlam yashirin (`resolve_layers`). HAR bir variantda
+    # bo'lishi SHART (logotip kabi) -- "telefon yo'qolib qoladi" shikoyati
+    # takrorlanmasin.
+    return _v_text("phone", x, y, w, h, "{{phone_line}}", align=align, font=font, size_ratio=size_ratio, color=color)
+
+
+def _layout_bottom_bold_simple(values: dict) -> list[dict]:
+    """Bazaviy variant -- to'liq kenglikdagi pastki panel, lekin sarlavha
+    ESKISIGA qaraganda SEZILARLI kattaroq (0.062 -> 0.082) va panel
+    balandroq/quyuqroq (matn o'qilishi uchun kontrast kuchliroq)."""
     return [
-        {"id": "cta_badge", "type": "badge", "x": 0.06, "y": 0.06, "w": 0.34, "h": 0.07, "align": "center",
-         "font": "bold", "size_ratio": 0.026, "color": "#FFFFFF", "bg_color": "#111111", "opacity": 0.92, "text": "{{cta_text}}"},
-        # 2026-09: keng wordmark-logotiplar uchun quti kengaytirildi (0.14 -> 0.22)
-        {"id": "logo", "type": "logo", "x": 0.72, "y": 0.06, "w": 0.22, "h": 0.10, "align": "right"},
-        {"id": "bottom_panel", "type": "panel", "x": 0.0, "y": 0.62, "w": 1.0, "h": 0.38, "bg_color": "#000000", "opacity": 0.75, "gradient": True},
-        {"id": "headline", "type": "text", "x": 0.06, "y": 0.72, "w": 0.88, "h": 0.12, "align": "left",
-         "font": "bold", "size_ratio": 0.062, "color": "#FFFFFF", "text": "{{headline}}"},
-        {"id": "subheadline", "type": "text", "x": 0.06, "y": 0.85, "w": 0.88, "h": 0.08, "align": "left",
-         "font": "regular", "size_ratio": 0.03, "color": "#E5E7EB", "text": "{{subheadline}}"},
-        # 2026-09: telefon (brif/profil) -- lid-reklama uchun odatiy element;
-        # raqam bo'lmasa qatlam yashirin (`resolve_layers`).
-        {"id": "phone", "type": "text", "x": 0.06, "y": 0.935, "w": 0.88, "h": 0.05, "align": "left",
-         "font": "bold", "size_ratio": 0.028, "color": "#FFFFFF", "text": "{{phone_line}}"},
+        _v_badge("cta_badge", 0.06, 0.055, 0.34, 0.065, "{{cta_text}}", bg_color="#111111", opacity=0.92),
+        _v_logo(0.72, 0.055, 0.22, 0.10),
+        _v_panel("bottom_panel", 0.0, 0.58, 1.0, 0.42, "#000000", opacity=0.78, gradient=True),
+        _v_text("headline", 0.06, 0.68, 0.88, 0.16, "{{headline}}", size_ratio=0.082),
+        _v_text("subheadline", 0.06, 0.855, 0.88, 0.07, "{{subheadline}}", font="regular", size_ratio=0.030, color="#E5E7EB"),
+        _v_phone(0.06, 0.94, 0.88, 0.045, size_ratio=0.026),
     ]
+
+
+def _layout_corner_card_clean(values: dict) -> list[dict]:
+    """Muqobil bazaviy variant -- to'liq kengdagi panel EMAS, pastki
+    O'NG burchakda ixcham "karta" (logotip esa CHAP tomonda) -- fonning
+    ko'p qismi ochiq qoladi, kompozitsiya butunlay boshqacha tuyuladi."""
+    return [
+        _v_logo(0.06, 0.06, 0.20, 0.09, align="left"),
+        _v_panel("card", 0.34, 0.56, 0.60, 0.40, "#0F172A", opacity=0.88),
+        _v_text("headline", 0.38, 0.605, 0.52, 0.17, "{{headline}}", size_ratio=0.078),
+        _v_text("subheadline", 0.38, 0.755, 0.52, 0.09, "{{subheadline}}", font="regular", size_ratio=0.028, color="#CBD5E1"),
+        _v_badge("cta_badge", 0.38, 0.865, 0.40, 0.07, "{{cta_text}}", bg_color="#FFFFFF", color="#0F172A", size_ratio=0.024),
+        _v_phone(0.38, 0.945, 0.52, 0.04, font="regular", size_ratio=0.020, color="#E2E8F0"),
+    ]
+
+
+def _layout_price_spotlight(values: dict) -> list[dict]:
+    """Narx MA'LUM bo'lgandagina tanlanadi -- narx katta, sariq "yorliq"
+    sifatida yuqori o'ng burchakda alohida element (headline'ga
+    aralashtirilmagan, foydalanuvchi aynan shuni so'ragan)."""
+    return [
+        _v_logo(0.06, 0.06, 0.20, 0.09, align="left"),
+        _v_panel("price_shadow", 0.605, 0.075, 0.34, 0.20, "#0C4A6E", opacity=0.45),
+        _v_badge("price_badge", 0.585, 0.06, 0.34, 0.20, "{{price_text}}", bg_color="#FACC15", color="#1F2937", size_ratio=0.058),
+        _v_panel("bottom_panel", 0.0, 0.64, 1.0, 0.36, "#000000", opacity=0.80, gradient=True),
+        _v_text("headline", 0.06, 0.72, 0.88, 0.13, "{{headline}}", size_ratio=0.078),
+        _v_text("subheadline", 0.06, 0.855, 0.88, 0.06, "{{subheadline}}", font="regular", size_ratio=0.028, color="#E5E7EB"),
+        _v_badge("cta_badge", 0.06, 0.92, 0.40, 0.06, "{{cta_text}}", bg_color="#FACC15", color="#1F2937", size_ratio=0.024),
+        _v_phone(0.50, 0.93, 0.44, 0.045, align="right", font="regular", size_ratio=0.022),
+    ]
+
+
+def _layout_feature_stack(values: dict) -> list[dict]:
+    """Xususiyat/afzallik matni MAVJUD bo'lgandagina tanlanadi -- o'ng
+    tomonda 3 ta kichik "belgi" ustma-ust joylashadi, headline chap
+    tomonda torroq ustunda (xususiyatlar bilan bir qatorda o'qiladi)."""
+    return [
+        _v_logo(0.06, 0.055, 0.20, 0.09, align="left"),
+        _v_badge("feature_1", 0.62, 0.32, 0.32, 0.09, "{{feature_1}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.021, align="left", opacity=0.93),
+        _v_badge("feature_2", 0.62, 0.43, 0.32, 0.09, "{{feature_2}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.021, align="left", opacity=0.93),
+        _v_badge("feature_3", 0.62, 0.54, 0.32, 0.09, "{{feature_3}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.021, align="left", opacity=0.93),
+        _v_panel("bottom_panel", 0.0, 0.68, 1.0, 0.32, "#000000", opacity=0.80, gradient=True),
+        _v_text("headline", 0.06, 0.735, 0.52, 0.14, "{{headline}}", size_ratio=0.075),
+        _v_text("subheadline", 0.06, 0.865, 0.52, 0.06, "{{subheadline}}", font="regular", size_ratio=0.026, color="#E5E7EB"),
+        _v_badge("cta_badge", 0.62, 0.865, 0.32, 0.06, "{{cta_text}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.022),
+        _v_phone(0.06, 0.94, 0.88, 0.04, font="regular", size_ratio=0.020, color="#E5E7EB"),
+    ]
+
+
+def _layout_quote_spotlight(values: dict) -> list[dict]:
+    """Mijoz/mahsulot haqida "iqtibos"ga o'xshash matn (`quote_text`)
+    MAVJUD bo'lgandagina tanlanadi -- markazlashgan oq karta ustida katta
+    qo'shtirnoq bezagi + iqtibos, headline IKKINCHI darajali (kichikroq,
+    chunki bu yerda diqqat markazi -- matn, headline emas)."""
+    return [
+        _v_logo(0.40, 0.05, 0.20, 0.09, align="center"),
+        _v_panel("quote_card", 0.06, 0.24, 0.88, 0.50, "#FFFFFF", opacity=0.92),
+        _v_text("quote_mark", 0.10, 0.215, 0.18, 0.14, "“", size_ratio=0.20, color="#E8C9A0"),
+        _v_text("quote_text", 0.12, 0.30, 0.76, 0.20, "{{quote_text}}", font="regular", size_ratio=0.038, color="#1F2937", align="center"),
+        _v_text("headline", 0.12, 0.52, 0.76, 0.08, "{{headline}}", align="center", size_ratio=0.040, color="#7C5B2B"),
+        _v_badge("cta_badge", 0.32, 0.625, 0.36, 0.065, "{{cta_text}}", bg_color="#1F2937", color="#FFFFFF", size_ratio=0.024),
+        _v_phone(0.12, 0.70, 0.76, 0.035, align="center", font="regular", size_ratio=0.018, color="#57534E"),
+    ]
+
+
+def _layout_price_feature_showcase(values: dict) -> list[dict]:
+    """ENG BOY variant (narx VA xususiyatlar ikkalasi ham mavjud bo'lganda
+    tanlanadi): yuqorida narx yorlig'i (+ agar HAQIQIY aksiya bo'lsa --
+    alohida qizil taklif belgisi), o'rtada 3 ta xususiyat qatorda, pastda
+    to'liq matn paneli -- foydalanuvchi so'ragan "to'liq ma'lumot"ning
+    aynan o'zi (narx, xususiyat, taklif -- barchasi ALOHIDA, aniq ko'rinadi)."""
+    layers = [
+        _v_logo(0.06, 0.05, 0.18, 0.08, align="left"),
+        _v_badge("price_badge", 0.68, 0.045, 0.27, 0.11, "{{price_text}}", bg_color="#FACC15", color="#1F2937", size_ratio=0.030),
+    ]
+    if (values.get("offer_text") or "").strip() and values["offer_text"] != "AKSIYA":
+        layers.append(_v_badge("offer_badge", 0.28, 0.05, 0.38, 0.075, "{{offer_text}}", bg_color="#DC2626", color="#FFFFFF", size_ratio=0.024))
+    layers += [
+        _v_badge("feature_1", 0.06, 0.40, 0.28, 0.09, "{{feature_1}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.020, opacity=0.93),
+        _v_badge("feature_2", 0.36, 0.40, 0.28, 0.09, "{{feature_2}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.020, opacity=0.93),
+        _v_badge("feature_3", 0.66, 0.40, 0.28, 0.09, "{{feature_3}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.020, opacity=0.93),
+        _v_panel("bottom_panel", 0.0, 0.60, 1.0, 0.40, "#000000", opacity=0.80, gradient=True),
+        _v_text("headline", 0.06, 0.66, 0.88, 0.13, "{{headline}}", size_ratio=0.076),
+        _v_text("subheadline", 0.06, 0.80, 0.88, 0.06, "{{subheadline}}", font="regular", size_ratio=0.026, color="#E5E7EB"),
+        _v_badge("cta_badge", 0.06, 0.875, 0.40, 0.06, "{{cta_text}}", bg_color="#FACC15", color="#1F2937", size_ratio=0.022),
+        _v_phone(0.50, 0.885, 0.44, 0.04, align="right", font="regular", size_ratio=0.020),
+    ]
+    return layers
+
+
+def _layout_price_feature_editorial(values: dict) -> list[dict]:
+    """Narx VA xususiyatlar mavjud bo'lganda `price_feature_showcase`ga
+    MUQOBIL, butunlay BOSHQA kompozitsiya (bir xil ma'lumot -- ikkinchi
+    tanlov bo'lmasa, bir xil "boy" holat ham har doim bir xil ko'rinardi):
+    to'liq balandlikdagi CHAP yon panel (narx+xususiyatlar+CTA shu yerda
+    ustma-ust), headline esa O'NG pastda, fon rasmi ustida to'g'ridan-to'g'ri."""
+    return [
+        _v_panel("side_panel", 0.0, 0.0, 0.38, 1.0, "#111111", opacity=0.82),
+        _v_logo(0.04, 0.05, 0.30, 0.09, align="left"),
+        _v_badge("price_badge", 0.04, 0.18, 0.30, 0.11, "{{price_text}}", bg_color="#FACC15", color="#1F2937", size_ratio=0.028),
+        _v_badge("feature_1", 0.04, 0.34, 0.30, 0.08, "{{feature_1}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.018, align="left", opacity=0.92),
+        _v_badge("feature_2", 0.04, 0.44, 0.30, 0.08, "{{feature_2}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.018, align="left", opacity=0.92),
+        _v_badge("feature_3", 0.04, 0.54, 0.30, 0.08, "{{feature_3}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.018, align="left", opacity=0.92),
+        _v_badge("cta_badge", 0.04, 0.66, 0.30, 0.07, "{{cta_text}}", bg_color="#FFFFFF", color="#111111", size_ratio=0.022),
+        _v_phone(0.04, 0.90, 0.30, 0.05, font="regular", size_ratio=0.020, color="#E5E7EB"),
+        _v_panel("headline_scrim", 0.40, 0.66, 0.58, 0.34, "#000000", opacity=0.55, gradient=True),
+        _v_text("headline", 0.44, 0.72, 0.50, 0.20, "{{headline}}", size_ratio=0.080),
+        _v_text("subheadline", 0.44, 0.88, 0.50, 0.08, "{{subheadline}}", font="regular", size_ratio=0.026, color="#E5E7EB"),
+    ]
+
+
+def _has_value(values: dict, key: str) -> bool:
+    return bool(str((values or {}).get(key) or "").strip())
+
+
+def _has_real_offer(values: dict) -> bool:
+    v = str((values or {}).get("offer_text") or "").strip()
+    return bool(v) and v != "AKSIYA"
+
+
+# Har bir variant: (kalit, qurish funksiyasi, boylik darajasi -- richness,
+# tanlanish sharti -- values'da HAQIQIY (bo'sh bo'lmagan) ma'lumot bormi).
+# richness KATTAROQ -> ustuvor; bir xil richness'dagi barcha mos variantlar
+# orasidan `random.Random(asset_id)` bilan tanlanadi (xilma-xillik).
+_LAYOUT_VARIANTS = [
+    ("bottom_bold_simple", _layout_bottom_bold_simple, 0, lambda v: True),
+    ("corner_card_clean", _layout_corner_card_clean, 0, lambda v: True),
+    ("price_spotlight", _layout_price_spotlight, 1, lambda v: _has_value(v, "price_text")),
+    ("feature_stack", _layout_feature_stack, 1, lambda v: _has_value(v, "feature_1")),
+    ("quote_spotlight", _layout_quote_spotlight, 1, lambda v: _has_value(v, "quote_text")),
+    ("price_feature_showcase", _layout_price_feature_showcase, 2, lambda v: _has_value(v, "price_text") and _has_value(v, "feature_1")),
+    ("price_feature_editorial", _layout_price_feature_editorial, 2, lambda v: _has_value(v, "price_text") and _has_value(v, "feature_1")),
+]
+
+
+def select_default_layout(values: dict, seed=None) -> list[dict]:
+    """Shablon tanlanmagan ("AI bilan yaratish") yo'l uchun ENG BOY, lekin
+    HAQIQATAN mos keladigan kompozitsiyani tanlaydi (`_LAYOUT_VARIANTS`):
+      1. Faqat `values`da HAQIQIY (bo'sh bo'lmagan) ma'lumoti bor
+         variantlar ko'rib chiqiladi (masalan narx yorlig'i ko'rsatadigan
+         variant narx bo'lmasa UMUMAN tanlanmaydi -- bo'sh belgi chizilmaydi).
+      2. Ular orasidan ENG YUQORI "richness" (necha ta qo'shimcha element
+         -- narx/xususiyat/iqtibos) darajasidagilar tanlanadi.
+      3. Bir nechtasi teng bo'lsa (masalan headline/subheadline/cta'dan
+         boshqa hech narsa yo'q -- ikkita bazaviy variant ham mos) --
+         `random.Random(seed)` bilan BARQAROR (bir xil `seed` -- doim bir
+         xil natija, qayta tahrirda o'zgarmaydi) lekin XILMA-XIL (turli
+         `seed` -- turli natija) tanlov qilinadi.
+    Hech qanday variant mos kelmasa (nazariy jihatdan bo'lmasligi kerak --
+    ikkita bazaviy variant shart har doim `True`) -- eng birinchi bazaviy
+    variant qaytariladi (xavfsizlik uchun)."""
+    import random
+    eligible = [(key, build, richness) for key, build, richness, cond in _LAYOUT_VARIANTS if cond(values or {})]
+    if not eligible:
+        return _layout_bottom_bold_simple(values or {})
+    max_richness = max(r for _, _, r in eligible)
+    richest = [(key, build) for key, build, r in eligible if r == max_richness]
+    if len(richest) == 1:
+        chosen = richest[0]
+    else:
+        rng = random.Random(seed if seed is not None else 0)
+        chosen = rng.choice(richest)
+    return chosen[1](values or {})
 
 
 def resolve_layers(layers: list[dict], values: dict) -> list[dict]:
@@ -1526,7 +1760,7 @@ def _render_asset(session, asset) -> None:
 def _initial_layers_for(asset, ctx: dict, template: "dict | None", values: "dict | None" = None) -> list[dict]:
     if values is None:
         values = placeholder_values(ctx, asset.get_brief_answers(), template, use_ai=False)
-    source = template["layers"] if template else default_layers()
+    source = template["layers"] if template else select_default_layout(values, asset.id)
     return resolve_layers(source, values)
 
 

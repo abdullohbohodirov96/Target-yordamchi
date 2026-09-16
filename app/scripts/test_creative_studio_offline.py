@@ -27,6 +27,14 @@ rasm-generatsiya) yadrosi, `creative_studio.py` + `creative_templates.py`
  12. (2026-09) AI kopirayter: telefon savoli (`ctx['phone']` bo'sh bo'lsa
      MAJBURIY), `generate_ad_copy` mock -- muvaffaqiyat/xato/buzuq JSON,
      CTA endi hech qachon umumiy "Batafsil" emas, xato bo'lsa "Bog'laning".
+ 13. (2026-09) "dizayn oddiy, har safar bir xil" shikoyati: AI kopirayter
+     `price_text`/`features` -- faqat asoslangan bo'lsa qaytaradi (hech
+     qachon o'ylab topmaydi), qisman/buzuq JSON baribir parse qilinadi;
+     `select_default_layout()` -- bo'sh narx/xususiyatda bazaviy variant
+     (bo'sh element yo'q), to'liq ma'lumotda BOY variant, bir xil asset id
+     -- bir xil natija (barqaror), turli asset id -- haqiqiy xilma-xillik
+     (bazaviy holatda ham); har bir variantda logotip+telefon+headline bor;
+     yangi variant `render_composite()` orqali xatosiz to'liq render bo'ladi.
 
 HAQIQIY tarmoqqa HECH QACHON chiqmaydi (`creative_studio._openai_request`
 va AI kopirayter `creative_studio._request_ad_copy` mock qilinadi).
@@ -731,6 +739,123 @@ def test_ai_copywriter_and_phone():
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# 13) (2026-09) Foydalanuvchi shikoyati skrinshot bilan: "dizayn juda oddiy,
+#     har safar bir xil, narx/xususiyat to'liq ko'rsatilmayapti" -- AI
+#     kopirayter ENDI price_text/features ham qaytaradi (faqat asoslangan
+#     bo'lsa), va shablonsiz yo'l `select_default_layout()` orqali BOY,
+#     XILMA-XIL kompozitsiya tanlaydi.
+# ---------------------------------------------------------------------------
+def test_price_features_and_default_layout_variants():
+    import company_context
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Sement Co", full_profile=True)
+        ctx = company_context.build_company_context(c, session)
+        raw = {"focus": "Sement", "offer_text": "yo'q"}
+
+        # --- narx/xususiyat REAL ma'lumotga asoslangan bo'lsa qaytadi
+        good_full = json.dumps({
+            "headline": "Sifatli sement", "subheadline": "Ishonchli yetkazib berish", "cta_text": "Buyurtma bering",
+            "price_text": "29.000 so'mdan boshlab",
+            "features": ["Yuqori sifat", "Tez yetkazib berish", "Rasmiy kafolat"],
+        }, ensure_ascii=False)
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(good_full)):
+            vals = creative_studio.placeholder_values(ctx, raw, None)
+        check("AI narx: asoslangan bo'lsa qaytadi", vals["price_text"] == "29.000 so'mdan boshlab")
+        check("AI xususiyatlar: asoslangan bo'lsa qaytadi (3 ta)",
+              vals["feature_1"] == "Yuqori sifat" and vals["feature_2"] == "Tez yetkazib berish" and vals["feature_3"] == "Rasmiy kafolat")
+        check("AI xususiyatlar zaxirani TO'LIQ almashtiradi (feature_4 bo'sh)", vals["feature_4"] == "")
+
+        # --- hech narsaga asoslanmasa -- BO'SH (o'ylab topilmaydi)
+        c_empty = _company(session, "Bosh Co", full_profile=False, phone=None)
+        ctx_empty = company_context.build_company_context(c_empty, session)
+        good_empty = json.dumps({
+            "headline": "Sifatli xizmat", "subheadline": "Ishonchli hamkor", "cta_text": "Bog'laning",
+            "price_text": "", "features": [],
+        }, ensure_ascii=False)
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(good_empty)):
+            vals_empty = creative_studio.placeholder_values(ctx_empty, {"focus": "Xizmat"}, None)
+        check("AI narx ma'lumoti yo'q -> bo'sh qaytadi (o'ylab topmaydi)", vals_empty["price_text"] == "")
+        check("AI xususiyat asosi yo'q -> bo'sh qaytadi (zaxira ham bo'sh)", vals_empty["feature_1"] == "")
+
+        # --- qisman/buzuq JSON -- mavjud to'g'ri maydonlar baribir parse qilinadi
+        partial = json.dumps({
+            "headline": "Yaxshi taklif", "price_text": "50.000 so'mdan",
+            "features": ["a" * 40, 123, "Tez"],  # 2-element noto'g'ri tur -- tashlab yuboriladi
+        }, ensure_ascii=False)
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(partial)):
+            vals_partial = creative_studio.placeholder_values(ctx, raw, None)
+        check("qisman JSON: mavjud headline/price_text parse qilindi", vals_partial["headline"] == "Yaxshi taklif" and vals_partial["price_text"] == "50.000 so'mdan")
+        check("qisman JSON: features ichidagi noto'g'ri element tashlab yuboriladi, qolgani saqlanadi",
+              vals_partial["feature_1"] == ("a" * 40)[:28] and vals_partial["feature_2"] == "Tez")
+
+        # -----------------------------------------------------------------
+        # select_default_layout()
+        # -----------------------------------------------------------------
+        minimal_values = {
+            "headline": "Sifatli sement", "subheadline": "Ishonchli yetkazib berish", "cta_text": "Buyurtma bering",
+            "offer_text": "AKSIYA", "price_text": "", "brand_name": "Dunyo Bunyo", "quote_text": "",
+            "phone": "+998901234567", "phone_line": "Tel: +998901234567",
+            "feature_1": "", "feature_2": "", "feature_3": "", "feature_4": "",
+        }
+        layers_minimal = creative_studio.select_default_layout(minimal_values, 1)
+        has_headline = any(l["id"] == "headline" for l in layers_minimal)
+        has_logo = any(l["type"] == "logo" for l in layers_minimal)
+        no_price_ref = not any("{{price_text}}" in (l.get("text") or "") for l in layers_minimal)
+        no_feature_ref = not any("{{feature_" in (l.get("text") or "") for l in layers_minimal)
+        check("select_default_layout: narx/xususiyat yo'q -> bazaviy variant (bo'sh element ko'rsatilmaydi)",
+              has_headline and has_logo and no_price_ref and no_feature_ref)
+
+        full_values = dict(
+            minimal_values, price_text="29.000 so'mdan boshlab", offer_text="-10% chegirma",
+            feature_1="Yuqori sifat", feature_2="Tez yetkazib berish", feature_3="Rasmiy kafolat",
+            quote_text="Mijozlarimiz doim mamnun",
+        )
+        layers_full = creative_studio.select_default_layout(full_values, 1)
+        has_price_ref = any("{{price_text}}" in (l.get("text") or "") for l in layers_full)
+        has_feature_ref = any("{{feature_1}}" in (l.get("text") or "") for l in layers_full)
+        check("select_default_layout: to'liq ma'lumotda -- narx+xususiyat ko'rsatadigan BOY variant tanlanadi",
+              has_price_ref and has_feature_ref)
+
+        # determinizm: bir xil values + bir xil seed (asset.id) -> bir xil natija
+        again1 = creative_studio.select_default_layout(full_values, 42)
+        again2 = creative_studio.select_default_layout(full_values, 42)
+        check("select_default_layout: bir xil asset id -> bir xil variant (barqaror)", again1 == again2)
+
+        # xilma-xillik: turli asset id -> BIR NECHTA xil variant (to'liq ma'lumot -- 2 ta BOY variant teng)
+        seen_full = {tuple(l["id"] for l in creative_studio.select_default_layout(full_values, i)) for i in range(30)}
+        check("select_default_layout: to'liq ma'lumotda ham turli asset id -> haqiqiy xilma-xillik", len(seen_full) > 1)
+
+        # xilma-xillik BAZAVIY holatda ham -- aynan foydalanuvchi shikoyati
+        # ("har safar bir xil dizayn") shu yerda TO'G'RIDAN-TO'G'RI tekshiriladi.
+        seen_min = {tuple(l["id"] for l in creative_studio.select_default_layout(minimal_values, i)) for i in range(30)}
+        check("select_default_layout: bazaviy holatda ham xilma-xillik (eski 'doim bir xil' muammo yo'q)", len(seen_min) > 1)
+
+        # har bir variantda logotip VA telefon qatlami bor (regressiya himoyasi)
+        all_variant_keys, _b, _r, _c = zip(*creative_studio._LAYOUT_VARIANTS)
+        check("kamida 5-6 ta original variant mavjud", len(creative_studio._LAYOUT_VARIANTS) >= 5)
+        for key, build, richness, cond in creative_studio._LAYOUT_VARIANTS:
+            layers = build(full_values)
+            ok = any(l["id"] == "logo" for l in layers) and any(l["id"] == "phone" for l in layers) and any(l["id"] == "headline" for l in layers)
+            check(f"variant '{key}': logotip+telefon+headline mavjud", ok)
+
+        # -----------------------------------------------------------------
+        # render_composite() -- yangi (boy) variant to'liq render zanjiri
+        # -----------------------------------------------------------------
+        resolved = creative_studio.resolve_layers(layers_full, full_values)
+        with tempfile.TemporaryDirectory() as td:
+            base_path = Path(td) / "base.png"
+            Image.new("RGB", (1080, 1080), (180, 190, 200)).save(base_path, format="PNG")
+            out_path = Path(td) / "final.png"
+            creative_studio.render_composite(base_path, resolved, None, out_path, target_size=(1080, 1080))
+            check("render_composite: yangi variant xatosiz render qilindi (fayl bor)", out_path.exists() and out_path.stat().st_size > 3000)
+            with Image.open(out_path) as img:
+                check("render_composite: chiqish o'lchami/format to'g'ri", img.format == "PNG" and img.size == (1080, 1080))
+    finally:
+        session.close()
+
+
 def test_brief_agent_flow():
     """2026-09, foydalanuvchi fikri ("savollar bir xil shablon bo'lmasin,
     agent ishlasin"): `creative_studio.start_brief`/`answer_brief`
@@ -968,6 +1093,7 @@ test_multitenant_isolation()
 test_plans()
 test_logo_background_removal()
 test_ai_copywriter_and_phone()
+test_price_features_and_default_layout_variants()
 test_brief_agent_flow()
 test_chat_edit_layers()
 test_r2_storage_backend_wired()

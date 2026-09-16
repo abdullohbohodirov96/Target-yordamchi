@@ -101,6 +101,10 @@ CREATIVE_TEMPLATES = [
         "layers": [
             _badge("offer_badge", 0.06, 0.06, 0.46, 0.16, "{{offer_text}}", bg_color="#FFD60A", color="#1D1D1D", size_ratio=0.055),
             _logo(0.80, 0.06, 0.14, 0.09),
+            # 2026-09: narx MA'LUM bo'lsa (kompaniya profilida/brifda) --
+            # aksiya yorlig'i ostida alohida narx belgisi (bo'sh bo'lsa
+            # qatlam avtomatik yashirin -- `resolve_layers`).
+            _badge("price_badge", 0.06, 0.24, 0.40, 0.10, "{{price_text}}", bg_color="#1D1D1D", color="#FFD60A", size_ratio=0.034),
             _text("headline", 0.06, 0.66, 0.88, 0.14, "{{headline}}", size_ratio=0.075, color="#FFFFFF"),
             _text("subheadline", 0.06, 0.80, 0.88, 0.07, "{{subheadline}}", font="regular", size_ratio=0.032, color="#FFF3E0"),
             _badge("cta_badge", 0.06, 0.88, 0.44, 0.075, "{{cta_text}}", bg_color="#1D1D1D", color="#FFFFFF"),
@@ -313,6 +317,11 @@ CREATIVE_TEMPLATES = [
         "default_cta": "Taklif oling",
         "layers": [
             _logo(0.06, 0.06, 0.18, 0.09, align="left"),
+            # 2026-09: B2B afzalliklar (kafolat/qo'llab-quvvatlash kabi
+            # -- brifdan/profildan) yuqori bo'sh maydonda ikkita ixcham
+            # belgi sifatida -- bo'sh bo'lsa avtomatik yashirin.
+            _badge("feature_1", 0.62, 0.20, 0.32, 0.09, "{{feature_1}}", bg_color="#FFFFFF", color="#0F2942", size_ratio=0.022, opacity=0.94),
+            _badge("feature_2", 0.62, 0.31, 0.32, 0.09, "{{feature_2}}", bg_color="#FFFFFF", color="#0F2942", size_ratio=0.022, opacity=0.94),
             _panel("accent_bar", 0.06, 0.64, 0.08, 0.008, "#3B82F6"),
             _text("headline", 0.06, 0.67, 0.88, 0.12, "{{headline}}", size_ratio=0.056, color="#FFFFFF"),
             _text("subheadline", 0.06, 0.80, 0.88, 0.07, "{{subheadline}}", font="regular", size_ratio=0.028, color="#CBD5E1"),
