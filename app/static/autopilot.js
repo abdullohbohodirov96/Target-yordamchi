@@ -841,6 +841,16 @@
           api('/media/' + m.id + '/select', { method: 'POST', body: {} }).then(function (r) { if (r.upload_error) { chatSystem(r.upload_error, 'warn'); } }).catch(function (e) { chatSystem(e.message, 'err'); });
         });
       }
+      if (editable()) {
+        // 2026-09, foydalanuvchi so'rovi: yuklangan rasm/videoni o'chirish imkoni.
+        var del = h('button', { type: 'button', class: 'ap-media-del', title: 'O\'chirish', html: '&times;' });
+        del.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (!confirm('Bu media o\'chirilsinmi?')) { return; }
+          api('/media/' + m.id + '/ochirish', { method: 'POST', body: {} }).catch(function (err) { chatSystem(err.message, 'err'); });
+        });
+        item.appendChild(del);
+      }
       grid.appendChild(item);
     });
     if (editable()) {
@@ -866,7 +876,7 @@
       }
     }
     var selected = media.filter(function (m) { return m.selected; })[0];
-    sec.appendChild(fieldWrap('ad.media', 'Reklama vizuali', grid, { hint: selected ? 'Tanlangan: ' + (selected.index + 1) + '-media (' + selected.filename + '). Chatda "2-rasmni tanla" deb ham yozsangiz bo\'ladi.' : 'Rasm yoki video yuklang -- AI rasm yaratmaydi. JPG/PNG/WEBP 30 MB, MP4/MOV 50 MB gacha.' }));
+    sec.appendChild(fieldWrap('ad.media', 'Reklama vizuali', grid, { hint: selected ? 'Tanlangan: ' + (selected.index + 1) + '-media (' + selected.filename + '). Chatda "2-rasmni tanla" deb ham yozsangiz bo\'ladi.' : 'Rasm yoki video yuklang -- AI rasm yaratmaydi. JPG/PNG/WEBP 30 MB, MP4/MOV/WEBM 300 MB gacha.' }));
     if (!media.length && (state().ad.media || {}).image_hash) {
       sec.appendChild(h('div', { class: 'ap-field-hint', text: 'Meta\'dagi mavjud rasm (hash ' + state().ad.media.image_hash + ') ishlatilmoqda.' }));
     }

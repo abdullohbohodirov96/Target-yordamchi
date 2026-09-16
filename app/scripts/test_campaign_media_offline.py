@@ -150,6 +150,35 @@ def test_ensure_uploaded_idempotent_and_failure():
         buf = b"\x00" * 1000
         vrow = campaign_media.save_uploaded_media(session, c.id, d.id, buf, "clip.mp4", "video/mp4")
         check("video qatori", vrow.kind == "video" and vrow.width is None)
+        check("video size_bytes to'g'ri", vrow.size_bytes == len(buf))
+
+        # 2026-09: video limit 300 MB'ga oshirildi, endi bo'lak-bo'lak
+        # diskka yoziladi (_stream_video_to_disk) -- xotiraga to'liq
+        # yig'ilmasligini va limitni to'g'ri qo'llashini tekshiramiz.
+        check("MAX_VIDEO_BYTES = 300 MB", campaign_media.MAX_VIDEO_BYTES == 300 * 1024 * 1024)
+
+        class _FakeStream:
+            """.stream.read(n) orqali bo'lak-bo'lak beradigan soxta yuklama."""
+            def __init__(self, data, chunk=64):
+                self._chunks = [data[i:i + chunk] for i in range(0, len(data), chunk)] or [b""]
+                self.stream = self
+
+            def read(self, n=-1):
+                if not self._chunks:
+                    return b""
+                return self._chunks.pop(0)
+
+        with mock.patch.object(campaign_media, "MAX_VIDEO_BYTES", 500):
+            try:
+                campaign_media.save_uploaded_media(session, c.id, d.id, _FakeStream(b"\x01" * 2000), "big.mp4", "video/mp4")
+                check("video hajm chegarasi (stream)", False)
+            except campaign_media.MediaError as e:
+                check("video hajm chegarasi (stream)", "juda katta" in str(e))
+            leftover = [p for p in (campaign_media.MEDIA_ROOT / str(c.id) / str(d.id)).glob("*big.mp4")]
+            check("limitdan oshgan chala fayl o'chirilgan", not leftover)
+
+        vrow2 = campaign_media.save_uploaded_media(session, c.id, d.id, _FakeStream(b"\x02" * 5000, chunk=777), "ok.mp4", "video/mp4")
+        check("stream orqali video to'g'ri saqlandi", vrow2.size_bytes == 5000 and campaign_media.media_file_path(vrow2).stat().st_size == 5000)
         with mock.patch.object(meta_api, "upload_ad_video", return_value={"id": "VID9"}) as upv:
             campaign_media.ensure_uploaded_to_meta(session, vrow, c)
             campaign_media.ensure_uploaded_to_meta(session, vrow, c)

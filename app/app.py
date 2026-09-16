@@ -7660,6 +7660,50 @@ def autopilot_media_select(draft_id: int, media_id: int):
         session.close()
 
 
+@app.route("/avtopilot/<int:draft_id>/media/<int:media_id>/ochirish", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_media_delete(draft_id: int, media_id: int):
+    """2026-09, foydalanuvchi so'rovi: yuklangan rasm/videoni o'chirish
+    imkoni bo'lsin. Diskdagi faylni ham, DB qatorini ham o'chiradi; agar
+    shu media `ad.media`da TANLANGAN bo'lsa -- media tanlovini tozalaydi
+    (Meta'da allaqachon yaratilgan reklama/kreativga tegmaydi, faqat
+    qoralama holatiga)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        row = session.get(db.CampaignDraftMedia, media_id)
+        if row is None or row.draft_id != draft.id or row.company_id != company.id:
+            return jsonify({"error": "Media topilmadi."}), 404
+        state = draft.get_state()
+        was_selected = str((state.get("ad") or {}).get("media", {}).get("media_id") or "") == str(row.id)
+        try:
+            path = campaign_media.media_file_path(row)
+            if path.exists():
+                path.unlink()
+        except Exception as e:  # noqa: BLE001 -- disk xatosi DB tozalashni to'xtatmasin
+            logger.warning("autopilot_media_delete(%s): fayl o'chirilmadi: %s", media_id, e)
+        session.delete(row)
+        if was_selected:
+            state["ad"]["media"] = {"media_id": None, "image_hash": None, "video_id": None, "selected_variant": None}
+            draft.set_state(state)
+            draft.updated_at = dt.datetime.utcnow()
+        autopilot_web.log_event(session, draft, actor="user", action="media_deleted", scope="ad", details={"media_id": media_id}, manager_id=_autopilot_manager_id())
+        session.commit()
+        assets = autopilot_web.safe_meta_assets(company)
+        return jsonify({"ok": True, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "media-delete")
+    finally:
+        session.close()
+
+
 @app.route("/avtopilot/<int:draft_id>/media/from-kreativ", methods=["POST"])
 @login_required
 @module_required("target")

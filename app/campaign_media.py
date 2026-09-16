@@ -32,7 +32,14 @@ MEDIA_ROOT = BASE_DIR / "uploads" / "ad_media"
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 ALLOWED_VIDEO_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/x-m4v": ".m4v", "video/webm": ".webm"}
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
-MAX_VIDEO_BYTES = 50 * 1024 * 1024
+# 2026-09, foydalanuvchi so'rovi ("ellik megabaytdan ko'proq video"):
+# 50 -> 300 MB. Undan ham yuqoriga chiqarish serverning RAM'i (512 MB,
+# Render "starter" tarifi) va disk sig'imi bilan xavfsiz emas -- video
+# endi xotiraga to'liq yig'ilmasdan bo'lak-bo'lak (`_stream_to_disk`)
+# diskka yoziladi, shu sabab RAM tomondan xavfsiz, lekin disk cheklangan
+# (ephemeral) bo'lib qoladi. Kattaroq limit -- persistent saqlash (S3)ga
+# o'tgandan keyin ko'tariladi.
+MAX_VIDEO_BYTES = 300 * 1024 * 1024
 
 _EXT_TO_TYPE = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
@@ -88,35 +95,83 @@ def save_uploaded_media(session, company_id: int, draft_id: int, file_storage_or
         limit = MAX_VIDEO_BYTES
     else:
         raise MediaError("Faqat rasm (JPG, PNG, WEBP, GIF) yoki video (MP4, MOV, WEBM) yuklash mumkin.")
-    data = _read_bytes(file_storage_or_bytes)
-    if not data:
-        raise MediaError("Fayl bo'sh.")
-    if len(data) > limit:
-        raise MediaError(f"Fayl juda katta -- {'rasm' if kind == 'image' else 'video'} uchun chegara {limit // (1024 * 1024)} MB.")
+    rel_dir = Path(str(company_id)) / str(draft_id)
+    abs_dir = Path(MEDIA_ROOT) / rel_dir
+    abs_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}_{filename}"
+    dest = abs_dir / stored_name
 
     width = height = None
     if kind == "image":
+        # Rasm -- PIL o'lchamini o'qishi uchun baribir xotirada kerak, lekin
+        # limit past (30 MB) -- xavfsiz.
+        data = _read_bytes(file_storage_or_bytes)
+        if not data:
+            raise MediaError("Fayl bo'sh.")
+        if len(data) > limit:
+            raise MediaError(f"Fayl juda katta -- rasm uchun chegara {limit // (1024 * 1024)} MB.")
         try:
             from PIL import Image
             with Image.open(io.BytesIO(data)) as img:
                 width, height = img.size
         except Exception as e:  # noqa: BLE001 -- PIL o'qiy olmasa: buzilgan/soxta rasm
             raise MediaError("Rasm faylini o'qib bo'lmadi -- fayl buzilgan yoki rasm emas.") from e
-
-    rel_dir = Path(str(company_id)) / str(draft_id)
-    abs_dir = Path(MEDIA_ROOT) / rel_dir
-    abs_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{uuid.uuid4().hex}_{filename}"
-    (abs_dir / stored_name).write_bytes(data)
+        dest.write_bytes(data)
+        size_bytes = len(data)
+    else:
+        # Video -- endi butun faylni XOTIRAGA YIG'MASDAN, bo'lak-bo'lak
+        # to'g'ridan-to'g'ri diskka yoziladi (limit oshirilgani -- 300 MB --
+        # sababli, cheklangan RAM'li serverda xotira portlamasligi uchun
+        # muhim, 2026-09).
+        size_bytes = _stream_video_to_disk(file_storage_or_bytes, dest, limit)
 
     row = db.CampaignDraftMedia(
         company_id=company_id, draft_id=draft_id, kind=kind, filename=filename,
-        storage_path=str(rel_dir / stored_name), content_type=ct, size_bytes=len(data),
+        storage_path=str(rel_dir / stored_name), content_type=ct, size_bytes=size_bytes,
         width=width, height=height, upload_status="pending",
     )
     session.add(row)
     session.commit()
     return row
+
+
+def _stream_video_to_disk(file_storage_or_bytes, dest: Path, limit: int) -> int:
+    """Video faylni 1MB'lik bo'laklarda o'qib diskka yozadi -- hech qachon
+    butun faylni xotirada ushlamaydi. Limit oshsa yoki xato bo'lsa, chala
+    yozilgan fayl o'chiriladi va `MediaError` ko'tariladi."""
+    if isinstance(file_storage_or_bytes, (bytes, bytearray)):
+        data = bytes(file_storage_or_bytes)
+        if not data:
+            raise MediaError("Fayl bo'sh.")
+        if len(data) > limit:
+            raise MediaError(f"Fayl juda katta -- video uchun chegara {limit // (1024 * 1024)} MB.")
+        dest.write_bytes(data)
+        return len(data)
+    stream = getattr(file_storage_or_bytes, "stream", None) or file_storage_or_bytes
+    if not hasattr(stream, "read"):
+        raise MediaError("Fayl o'qib bo'lmadi.")
+    total = 0
+    chunk_size = 1024 * 1024
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise MediaError(f"Fayl juda katta -- video uchun chegara {limit // (1024 * 1024)} MB.")
+                out.write(chunk)
+    except MediaError:
+        dest.unlink(missing_ok=True)
+        raise
+    except Exception as e:  # noqa: BLE001
+        dest.unlink(missing_ok=True)
+        raise MediaError("Fayl o'qib bo'lmadi.") from e
+    if total == 0:
+        dest.unlink(missing_ok=True)
+        raise MediaError("Fayl bo'sh.")
+    return total
 
 
 def _log_event(session, media_row, action: str, details: dict) -> None:

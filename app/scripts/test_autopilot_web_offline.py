@@ -358,6 +358,33 @@ def test_media_upload_and_preview():
         other = _client("ap_admin_b")
         check("B kompaniyasi A media fayliga 404", other.get(f"/avtopilot/media/{media_id}").status_code == 404)
 
+        # 2026-09, foydalanuvchi so'rovi: media o'chirish. Keyingi testlar
+        # HASH_2 tanlangan holatiga tayanadi -- shu sabab uchinchi, TASHLAB
+        # YUBORILADIGAN media yuklab, faqat o'shani o'chiramiz (mavjud
+        # tanlovga tegmaymiz).
+        with mock.patch.object(meta_api, "upload_ad_image", return_value={"hash": "HASH_3", "url": None}):
+            r = admin.post(f"/avtopilot/{DRAFT_ID}/media", data={"file": (io.BytesIO(_png_bytes()), "third.png"), "select": "0"}, content_type="multipart/form-data")
+        d3 = r.get_json()
+        check("boshqa kompaniya o'chira olmaydi (404)", other.post(f"/avtopilot/{DRAFT_ID}/media/{d3['media_id']}/ochirish", json={}).status_code == 404)
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/media/{d3['media_id']}/ochirish", json={})
+        data = r.get_json()
+        check("tanlanmagan media o'chirilgach, ok=True", r.status_code == 200 and data["ok"] is True)
+        check("o'chirilgan media ro'yxatdan yo'qoldi", all(m["id"] != d3["media_id"] for m in data["draft"]["media"]))
+        check("boshqa media tanlangan bo'lsa, o'chirish uni o'zgartirmaydi", data["draft"]["state"]["ad"]["media"]["image_hash"] == "HASH_2")
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/media/{d3['media_id']}/ochirish", json={})
+        check("ikkinchi marta o'chirish -> 404 (allaqachon yo'q)", r.status_code == 404)
+        check("noto'g'ri media_id -> 404", admin.post(f"/avtopilot/{DRAFT_ID}/media/999999/ochirish", json={}).status_code == 404)
+        # TANLANGAN medianing o'chirilishi ad.media'ni tozalashini ham
+        # alohida tekshiramiz -- so'ng darhol qayta tanlab, holatni
+        # keyingi testlar uchun tiklaymiz.
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/media/{d2['media_id']}/ochirish", json={})
+        data = r.get_json()
+        check("tanlangan media o'chirilgach ad.media tozalandi", data["draft"]["state"]["ad"]["media"]["media_id"] is None and data["draft"]["state"]["ad"]["media"]["image_hash"] is None)
+        with mock.patch.object(meta_api, "upload_ad_image", return_value={"hash": "HASH_2", "url": None}):
+            r = admin.post(f"/avtopilot/{DRAFT_ID}/media", data={"file": (io.BytesIO(_png_bytes()), "second.png"), "select": "1"}, content_type="multipart/form-data")
+        d2 = r.get_json()
+        check("HASH_2 media qayta yuklab tanlandi (keyingi testlar uchun)", r.get_json()["draft"]["state"]["ad"]["media"]["image_hash"] == "HASH_2")
+
 
 # ---------------------------------------------------------------------------
 # 7-8) Nashr + faollashtirish
