@@ -112,8 +112,16 @@ qo'sha olasiz — Shell'ga qayta kirish shart emas.
 ### 5. Telegram webhook'ni ro'yxatdan o'tkazing
 
 ```
-https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<render-domeningiz>/api/webhook
+https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<render-domeningiz>/api/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
+
+`secret_token` -- Render'da `TELEGRAM_WEBHOOK_SECRET` ENV o'zgaruvchisiga
+yozgan qiymatingiz bilan BIR XIL bo'lsin (masalan `python3 -c "import
+secrets; print(secrets.token_urlsafe(32))"` bilan hosil qiling). Shunda
+Telegram har bir update'ga `X-Telegram-Bot-Api-Secret-Token` sarlavhasini
+qo'shadi va ilova boshqa har qanday (soxta) POST'ni 403 bilan rad etadi.
+ENV o'rnatilmasa ilova eskicha (tekshiruvsiz) ishlayveradi, lekin logda
+ogohlantirish chiqadi -- production'da albatta o'rnating.
 
 ### 6. Guruh Privacy'ni o'chiring (MUHIM — eski botda aynan shu sabab guruhda javob bermagan)
 

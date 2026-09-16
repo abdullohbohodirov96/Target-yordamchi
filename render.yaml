@@ -16,6 +16,10 @@ services:
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      # 2026-09 xavfsizlik: /api/webhook uchun Telegram secret_token
+      # (README, 5-qadam -- setWebhook'ni shu qiymat bilan qayta chaqiring)
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
       - key: TELEGRAM_AGENTS_GROUP_ID
         sync: false
       - key: TELEGRAM_REPORT_GROUP_ID

@@ -1737,6 +1737,16 @@ _COMPANY_SCOPED_MODELS = [
     # 2026-09: Kreativ studiya (AI rasm-generatsiya) jadvallari -- brend
     # kit, rasmlar va oylik kvota sanog'i boshqa kompaniyaga ko'rinmasin.
     CompanyBrandKit, CreativeAsset, ImageGenerationUsage,
+    # 2026-09 xavfsizlik auditi (`scripts/test_security_tenant_isolation_
+    # offline.py`): bu ikkalasi `company_id` ustunli bo'lsa-da ro'yxatga
+    # qo'shilmay qolgan edi. Marshrutlar orqali sizish TOPILMADI
+    # (`manager_reporting.py` qo'lda `company_id` bilan filtrlaydi,
+    # `BotPrompt` hali hech qayerda o'qilmaydi), lekin (1) kelajakda
+    # filtrsiz so'rov yozilsa boshqa kompaniyaga ochiq bo'lib qolardi,
+    # (2) `delete_company_cascade()` `lead_status_events`ni o'chirmasdi --
+    # `lead_id` NOT NULL FK bo'lgani uchun Postgres'da kompaniyani
+    # o'chirish FK xatosi bilan yiqilardi. Endi ikkalasi ham bitta manbada.
+    LeadStatusEvent, BotPrompt,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

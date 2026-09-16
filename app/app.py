@@ -11,6 +11,7 @@ gunicorn orqali). Uch narsani birlashtiradi:
 
 import os
 import re
+import hmac
 import json
 import time
 import secrets
@@ -107,6 +108,18 @@ if os.environ.get("RENDER") and not os.environ.get("FLASK_SECRET_KEY", "").strip
     )
 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+
+# 2026-09 xavfsizlik auditi: sessiya cookie bayroqlari ILGARI umuman
+# sozlanmagan edi (Flask standarti: HttpOnly=True, lekin Secure=False,
+# SameSite=None). Endi aniq: `HttpOnly` (JS o'qiy olmaydi -- XSS orqali
+# sessiya o'g'irlashga qarshi), `SameSite=Lax` (CSRF'ga qo'shimcha qatlam,
+# Flask-WTF tokeni bilan birga), `Secure` -- FAQAT production'da (Render
+# HAR DOIM HTTPS beradi; lokal `http://localhost` ishlab chiqishda Secure
+# cookie brauzer tomonidan umuman yuborilmaydi, shuning uchun `RENDER`
+# ENV bo'lmasa o'chiq qoladi).
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 # 2026-08, foydalanuvchi so'rovi: "sayt azgina qotvoti" -- brauzer statik
 # fayllarni (logo PNG'lari, va h.k.) har sahifa o'tishida qayta so'ramasin
 # deb keshlash muddatini uzaytiramiz (standart Flask minimal/keshsiz rejimda
@@ -151,6 +164,39 @@ login_manager.login_view = "login"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
+# 2026-09 xavfsizlik auditi (TOPILGAN KAMCHILIK): `/api/webhook` (Telegram)
+# ILGARI HECH QANDAY autentifikatsiyasiz edi -- Meta webhook'idan
+# (`X-Hub-Signature-256` imzo) farqli o'laroq, URL'ni bilgan ISTALGAN kishi
+# soxta "Telegram update" (ixtiyoriy `chat.id` bilan) yuborib, bot
+# buyruqlarini O'ZGA NOMIDAN ishga tushira olardi -- masalan platforma
+# egasining chat ID'si bilan `/pause`/`/resume` (Meta reklamani to'xtatish),
+# `/vazifa_off`, yoki AI-yordamchi javob-relesi orqali menejer web-suhbatiga
+# soxta "admin javobi" yozish. Telegram buning uchun RASMIY mexanizm beradi:
+# `setWebhook` chaqiruvida `secret_token=<maxfiy>` berilsa, Telegram HAR
+# bir update'ga `X-Telegram-Bot-Api-Secret-Token: <maxfiy>` sarlavhasini
+# qo'shadi -- boshqa hech kim buni bilmaydi.
+#
+# `TELEGRAM_WEBHOOK_SECRET` ENV o'rnatilgan bo'lsa -- sarlavha MOS
+# KELMAGAN har bir so'rov 403 bilan RAD ETILADI (vaqt-hujumidan himoya
+# uchun `hmac.compare_digest`). O'rnatilMAGAN bo'lsa -- eski (ochiq)
+# xatti-harakat saqlanadi (deploy'ni sindirmaslik uchun), lekin har ishga
+# tushishda ogohlantirish log qilinadi. Yoqish: Render'da
+# `TELEGRAM_WEBHOOK_SECRET` qo'shing, so'ng webhook'ni QAYTA ro'yxatdan
+# o'tkazing (README, 5-qadam): `.../setWebhook?url=...&secret_token=<o'sha>`.
+TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
+if not TELEGRAM_WEBHOOK_SECRET:
+    logger.warning(
+        "TELEGRAM_WEBHOOK_SECRET sozlanmagan -- /api/webhook soxta so'rovlardan HIMOYALANMAGAN. "
+        "Render'da TELEGRAM_WEBHOOK_SECRET qo'shib, webhook'ni secret_token bilan qayta ro'yxatdan o'tkazing."
+    )
+
+
+def _telegram_webhook_authorized() -> bool:
+    if not TELEGRAM_WEBHOOK_SECRET:
+        return True  # ataylab: sozlanmaguncha eski xatti-harakat (yuqoridagi izoh)
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    return bool(provided) and hmac.compare_digest(provided, TELEGRAM_WEBHOOK_SECRET)
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
 
 # 2026-09, XATO TUZATISHI ("hammayoqda ulash ishlamayapti" -- Facebook
@@ -1699,6 +1745,11 @@ def _try_handle_assistant_reply(chat_id: int, message: dict) -> bool:
 @app.route("/api/webhook", methods=["POST"])
 @csrf.exempt  # Telegram server-serverga chaqiradi -- brauzer sessiyasi/CSRF tokeni yo'q
 def webhook():
+    # 2026-09 xavfsizlik auditi: `TELEGRAM_WEBHOOK_SECRET` sozlangan bo'lsa,
+    # Telegram'ning `X-Telegram-Bot-Api-Secret-Token` sarlavhasi SHART
+    # (`_telegram_webhook_authorized()` izohiga qarang).
+    if not _telegram_webhook_authorized():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
     update = request.get_json(silent=True) or {}
     message = update.get("message") or update.get("edited_message")
     if not message or "text" not in message:
@@ -6360,6 +6411,15 @@ def individual_check_upload_audio():
 
     session = get_session()
     try:
+        # 2026-09 xavfsizlik auditi: formadan kelgan `manager_id` ILGARI
+        # tekshiruvsiz saqlanardi -- boshqa kompaniyaning menejer ID'si
+        # berilsa, o'z qo'ng'iroq yozuvi BEGONA menejerga bog'lanib
+        # qolardi (ma'lumot sizmaydi, lekin tenant-chegara buziladi).
+        # Endi faqat O'Z kompaniyasining (tenant-filtr) menejeri qabul
+        # qilinadi, aks holda bo'sh qoldiriladi.
+        if manager_id is not None and session.get(ManagerModel, manager_id) is None:
+            manager_id = None
+
         lead_id = None
         if phone_number:
             key = phone_key9(phone_number)
