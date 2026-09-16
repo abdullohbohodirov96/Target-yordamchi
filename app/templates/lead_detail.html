@@ -9,7 +9,7 @@
   </div>
   <form method="post" action="{{ url_for('lead_delete', lead_id=lead.id) }}" onsubmit="return confirm('Bu leadni o\'chirishni tasdiqlaysizmi?');">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" style="background:var(--bad)">O'chirish</button>
+    <button type="submit" style="background:var(--bad-fill)">O'chirish</button>
   </form>
 </div>
 

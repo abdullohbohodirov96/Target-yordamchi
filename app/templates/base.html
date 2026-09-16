@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   {{ csrf_meta_tag() }}
   <!-- 2026-09: pastdagi skript ATAYLAB shu yerda -- "progressive
        enhancement": [data-reveal] scroll-animatsiyasi (landing.css) FAQAT
@@ -13,6 +14,102 @@
        (jumladan FAQ va tariflar) HECH QANDAY animatsiyasiz, darhol to'liq
        ko'rinadi -- hech narsa yashirin qolmaydi. -->
   <script>document.documentElement.classList.add('js');</script>
+  <!-- 2026-09, foydalanuvchi so'rovi ("web ga dark mode light mode qoshish
+       kerak"): mavzu (yorug'/qorong'i) CSS YUKLANISHIDAN OLDIN, shu yerda,
+       <html> elementiga `data-theme` atributi sifatida qo'yiladi -- aks
+       holda sahifa avval oq bo'lib ochilib, keyin qorayib "miltillardi"
+       (flash of wrong theme). Tartib: (1) foydalanuvchi sidebar'dagi tugma
+       orqali qo'lda tanlagan bo'lsa -- localStorage'dagi qiymat;
+       (2) tanlamagan bo'lsa -- operatsion tizim sozlamasi
+       (prefers-color-scheme), va OS sozlamasi o'zgarsa jonli ravishda
+       ergashadi. Ranglarning o'zi style.css'da (`:root[data-theme="dark"]`
+       bloki). `window.ReplixTheme` -- boshqa skriptlar (masalan Chart.js
+       diagrammalari) uchun umumiy yordamchi. -->
+  <script>
+  (function () {
+    var KEY = 'replix_theme';
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function stored() {
+      try { var v = localStorage.getItem(KEY); return (v === 'dark' || v === 'light') ? v : null; } catch (e) { return null; }
+    }
+    function systemTheme() { return (mq && mq.matches) ? 'dark' : 'light'; }
+    function apply(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      try { document.dispatchEvent(new CustomEvent('replix:themechange', { detail: { theme: theme } })); } catch (e) {}
+    }
+    var T = window.ReplixTheme = {
+      KEY: KEY,
+      /* Hozir amalda bo'lgan mavzu: 'light' | 'dark'. */
+      get: function () { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; },
+      /* Foydalanuvchi qo'lda tanlaganmi (null -- yo'q, tizimga ergashadi). */
+      stored: stored,
+      set: function (theme) {
+        try { localStorage.setItem(KEY, theme); } catch (e) {}
+        apply(theme);
+      },
+      toggle: function () { T.set(T.get() === 'dark' ? 'light' : 'dark'); },
+      /* CSS tokenining hozirgi (mavzuga mos) qiymatini o'qish, masalan
+         ReplixTheme.cssVar('--text-dim') -> '#9AA6B8'. */
+      cssVar: function (name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      },
+      /* Chart.js diagrammalari uchun mavzuga mos ranglar. Chart.js o'z
+         ranglarini (o'q yozuvlari, to'r chiziqlari, legenda) CSS'dan EMAS,
+         JS opsiyalaridan oladi -- shuning uchun sahifadagi diagrammalar
+         yaratilishidan OLDIN `Chart.defaults` shu qiymatlar bilan
+         to'ldiriladi (har bir diagrammali shablon `applyChartTheme()`ni
+         chaqiradi), mavzu almashtirilganda esa MAVJUD diagrammalarning
+         hammasi (Chart.instances) qayta bo'yaladi -- sahifani qayta
+         yuklash shart emas. */
+      chartColors: function () {
+        return { text: T.cssVar('--text-dim'), grid: T.cssVar('--chart-grid'), card: T.cssVar('--card') };
+      },
+      applyChartTheme: function () {
+        var C = window.Chart;
+        if (!C || !C.defaults) return;
+        var c = T.chartColors();
+        C.defaults.color = c.text;
+        C.defaults.borderColor = c.grid;
+        var reg = C.instances || {};
+        Object.keys(reg).forEach(function (k) {
+          var ch = reg[k];
+          /* DIQQAT: `ch.options` EMAS, `ch.config.options` -- Chart.js 4'da
+             `ch.options` resolver-proxy, unga ichki obyekt (`plugins`,
+             `scales`) yozib qo'yilsa o'zi-o'ziga havola bo'lib, cheksiz
+             rekursiyaga ("Maximum call stack") olib keladi. `config.options`
+             esa oddiy (foydalanuvchi bergan) opsiyalar obyekti. */
+          var o = ch && ch.config && ch.config.options;
+          if (!o) return;
+          o.color = c.text;
+          var scales = o.scales || {};
+          Object.keys(scales).forEach(function (id) {
+            var sc = scales[id];
+            if (!sc) return;
+            sc.ticks = sc.ticks || {}; sc.ticks.color = c.text;
+            sc.grid = sc.grid || {}; sc.grid.color = c.grid;
+            sc.border = sc.border || {}; sc.border.color = c.grid;
+          });
+          o.plugins = o.plugins || {};
+          o.plugins.legend = o.plugins.legend || {};
+          o.plugins.legend.labels = o.plugins.legend.labels || {};
+          o.plugins.legend.labels.color = c.text;
+          /* Doira (doughnut/pie) bo'laklari orasidagi ajratuvchi chiziq --
+             karta foni rangida bo'lishi kerak (yorug'da oq, qorong'ida to'q). */
+          if (ch.config.type === 'doughnut' || ch.config.type === 'pie') {
+            (ch.data.datasets || []).forEach(function (ds) { ds.borderColor = c.card; });
+          }
+          ch.update('none');
+        });
+      }
+    };
+    document.addEventListener('replix:themechange', function () { T.applyChartTheme(); });
+    document.documentElement.setAttribute('data-theme', stored() || systemTheme());
+    if (mq) {
+      var onChange = function () { if (!stored()) apply(systemTheme()); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+    }
+  })();
+  </script>
 
   {% if not current_user.is_authenticated %}
   <!-- Meta Pixel Code -- 2026-09, foydalanuvchi so'rovi: "meta pixel
@@ -178,6 +275,13 @@
       <a href="{{ url_for('dashboard') }}" class="brand">
         <img class="brand-icon" src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="Replix">
         <img class="brand-full-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix">
+        {# Qorong'i rejim uchun logotipning och varianti: asl logotipda
+           "eplix" harflari to'q siyohrang bo'lgani uchun qorong'i fonda
+           butunlay ko'rinmay qolardi (`brand/logo-full-dark.png` -- aynan
+           o'sha fayl, faqat siyohrang harflar och rangga almashtirilgan,
+           gradientli "R" va "x" o'zgarmagan). Qaysi biri ko'rinishini CSS
+           hal qiladi (`.brand-full-logo-dark`, style.css). #}
+        <img class="brand-full-logo brand-full-logo-dark" src="{{ url_for('static', filename='brand/logo-full-dark.png') }}" alt="Replix">
       </a>
     </div>
 
@@ -366,6 +470,22 @@
       <a href="{{ url_for('my_profile') }}" class="nav-item nav-user-info {{ 'active' if request.endpoint == 'my_profile' }}" title="{{ current_user.full_name or current_user.username }} — Mening profilim">
         <span class="nav-icon nav-avatar">{{ (current_user.full_name or current_user.username or '?')[0]|upper }}</span><span class="nav-text">{{ current_user.full_name or current_user.username }}</span>
       </a>
+      {# 2026-09, foydalanuvchi so'rovi ("web ga dark mode light mode qoshish
+         kerak"): mavzu almashtirgich -- HAR BIR tizimga kirilgan sahifada,
+         profil/chiqish yonida, sidebar pastida (yig'ilgan holatda ham
+         ikonka ko'rinib turadi, tooltip "Qorong'i rejim"/"Yorug' rejim").
+         Ikki holatli: hozir yorug' bo'lsa -- oy ikonkasi + "Qorong'i rejim"
+         (bosilsa qorayadi), qorong'i bo'lsa -- quyosh + "Yorug' rejim".
+         Boshlang'ich holat OS sozlamasidan, tanlov localStorage'da
+         saqlanadi (<head>'dagi skript). Matn/tooltip JS'siz ham to'g'ri
+         bo'lsin deb ikkalasi ham HTML'da, ko'rinishini CSS boshqaradi. #}
+      <button type="button" class="nav-item theme-toggle" id="themeToggle" data-tooltip="Qorong'i rejim" aria-label="Mavzuni almashtirish">
+        <span class="nav-icon theme-toggle-icon">
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </span>
+        <span class="nav-text"><span class="theme-label-to-dark">Qorong'i rejim</span><span class="theme-label-to-light">Yorug' rejim</span></span>
+      </button>
       <a href="{{ url_for('logout') }}" class="nav-item" title="Chiqish">
         <span class="nav-icon">{{ navicon('logout') }}</span><span class="nav-text">Chiqish</span>
       </a>
@@ -606,6 +726,25 @@
         item.addEventListener('click', function () { tooltip.hidden = true; });
       });
       sidebar.addEventListener('mouseleave', function () { tooltip.hidden = true; });
+    }
+
+    // 2026-09, foydalanuvchi so'rovi ("web ga dark mode light mode qoshish
+    // kerak"): mavzu tugmasi. Bosilganda `ReplixTheme.toggle()` (<head>'da)
+    // <html data-theme>'ni almashtiradi va localStorage'ga yozadi;
+    // ikonka/matn CSS orqali (`:root[data-theme="dark"] .theme-icon-*`)
+    // o'z-o'zidan almashadi, faqat yig'ilgan sidebar'dagi tooltip matni
+    // shu yerda yangilanadi.
+    var themeBtn = document.getElementById('themeToggle');
+    if (themeBtn && window.ReplixTheme) {
+      var syncThemeTip = function () {
+        themeBtn.setAttribute('data-tooltip', window.ReplixTheme.get() === 'dark' ? "Yorug' rejim" : "Qorong'i rejim");
+      };
+      syncThemeTip();
+      document.addEventListener('replix:themechange', syncThemeTip);
+      themeBtn.addEventListener('click', function () {
+        window.ReplixTheme.toggle();
+        if (tooltip) { tooltip.textContent = themeBtn.getAttribute('data-tooltip'); }
+      });
     }
 
     // 2026-09, foydalanuvchi so'rovi ("bo'limlar orasida o'tganda

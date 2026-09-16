@@ -59,7 +59,7 @@
   </form>
   <form method="post" action="{{ url_for('payme_card_remove') }}" style="display:inline-block; margin-top:8px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="block" style="background:transparent; color:var(--danger, #d33)">Kartani o'chirish</button>
+    <button type="submit" class="block" style="background:transparent; color:var(--bad)">Kartani o'chirish</button>
   </form>
   {% elif payme_card_pending %}
   <p class="page-subtitle" style="margin-top:-6px">Kartangizga yuborilgan SMS kodni kiriting:</p>

@@ -269,7 +269,11 @@
   // ustidagi yozuvlar (o'qlar, belgilar) qolgan matndan boshqacha shriftda
   // ko'rinardi. Endi bir xil.
   Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
-  Chart.defaults.color = '#64748B';
+  // 2026-09 (dark mode): matn/to'r ranglari endi mavzu tokenlaridan
+  // (--text-dim / --chart-grid, base.html'dagi ReplixTheme) -- qorong'i
+  // rejimda o'qlar/yozuvlar o'qiladigan bo'lsin; mavzu almashganda
+  // diagrammalar jonli qayta bo'yaladi.
+  if (window.ReplixTheme) { window.ReplixTheme.applyChartTheme(); } else { Chart.defaults.color = '#64748B'; }
 
   function fmtSom(v) {
     return Math.round(v).toLocaleString('ru-RU').replace(/,/g, ' ') + " so'm";
@@ -284,7 +288,7 @@
         data: {{ o.status_breakdown|map(attribute='count')|list|tojson }},
         backgroundColor: {{ o.status_breakdown|map(attribute='color')|list|tojson }},
         borderWidth: 2,
-        borderColor: '#FFFFFF',
+        borderColor: window.ReplixTheme ? window.ReplixTheme.cssVar('--card') : '#FFFFFF',
       }]
     },
     options: {

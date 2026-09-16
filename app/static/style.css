@@ -64,6 +64,167 @@
      "ko'tarilib" turadi. */
   --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.05);
   --shadow-md: 0 4px 10px rgba(15,23,42,0.06), 0 14px 30px rgba(15,23,42,0.09);
+
+  /* 2026-09, foydalanuvchi so'rovi ("web ga dark mode light mode qoshish
+     kerak"): QORONG'I REJIM uchun poydevor. Ilgari pastdagi qoidalarda bir
+     nechta joyda "oq fon"/"och kulrang hover"/"och rangli chegara" kabi
+     ranglar to'g'ridan-to'g'ri hex bilan yozilgan edi -- ular qorong'i
+     rejimda "oq dog'" bo'lib qolardi. Endi ularning har biri uchun ALOHIDA
+     token bor (pastda), yorug' rejimda qiymatlari avvalgi hex bilan AYNAN
+     bir xil (hech narsa o'zgarmadi), qorong'i rejimda esa
+     `[data-theme="dark"]` blokida qayta belgilanadi. */
+  color-scheme: light;
+  /* Kiritish maydonlari (input/select/textarea) va oq "panel" fonlari. */
+  --input-bg: #FFFFFF;
+  /* Nav ikonkasi hover'i, jadval qatori hover'i, kuchliroq chegara. */
+  --surface-hover: #E7ECF3;
+  --row-hover: #FAFBFC;
+  --border-strong: #CBD5E1;
+  --thumb-bg: #E9ECF1;
+  /* Holat kartalari/xabarlarining rangli chegaralari (yashil/qizil/sariq/
+     ko'k). */
+  --good-border: #A7F3D0;
+  --bad-border: #FCA5A5;
+  --warn-border: #FDE68A;
+  --blue-border: #C7DBFD;
+  /* "--ink" FONI ustidagi matn (tooltip, faol filtr, avatar): yorug'
+     rejimda oq, qorong'i rejimda -- --ink o'zi och bo'lgani uchun -- to'q. */
+  --on-ink: #FFFFFF;
+  /* Ustida OQ matn turadigan TO'LIQ (solid) aksent fonlar -- chat
+     pufakchalari, "O'chirish" tugmalari va h.k. Qorong'i rejimda --blue/
+     --bad matn uchun ochroq qilinadi (kontrast), lekin fon sifatida
+     ochroq rang ustida oq matn o'qilmay qoladi -- shuning uchun fon uchun
+     alohida, to'yingan variant. */
+  --blue-fill: var(--blue);
+  --good-fill: var(--good);
+  --bad-fill: var(--bad);
+  --warn-fill: var(--warn);
+  /* Yarim shaffof qatlamlar: modal orqa foni, yopishqoq pastki panel,
+     kreativ studiya "shaxmat" foni, Chart.js to'r chiziqlari. */
+  --overlay: rgba(15, 23, 42, 0.5);
+  --glass-bg: rgba(255, 255, 255, 0.96);
+  --checker: #FFFFFF;
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  /* Login/wizard sahifalarining to'liq-ekran radial foni. */
+  --shell-gradient: radial-gradient(circle at 25% 20%, #ffffff 0%, #F1F5F9 55%, #E2E8F0 100%);
+}
+
+/* ---------- Qorong'i rejim (dark mode) ----------
+   Ikki yo'l bilan yoqiladi:
+     1) Foydalanuvchi qo'lda tanlamagan bo'lsa (html'da data-theme yo'q) --
+        operatsion tizim sozlamasi (prefers-color-scheme) bo'yicha;
+     2) Sidebar'dagi tugma orqali tanlangan bo'lsa -- `data-theme="dark"`
+        (yoki "light") atributi OS sozlamasidan USTUN turadi (base.html
+        <head>'dagi kichik skript localStorage'dan o'qib, CSS yuklanishidan
+        OLDIN qo'yadi -- "noto'g'ri rang bilan miltillash" bo'lmasin).
+   Palitra FALSAFASI: bu shunchaki ranglarni teskari qilish EMAS. Fon --
+   sovuq, ko'k-kulrang tusli to'q qatlamlar (sahifa < sidebar < karta,
+   har biri bir pog'ona ochroq -- chuqurlik saqlanadi), matn -- sof oq
+   emas, yumshoq och-kulrang (ko'z charchamasin). Brend ranglari (--blue/
+   --purple) matn sifatida to'q fonda o'qilishi uchun BIROZ ochroq qilindi
+   (kontrast oq fonda emas, #171D2B kartada hisoblangan: --blue 5.3:1,
+   --text-dim 6.8:1, --text 13:1 -- WCAG AA >=4.5:1 bajariladi), tugma
+   gradientlari esa ustidagi oq matn uchun ATAYLAB to'yingan holda
+   qoldirildi (oq matn 4.5:1+). Ikki blok (media so'rovi + atribut) bir
+   xil qiymatlarga ega -- ikkalasi ham kerak: birinchisi OS'ga ergashish,
+   ikkinchisi qo'lda tanlash uchun. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0F1420;
+    --card: #171D2B;
+    --sidebar-bg: #121826;
+    --border: #2A3345;
+    --border-light: #1F2736;
+    --ink: #F1F5F9;
+    --text: #DDE3ED;
+    --text-dim: #9AA6B8;
+    --text-faint: #7B879B;
+    --blue: #4D8DFF;
+    --blue-deep: #6AA0FF;
+    --blue-bg: #152647;
+    --purple: #A67CFF;
+    --purple-bg: #2A1F4A;
+    --cyan: #22E0FA;
+    --cyan-bg: #0D3A44;
+    --brand-gradient: linear-gradient(135deg, #2B6EF5 0%, #8A3BF5 100%);
+    --brand-gradient-vivid: linear-gradient(135deg, #06D6F5 0%, #2B6EF5 55%, #8A3BF5 100%);
+    --good: #34D399;
+    --good-bg: #10302A;
+    --bad: #F87171;
+    --bad-bg: #3B1D22;
+    --warn: #FBBF24;
+    --warn-bg: #3A2B0E;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.3);
+    --shadow-md: 0 4px 10px rgba(0,0,0,0.35), 0 14px 30px rgba(0,0,0,0.45);
+    --input-bg: #0F1522;
+    --surface-hover: #273041;
+    --row-hover: #1B2232;
+    --border-strong: #3A455B;
+    --thumb-bg: #232C3D;
+    --good-border: #1E5A45;
+    --bad-border: #7A2E33;
+    --warn-border: #6B4B10;
+    --blue-border: #2A4A85;
+    --on-ink: #0F1420;
+    --blue-fill: #2B6EF5;
+    --good-fill: #059669;
+    --bad-fill: #DC2626;
+    --warn-fill: #D97706;
+    --overlay: rgba(0, 0, 0, 0.62);
+    --glass-bg: rgba(23, 29, 43, 0.96);
+    --checker: #2A3345;
+    --chart-grid: rgba(255, 255, 255, 0.09);
+    --shell-gradient: radial-gradient(circle at 25% 20%, #1B2334 0%, #121826 55%, #0B0F18 100%);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0F1420;
+  --card: #171D2B;
+  --sidebar-bg: #121826;
+  --border: #2A3345;
+  --border-light: #1F2736;
+  --ink: #F1F5F9;
+  --text: #DDE3ED;
+  --text-dim: #9AA6B8;
+  --text-faint: #7B879B;
+  --blue: #4D8DFF;
+  --blue-deep: #6AA0FF;
+  --blue-bg: #152647;
+  --purple: #A67CFF;
+  --purple-bg: #2A1F4A;
+  --cyan: #22E0FA;
+  --cyan-bg: #0D3A44;
+  --brand-gradient: linear-gradient(135deg, #2B6EF5 0%, #8A3BF5 100%);
+  --brand-gradient-vivid: linear-gradient(135deg, #06D6F5 0%, #2B6EF5 55%, #8A3BF5 100%);
+  --good: #34D399;
+  --good-bg: #10302A;
+  --bad: #F87171;
+  --bad-bg: #3B1D22;
+  --warn: #FBBF24;
+  --warn-bg: #3A2B0E;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 10px rgba(0,0,0,0.35), 0 14px 30px rgba(0,0,0,0.45);
+  --input-bg: #0F1522;
+  --surface-hover: #273041;
+  --row-hover: #1B2232;
+  --border-strong: #3A455B;
+  --thumb-bg: #232C3D;
+  --good-border: #1E5A45;
+  --bad-border: #7A2E33;
+  --warn-border: #6B4B10;
+  --blue-border: #2A4A85;
+  --on-ink: #0F1420;
+  --blue-fill: #2B6EF5;
+  --good-fill: #059669;
+  --bad-fill: #DC2626;
+  --warn-fill: #D97706;
+  --overlay: rgba(0, 0, 0, 0.62);
+  --glass-bg: rgba(23, 29, 43, 0.96);
+  --checker: #2A3345;
+  --chart-grid: rgba(255, 255, 255, 0.09);
+  --shell-gradient: radial-gradient(circle at 25% 20%, #1B2334 0%, #121826 55%, #0B0F18 100%);
 }
 
 * { box-sizing: border-box; }
@@ -260,7 +421,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--border-light); color: var(--text-dim);
   transition: background 0.12s, color 0.12s;
 }
-.nav-item:hover .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: #E7ECF3; color: var(--ink); }
+.nav-item:hover .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: var(--surface-hover); color: var(--ink); }
 .nav-item.active .nav-icon:not(.nav-avatar):not(.sidebar-pin-icon) { background: var(--brand-gradient); color: #fff; }
 .nav-icon svg { width: 18px; height: 18px; }
 .nav-text { overflow: hidden; text-overflow: ellipsis; opacity: 0; width: 0; transition: opacity 0.1s; }
@@ -278,7 +439,7 @@ a { color: inherit; text-decoration: none; }
    nisbatan joylashtiriladi -- shu orqali hech qanday overflow uni kesib
    tashlay olmaydi. */
 .nav-tooltip {
-  position: fixed; background: var(--ink); color: #fff; font-size: 12px; font-weight: 500;
+  position: fixed; background: var(--ink); color: var(--on-ink); font-size: 12px; font-weight: 500;
   line-height: 1.3; padding: 6px 10px; border-radius: 7px; white-space: nowrap;
   pointer-events: none; box-shadow: var(--shadow-md); z-index: 1000; transform: translateY(-50%);
 }
@@ -286,11 +447,42 @@ a { color: inherit; text-decoration: none; }
 .sidebar-bottom { border-top: 1px solid var(--border-light); padding: 10px; flex-shrink: 0; }
 .nav-user-info { color: var(--ink); font-weight: 500; }
 .nav-avatar {
-  width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: #fff;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--on-ink);
   font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
 }
 .sidebar-pin.pinned .sidebar-pin-icon svg { transform: rotate(180deg); }
 .sidebar-pin-icon svg { transition: transform 0.15s; }
+
+/* ---------- Mavzu almashtirgich (yorug'/qorong'i), sidebar pastida ----------
+   2026-09, foydalanuvchi so'rovi ("web ga dark mode light mode qoshish
+   kerak"). Tugma oddiy nav-band ko'rinishida (profil/chiqish bilan bir
+   qatorda). HTML'da ikkala ikonka (oy/quyosh) va ikkala matn ham bor --
+   qaysi biri ko'rinishi <html data-theme> atributiga qarab shu yerda hal
+   qilinadi: YORUG' rejimda "oy + Qorong'i rejim" (ya'ni tugma nimaga
+   O'TKAZISHINI ko'rsatadi), QORONG'I rejimda "quyosh + Yorug' rejim". */
+.theme-toggle .theme-icon-sun, .theme-toggle .theme-label-to-light { display: none; }
+:root[data-theme="dark"] .theme-toggle .theme-icon-moon,
+:root[data-theme="dark"] .theme-toggle .theme-label-to-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle .theme-icon-sun { display: block; }
+:root[data-theme="dark"] .theme-toggle .theme-label-to-light { display: inline; }
+
+/* Qorong'i rejimda logotipning och varianti (base.html'dagi izohga
+   qarang): asl "eplix" harflari to'q siyohrang -- to'q fonda yo'qoladi. */
+.brand-full-logo-dark, .login-logo-dark, .lp-logo-dark { display: none; }
+/* `.sidebar.open .brand-full-logo` (yuqorida) qoidasidan ustun turishi uchun
+   xuddi shu spesifiklik bilan. */
+.sidebar.open .brand-full-logo-dark { display: none; }
+:root[data-theme="dark"] .sidebar.open .brand-full-logo:not(.brand-full-logo-dark) { display: none; }
+:root[data-theme="dark"] .sidebar.open .brand-full-logo-dark { display: block; }
+:root[data-theme="dark"] .login-logo:not(.login-logo-dark) { display: none; }
+:root[data-theme="dark"] .login-logo-dark { display: block; }
+:root[data-theme="dark"] .lp-logo:not(.lp-logo-dark) { display: none; }
+:root[data-theme="dark"] .lp-logo-dark { display: block; }
+/* Yorug' rejimda tashqi (oq fonli) rasm konteynerlari va Meta/Instagram
+   rasmlari o'zgarmaydi; faqat ochiq oq gradient "shell" fonlari token
+   orqali (yuqoridagi --shell-gradient). Sahifa/skrollbar/select
+   ochilmalari brauzerning o'zi tomonidan `color-scheme` orqali to'q
+   bo'ladi. */
 
 /* Asosiy kontent -- standart holatda faqat icon-rail (68px) uchun joy
    qoldiriladi; sichqoncha ustiga kelib sidebar OVERLAY sifatida kengaysa
@@ -349,7 +541,7 @@ a { color: inherit; text-decoration: none; }
 .impersonation-banner {
   position: fixed; top: 0; left: 0; right: 0; z-index: 40; height: 40px;
   display: flex; align-items: center; justify-content: center; gap: 14px;
-  background: var(--warn); color: #fff; font-size: 13.5px; font-weight: 600;
+  background: var(--warn-fill); color: #fff; font-size: 13.5px; font-weight: 600;
   box-shadow: 0 1px 0 rgba(0,0,0,0.08);
 }
 .impersonation-banner b { font-weight: 800; }
@@ -437,7 +629,7 @@ body:has(.impersonation-banner) .mobile-menu-btn { top: 52px; }
   background: var(--border-light); font-size: 12.5px; margin-bottom: 0;
 }
 .page-subnav-secondary .page-subnav-item:hover { background: var(--blue-bg); color: var(--blue); }
-.page-subnav-secondary .page-subnav-item.active { background: var(--blue); color: #fff; }
+.page-subnav-secondary .page-subnav-item.active { background: var(--blue-fill); color: #fff; }
 
 /* ---------- Ixcham sana-oralig'i filtri (_date_picker.html) ---------- */
 .date-picker { position: relative; display: inline-block; }
@@ -511,9 +703,9 @@ body:has(.impersonation-banner) .mobile-menu-btn { top: 52px; }
 
 /* ---------- Flash ---------- */
 .flash { padding: 10px 14px; border-radius: var(--radius); margin-bottom: 18px; font-size: 13.5px; border: 1px solid; }
-.flash-error { background: var(--bad-bg); color: var(--bad); border-color: #FCA5A5; }
-.flash-success { background: var(--good-bg); color: var(--good); border-color: #A7F3D0; }
-.flash-info { background: var(--warn-bg); color: var(--warn); border-color: #FDE68A; }
+.flash-error { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-border); }
+.flash-success { background: var(--good-bg); color: var(--good); border-color: var(--good-border); }
+.flash-info { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
 
 /* ---------- Typography ---------- */
 h1 { font-size: 22px; font-weight: 700; margin: 0; color: var(--ink); letter-spacing: -0.01em; }
@@ -583,7 +775,7 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
   flex-shrink: 0; transition: background 0.12s, color 0.12s;
 }
 .pill-group a:hover:not(.active) { background: var(--border-light); color: var(--ink); }
-.pill-group a.active { background: var(--ink); color: #fff; box-shadow: var(--shadow-sm); }
+.pill-group a.active { background: var(--ink); color: var(--on-ink); box-shadow: var(--shadow-sm); }
 
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
 
@@ -626,7 +818,7 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
   width: 100%; padding: 8px 12px 8px 32px; font-size: 13.5px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit;
 }
-.searchbar .search-input-wrap input:focus { outline: none; border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px var(--blue-bg); }
+.searchbar .search-input-wrap input:focus { outline: none; border-color: var(--blue); background: var(--input-bg); box-shadow: 0 0 0 3px var(--blue-bg); }
 
 /* ---------- Filter pills (leads page) ---------- */
 .filters { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -634,7 +826,7 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--ink); }
   padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim);
   font-size: 12.5px; font-weight: 500; transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.filters a.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.filters a.active { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 .filters a:hover:not(.active) { background: var(--border-light); color: var(--ink); }
 
 /* ---------- Table ---------- */
@@ -656,8 +848,8 @@ tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border-light); col
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.1s; }
 tbody tr.rowlink { cursor: pointer; }
-tbody tr.rowlink:hover { background: #FAFBFC; }
-tbody tr:not(.rowlink):hover td { background: #FBFCFD; }
+tbody tr.rowlink:hover { background: var(--row-hover); }
+tbody tr:not(.rowlink):hover td { background: var(--row-hover); }
 
 th.sortable { cursor: pointer; user-select: none; position: relative; }
 th.sortable:hover { color: var(--text-dim); }
@@ -668,7 +860,7 @@ th.sortable::after {
 th.sortable[data-sorted="asc"]::after { border-bottom: 4px solid var(--ink); opacity: 1; }
 th.sortable[data-sorted="desc"]::after { border-top: 4px solid var(--ink); opacity: 1; }
 
-.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 9px; background: #CBD5E1; }
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 9px; background: var(--border-strong); }
 .status-dot.on { background: var(--good); }
 
 .text-blue { color: var(--blue); }
@@ -708,7 +900,7 @@ form input[type="date"], form input[type="datetime-local"],
 form input[type="tel"], form input[type="email"], form input[type="url"],
 form select, form textarea {
   width: 100%; padding: 9px 12px; font-size: 13.5px; font-family: inherit;
-  border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text);
 }
 form textarea { resize: vertical; min-height: 76px; }
 form input:focus, form select:focus, form textarea:focus {
@@ -719,7 +911,7 @@ form input:focus, form select:focus, form textarea:focus {
    ko'rinishga keltirish + kalendar belgichasini "bosiladigan tugma"dek
    ko'rinadigan qilish (foydalanuvchi so'rovi: "sanani tanlashni
    chiroyliroq qil"). */
-form input[type="date"] { min-height: 38px; color-scheme: light; cursor: pointer; }
+form input[type="date"] { min-height: 38px; cursor: pointer; }
 form input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer; opacity: 0.55; padding: 4px; margin-right: -4px;
   border-radius: 5px; transition: opacity 0.15s ease, background 0.15s ease;
@@ -760,17 +952,17 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 .toggle-all-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 7px 14px; white-space: nowrap; }
 .toggle-all-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
-.toggle-all-btn-outline { background: #fff; color: var(--text-dim); border: 1px solid var(--border); }
+.toggle-all-btn-outline { background: var(--card); color: var(--text-dim); border: 1px solid var(--border); }
 .toggle-all-btn-outline:hover { background: var(--border-light); color: var(--ink); }
 
 /* ---------- Login ---------- */
 .login-shell {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 25% 20%, #ffffff 0%, #F1F5F9 55%, #E2E8F0 100%);
+  background: var(--shell-gradient);
   margin: -28px -24px; padding: 24px;
 }
 .login-card {
-  width: 100%; max-width: 380px; background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
   padding: 36px 32px 32px; box-shadow: 0 1px 3px rgba(15,23,42,0.05), 0 16px 40px rgba(15,23,42,0.08);
   position: relative; overflow: hidden;
 }
@@ -786,7 +978,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 .login-error {
   display: flex; align-items: flex-start; gap: 9px; background: var(--bad-bg); color: var(--bad);
-  border: 1px solid #FCA5A5; border-radius: var(--radius); padding: 11px 13px; margin-bottom: 18px;
+  border: 1px solid var(--bad-border); border-radius: var(--radius); padding: 11px 13px; margin-bottom: 18px;
   font-size: 13.5px; font-weight: 500; animation: fadeInUp 0.2s ease-out;
 }
 .login-error svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; }
@@ -800,11 +992,11 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    bu yerda ko'proq (4 tagacha) qadam bor. */
 .wizard-shell {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 25% 20%, #ffffff 0%, #F1F5F9 55%, #E2E8F0 100%);
+  background: var(--shell-gradient);
   margin: -28px -24px; padding: 32px 24px;
 }
 .wizard-card {
-  width: 100%; max-width: 640px; background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
   padding: 40px 40px 34px; box-shadow: 0 1px 3px rgba(15,23,42,0.05), 0 16px 40px rgba(15,23,42,0.08);
   position: relative; overflow: hidden;
 }
@@ -903,7 +1095,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ai-nudge-bubble {
   position: absolute; right: 0; bottom: 66px; width: 280px; max-width: calc(100vw - 44px);
   display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; padding-right: 30px;
-  background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: 0 12px 32px rgba(15,23,42,0.16); text-decoration: none; cursor: pointer;
   animation: fadeInUp 0.25s ease-out;
 }
@@ -929,7 +1121,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 #ai-assistant-panel[hidden] { display: none; }
 #ai-assistant-panel {
   position: absolute; right: 0; bottom: 66px; width: 340px; max-width: calc(100vw - 44px);
-  height: 460px; max-height: calc(100vh - 140px); background: #fff; border: 1px solid var(--border);
+  height: 460px; max-height: calc(100vh - 140px); background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); box-shadow: 0 12px 36px rgba(15,23,42,0.16);
   display: flex; flex-direction: column; overflow: hidden; animation: fadeInUp 0.18s ease-out;
 }
@@ -953,7 +1145,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   max-width: 84%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45;
   white-space: pre-wrap; word-break: break-word;
 }
-.ai-msg-user .ai-bubble { background: var(--blue); color: #fff; border-bottom-right-radius: 3px; }
+.ai-msg-user .ai-bubble { background: var(--blue-fill); color: #fff; border-bottom-right-radius: 3px; }
 .ai-msg-assistant .ai-bubble { background: var(--border-light); color: var(--text); border-bottom-left-radius: 3px; }
 .ai-msg.ai-typing .ai-bubble { color: var(--text-faint); font-style: italic; }
 
@@ -962,9 +1154,9 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   flex: 1; padding: 9px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 999px;
   font-family: inherit; background: var(--bg); color: var(--text);
 }
-#ai-assistant-form input:focus { outline: none; border-color: var(--blue); background: #fff; }
+#ai-assistant-form input:focus { outline: none; border-color: var(--blue); background: var(--input-bg); }
 #ai-assistant-form button {
-  width: 36px; height: 36px; border-radius: 50%; background: var(--blue); color: #fff; border: none;
+  width: 36px; height: 36px; border-radius: 50%; background: var(--blue-fill); color: #fff; border: none;
   display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0;
 }
 #ai-assistant-form button:hover { background: var(--blue-deep); }
@@ -982,7 +1174,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .kpidash-card.span-2 { grid-column: 1 / -1; }
 .kpidash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .kpidash-card-title { font-size: 14px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; }
-.kpidash-card-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.kpidash-card-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: var(--on-ink); font-size: 12px; font-weight: 700; flex-shrink: 0; }
 .kpidash-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.03em; padding: 4px 10px; border-radius: 999px; background: var(--blue-bg); color: var(--blue); white-space: nowrap; }
 .kpidash-badge.good { background: var(--good-bg); color: var(--good); }
 .kpidash-badge.bad { background: var(--bad-bg); color: var(--bad); }
@@ -1001,8 +1193,8 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .daystrip-cell .d-date { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; opacity: 0.75; }
 .daystrip-cell .d-count { font-size: 15px; font-weight: 700; margin-top: 2px; }
 .daystrip-cell .d-pct { font-size: 9.5px; font-weight: 600; margin-top: 1px; opacity: 0.85; }
-.daystrip-cell.met { background: var(--good-bg); color: var(--good); border-color: #A7F3D0; }
-.daystrip-cell.missed { background: var(--bad-bg); color: var(--bad); border-color: #FCA5A5; }
+.daystrip-cell.met { background: var(--good-bg); color: var(--good); border-color: var(--good-border); }
+.daystrip-cell.missed { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-border); }
 .daystrip-cell.off { background: var(--border-light); color: var(--text-faint); }
 
 /* Progress bar -- reja bajarilishi */
@@ -1017,7 +1209,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 @media (max-width: 560px) { .tier-grid { grid-template-columns: repeat(2, 1fr); } }
 .tier-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 8px; text-align: center; background: var(--bg); }
 .tier-box.current { border-color: var(--blue); background: var(--blue-bg); }
-.tier-box.achieved { border-color: #A7F3D0; background: var(--good-bg); }
+.tier-box.achieved { border-color: var(--good-border); background: var(--good-bg); }
 .tier-box .t-label { font-size: 10.5px; color: var(--text-dim); font-weight: 600; }
 .tier-box.current .t-label { color: var(--blue); }
 .tier-box.achieved .t-label { color: var(--good); }
@@ -1050,7 +1242,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    shu umumiy klasslardan foydalanadi. */
 .modal-overlay {
   display: none; position: fixed; inset: 0; z-index: 200;
-  background: rgba(15, 23, 42, 0.5); align-items: center; justify-content: center; padding: 24px;
+  background: var(--overlay); align-items: center; justify-content: center; padding: 24px;
 }
 .modal-overlay.open { display: flex; animation: fadeInUp 0.15s ease-out; }
 .modal-dialog {
@@ -1342,7 +1534,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   flex: 1 1 220px; max-width: 420px;
   transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
-.app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: #CBD5E1; }
+.app-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: var(--border-strong); }
 .app-card.active { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg), var(--shadow-md); }
 /* 2026-09, foydalanuvchi so'rovi ("ikonkalani kattalashtir, to'ldirish
    kerak" -- avvalgi 68px hali ham "bo'sh joy ko'p" taassurotini to'liq
@@ -1396,7 +1588,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .copy-field input:focus { outline: none; border-color: var(--blue); }
 .copy-field .copy-btn { flex-shrink: 0; white-space: nowrap; font-size: 12.5px; padding: 9px 14px; }
-.copy-field .copy-btn.copied { background: var(--good); }
+.copy-field .copy-btn.copied { background: var(--good-fill); }
 
 @media (max-width: 640px) {
   .app-grid { gap: 10px; }
@@ -1468,7 +1660,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    turadi -- Meta'ning o'z inbox vositalarida ham shu naqsh ishlatiladi. */
 .dm-avatar {
   position: relative; width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-  background: var(--blue); color: #fff; font-weight: 600; font-size: 14px;
+  background: var(--blue-fill); color: #fff; font-weight: 600; font-size: 14px;
   display: flex; align-items: center; justify-content: center; text-transform: uppercase;
 }
 .dm-avatar-lg { width: 44px; height: 44px; font-size: 16px; }
@@ -1495,7 +1687,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   max-width: 70%; padding: 9px 13px; border-radius: 12px; font-size: 13.5px; line-height: 1.4;
   background: var(--border-light); color: var(--text);
 }
-.dm-bubble-row.from-business .dm-bubble { background: var(--blue); color: #fff; border-bottom-right-radius: 3px; }
+.dm-bubble-row.from-business .dm-bubble { background: var(--blue-fill); color: #fff; border-bottom-right-radius: 3px; }
 .dm-bubble-row.from-customer .dm-bubble { border-bottom-left-radius: 3px; }
 .dm-bubble-text { white-space: pre-wrap; word-break: break-word; }
 .dm-bubble-time { font-size: 10.5px; opacity: 0.65; margin-top: 4px; text-align: right; }
@@ -1675,7 +1867,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
    wizard kartalari, media to'ri, lokal preview. Ranglar -- faqat mavjud
    tokenlar (--blue/--purple/--good/--bad/--warn), yangi rang kiritilmagan.
    ===================================================================== */
-.ap-connect-banner { margin-bottom: 20px; border-color: #FDE68A; background: var(--warn-bg); }
+.ap-connect-banner { margin-bottom: 20px; border-color: var(--warn-border); background: var(--warn-bg); }
 .ap-banner-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); }
 .ap-banner-list li { margin: 3px 0; }
 .ap-row-title { color: var(--ink); font-weight: 600; text-decoration: none; }
@@ -1696,7 +1888,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-objective-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
 .ap-objective-card {
   display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius);
-  cursor: pointer; background: #fff; transition: border-color 0.12s, box-shadow 0.12s; font-weight: 400; color: var(--text); margin: 0;
+  cursor: pointer; background: var(--card); transition: border-color 0.12s, box-shadow 0.12s; font-weight: 400; color: var(--text); margin: 0;
 }
 .ap-objective-card:hover { border-color: var(--blue); }
 .ap-objective-card.selected { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
@@ -1710,7 +1902,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-duration-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ap-chip {
   display: inline-flex; align-items: center; padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
-  font-size: 12.5px; cursor: pointer; margin: 0; color: var(--text); font-weight: 500; background: #fff;
+  font-size: 12.5px; cursor: pointer; margin: 0; color: var(--text); font-weight: 500; background: var(--card);
 }
 .ap-chip input { position: absolute; opacity: 0; pointer-events: none; }
 .ap-chip.selected { border-color: var(--blue); background: var(--blue-bg); color: var(--blue); }
@@ -1727,7 +1919,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-loading { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius); background: var(--blue-bg); color: var(--blue); font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .ap-typeahead { position: relative; }
 .ap-typeahead-list {
-  position: absolute; left: 0; right: 0; top: 100%; z-index: 30; background: #fff; border: 1px solid var(--border);
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 30; background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: var(--shadow-md); max-height: 240px; overflow-y: auto; margin-top: 4px;
 }
 .ap-typeahead-item { padding: 8px 12px; font-size: 13px; cursor: pointer; }
@@ -1750,10 +1942,10 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-saving { font-size: 12px; color: var(--text-faint); }
 .ap-saving.err { color: var(--bad); }
 .ap-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
-.ap-warn-card { border-color: #FDE68A; background: var(--warn-bg); margin: 0; }
+.ap-warn-card { border-color: var(--warn-border); background: var(--warn-bg); margin: 0; }
 .ap-warn-card h2 { color: var(--warn); margin-bottom: 8px; }
 .ap-warn-card ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text); }
-.ap-err-card { border-color: #FCA5A5; background: var(--bad-bg); margin: 0; }
+.ap-err-card { border-color: var(--bad-border); background: var(--bad-bg); margin: 0; }
 .ap-err-card h2 { color: var(--bad); margin-bottom: 6px; }
 .ap-err-card p { margin: 0; font-size: 13px; }
 
@@ -1765,7 +1957,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   box-shadow: none; font-weight: 500;
 }
 .ap-tree-node:hover { background: var(--border-light); box-shadow: none; transform: none; filter: none; }
-.ap-tree-node.active { background: var(--blue-bg); border-color: #C7DBFD; color: var(--blue); }
+.ap-tree-node.active { background: var(--blue-bg); border-color: var(--blue-border); color: var(--blue); }
 .ap-tree-node.level-1 { margin-left: 14px; }
 .ap-tree-node.level-2 { margin-left: 28px; }
 .ap-tree-node svg { width: 15px; height: 15px; flex-shrink: 0; }
@@ -1803,12 +1995,12 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-field input[type="text"], .ap-field input[type="number"], .ap-field input[type="url"], .ap-field input[type="datetime-local"], .ap-field input[type="date"],
 .ap-field select, .ap-field textarea {
   width: 100%; padding: 9px 12px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--border); border-radius: 6px;
-  background: #fff; color: var(--text);
+  background: var(--input-bg); color: var(--text);
 }
 .ap-field textarea { resize: vertical; min-height: 70px; }
 .ap-field input:focus, .ap-field select:focus, .ap-field textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .ap-field input:disabled, .ap-field select:disabled, .ap-field textarea:disabled { background: var(--border-light); color: var(--text-faint); cursor: not-allowed; }
-.ap-field.has-error input, .ap-field.has-error select, .ap-field.has-error textarea { border-color: #FCA5A5; }
+.ap-field.has-error input, .ap-field.has-error select, .ap-field.has-error textarea { border-color: var(--bad-border); }
 .ap-field-error { margin-top: 5px; font-size: 12px; color: var(--bad); }
 .ap-field-hint { margin-top: 5px; font-size: 11.5px; color: var(--text-faint); line-height: 1.45; }
 .ap-field-explain { margin-top: 5px; font-size: 11.5px; color: var(--purple); background: var(--purple-bg); padding: 6px 9px; border-radius: 6px; line-height: 1.45; }
@@ -1824,10 +2016,10 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-unsupported span:last-child { font-size: 11px; white-space: nowrap; }
 .ap-inline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ap-mini-btn {
-  padding: 4px 10px; font-size: 11.5px; border-radius: 6px; background: #fff; color: var(--text-dim); border: 1px solid var(--border); box-shadow: none;
+  padding: 4px 10px; font-size: 11.5px; border-radius: 6px; background: var(--card); color: var(--text-dim); border: 1px solid var(--border); box-shadow: none;
 }
 .ap-mini-btn:hover { background: var(--border-light); color: var(--ink); box-shadow: none; transform: none; filter: none; }
-.ap-mini-btn.primary { background: var(--blue-bg); color: var(--blue); border-color: #C7DBFD; }
+.ap-mini-btn.primary { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-border); }
 .ap-mini-btn.danger { color: var(--bad); }
 .ap-mini-btn:disabled { opacity: 0.55; cursor: default; }
 .ap-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -1857,12 +2049,12 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-media-item.selected { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .ap-media-item img, .ap-media-item video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ap-media-item .ap-media-idx { position: absolute; top: 6px; left: 6px; background: rgba(15,23,42,0.75); color: #fff; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
-.ap-media-item .ap-media-status { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10.5px; padding: 3px 6px; background: rgba(255,255,255,0.92); color: var(--text-dim); text-align: center; }
+.ap-media-item .ap-media-status { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10.5px; padding: 3px 6px; background: var(--glass-bg); color: var(--text-dim); text-align: center; }
 .ap-media-item .ap-media-status.ok { color: var(--good); }
 .ap-media-item .ap-media-status.err { color: var(--bad); }
 /* 2026-09, foydalanuvchi so'rovi: media o'chirish tugmasi (yuqori o'ng burchak) */
 .ap-media-item .ap-media-del { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; line-height: 18px; text-align: center; border: none; border-radius: 999px; background: rgba(15,23,42,0.75); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; padding: 0; z-index: 2; }
-.ap-media-item .ap-media-del:hover { background: var(--bad); }
+.ap-media-item .ap-media-del:hover { background: var(--bad-fill); }
 .ap-media-add { border: 2px dashed var(--border); color: var(--text-dim); font-size: 12px; font-weight: 500; flex-direction: column; gap: 6px; }
 .ap-media-add:hover { border-color: var(--blue); color: var(--blue); }
 .ap-media-add svg { width: 22px; height: 22px; }
@@ -1873,7 +2065,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-preview-note { font-size: 12px; margin-bottom: 10px; padding: 8px 10px; border-radius: 6px; }
 .ap-preview-note.local { background: var(--warn-bg); color: var(--warn); }
 .ap-preview-note.meta { background: var(--good-bg); color: var(--good); }
-.ap-local-preview { width: 320px; background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13px; }
+.ap-local-preview { width: 320px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13px; }
 .ap-local-preview-story { width: 270px; }
 .ap-lp-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); background: var(--warn-bg); padding: 5px 10px; text-align: center; }
 .ap-lp-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
@@ -1902,10 +2094,10 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-chat-title { font-weight: 700; color: var(--ink); font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
 .ap-chat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .ap-msg { max-width: 92%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-.ap-msg-user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 4px; }
+.ap-msg-user { align-self: flex-end; background: var(--blue-fill); color: #fff; border-bottom-right-radius: 4px; }
 .ap-msg-ai { align-self: flex-start; background: var(--bg); color: var(--text); border: 1px solid var(--border-light); border-bottom-left-radius: 4px; }
-.ap-msg-ai.err { background: var(--bad-bg); color: var(--bad); border-color: #FCA5A5; }
-.ap-msg-ai.warn { background: var(--warn-bg); color: var(--warn); border-color: #FDE68A; }
+.ap-msg-ai.err { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-border); }
+.ap-msg-ai.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
 .ap-msg-meta { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
 .ap-msg-typing { align-self: flex-start; color: var(--text-faint); font-size: 12px; padding: 4px 12px; }
 .ap-chat-suggest { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 8px; }
@@ -1916,7 +2108,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 /* ---- Yopishqoq pastki panel ---- */
 .ap-bottombar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; background: rgba(255,255,255,0.96); backdrop-filter: blur(6px);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; background: var(--glass-bg); backdrop-filter: blur(6px);
   border-top: 1px solid var(--border); padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   box-shadow: 0 -6px 20px rgba(15,23,42,0.06);
 }
@@ -1926,11 +2118,11 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-approve-dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--border); display: inline-block; }
 .ap-approve-dots span.ok { background: var(--good); }
 .ap-btn-publish { background: var(--brand-gradient-vivid); }
-.ap-btn-good { background: var(--good); }
-.ap-btn-danger { background: var(--bad); }
+.ap-btn-good { background: var(--good-fill); }
+.ap-btn-danger { background: var(--bad-fill); }
 .ap-tooltip-wrap { position: relative; display: inline-block; }
 .ap-tooltip-wrap[data-tip]:hover::after {
-  content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--ink); color: #fff; font-size: 11.5px;
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--ink); color: var(--on-ink); font-size: 11.5px;
   padding: 8px 10px; border-radius: 6px; width: max-content; max-width: 320px; white-space: normal; z-index: 100; line-height: 1.4;
 }
 /* Modal ichidagi xulosa */
@@ -1950,7 +2142,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-ta-issue { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--bg); }
 .ap-ta-issue-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .ap-ta-changes { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
-.ap-ta-change { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: #fff; }
+.ap-ta-change { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--card); }
 .ap-ta-change code { font-size: 11.5px; color: var(--text-faint); }
 .ap-ta-diff { margin-top: 6px; font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .ap-ta-before { color: var(--text-faint); text-decoration: line-through; }
@@ -1977,12 +2169,12 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 /* 2026-09: Instant Form muharriri -- Ads Manager uslubidagi 3 blok
    (Kirish / Savollar / Rahmat) va savol kartalari + yagona "yangi savol"
    kompozitori. */
-.ap-lf-block { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px 14px 4px; margin-bottom: 14px; background: #fff; }
+.ap-lf-block { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px 14px 4px; margin-bottom: 14px; background: var(--card); }
 .ap-lf-subhead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--ink); margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
 .ap-lf-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--border-light); color: var(--text-dim); font-size: 11px; font-weight: 700; }
 .ap-lf-questions { display: flex; flex-direction: column; gap: 8px; }
 .ap-lf-q { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
-.ap-lf-q.custom { background: #fff; }
+.ap-lf-q.custom { background: var(--card); }
 .ap-lf-q-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ap-lf-q-num { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--blue-bg); color: var(--blue); }
 .ap-lf-q-label { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1991,14 +2183,14 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-lf-q-kind { flex: 0 0 auto; font-size: 10.5px; color: var(--text-faint); background: var(--border-light); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
 .ap-lf-opts { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px 30px; }
 .ap-lf-opt { display: flex; align-items: center; gap: 8px; }
-.ap-lf-opt-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border); background: #fff; }
+.ap-lf-opt-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--input-bg); }
 .ap-lf-opt input[type="text"] { flex: 1; min-width: 0; padding: 6px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
 .ap-lf-opt input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .ap-lf-empty { font-size: 12.5px; color: var(--text-faint); padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; text-align: center; }
 .ap-lf-composer { border: 1px dashed var(--border); border-radius: 8px; padding: 10px; background: var(--bg); }
-.ap-lf-composer.open { border-style: solid; border-color: #C7DBFD; background: #fff; }
+.ap-lf-composer.open { border-style: solid; border-color: var(--blue-border); background: var(--card); }
 .ap-lf-composer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.ap-lf-composer-row select { flex: 1 1 260px; min-width: 0; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: #fff; color: var(--text); }
+.ap-lf-composer-row select { flex: 1 1 260px; min-width: 0; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: var(--input-bg); color: var(--text); }
 .ap-lf-composer-row select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .ap-lf-composer-row .ap-mini-btn { padding: 7px 14px; font-size: 12.5px; }
 /* Maxsus savol qoralamasi ochiq bo'lganda yuqoridagi "+ Qo'shish" yashiriladi --
@@ -2007,11 +2199,11 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-lf-composer-row .ap-mini-btn[hidden] { display: none; }
 .ap-lf .ap-field-label:empty { display: none; }
 .ap-lf .ap-field-head:has(> .ap-field-label:empty) { justify-content: flex-end; }
-.ap-lf-draft { margin-top: 10px; padding: 12px; border-radius: 8px; background: var(--blue-bg); border: 1px solid #C7DBFD; }
+.ap-lf-draft { margin-top: 10px; padding: 12px; border-radius: 8px; background: var(--blue-bg); border: 1px solid var(--blue-border); }
 .ap-lf-draft-title { font-size: 12.5px; font-weight: 600; color: var(--blue); margin-bottom: 8px; }
 .ap-lf-draft .ap-field-label { display: block; margin-bottom: 4px; }
-.ap-lf-draft input[type="text"] { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: #fff; }
-.ap-lf-draft input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px #fff; }
+.ap-lf-draft input[type="text"] { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; background: var(--input-bg); }
+.ap-lf-draft input[type="text"]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--card); }
 .ap-lf-draft .ap-lf-opts { margin-left: 0; }
 .ap-lf-draft .ap-lf-opt input[type="text"] { width: auto; }
 .ap-lf-draft-actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -2087,7 +2279,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-inline-tpl-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .cs-inline-tpl-card form { display: flex; flex-direction: column; flex: 1; margin: 0; }
 /* Bir xil kvadrat plitkalar (4:5 / 9:16 preview'lar to'liq ko'rinadi -- contain) */
-.cs-inline-tpl-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; padding: 0; border: 0; background: #E9ECF1; overflow: hidden; cursor: pointer; }
+.cs-inline-tpl-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; padding: 0; border: 0; background: var(--thumb-bg); overflow: hidden; cursor: pointer; }
 .cs-inline-tpl-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .cs-inline-tpl-hover { position: absolute; inset: auto 0 0 0; padding: 6px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(11, 99, 245, 0.88); opacity: 0; transition: opacity 0.12s; }
 .cs-inline-tpl-thumb:hover .cs-inline-tpl-hover, .cs-inline-tpl-thumb:focus-visible .cs-inline-tpl-hover { opacity: 1; }
@@ -2109,7 +2301,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 }
 .cs-style-chip::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--cs-style-accent, #0B63F5); flex-shrink: 0; }
 .cs-style-chip.active { border-color: transparent; background: var(--cs-style-accent, #0B63F5); color: #fff; }
-.cs-style-chip.active::before { background: #fff; }
+.cs-style-chip.active::before { background: var(--card); }
 .cs-style-ref-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
 .cs-style-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
@@ -2145,8 +2337,8 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-side-section:last-child { margin-bottom: 0; }
 .cs-side-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .cs-side .ap-field { margin-bottom: 10px; }
-.cs-side .ap-field textarea, .cs-side .ap-field select, .cs-side .ap-field input[type="number"] { width: 100%; padding: 7px 10px; font-size: 13px; font-family: inherit; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); }
-.cs-side .ap-field input[type="color"] { width: 100%; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.cs-side .ap-field textarea, .cs-side .ap-field select, .cs-side .ap-field input[type="number"] { width: 100%; padding: 7px 10px; font-size: 13px; font-family: inherit; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); }
+.cs-side .ap-field input[type="color"] { width: 100%; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); cursor: pointer; }
 .cs-side .ap-field input[type="range"] { width: 100%; accent-color: var(--blue); }
 .cs-pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 
@@ -2159,7 +2351,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-q-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
 .cs-q-step { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
 .cs-q-text { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.4; }
-.cs-q-card textarea { width: 100%; padding: 10px 12px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); resize: vertical; }
+.cs-q-card textarea { width: 100%; padding: 10px 12px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); resize: vertical; }
 .cs-q-card textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .cs-q-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cs-answers { display: grid; grid-template-columns: 1fr; gap: 6px 12px; font-size: 13px; margin: 0; }
@@ -2170,23 +2362,23 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 /* ---- AI suhbat (brif + "tezkor o'zgartirish") -- 2026-09, `.ap-chat-*`
    bilan bir xil vizual til, `cs-` prefiksi (shu faylning naqshi). ---- */
-.cs-chat-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; }
+.cs-chat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; }
 .cs-chat-log { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-height: 420px; overflow-y: auto; }
 .cs-chat-log-sm { max-height: 220px; padding: 10px 0; }
 .cs-chat-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .cs-chat-msg-agent { align-self: flex-start; background: var(--bg); color: var(--text); border: 1px solid var(--border-light); border-bottom-left-radius: 4px; }
-.cs-chat-msg-user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 4px; }
-.cs-chat-msg.err, .cs-chat-msg-agent.err { background: var(--bad-bg); color: var(--bad); border-color: #FCA5A5; }
+.cs-chat-msg-user { align-self: flex-end; background: var(--blue-fill); color: #fff; border-bottom-right-radius: 4px; }
+.cs-chat-msg.err, .cs-chat-msg-agent.err { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-border); }
 .cs-chat-typing { align-self: flex-start; color: var(--text-faint); font-size: 12px; padding: 2px 4px; }
 .cs-chat-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-light); align-items: flex-end; }
-.cs-chat-form textarea { flex: 1; resize: none; padding: 8px 10px; font-size: 13px; font-family: inherit; border: 1px solid var(--border); border-radius: 8px; min-height: 40px; background: #fff; color: var(--text); }
+.cs-chat-form textarea { flex: 1; resize: none; padding: 8px 10px; font-size: 13px; font-family: inherit; border: 1px solid var(--border); border-radius: 8px; min-height: 40px; background: var(--input-bg); color: var(--text); }
 .cs-chat-form textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 .cs-chat-form textarea:disabled { opacity: 0.6; }
 
 /* ---- Canvas ---- */
 .cs-editor { display: flex; flex-direction: column; gap: 12px; }
 .cs-editor-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-faint); line-height: 1.45; }
-.cs-canvas-wrap { display: flex; justify-content: center; background: repeating-conic-gradient(var(--border-light) 0% 25%, #fff 0% 50%) 50% / 18px 18px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.cs-canvas-wrap { display: flex; justify-content: center; background: repeating-conic-gradient(var(--border-light) 0% 25%, var(--checker) 0% 50%) 50% / 18px 18px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
 .cs-canvas { display: block; max-width: 100%; box-shadow: var(--shadow-md); border-radius: 4px; touch-action: none; outline: none; }
 .cs-canvas:focus { box-shadow: 0 0 0 3px var(--blue-bg), var(--shadow-md); }
 
@@ -2194,7 +2386,7 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-layer-list { display: flex; flex-direction: column; gap: 3px; }
 .cs-layer-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; font-size: 12.5px; min-width: 0; }
 .cs-layer-row:hover { background: var(--border-light); }
-.cs-layer-row.selected { background: var(--blue-bg); border-color: #C7DBFD; }
+.cs-layer-row.selected { background: var(--blue-bg); border-color: var(--blue-border); }
 .cs-layer-row.hidden-layer .cs-layer-text, .cs-layer-row.hidden-layer .cs-layer-type { color: var(--text-faint); text-decoration: line-through; }
 .cs-layer-eye { background: none; border: none; box-shadow: none; padding: 0; width: 20px; height: 20px; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .cs-layer-eye:hover { transform: none; filter: none; box-shadow: none; color: var(--ink); background: none; }
@@ -2206,16 +2398,16 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 /* ---- Brend kit formasi ---- */
 .cs-logo-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.cs-logo-preview { width: 120px; height: 120px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: var(--radius); background: repeating-conic-gradient(var(--border-light) 0% 25%, #fff 0% 50%) 50% / 16px 16px; overflow: hidden; font-size: 12px; text-align: center; padding: 6px; }
+.cs-logo-preview { width: 120px; height: 120px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: var(--radius); background: repeating-conic-gradient(var(--border-light) 0% 25%, var(--checker) 0% 50%) 50% / 16px 16px; overflow: hidden; font-size: 12px; text-align: center; padding: 6px; }
 .cs-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .cs-color-row { display: flex; align-items: center; gap: 10px; }
-.cs-color-row input[type="color"] { width: 46px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; flex-shrink: 0; }
+.cs-color-row input[type="color"] { width: 46px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); cursor: pointer; flex-shrink: 0; }
 .cs-color-row input[type="text"] { width: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 /* Muharrir o'ng panelidagi rang maydoni (swatch + HEX) -- tor panelga sig'sin */
 .cs-side .cs-color-row { gap: 6px; }
 .cs-side .cs-color-row input[type="color"] { width: 36px; height: 32px; }
 .cs-side .cs-color-row input[type="text"].cs-hex-input { width: 0; flex: 1; min-width: 70px; padding: 6px 8px; text-transform: uppercase; }
-.cs-hex-input.invalid { border-color: #DC2626 !important; box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15); }
+.cs-hex-input.invalid { border-color: var(--bad) !important; box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15); }
 /* Avtopilot wizard: Kreativ studiyadan kelgan rasm banneri (2026-09) */
 .ap-creative-banner { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; border-color: var(--blue); }
 .ap-creative-banner-thumb { flex-shrink: 0; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; background: var(--border-light); display: block; }

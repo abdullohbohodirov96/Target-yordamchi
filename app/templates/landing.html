@@ -71,7 +71,8 @@
 
 <nav class="lp-nav">
   <div class="lp-nav-brand">
-    <img src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix">
+    <img class="lp-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix">
+    <img class="lp-logo lp-logo-dark" src="{{ url_for('static', filename='brand/logo-full-dark.png') }}" alt="Replix">
   </div>
   <div class="lp-nav-links">
     <a href="#imkoniyatlar">{{ t('nav.features') }}</a>

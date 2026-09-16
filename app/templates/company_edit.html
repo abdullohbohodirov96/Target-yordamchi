@@ -31,7 +31,7 @@
     </form>
     <form method="post" onsubmit="return confirm('Rostdan ham to\'xtatilsinmi? Bu kompaniyaning HAMMA foydalanuvchisi CRM\'ga kira olmay qoladi.')">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="suspend">
-      <button type="submit" class="block" style="background:var(--bad, #DC2626)">Hisobni to'xtatish</button>
+      <button type="submit" class="block" style="background:var(--bad-fill)">Hisobni to'xtatish</button>
     </form>
     {% endif %}
   </div>

@@ -21,7 +21,7 @@
 </div>
 
 {% if not configured %}
-<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
+<div class="card" style="margin-bottom:20px; border-color:var(--bad-border)">
   <h2 class="text-bad">Meta ulanmagan</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:8px">
     SMM statistikasi ko'rinishi uchun avval Facebook sahifangiz (va unga ulangan Instagram Business
@@ -216,7 +216,7 @@
             {% endif %}
           </a>
           {% else %}
-          <div style="width:46px; height:46px; border-radius:8px; background:var(--bg-subtle, #F1F5F9); display:flex; align-items:center; justify-content:center">
+          <div style="width:46px; height:46px; border-radius:8px; background:var(--border-light); display:flex; align-items:center; justify-content:center">
             <span class="text-faint" style="font-size:10px">—</span>
           </div>
           {% endif %}
@@ -309,7 +309,11 @@
   // rebrend paytida "Plus Jakarta Sans"ga o'tilgan, lekin bu yerdagi
   // Chart.js konfiguratsiyasi eski shriftda qolib ketgan edi.
   Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
-  Chart.defaults.color = '#64748B';
+  // 2026-09 (dark mode): matn/to'r ranglari endi mavzu tokenlaridan
+  // (--text-dim / --chart-grid, base.html'dagi ReplixTheme) -- qorong'i
+  // rejimda o'qlar/yozuvlar o'qiladigan bo'lsin; mavzu almashganda
+  // diagrammalar jonli qayta bo'yaladi.
+  if (window.ReplixTheme) { window.ReplixTheme.applyChartTheme(); } else { Chart.defaults.color = '#64748B'; }
   window._smmCharts = {};
 
   {% for key, label, color in [('instagram', 'Instagram', '#DB2777'), ('facebook', 'Facebook', '#2563EB')] %}

@@ -199,7 +199,7 @@
 .lp-step::before {
   counter-increment: lp-step; content: counter(lp-step);
   display: flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff;
+  width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--on-ink);
   font-weight: 700; font-size: 13.5px; margin-bottom: 14px;
 }
 .lp-step h4 { font-size: 14.5px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
@@ -328,8 +328,11 @@
   background: var(--ink); border-radius: 18px; padding: 48px; text-align: center;
   display: flex; flex-direction: column; align-items: center; gap: 16px;
 }
-.lp-cta-card h2 { color: #fff; font-size: 26px; margin: 0; letter-spacing: -0.015em; }
+.lp-cta-card h2 { color: var(--on-ink); font-size: 26px; margin: 0; letter-spacing: -0.015em; }
 .lp-cta-card p { color: #94A3B8; font-size: 14.5px; margin: 0; max-width: 460px; }
+/* Qorong'i rejimda --ink och bo'lgani uchun CTA kartasi och fonli bo'ladi --
+   ostidagi izoh matni ham shunga mos to'q kulrang. */
+:root[data-theme="dark"] .lp-cta-card p { color: #475569; }
 
 .lp-footer {
   border-top: 1px solid var(--border-light); padding: 28px 24px; text-align: center;

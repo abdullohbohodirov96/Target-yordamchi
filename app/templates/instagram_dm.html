@@ -44,7 +44,7 @@
 </div>
 
 {% if not configured %}
-<div class="card" style="margin-bottom:20px; border-color:#FCA5A5">
+<div class="card" style="margin-bottom:20px; border-color:var(--bad-border)">
   <h2 class="text-bad">Instagram DM ulanmagan</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
     Bu bo'lim ishlashi uchun Marketplace bo'limida Meta (Facebook/Instagram) ulangan bo'lishi VA Instagram Business
@@ -371,7 +371,11 @@
 // shriftida ("Plus Jakarta Sans") ko'rinishi uchun.
 if (typeof Chart !== 'undefined') {
   Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
-  Chart.defaults.color = '#64748B';
+  // 2026-09 (dark mode): matn/to'r ranglari endi mavzu tokenlaridan
+  // (--text-dim / --chart-grid, base.html'dagi ReplixTheme) -- qorong'i
+  // rejimda o'qlar/yozuvlar o'qiladigan bo'lsin; mavzu almashganda
+  // diagrammalar jonli qayta bo'yaladi.
+  if (window.ReplixTheme) { window.ReplixTheme.applyChartTheme(); } else { Chart.defaults.color = '#64748B'; }
 }
 new Chart(document.getElementById('chart-dm-trend'), {
   type: 'bar',

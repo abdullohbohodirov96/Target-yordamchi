@@ -21,7 +21,7 @@
   </div>
   <div style="display:flex; flex-direction:column; gap:10px; max-width:760px">
     {% for msg in transcript %}
-    <div style="padding:10px 14px; border-radius:10px; {{ 'background:var(--surface-2,#f0f4ff); margin-right:60px' if msg.role == 'assistant' else 'background:var(--surface,#eef1f5); margin-left:60px' }}">
+    <div style="padding:10px 14px; border-radius:10px; {{ 'background:var(--blue-bg); margin-right:60px' if msg.role == 'assistant' else 'background:var(--border-light); margin-left:60px' }}">
       <div class="text-dim" style="font-size:11.5px; margin-bottom:4px">{{ 'AI-yordamchi' if msg.role == 'assistant' else 'Foydalanuvchi' }}</div>
       <div style="white-space:pre-wrap">{{ msg.content }}</div>
     </div>

@@ -29,7 +29,7 @@
     {% set cdp_date_from = date_from %}
     {% set cdp_date_to = date_to %}
     {% include "_calendar_date_picker.html" %}
-    <a href="{{ url_for('leads_import') }}" class="btn" style="background:#fff; color:var(--ink); border:1px solid var(--border)">Excel import</a>
+    <a href="{{ url_for('leads_import') }}" class="btn" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">Excel import</a>
     <a href="{{ url_for('lead_new') }}" class="btn">+ Yangi lead</a>
   </div>
 </div>

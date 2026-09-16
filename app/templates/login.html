@@ -10,7 +10,7 @@
       <a href="?lang={{ code }}" class="{{ 'active' if current_lang() == code else '' }}">{{ lang_labels[code] }}</a>
       {% endfor %}
     </div>
-    <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
+    <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"><img class="login-logo login-logo-dark" src="{{ url_for('static', filename='brand/logo-full-dark.png') }}" alt="Replix"></div>
     <p class="login-subtitle">{{ t('login.subtitle') }}</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
