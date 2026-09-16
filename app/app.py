@@ -1652,7 +1652,13 @@ def _try_handle_assistant_reply(chat_id: int, message: dict) -> bool:
             origin_manager_id = row.manager_id
             origin_chat_id = row.chat_id
 
-        relay_text = f"\U0001F464 {answered_by} javob berdi:\n{answer_text}"
+        # 2026-09, foydalanuvchi so'rovi ("Replix admin bo'lib javob
+        # berilsin, shaxsiy ism emas -- webda ham, Telegramda ham"):
+        # asl javob beruvchining ismi ichki audit uchun (`row.answered_by`,
+        # superadmin panelida ko'rinadi) saqlanadi, lekin ASL SO'RAGAN
+        # KISHIGA yetkaziladigan matnda DOIM umumiy "Replix admin"
+        # brendi ko'rsatiladi (shaxsiy ism/username sizib chiqmasin).
+        relay_text = f"\U0001F464 Replix admin javob berdi:\n{answer_text}"
         if origin == "web":
             if origin_manager_id:
                 key = f"web_chat_history:{origin_manager_id}"
