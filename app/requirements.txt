@@ -24,3 +24,8 @@ tzdata==2024.2
 # ulanmagan (production'da bir martalik `alembic stamp head` kerak,
 # app/migrations/versions/..._boshlangich_sxema_...py fayliga qarang).
 alembic==1.13.2
+# 2026-09: Cloudflare R2 (S3-mos) -- brend logotipi/kampaniya media/kreativ
+# rasm fayllarini DOIMIY saqlash uchun (`storage_backend.py`). R2_* muhit
+# o'zgaruvchilari sozlanmasa bu paket import qilinadi, lekin hech qanday
+# tarmoq so'rovi yubormaydi (xavfsiz no-op).
+boto3==1.43.95

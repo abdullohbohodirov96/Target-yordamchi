@@ -21,6 +21,7 @@ from pathlib import Path
 
 import db
 import meta_api
+import storage_backend
 
 logger = logging.getLogger("campaign_media")
 
@@ -77,8 +78,24 @@ def _read_bytes(file_storage_or_bytes) -> bytes:
 
 
 def media_file_path(media_row) -> Path:
-    """`CampaignDraftMedia` qatorining diskdagi to'liq yo'li."""
-    return Path(MEDIA_ROOT) / (media_row.storage_path or "")
+    """`CampaignDraftMedia` qatorining diskdagi to'liq yo'li. Render'ning
+    efemer diski tozalangan bo'lsa (yangi deploy'dan keyin) -- avval R2'dan
+    self-heal qilishga urinadi (`storage_backend.ensure_local`), sozlanmagan
+    bo'lsa bugungidek yo'l qaytariladi (chaqiruvchi `.exists()` tekshiradi)."""
+    return storage_backend.ensure_local(MEDIA_ROOT, media_row.storage_path or "", key_prefix="ad_media")
+
+
+def delete_media_file(media_row) -> None:
+    """Lokal fayl VA R2'dagi nusxasini o'chiradi (ikkalasi ham eng yaxshi
+    urinish -- xato bo'lsa faqat log, DB qatorini o'chirishga
+    to'sqinlik qilmaydi)."""
+    try:
+        path = media_file_path(media_row)
+        if path.exists():
+            path.unlink()
+    except Exception as e:  # noqa: BLE001 -- disk xatosi DB tozalashni to'xtatmasin
+        logger.warning("campaign_media: fayl o'chirilmadi (media=%s): %s", getattr(media_row, "id", None), e)
+    storage_backend.delete_object(f"ad_media/{media_row.storage_path or ''}")
 
 
 def save_uploaded_media(session, company_id: int, draft_id: int, file_storage_or_bytes, filename: str, content_type: "str | None") -> "db.CampaignDraftMedia":
@@ -125,9 +142,15 @@ def save_uploaded_media(session, company_id: int, draft_id: int, file_storage_or
         # muhim, 2026-09).
         size_bytes = _stream_video_to_disk(file_storage_or_bytes, dest, limit)
 
+    storage_path = str(rel_dir / stored_name)
+    # 2026-09, R2 doimiy saqlash: disk yozuvi MUVAFFAQIYATLI bo'lgandan
+    # keyin nusxa R2'ga ham yuklanadi (eng yaxshi urinish -- R2 sozlanmagan
+    # yoki xato bo'lsa DB qatorini yaratishga to'sqinlik qilmaydi).
+    storage_backend.upload_file(dest, f"ad_media/{storage_path}")
+
     row = db.CampaignDraftMedia(
         company_id=company_id, draft_id=draft_id, kind=kind, filename=filename,
-        storage_path=str(rel_dir / stored_name), content_type=ct, size_bytes=size_bytes,
+        storage_path=storage_path, content_type=ct, size_bytes=size_bytes,
         width=width, height=height, upload_status="pending",
     )
     session.add(row)

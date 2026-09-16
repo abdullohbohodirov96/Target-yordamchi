@@ -198,8 +198,51 @@ def test_ensure_uploaded_idempotent_and_failure():
         session.close()
 
 
+def test_r2_storage_backend_wired():
+    """2026-09, R2 doimiy saqlash: `save_uploaded_media()` lokal yozuvdan
+    keyin `storage_backend.upload_file`ni to'g'ri key bilan chaqirishi,
+    `media_file_path()` esa `storage_backend.ensure_local`ga o'tishi kerak
+    (R2 o'chiq bo'lganda xatti-harakat bugungidek qolishini alohida
+    tekshiramiz)."""
+    session, c, d = _setup()
+    try:
+        with mock.patch.object(campaign_media.storage_backend, "upload_file", return_value=True) as up:
+            row = campaign_media.save_uploaded_media(session, c.id, d.id, _png_bytes(), "r2.png", "image/png")
+        check("save_uploaded_media -> storage_backend.upload_file chaqirildi", up.call_count == 1)
+        up_args = up.call_args[0]
+        check("upload_file to'g'ri lokal fayl bilan", up_args[0] == campaign_media.media_file_path(row))
+        check("upload_file to'g'ri R2 kaliti bilan", up_args[1] == f"ad_media/{row.storage_path}")
+
+        # media_file_path() -- R2 O'CHIQ bo'lganda (standart holat) hech
+        # qanday download urinmasdan bugungidek Path qaytarishi kerak.
+        with mock.patch.object(campaign_media.storage_backend, "download_file") as dl:
+            path = campaign_media.media_file_path(row)
+            check("media_file_path R2 o'chiqda to'g'ri Path", path == campaign_media.MEDIA_ROOT / row.storage_path)
+            check("media_file_path R2 o'chiqda download urinmaydi", dl.call_count == 0)
+
+        # media_file_path() -- fayl "yo'qolgan" (yangi deploy simulyatsiyasi)
+        # holatda `ensure_local` orqali R2'dan tortishga URINISHI kerak.
+        path.unlink()
+        with mock.patch.object(campaign_media.storage_backend, "enabled", return_value=True), \
+             mock.patch.object(campaign_media.storage_backend, "download_file", return_value=True) as dl2:
+            campaign_media.media_file_path(row)
+            check("media_file_path fayl yo'qolganda+R2 yoqilganda download urinadi", dl2.call_count == 1)
+            check("download to'g'ri key bilan chaqirildi", dl2.call_args[0][0] == f"ad_media/{row.storage_path}")
+
+        # delete_media_file() -- lokal fayl + R2 obyektini ham o'chirishga
+        # urinishi kerak (R2 o'chiq bo'lsa ham xato bermaydi).
+        row2 = campaign_media.save_uploaded_media(session, c.id, d.id, _png_bytes(), "todelete.png", "image/png")
+        with mock.patch.object(campaign_media.storage_backend, "delete_object", return_value=True) as delmock:
+            campaign_media.delete_media_file(row2)
+        check("delete_media_file lokal faylni o'chiradi", not campaign_media.media_file_path(row2).exists())
+        check("delete_media_file storage_backend.delete_object chaqiradi", delmock.call_count == 1 and delmock.call_args[0][0] == f"ad_media/{row2.storage_path}")
+    finally:
+        session.close()
+
+
 test_save_image_and_reject()
 test_ensure_uploaded_idempotent_and_failure()
+test_r2_storage_backend_wired()
 
 print()
 if failures:

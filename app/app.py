@@ -7681,12 +7681,9 @@ def autopilot_media_delete(draft_id: int, media_id: int):
             return jsonify({"error": "Media topilmadi."}), 404
         state = draft.get_state()
         was_selected = str((state.get("ad") or {}).get("media", {}).get("media_id") or "") == str(row.id)
-        try:
-            path = campaign_media.media_file_path(row)
-            if path.exists():
-                path.unlink()
-        except Exception as e:  # noqa: BLE001 -- disk xatosi DB tozalashni to'xtatmasin
-            logger.warning("autopilot_media_delete(%s): fayl o'chirilmadi: %s", media_id, e)
+        # Lokal fayl VA R2'dagi nusxasi (sozlangan bo'lsa) -- ikkalasi ham
+        # eng yaxshi urinish, xato bo'lsa DB tozalashga to'sqinlik qilmaydi.
+        campaign_media.delete_media_file(row)
         session.delete(row)
         if was_selected:
             state["ad"]["media"] = {"media_id": None, "image_hash": None, "video_id": None, "selected_variant": None}
@@ -8251,10 +8248,8 @@ def _creative_send_png(asset_id: int, *, base: bool = False, download: bool = Fa
     try:
         asset = _creative_load_asset(session, asset_id, company)
         if base:
-            if not asset.base_image_storage_path:
-                abort(404)
-            path = creative_studio.CREATIVE_ROOT / asset.base_image_storage_path
-            if not path.exists():
+            path = creative_studio.asset_base_image_path(asset)
+            if path is None or not path.exists():
                 abort(404)
         else:
             try:

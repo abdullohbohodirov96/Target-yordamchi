@@ -76,6 +76,25 @@ services:
         value: "true"
       - key: PAYME_USD_TO_UZS_RATE
         value: "12700"
+      # 2026-09, Render "starter" tarifi diski EFEMER -- har deploy'da
+      # tozalanadi, shu sabab brend logotipi/kampaniya media/kreativ rasm
+      # fayllari yo'qolib qolardi. Cloudflare R2 (S3-mos, bepul tarifi
+      # yetarli) -- doimiy saqlash zaxirasi (`storage_backend.py`). To'rttasi
+      # HAM sozlanmasa, tizim FAQAT lokal diskda ishlashda davom etadi
+      # (bugungidek, buzilmaydi) -- R2 hisobi Cloudflare Dashboard'da
+      # yaratilib, bu qiymatlar shu yerga qo'lda qo'yiladi.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      # Ixtiyoriy: standart `https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+      # o'rniga boshqa (masalan maxsus domen) endpoint kerak bo'lsagina.
+      - key: R2_ENDPOINT_URL
+        sync: false
       - key: CRON_SECRET
         generateValue: true
       - key: FLASK_SECRET_KEY

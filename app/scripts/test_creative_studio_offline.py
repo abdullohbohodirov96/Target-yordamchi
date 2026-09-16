@@ -730,6 +730,86 @@ def test_ai_copywriter_and_phone():
         session.close()
 
 
+def test_r2_storage_backend_wired():
+    """2026-09, R2 doimiy saqlash: logotip/kreativ base+final rasmlari
+    `storage_backend.upload_file`ga to'g'ri key bilan uzatilishi,
+    `brand_logo_file_path`/`brand_logo_original_path`/`export_png_path`/
+    `asset_base_image_path` esa `storage_backend.ensure_local` orqali
+    o'tishi (R2 o'chiq bo'lganda -- bugungidek, download urinmasdan)."""
+    session = db_module.get_session()
+    try:
+        c = _company(session, "R2 Co", plan="trial")
+
+        # --- brend logotip: yuklashda R2'ga yuklanadi ---
+        with mock.patch.object(creative_studio.storage_backend, "upload_file", return_value=True) as up:
+            kit = creative_studio.save_brand_logo(session, c.id, _rgba_png_bytes(), "logo.png", "image/png")
+        check("save_brand_logo -> storage_backend.upload_file chaqirildi", up.call_count == 1)
+        up_args = up.call_args[0]
+        check("logotip -> to'g'ri R2 kaliti", up_args[1] == f"brand_kit/{kit.logo_storage_path}")
+        check("logotip -> lokal fayl bilan chaqirildi", up_args[0].exists() and up_args[0].name == Path(kit.logo_storage_path).name)
+
+        # brand_logo_file_path/original_path -- R2 o'chiqda bugungidek
+        # (download urinmasdan, mavjud lokal faylni qaytaradi).
+        with mock.patch.object(creative_studio.storage_backend, "download_file") as dl:
+            p1 = creative_studio.brand_logo_file_path(kit)
+            p2 = creative_studio.brand_logo_original_path(kit)
+            check("brand_logo_file_path R2 o'chiqda download urinmaydi", dl.call_count == 0)
+            check("brand_logo_original_path R2 o'chiqda to'g'ri fayl", p2.exists())
+            check("brand_logo_file_path natija bor (logo_clean yoki asl)", p1 is not None and p1.exists())
+
+        # Fayl "yo'qolgan" (yangi deploy simulyatsiyasi) + R2 yoqilgan ->
+        # ensure_local orqali download'ga urinishi kerak.
+        original = creative_studio.BRAND_ROOT / kit.logo_storage_path
+        for f in original.parent.glob("logo_clean.*"):
+            f.unlink()
+        original.unlink()
+        with mock.patch.object(creative_studio.storage_backend, "enabled", return_value=True), \
+             mock.patch.object(creative_studio.storage_backend, "download_file", return_value=False) as dl2:
+            creative_studio.brand_logo_original_path(kit)
+            check("brand_logo_original_path fayl yo'qolganda+R2 yoqilganda download urinadi", dl2.call_count == 1)
+            check("download to'g'ri key bilan", dl2.call_args[0][0] == f"brand_kit/{kit.logo_storage_path}")
+        # Faylni tiklab qo'yamiz (keyingi testlar buzilmasin).
+        creative_studio.save_brand_logo(session, c.id, _rgba_png_bytes(), "logo.png", "image/png")
+
+        # --- shablondan yaratilgan kreativ: base.png R2'ga yuklanadi ---
+        with mock.patch.object(creative_studio.storage_backend, "upload_file", return_value=True) as up2, \
+             mock.patch.object(creative_studio, "_openai_request") as req:
+            asset = creative_studio.create_from_template(session, c, None, "luxury_dark")
+        check("create_from_template: OpenAI chaqirilmagan", req.call_count == 0)
+        keys_uploaded = [call.args[1] for call in up2.call_args_list]
+        check("base.png R2'ga yuklandi", f"creative_studio/{asset.base_image_storage_path}" in keys_uploaded)
+        check("final.png R2'ga yuklandi", f"creative_studio/{asset.final_storage_path}" in keys_uploaded)
+
+        # export_png_path -- R2 o'chiqda download urinmasdan mavjud faylni qaytaradi.
+        with mock.patch.object(creative_studio.storage_backend, "download_file") as dl3:
+            out = creative_studio.export_png_path(asset)
+            check("export_png_path R2 o'chiqda download urinmaydi", dl3.call_count == 0 and out.exists())
+
+        # asset_base_image_path -- xuddi shunday, va bo'sh asset -> None.
+        check("asset_base_image_path to'g'ri yo'l qaytaradi", creative_studio.asset_base_image_path(asset) == creative_studio.CREATIVE_ROOT / asset.base_image_storage_path)
+        check("asset_base_image_path bo'sh asset -> None", creative_studio.asset_base_image_path(None) is None)
+
+        # final.png "yo'qolgan" + R2 yoqilgan -> export_png_path ensure_local orqali urinadi.
+        final_path = creative_studio.CREATIVE_ROOT / asset.final_storage_path
+        final_path.unlink()
+        with mock.patch.object(creative_studio.storage_backend, "enabled", return_value=True), \
+             mock.patch.object(creative_studio.storage_backend, "download_file", return_value=False) as dl4:
+            try:
+                creative_studio.export_png_path(asset)
+                check("export_png_path noto'g'ri holatda xato berishi kerak edi", False)
+            except creative_studio.CreativeError:
+                check("final.png yo'qolganda+R2 yoqilganda download urinadi", dl4.call_count == 1)
+                check("download to'g'ri key bilan (final.png)", dl4.call_args[0][0] == f"creative_studio/{asset.final_storage_path}")
+
+        # delete_asset -- R2 prefiksini ham o'chirishga urinishi kerak.
+        with mock.patch.object(creative_studio.storage_backend, "delete_prefix", return_value=True) as delp:
+            creative_studio.delete_asset(session, asset)
+        check("delete_asset -> storage_backend.delete_prefix chaqirildi", delp.call_count == 1)
+        check("delete_prefix to'g'ri prefiks bilan", delp.call_args[0][0] == f"creative_studio/{c.id}/{asset.id}/")
+    finally:
+        session.close()
+
+
 test_templates()
 test_missing_questions_and_placeholders()
 test_quota()
@@ -740,6 +820,7 @@ test_multitenant_isolation()
 test_plans()
 test_logo_background_removal()
 test_ai_copywriter_and_phone()
+test_r2_storage_backend_wired()
 
 print()
 if failures:

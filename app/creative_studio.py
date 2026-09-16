@@ -52,6 +52,7 @@ import requests
 
 import db
 import creative_templates
+import storage_backend
 import company_context as company_context_module
 from call_analysis import (  # noqa: F401 -- umumiy OpenAI infratuzilmasi QAYTA ishlatiladi
     _openai_request, _extract_openai_error, _is_quota_exhausted_response, OpenAICreditExhaustedError,
@@ -230,13 +231,25 @@ def save_brand_logo(session, company_id: int, file_storage_or_bytes, filename: s
     abs_dir = Path(BRAND_ROOT) / rel_dir
     abs_dir.mkdir(parents=True, exist_ok=True)
     # Eski logotip (boshqa kengaytmali) VA eski tozalangan nusxa/marker
-    # qolib ketmasin.
-    for old in list(abs_dir.glob("logo.*")) + list(abs_dir.glob("logo_clean.*")):
+    # qolib ketmasin (R2'dagi eski nusxa ham -- eng yaxshi urinish;
+    # `logo_clean.*` HECH QACHON R2'ga yuklanmagan, faqat lokal keshi o'chiriladi).
+    for old in list(abs_dir.glob("logo.*")):
+        try:
+            storage_backend.delete_object(f"brand_kit/{rel_dir / old.name}")
+            old.unlink()
+        except OSError:
+            pass
+    for old in list(abs_dir.glob("logo_clean.*")):
+        # `logo_clean.*` R2'ga HECH QACHON yuklanmagan (faqat lokal kesh).
         try:
             old.unlink()
         except OSError:
             pass
     (abs_dir / f"logo{ext}").write_bytes(data)
+    # 2026-09, R2 doimiy saqlash: ASL logotip (foydalanuvchi yuklagan)
+    # R2'ga ham yuklanadi -- `logo_clean.png` (avto-kesilgan derivativ kesh)
+    # EMAS, u asl fayldan arzon qayta hisoblanadi, shuning uchun yuklanmaydi.
+    storage_backend.upload_file(abs_dir / f"logo{ext}", f"brand_kit/{rel_dir / f'logo{ext}'}")
     # 2026-09, foydalanuvchi shikoyati: oq/qora fonli (shaffof bo'lmagan)
     # logotip reklamada "oq quti" bo'lib ko'rinardi -- fon YUKLASH paytida
     # BIR MARTA avtomatik kesiladi (`logo_clean.png`), render shu faylni oladi.
@@ -409,7 +422,7 @@ def brand_logo_file_path(brand_kit) -> "Path | None":
     `.exists()` tekshiradi -- avvalgi xatti-harakat saqlangan)."""
     if brand_kit is None or not getattr(brand_kit, "logo_storage_path", None):
         return None
-    original = Path(BRAND_ROOT) / brand_kit.logo_storage_path
+    original = storage_backend.ensure_local(BRAND_ROOT, brand_kit.logo_storage_path, key_prefix="brand_kit")
     if original.exists():
         clean = _ensure_clean_logo(original)
         if clean is not None:
@@ -421,7 +434,7 @@ def brand_logo_original_path(brand_kit) -> "Path | None":
     """Foydalanuvchi yuklagan ASL logotip fayli (kesilmagan)."""
     if brand_kit is None or not getattr(brand_kit, "logo_storage_path", None):
         return None
-    return Path(BRAND_ROOT) / brand_kit.logo_storage_path
+    return storage_backend.ensure_local(BRAND_ROOT, brand_kit.logo_storage_path, key_prefix="brand_kit")
 
 
 # ---------------------------------------------------------------------------
@@ -1296,7 +1309,7 @@ def _asset_rel(asset, name: str) -> str:
 
 def _render_asset(session, asset) -> None:
     """`asset.layers_json` + base rasm -> `final_storage_path` (PNG)."""
-    base_path = Path(CREATIVE_ROOT) / asset.base_image_storage_path
+    base_path = storage_backend.ensure_local(CREATIVE_ROOT, asset.base_image_storage_path, key_prefix="creative_studio")
     if not base_path.exists():
         raise CreativeError("Fon rasmi diskda topilmadi -- qayta generatsiya qiling.")
     size = _target_pixels_for_aspect(asset.aspect)
@@ -1304,6 +1317,10 @@ def _render_asset(session, asset) -> None:
     out_path = Path(CREATIVE_ROOT) / out_rel
     brand_kit = get_brand_kit(session, asset.company_id)
     render_composite(base_path, asset.get_layers(), brand_kit, out_path, target_size=size)
+    # 2026-09, R2 doimiy saqlash: yakuniy kompozit -- foydalanuvchi ko'rgan/
+    # eksport qilgan/Autopilot'ga tashlagan rasm, hech qachon jimgina
+    # yo'qolmasligi kerak.
+    storage_backend.upload_file(out_path, f"creative_studio/{out_rel}")
     asset.final_storage_path = out_rel
     asset.width, asset.height = size
 
@@ -1360,6 +1377,9 @@ def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> 
         d.mkdir(parents=True, exist_ok=True)
         (d / "base.png").write_bytes(data)
         asset.base_image_storage_path = _asset_rel(asset, "base.png")
+        # 2026-09, R2 doimiy saqlash: base.png -- OpenAI'dan qimmat olingan
+        # manba rasm, jimgina yo'qolib qolmasligi SHART.
+        storage_backend.upload_file(d / "base.png", f"creative_studio/{asset.base_image_storage_path}")
         asset.openai_response_id = (response_id or "")[:128] or None
         if not (keep_layers and asset.get_layers()):
             # AI kopirayter (arzon matn modeli) -- xom brif javoblari
@@ -1459,6 +1479,7 @@ def create_from_template(session, company, manager_id, template_key: str, *, pro
         d.mkdir(parents=True, exist_ok=True)
         base.save(d / "base.png", format="PNG")
         asset.base_image_storage_path = _asset_rel(asset, "base.png")
+        storage_backend.upload_file(d / "base.png", f"creative_studio/{asset.base_image_storage_path}")
         ctx = company_context_module.build_company_context(company, session)
         asset.set_layers(_initial_layers_for(asset, ctx, template))
         asset.title = template["name"]
@@ -1488,10 +1509,19 @@ def export_png_path(asset) -> "Path":
     """`final_storage_path`ning to'liq yo'li (fayl bo'lmasa `CreativeError`)."""
     if not asset or not asset.final_storage_path:
         raise CreativeError("Rasm hali tayyor emas.")
-    path = Path(CREATIVE_ROOT) / asset.final_storage_path
+    path = storage_backend.ensure_local(CREATIVE_ROOT, asset.final_storage_path, key_prefix="creative_studio")
     if not path.exists():
         raise CreativeError("Yakuniy rasm diskda topilmadi -- qatlamlarni qayta saqlang yoki qayta generatsiya qiling.")
     return path
+
+
+def asset_base_image_path(asset) -> "Path | None":
+    """Fon (matnsiz) rasmning diskdagi yo'li (`asset` yoki
+    `base_image_storage_path` bo'lmasa `None`) -- `brand_logo_original_path`
+    uslubida, R2'dan self-heal bilan (`ensure_local`)."""
+    if asset is None or not getattr(asset, "base_image_storage_path", None):
+        return None
+    return storage_backend.ensure_local(CREATIVE_ROOT, asset.base_image_storage_path, key_prefix="creative_studio")
 
 
 def export_pdf(asset, out_path: "Path") -> None:
@@ -1538,9 +1568,11 @@ def list_assets(session, company_id: int, *, limit: int = 50) -> list:
 
 
 def delete_asset(session, asset) -> None:
-    """Qatorni va diskdagi papkasini o'chiradi (commit qiladi)."""
+    """Qatorni, diskdagi papkasini VA R2'dagi nusxalarini (sozlangan
+    bo'lsa) o'chiradi (commit qiladi)."""
     import shutil
     d = _asset_dir(asset)
+    r2_prefix = f"creative_studio/{asset.company_id}/{asset.id}/"
     session.delete(asset)
     session.commit()
     try:
@@ -1548,3 +1580,4 @@ def delete_asset(session, asset) -> None:
             shutil.rmtree(d)
     except OSError as e:
         logger.warning("creative_studio: papka o'chirilmadi (%s): %s", d, e)
+    storage_backend.delete_prefix(r2_prefix)
