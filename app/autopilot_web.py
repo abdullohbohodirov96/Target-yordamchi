@@ -55,6 +55,7 @@ ACTION_LABELS = {
     "publish_started": "Nashr boshlandi", "publish_verified": "Nashr yakunlandi (tekshirildi)", "publish_failed": "Nashr xatosi", "ai_edit_rejected": "Chat buyrug'i rad etildi",
     "meta_error": "Meta xatosi", "activated": "Faollashtirildi", "synced": "Sinxronlandi", "imported": "Meta'dan import",
     "archived": "Arxivlandi", "meta_creative_created": "Yangi kreativ yaratildi",
+    "target_analysis_run": "Target Analizi ishga tushdi", "target_analysis_applied": "Target Analizi -- o'zgarish qo'llandi",
 }
 ACTOR_LABELS = {"user": "Foydalanuvchi", "ai": "Replix AI", "system": "Tizim"}
 

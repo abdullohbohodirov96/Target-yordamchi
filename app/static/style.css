@@ -1726,6 +1726,19 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-modal-msg.warn { background: var(--warn-bg); color: var(--warn); }
 .ap-modal-msg ul { margin: 6px 0 0; padding-left: 18px; }
 
+/* 2026-09: Target Analizi -- diagnostika (muammolar) va taklif qilingan
+   before/after o'zgarishlar ro'yxati. */
+.ap-ta-issues { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.ap-ta-issue { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--bg); }
+.ap-ta-issue-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ap-ta-changes { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
+.ap-ta-change { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: #fff; }
+.ap-ta-change code { font-size: 11.5px; color: var(--text-faint); }
+.ap-ta-diff { margin-top: 6px; font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ap-ta-before { color: var(--text-faint); text-decoration: line-through; }
+.ap-ta-arrow { color: var(--text-faint); }
+.ap-ta-after { color: var(--good); font-weight: 600; }
+
 /* 2026-09: nashr modalidagi "Darhol yoqilsin / Pauzada qolsin" tanlovi */
 .ap-launch-toggle { display: flex; gap: 6px 16px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
 .ap-launch-toggle > span:first-child { font-weight: 600; font-size: 13px; color: var(--ink); }

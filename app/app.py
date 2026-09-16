@@ -68,6 +68,10 @@ import ai_campaign_planner
 import campaign_media
 import meta_publish
 import autopilot_web
+# 2026-09, Target Analizi: import qilingan/jonli kampaniyani Meta statistikasi
+# + CRM lid sifati asosida diagnostika qilib, tasdiqlangan o'zgarishlarnigina
+# jonli Meta kampaniyasiga qo'llaydigan AI vosita (avtopilotning bir bo'lagi).
+import target_analysis
 # 2026-09, Kreativ studiya (AI rasm-generatsiya): OpenAI fon + Pillow
 # matn/logo qatlamlari, 20 ta shablon, PNG/PDF eksport, Autopilot mediasi.
 import creative_studio
@@ -7844,6 +7848,128 @@ def autopilot_replan(draft_id: int):
         if getattr(e, "code", None) == 404:
             raise
         return _autopilot_json_error(e, "replan")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/target-analiz", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_target_analiz(draft_id: int):
+    """"Target Analizi": jonli (Meta'ga chiqarilgan) kampaniyani haqiqiy
+    Meta statistikasi + CRM lid sifati + o'rnatilgan yaxshi amaliyotlarga
+    solishtirib diagnostika qiladi. FAQAT o'qiydi -- hech narsani
+    o'zgartirmaydi/qo'llamaydi (buning uchun alohida, ANIQ tasdiq talab
+    qiladigan `/target-analiz/qollash` marshruti bor)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if not draft.meta_campaign_id:
+            return jsonify({"error": "Target Analizi faqat Meta'ga chiqarilgan (jonli) kampaniyalar uchun ishlaydi."}), 400
+        ctx = company_context_module.build_company_context(company, session)
+        try:
+            result = target_analysis.run_diagnosis(
+                session, draft, company, ctx,
+                resolve_geo=autopilot_web.resolve_geo_factory(company),
+                resolve_interests=autopilot_web.resolve_interests_factory(company),
+            )
+        except target_analysis.AnalysisUnavailableError as e:
+            return jsonify({"error": str(e)}), 503
+        autopilot_web.log_event(
+            session, draft, actor="ai", action="target_analysis_run", scope=None,
+            details={"sufficient": result["sufficient"], "reason": result.get("reason"),
+                     "issue_count": len(result.get("issues") or []), "change_count": len(result.get("changes") or []),
+                     "dropped_paths": result.get("dropped_paths") or []},
+            manager_id=_autopilot_manager_id(),
+        )
+        session.commit()
+        return jsonify({"result": result})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "target-analiz")
+    finally:
+        session.close()
+
+
+@app.route("/avtopilot/<int:draft_id>/target-analiz/qollash", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_target_analiz_apply(draft_id: int):
+    """Foydalanuvchi checkbox bilan ALOHIDA-ALOHIDA tasdiqlagan o'zgarish-
+    larnigina qo'llaydi -- {"changes": [{"path": str, "value": ...}, ...]}
+    (Target Analizi javobidan tanlangan qism, boshqa hech narsa). Har bir
+    yo'l QAYTA `is_allowed_path()` bilan tekshiriladi (klientdan kelgan
+    hech narsaga ishonilmaydi) -- `campaign_draft.apply_patch()` (scope
+    bo'yicha, chat-tahrir bilan bir xil `autopilot_web.apply_and_persist_
+    patch()` quvuri) orqali qo'llanadi, so'ng `meta_publish.
+    push_updates_to_meta()` bilan JONLI Meta kampaniyasiga yuboriladi."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    data = request.get_json(silent=True) or {}
+    approved = data.get("changes")
+    if not isinstance(approved, list) or not approved:
+        return jsonify({"error": "Tanlangan o'zgarish yo'q."}), 400
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        if draft.status in ("publishing", "archived"):
+            return jsonify({"error": "Bu qoralamani hozir tahrirlab bo'lmaydi (nashr jarayonida yoki arxivda)."}), 400
+        if not draft.meta_campaign_id:
+            return jsonify({"error": "Target Analizi faqat Meta'ga chiqarilgan (jonli) kampaniyalar uchun ishlaydi."}), 400
+        assets = autopilot_web.safe_meta_assets(company)
+
+        # Faqat ruxsat etilgan yo'llarni, DARAJA (scope) bo'yicha guruhlab
+        # olamiz -- `campaign_draft.apply_patch()` bitta chaqiruvda faqat
+        # BITTA scope qabul qiladi (masalan byudjet -- adset, sarlavha --
+        # ad bo'lishi mumkin, ikkalasi ham tanlangan bo'lishi mumkin).
+        by_scope: dict = {}
+        skipped = []
+        for item in approved:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "").strip()
+            if not campaign_draft.is_allowed_path(path):
+                if path:
+                    skipped.append(path)
+                continue
+            scope = campaign_draft.scope_of_path(path)
+            by_scope.setdefault(scope, {})[path] = item.get("value")
+        if not by_scope:
+            return jsonify({"error": "Tanlangan o'zgarishlarning birortasi ham qo'llab bo'lmaydi.", "skipped": skipped}), 400
+
+        all_changed: list[str] = []
+        for scope, changes in by_scope.items():
+            try:
+                applied_info = autopilot_web.apply_and_persist_patch(
+                    session, draft, {"scope": scope, "changes": changes}, source="USER_OVERRIDDEN",
+                    manager_id=_autopilot_manager_id(), actor="user", action="target_analysis_applied",
+                    details={"changes": changes, "origin": "target_analiz"}, company=company, assets=assets,
+                )
+            except campaign_draft.DraftPatchError as e:
+                return jsonify({"error": str(e)}), 400
+            all_changed.extend(applied_info["changed_paths"])
+
+        try:
+            push_result = meta_publish.push_updates_to_meta(session, draft, company, all_changed, manager_id=_autopilot_manager_id())
+        except meta_publish.PublishError as e:
+            return jsonify({
+                "error": e.friendly, "step": e.step, "changed_paths": all_changed, "skipped": skipped,
+                "draft": _autopilot_payload(session, draft, company, assets),
+            }), 400
+
+        return jsonify({"ok": True, "changed_paths": all_changed, "skipped": skipped, "push": push_result,
+                        "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "target-analiz-qollash")
     finally:
         session.close()
 

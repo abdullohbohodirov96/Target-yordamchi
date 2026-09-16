@@ -67,6 +67,12 @@
     <div class="modal-body" id="ap-modal-preview-body"></div>
   </div>
 </div>
+<div class="modal-overlay" id="ap-modal-target-analiz">
+  <div class="modal-dialog" style="max-width:720px">
+    <div class="modal-header"><h2>&#128269; Target Analizi</h2><button type="button" class="modal-close" data-close="ap-modal-target-analiz" aria-label="Yopish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body" id="ap-modal-target-analiz-body"></div>
+  </div>
+</div>
 
 <script id="ap-data" type="application/json">{{ draft_json|tojson }}</script>
 <script src="{{ url_for('static', filename='autopilot.js') }}?v={{ asset_v('autopilot.js') }}"></script>

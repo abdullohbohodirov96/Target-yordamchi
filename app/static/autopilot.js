@@ -1253,6 +1253,14 @@
     var dots = h('span', { class: 'ap-approve-dots' }, LEVELS.map(function (l) { return h('span', { class: d.approvals[l] ? 'ok' : '', title: LEVEL_LABELS[l] }); }));
     var left = h('div', { class: 'ap-bottombar-left' }, [dots, h('span', { class: 'ap-bottombar-status', text: LEVELS.filter(function (l) { return d.approvals[l]; }).length + '/3 tasdiqlangan' + (d.has_meta_ids ? ' · Meta ID: ' + d.meta.campaign_id : '') })]);
     var right = h('div', { class: 'ap-bottombar-right' });
+    // 2026-09, Target Analizi: faqat Meta'ga chiqarilgan (jonli/import
+    // qilingan) kampaniyalar uchun ma'no beradi -- yangi, hali nashr
+    // qilinmagan qoralamada haqiqiy statistika yo'q.
+    if (d.has_meta_ids) {
+      var taBtn = h('button', { type: 'button', class: 'btn btn-outline ap-btn-sm', html: '&#128269; Target Analizi' });
+      taBtn.addEventListener('click', openTargetAnalizModal);
+      right.appendChild(taBtn);
+    }
     var back = h('button', { type: 'button', class: 'btn btn-outline ap-btn-sm', text: 'Orqaga', disabled: idx <= 0 });
     back.addEventListener('click', function () { if (idx > 0) { setTab(LEVELS[idx - 1]); } });
     right.appendChild(back);
@@ -1439,6 +1447,143 @@
     });
     actions.appendChild(back); actions.appendChild(go); body.appendChild(actions);
     openModal('ap-modal-activate');
+  }
+
+  // ------------------------------------------------------------------
+  // TARGET ANALIZI -- AI diagnostika (Meta statistikasi + CRM lid sifati +
+  // o'rnatilgan yaxshi amaliyotlar), so'ng foydalanuvchi checkbox bilan
+  // ALOHIDA-ALOHIDA tasdiqlagan o'zgarishlarnigina jonli Meta kampaniyasiga
+  // qo'llanadi. Hech narsa avtomatik/oldindan belgilangan holda qo'llanmaydi.
+  // ------------------------------------------------------------------
+  var TA_SEVERITY_LABEL = { past: 'Past', "o'rtacha": "O'rtacha", yuqori: 'Yuqori' };
+  var TA_SEVERITY_CLS = { past: 'dim', "o'rtacha": 'warn', yuqori: 'bad' };
+
+  function taFmtVal(v) {
+    if (v == null || v === '') { return '—'; }
+    if (Array.isArray(v)) {
+      if (!v.length) { return '—'; }
+      return v.map(function (x) { return (x && typeof x === 'object') ? (x.name || x.label || JSON.stringify(x)) : String(x); }).join(', ');
+    }
+    if (typeof v === 'object') { return JSON.stringify(v); }
+    return String(v);
+  }
+
+  function openTargetAnalizModal() {
+    var body = document.getElementById('ap-modal-target-analiz-body');
+    body.innerHTML = '';
+    body.appendChild(h('div', { class: 'ap-empty' }, [
+      h('span', { class: 'btn-spinner' }), ' Tahlil qilinmoqda — Meta statistikasi, CRM va AI xulosasi (bir necha soniya davom etishi mumkin)…'
+    ]));
+    openModal('ap-modal-target-analiz');
+    api('/target-analiz', { method: 'POST', body: {} }).then(function (r) {
+      renderTargetAnaliz(r.result);
+    }).catch(function (e) {
+      body.innerHTML = '';
+      body.appendChild(h('div', { class: 'ap-modal-msg err', text: e.message }));
+      var close = h('button', { type: 'button', class: 'btn btn-outline', text: 'Yopish' });
+      close.addEventListener('click', function () { closeModal('ap-modal-target-analiz'); });
+      body.appendChild(close);
+    });
+  }
+
+  function renderTargetAnaliz(result) {
+    var body = document.getElementById('ap-modal-target-analiz-body');
+    body.innerHTML = '';
+    if (!result) { body.appendChild(h('div', { class: 'ap-modal-msg err', text: 'Natija olinmadi.' })); return; }
+    if (!result.sufficient) {
+      body.appendChild(h('div', { class: 'ap-modal-msg warn', text: result.reason || 'Hali yetarli ma\'lumot yo\'q.' }));
+      var closeEarly = h('div', { class: 'ap-modal-actions' }, [(function () {
+        var b = h('button', { type: 'button', class: 'btn btn-outline', text: 'Yopish' });
+        b.addEventListener('click', function () { closeModal('ap-modal-target-analiz'); });
+        return b;
+      })()]);
+      body.appendChild(closeEarly);
+      return;
+    }
+    if (result.summary) { body.appendChild(h('div', { class: 'ap-field-hint', style: 'margin-bottom:14px;font-size:13px', text: result.summary })); }
+
+    var perf = result.performance || {};
+    var w30 = perf.last_30d || {};
+    var w7 = perf.last_7d || {};
+    var crm = result.crm || {};
+    var dl = h('dl', { class: 'ap-summary-grid' });
+    [
+      ['So\'nggi 7 kun — xarajat', fmtMoney(w7.spend, store.draft.currency)],
+      ['So\'nggi 7 kun — natija', w7.results != null ? (w7.results + ' (' + w7.result_label + ')') : '—'],
+      ['So\'nggi 7 kun — 1 natija narxi', w7.cost_per_result != null ? fmtMoney(w7.cost_per_result, store.draft.currency) : '—'],
+      ['So\'nggi 30 kun — xarajat', fmtMoney(w30.spend, store.draft.currency)],
+      ['So\'nggi 30 kun — natija', w30.results != null ? (w30.results + ' (' + w30.result_label + ')') : '—'],
+      ['Eng yuqori chastota (so\'nggi 7 kun)', perf.max_frequency_recent_7d != null ? perf.max_frequency_recent_7d : '—'],
+      ['CRM lid sifati (30 kun)', crm.total ? (crm.won + ' yutilgan / ' + crm.lost + ' yo\'qotilgan / jami ' + crm.total) : 'Bu davrda CRM\'da lid topilmadi']
+    ].forEach(function (kv) { dl.appendChild(h('dt', { text: kv[0] })); dl.appendChild(h('dd', { text: kv[1] == null ? '—' : String(kv[1]) })); });
+    body.appendChild(dl);
+
+    if (result.issues && result.issues.length) {
+      body.appendChild(sectionTitle('Aniqlangan muammolar'));
+      var issuesWrap = h('div', { class: 'ap-ta-issues' });
+      result.issues.forEach(function (it) {
+        issuesWrap.appendChild(h('div', { class: 'ap-ta-issue' }, [
+          h('div', { class: 'ap-ta-issue-head' }, [
+            h('span', { class: 'badge badge-color-' + (TA_SEVERITY_CLS[it.severity] || 'dim'), text: TA_SEVERITY_LABEL[it.severity] || it.severity }),
+            h('strong', { text: it.issue })
+          ]),
+          it.evidence ? h('div', { class: 'ap-field-hint', text: it.evidence }) : null
+        ]));
+      });
+      body.appendChild(issuesWrap);
+    }
+
+    var selected = {};
+    var applyBtn;
+    function updateApplyBtn() { if (applyBtn) { applyBtn.disabled = !Object.keys(selected).length || !IS_ADMIN; } }
+
+    if (result.changes && result.changes.length) {
+      body.appendChild(sectionTitle('Taklif qilingan o\'zgarishlar — faqat belgilanganlari qo\'llanadi'));
+      var changesWrap = h('div', { class: 'ap-ta-changes' });
+      result.changes.forEach(function (ch, i) {
+        var cb = h('input', { type: 'checkbox', disabled: !IS_ADMIN });
+        cb.addEventListener('change', function () { if (cb.checked) { selected[i] = ch; } else { delete selected[i]; } updateApplyBtn(); });
+        changesWrap.appendChild(h('div', { class: 'ap-ta-change' }, [
+          h('label', { class: 'ap-check' }, [cb, h('code', { text: ch.path })]),
+          h('div', { class: 'ap-ta-diff' }, [
+            h('span', { class: 'ap-ta-before', text: taFmtVal(ch.current_value) }),
+            h('span', { class: 'ap-ta-arrow', text: ' → ' }),
+            h('span', { class: 'ap-ta-after', text: taFmtVal(ch.proposed_value) })
+          ]),
+          ch.why ? h('div', { class: 'ap-field-hint', text: ch.why }) : null
+        ]));
+      });
+      body.appendChild(changesWrap);
+    } else {
+      body.appendChild(h('div', { class: 'ap-field-hint', text: 'AI hozircha aniq, dalilga asoslangan taklif topmadi.' }));
+    }
+
+    var actions = h('div', { class: 'ap-modal-actions' });
+    var close = h('button', { type: 'button', class: 'btn btn-outline', text: 'Yopish' });
+    close.addEventListener('click', function () { closeModal('ap-modal-target-analiz'); });
+    applyBtn = h('button', { type: 'button', class: 'btn ap-btn-good', text: 'Tanlanganlarni qo\'llash', disabled: true });
+    applyBtn.addEventListener('click', function () {
+      var payload = Object.keys(selected).map(function (i) { var ch = selected[i]; return { path: ch.path, value: ch.proposed_value }; });
+      if (!payload.length) { return; }
+      if (!confirm('Tanlangan ' + payload.length + ' ta o\'zgarish JONLI Meta kampaniyasiga yuboriladi. Davom etaymi?')) { return; }
+      applyBtn.disabled = true; close.disabled = true;
+      applyBtn.innerHTML = '<span class="btn-spinner"></span> Qo\'llanmoqda…';
+      api('/target-analiz/qollash', { method: 'POST', body: { changes: payload } }).then(function (r) {
+        body.innerHTML = '';
+        body.appendChild(h('div', { class: 'ap-modal-msg ok', text: 'Qo\'llandi va Meta\'ga yuborildi: ' + ((r.changed_paths || []).join(', ') || 'hech narsa') }));
+        if (r.skipped && r.skipped.length) { body.appendChild(h('div', { class: 'ap-modal-msg warn', text: 'O\'tkazib yuborildi: ' + r.skipped.join(', ') })); }
+        var a2 = h('div', { class: 'ap-modal-actions' });
+        var closeBtn2 = h('button', { type: 'button', class: 'btn', text: 'Yopish' });
+        closeBtn2.addEventListener('click', function () { closeModal('ap-modal-target-analiz'); });
+        a2.appendChild(closeBtn2); body.appendChild(a2);
+        chatSystem('Target Analizi: tanlangan o\'zgarishlar Meta\'ga qo\'llandi.');
+      }).catch(function (e) {
+        body.appendChild(h('div', { class: 'ap-modal-msg err', text: e.message }));
+        close.disabled = false; applyBtn.disabled = false; applyBtn.textContent = 'Qayta urinish';
+      });
+    });
+    actions.appendChild(close); actions.appendChild(applyBtn);
+    body.appendChild(actions);
   }
 
   // ------------------------------------------------------------------

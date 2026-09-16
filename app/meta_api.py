@@ -566,6 +566,32 @@ def get_insights(
     return data.get("data", [])
 
 
+def get_campaign_insights(
+    campaign_id: str,
+    date_preset: str = "last_7d",
+    fields: list[str] | None = None,
+    time_range: dict | None = None,
+    time_increment: int | str | None = None,
+    *,
+    access_token: str | None = None,
+) -> list[dict]:
+    """`get_insights()`dan farqli -- butun reklama hisobi emas, FAQAT bitta
+    ANIQ kampaniyaning statistikasi (`{campaign_id}/insights` endpoint'i,
+    `get_campaign_basic()` kabi to'g'ridan-to'g'ri obyekt ID'siga so'rov).
+    2026-09, Target Analizi (`target_analysis.py`) uchun -- bitta live
+    kampaniyani diagnostika qilishda butun hisobni o'qib, natijani mahalliy
+    filtrlash shart emas."""
+    params = {"fields": ",".join(fields or DEFAULT_FIELDS), "limit": 200}
+    if time_range:
+        params["time_range"] = time_range
+    else:
+        params["date_preset"] = date_preset
+    if time_increment:
+        params["time_increment"] = time_increment
+    data = _get(f"{campaign_id}/insights", params, token=access_token)
+    return data.get("data", [])
+
+
 def get_account_spend(since: str, until: str, *, access_token: str | None = None, ad_account_id: str | None = None) -> float:
     """Berilgan sana oralig'ida (YYYY-MM-DD, ikkalasi ham kiritiladi) butun
     hisobning (barcha kampaniyalar) umumiy xarajatini qaytaradi. Byudjet
