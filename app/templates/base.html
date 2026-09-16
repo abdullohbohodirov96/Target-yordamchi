@@ -56,6 +56,14 @@
 
   <title>{% block title %}Replix{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 5 kun bepul sinov.{% endblock %}">
+  {# 2026-09, foydalanuvchi so'rovi ("repliks desam chiqib kelmayapti,
+     keywordlarni ulab tashla"): klassik <meta name="keywords"> Google'da
+     endi rasmiy ravishda RANKINGGA TA'SIR QILMAYDI (2009'dan buyon) --
+     lekin Yandex va Bing bugun ham buni past darajada signal sifatida
+     hisobga oladi, shu sabab qo'shildi (zarar keltirmaydi). Haqiqiy
+     "Replix qidirganda chiqmayapti" muammosining asosiy sababi bu EMAS --
+     pastdagi izohga qarang. #}
+  <meta name="keywords" content="{% block meta_keywords %}Replix, Replix CRM, Replix Uzbekistan, CRM O'zbekiston, Meta Ads O'zbekiston, Instagram reklama, Facebook reklama, targetolog, SMM hisobot, lidlar boshqaruvi, reklama monitoring{% endblock %}">
   <link rel="canonical" href="{{ request.url_root.rstrip('/') + request.path }}">
   <meta property="og:site_name" content="Replix">
   <meta property="og:type" content="website">
@@ -67,6 +75,7 @@
   <meta name="twitter:title" content="{% block og_title2 %}Replix — reklama, CRM va AI tahlil bitta tizimda{% endblock %}">
   <meta name="twitter:image" content="{{ url_for('static', filename='brand/logo-full.png', _external=True) }}">
   {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
+  {% if yandex_site_verification %}<meta name="yandex-verification" content="{{ yandex_site_verification }}">{% endif %}
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon/favicon-16x16.png') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon/favicon-32x32.png') }}">

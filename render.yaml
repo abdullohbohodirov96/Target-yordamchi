@@ -95,6 +95,18 @@ services:
       # o'rniga boshqa (masalan maxsus domen) endpoint kerak bo'lsagina.
       - key: R2_ENDPOINT_URL
         sync: false
+      # 2026-09, foydalanuvchi so'rovi ("repliks desam chiqib
+      # kelmayapti") -- qidiruv tizimlarida sayt tasdiqlanishi/
+      # indekslanishi uchun. Google Search Console'dan olib
+      # (https://search.google.com/search-console -> URL prefix ->
+      # HTML tag usuli) shu yerga qo'ying; bo'sh qoldirilsa teg
+      # chiqmaydi, xatoga olib kelmaydi.
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      # Ixtiyoriy -- Yandex.Webmaster'dan (webmaster.yandex.com ->
+      # Verification -> Meta tag usuli).
+      - key: YANDEX_SITE_VERIFICATION
+        sync: false
       - key: CRON_SECRET
         generateValue: true
       - key: FLASK_SECRET_KEY

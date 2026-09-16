@@ -551,6 +551,12 @@ app.jinja_env.globals["asset_v"] = _asset_v
 # `GOOGLE_SITE_VERIFICATION` muhit o'zgaruvchisi sifatida qo'shing --
 # bo'sh bo'lsa teg umuman chiqmaydi (xato bermaydi).
 app.jinja_env.globals["google_site_verification"] = os.environ.get("GOOGLE_SITE_VERIFICATION", "")
+# 2026-09, foydalanuvchi so'rovi ("repliks desam chiqib kelmayapti"):
+# Yandex ham O'zbekistonda ishlatiladi va Yandex.Webmaster'ning o'z
+# tasdiqlash tegi bor (Google'nikidan alohida). Qiymatni
+# https://webmaster.yandex.com -> Verification -> "Meta tag" usulidan
+# olib `YANDEX_SITE_VERIFICATION` muhit o'zgaruvchisi sifatida qo'shing.
+app.jinja_env.globals["yandex_site_verification"] = os.environ.get("YANDEX_SITE_VERIFICATION", "")
 
 
 def _format_som(value) -> str:
