@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Lidlar — Replix{% endblock %}
+{% block title %}{{ t('leads.title') }} — Replix{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Lidlar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Meta Lead Ads'dan avtomatik tortilgan + qo'lda qo'shilgan/import qilingan lidlar</p>
+    <h1>{{ t('leads.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('leads.subtitle') }}</p>
   </div>
   <div style="display:flex; gap:8px; align-items:center">
     {# 2026-09, foydalanuvchi so'rovi ("CRM'da ham sanani tanlash kerak
@@ -14,11 +14,11 @@
        faqat period/date_from/date_to'ni yangilaydi. #}
     {% set cdp_id = 'leads' %}
     {% set cdp_presets = [
-      ('today','Bugun'), ('yesterday','Kecha'),
-      ('last_7d',"So'nggi 7 kun"), ('last_30d',"So'nggi 30 kun"), ('last_90d',"So'nggi 90 kun"),
-      ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
-      ('this_month',"Shu oy"), ('last_month',"O'tgan oy"), ('this_year',"Shu yil"),
-      ('maximum','Maksimal'),
+      ('today', t('period.today')), ('yesterday', t('period.yesterday')),
+      ('last_7d', t('period.last_7d')), ('last_30d', t('period.last_30d')), ('last_90d', t('period.last_90d')),
+      ('this_week_mon_today', t('period.this_week')), ('last_week_mon_sun', t('period.last_week')),
+      ('this_month', t('period.this_month')), ('last_month', t('period.last_month')), ('this_year', t('period.this_year')),
+      ('maximum', t('period.maximum')),
     ] %}
     {% set cdp_preset_param = 'period' %}
     {% set cdp_current_preset = period %}
@@ -29,8 +29,8 @@
     {% set cdp_date_from = date_from %}
     {% set cdp_date_to = date_to %}
     {% include "_calendar_date_picker.html" %}
-    <a href="{{ url_for('leads_import') }}" class="btn" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">Excel import</a>
-    <a href="{{ url_for('lead_new') }}" class="btn">+ Yangi lead</a>
+    <a href="{{ url_for('leads_import') }}" class="btn" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">{{ t('leads.excel_import') }}</a>
+    <a href="{{ url_for('lead_new') }}" class="btn">{{ t('leads.new_lead') }}</a>
   </div>
 </div>
 
@@ -42,34 +42,36 @@
 {% if leads_usage and leads_usage.status != 'ok' %}
 <div class="flash {{ 'flash-error' if leads_usage.status == 'over' else 'flash-info' }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
   <span>
+    {# Faqat RAQAMLAR qo'yiladi (used/limit/percent) -- shuning uchun `|safe` xavfsiz. #}
     {% if leads_usage.status == 'over' %}
-    CRM'da <strong>{{ leads_usage.used }} / {{ leads_usage.limit }}</strong> lid ishlatilgan -- joriy tarifingiz limitidan oshdingiz. Yangi lidlar hamon qabul qilinadi, lekin ko'proq joy uchun tarifni yangilashni tavsiya qilamiz.
+    {{ t('leads.usage_over', used=leads_usage.used, limit=leads_usage.limit)|safe }}
     {% else %}
-    CRM'da <strong>{{ leads_usage.used }} / {{ leads_usage.limit }}</strong> lid ishlatilgan ({{ leads_usage.percent }}%) -- tez orada tarifingiz limitiga yetasiz.
+    {{ t('leads.usage_near', used=leads_usage.used, limit=leads_usage.limit, percent=leads_usage.percent)|safe }}
     {% endif %}
   </span>
-  <a href="{{ url_for('pricing') }}" class="text-blue" style="white-space:nowrap">Tarifni yangilash →</a>
+  <a href="{{ url_for('pricing') }}" class="text-blue" style="white-space:nowrap">{{ t('leads.upgrade_plan') }}</a>
 </div>
 {% endif %}
 
 {% if viewing_company %}
 <div class="flash flash-info" style="display:flex; align-items:center; justify-content:space-between; gap:10px">
-  <span><strong>{{ viewing_company.name }}</strong> kompaniyasining lidlari ko'rsatilyapti (platforma egasi rejimi).</span>
-  <a href="{{ url_for('companies') }}" class="text-blue" style="white-space:nowrap">← Kompaniyalarga qaytish</a>
+  {# Kompaniya nomi DB'dan -- `|e` bilan oldindan qochiriladi, keyin `|safe`. #}
+  <span>{{ t('leads.viewing_company', name=(viewing_company.name|e))|safe }}</span>
+  <a href="{{ url_for('companies') }}" class="text-blue" style="white-space:nowrap">{{ t('leads.back_to_companies') }}</a>
 </div>
 {% endif %}
 
 {% if incomplete_count and incomplete_count > 0 %}
 <div class="flash flash-info" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap">
-  <span>⚠️ <strong>{{ incomplete_count }}</strong> ta lidda ism yoki telefon raqami yo'q (chala to'ldirilgan) -- menejerlar ularni to'ldirishi kerak.</span>
-  <a href="{{ url_for('leads_incomplete_export') }}" class="text-blue" style="white-space:nowrap">Excel ro'yxatini yuklab olish ↓</a>
+  <span>{{ t('leads.incomplete_notice', n=incomplete_count)|safe }}</span>
+  <a href="{{ url_for('leads_incomplete_export') }}" class="text-blue" style="white-space:nowrap">{{ t('leads.incomplete_download') }}</a>
 </div>
 {% endif %}
 
 <form method="get" class="searchbar" style="padding:0; margin-bottom:14px">
   <div class="search-input-wrap" style="max-width:320px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" name="q" value="{{ search_q }}" placeholder="Ism, telefon yoki kampaniya bo'yicha qidirish...">
+    <input type="text" name="q" value="{{ search_q }}" placeholder="{{ t('leads.search_placeholder') }}">
   </div>
   {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
   {% if status_group %}<input type="hidden" name="status_group" value="{{ status_group }}">{% endif %}
@@ -84,13 +86,13 @@
 
 {% if status_group %}
 <div class="flash flash-info">
-  Faqat <strong>{{ 'yangi (hali bog\'lanilmagan)' if status_group == 'new' else 'ishlangan (bog\'lanilgan/sifatli/sifatsiz/sotilgan)' }}</strong> lidlar ko'rsatilyapti.
-  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="text-blue">Olib tashlash</a>
+  {{ t('leads.only_group', group=(t('leads.group_new') if status_group == 'new' else t('leads.group_processed')))|safe }}
+  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="text-blue">{{ t('leads.remove_filter') }}</a>
 </div>
 {% endif %}
 
 <div class="filters" style="align-items:center">
-  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter=='' }}">Hammasi</a>
+  <a href="{{ url_for('leads_list', q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter=='' }}">{{ t('common.all') }}</a>
   {% for s in stages %}
   <a href="{{ url_for('leads_list', status=s.key, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="{{ 'active' if status_filter==s.key }}">{{ s.label }}</a>
   {% endfor %}
@@ -100,7 +102,7 @@
   <div class="date-picker" id="leadsFilterDp" style="margin-left:auto">
     <button type="button" class="date-picker-trigger" id="leadsFilterTrigger">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M7 12h10M10 18h4"/></svg>
-      <span>Filtr{% if form_ids or campaign_ids or source_filters %} <span class="badge badge-color-blue" style="margin-left:2px">{{ (form_ids|length) + (campaign_ids|length) + (source_filters|length) }}</span>{% endif %}</span>
+      <span>{{ t('leads.filter') }}{% if form_ids or campaign_ids or source_filters %} <span class="badge badge-color-blue" style="margin-left:2px">{{ (form_ids|length) + (campaign_ids|length) + (source_filters|length) }}</span>{% endif %}</span>
     </button>
     <div class="date-picker-menu" id="leadsFilterMenu" style="min-width:260px">
       <form method="get">
@@ -110,7 +112,7 @@
         {% if viewing_company %}<input type="hidden" name="company_id" value="{{ viewing_company.id }}">{% endif %}
 
         <div class="date-picker-custom">
-          <label>Manba</label>
+          <label>{{ t('leads.source') }}</label>
           <div style="display:flex; flex-direction:column; gap:4px">
             {% for key, label in source_labels.items() %}
             <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; cursor:pointer">
@@ -123,7 +125,7 @@
 
         {% if form_options %}
         <div class="date-picker-custom">
-          <label>Forma</label>
+          <label>{{ t('leads.form') }}</label>
           <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto">
             {% for f in form_options %}
             <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; cursor:pointer">
@@ -142,7 +144,7 @@
            o'zidan ham qo'lda tanlash mumkin. #}
         {% if campaign_options %}
         <div class="date-picker-custom">
-          <label>Target (kampaniya)</label>
+          <label>{{ t('leads.target_campaign') }}</label>
           <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto">
             {% for c in campaign_options %}
             <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; cursor:pointer">
@@ -162,8 +164,8 @@
         {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
         {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
         <div style="display:flex; gap:6px; padding:8px 10px 4px">
-          <button type="submit" class="btn" style="flex:1; padding:6px 10px; font-size:12px">Qo'llash</button>
-          <a href="{{ url_for('leads_list', status=status_filter, q=search_q, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="btn toggle-all-btn-outline" style="flex:0 0 auto; padding:6px 10px; font-size:12px">Tozalash</a>
+          <button type="submit" class="btn" style="flex:1; padding:6px 10px; font-size:12px">{{ t('leads.apply') }}</button>
+          <a href="{{ url_for('leads_list', status=status_filter, q=search_q, period=period, date_from=date_from, date_to=date_to, company_id=(viewing_company.id if viewing_company else none)) }}" class="btn toggle-all-btn-outline" style="flex:0 0 auto; padding:6px 10px; font-size:12px">{{ t('leads.clear') }}</a>
         </div>
       </form>
     </div>
@@ -175,14 +177,14 @@
   <table>
     <thead>
       <tr>
-        <th>Ism</th><th>Telefon</th><th>Target (kampaniya / adset / reklama)</th><th>Forma</th><th>Manba</th><th>Holat</th><th>Menejer</th><th>Sana</th>
+        <th>{{ t('leads.th_name') }}</th><th>{{ t('leads.th_phone') }}</th><th>{{ t('leads.th_target') }}</th><th>{{ t('leads.th_form') }}</th><th>{{ t('leads.th_source') }}</th><th>{{ t('leads.th_status') }}</th><th>{{ t('leads.th_manager') }}</th><th>{{ t('leads.th_date') }}</th>
       </tr>
     </thead>
     <tbody>
       {% for l in leads %}
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
         <td>{{ l.full_name or '—' }}</td>
-        <td class="text-dim">{{ l.phone or '—' }}{% if l.phone2 %} <span class="text-faint" title="Qo'shimcha telefon: {{ l.phone2 }}">+1</span>{% endif %}</td>
+        <td class="text-dim">{{ l.phone or '—' }}{% if l.phone2 %} <span class="text-faint" title="{{ t('leads.extra_phone_title', phone=l.phone2) }}">+1</span>{% endif %}</td>
         <td class="text-dim">
           {{ l.campaign_name or '—' }}{% if l.adset_name %} <span class="text-faint">/ {{ l.adset_name }}</span>{% endif %}{% if l.ad_name %} <span class="text-faint">/ {{ l.ad_name }}</span>{% endif %}
         </td>
@@ -193,20 +195,20 @@
         <td class="text-faint">{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="8">Hali lead yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="8">{{ t('leads.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% if total_pages > 1 %}
   <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 4px 2px; font-size:12.5px" class="text-faint">
-    <span>Jami {{ total_count }} ta lead &middot; {{ page }}/{{ total_pages }}-sahifa</span>
+    <span>{{ t('leads.pagination', total=total_count, page=page, pages=total_pages) }}</span>
     <div style="display:flex; gap:6px">
       {% if page > 1 %}
-      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page-1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">← Oldingi</a>
+      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page-1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">{{ t('leads.prev') }}</a>
       {% endif %}
       {% if page < total_pages %}
-      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page+1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">Keyingi →</a>
+      <a href="{{ url_for('leads_list', status=status_filter, q=search_q, form_id=form_ids, campaign_id=campaign_ids, source=source_filters, period=period, date_from=date_from, date_to=date_to, status_group=status_group, company_id=(viewing_company.id if viewing_company else none), page=page+1) }}" class="btn toggle-all-btn-outline" style="padding:6px 12px; font-size:12.5px">{{ t('leads.next') }}</a>
       {% endif %}
     </div>
   </div>

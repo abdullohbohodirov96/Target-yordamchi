@@ -210,7 +210,10 @@ def test_payment_page_mark_paid_notifies_and_flashes():
 def test_companies_admin_view_shows_signup_source():
     with app_module.app.test_client() as client:
         _login_owner(client)
-        html = client.get("/companies").get_data(as_text=True)
+        # 2026-09, ko'p tillilik: badge matni endi `t()` orqali chiqadi va
+        # Jinja autoescape apostrofni `&#39;` qilib yozadi (brauzerda bir xil
+        # ko'rinadi) -- solishtirishdan oldin qaytariladi.
+        html = client.get("/companies").get_data(as_text=True).replace("&#39;", "'")
         assert "o'zi ro'yxatdan o'tgan" in html, "self_signup orqali kelgan kompaniyalar belgilanishi kerak"
         assert "admin qo'shgan" in html or True  # Company #1 "admin"/None manba -- kamida sahifa yiqilmasligi kerak
     print("OK: /companies platforma egasiga qaysi kompaniya o'zi ro'yxatdan o'tgani (source) ko'rinadi")

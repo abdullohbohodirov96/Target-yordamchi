@@ -60,22 +60,22 @@
   @media (max-width:480px){ .tn-card{right:12px; bottom:80px} .tn-bubble{right:12px; bottom:12px} }
 </style>
 
-<button type="button" class="tn-bubble" id="tnBubble" aria-label="Xabar">
+<button type="button" class="tn-bubble" id="tnBubble" aria-label="{{ t('trial_nudge.message_aria') }}">
   <img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt="">
   <span class="tn-dot" id="tnDot" hidden>1</span>
 </button>
 
-<div class="tn-card" id="tnCard" role="dialog" aria-label="Bepul sinov taklifi">
-  <button type="button" class="tn-close" id="tnClose" aria-label="Yopish">&times;</button>
+<div class="tn-card" id="tnCard" role="dialog" aria-label="{{ t('trial_nudge.dialog_aria') }}">
+  <button type="button" class="tn-close" id="tnClose" aria-label="{{ t('common.close') }}">&times;</button>
   <div class="tn-head">
     <span class="tn-avatar"><img src="{{ url_for('static', filename='brand/logo-icon.png') }}" alt=""></span>
     <div>
       <div class="tn-head-name">Replix</div>
-      <div class="tn-head-sub">AI yordamchi</div>
+      <div class="tn-head-sub">{{ t('trial_nudge.assistant') }}</div>
     </div>
   </div>
-  <p class="tn-text">👋 Hali sinab ko'rmadingizmi? Instagram/Facebook natijalaringizni <strong>5 kun bepul</strong> ko'ring — karta ma'lumoti shart emas.</p>
-  <a href="{{ url_for('signup', plan='trial') }}" class="tn-cta" id="tnCta">5 kun bepul boshlash</a>
+  <p class="tn-text">{{ t('trial_nudge.text')|safe }}</p>
+  <a href="{{ url_for('signup', plan='trial') }}" class="tn-cta" id="tnCta">{{ t('trial_nudge.cta') }}</a>
 </div>
 
 <script>

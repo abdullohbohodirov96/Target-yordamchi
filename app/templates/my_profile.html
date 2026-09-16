@@ -1,55 +1,53 @@
 {% extends "base.html" %}
-{% block title %}Mening profilim — Replix{% endblock %}
+{% block title %}{{ t('profile.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Mening profilim</h1>
-    <p class="page-subtitle" style="margin-bottom:0">{{ current_user.full_name or current_user.username }} ({{ 'Administrator' if current_user.role == 'admin' else 'Menejer' }})</p>
+    <h1>{{ t('profile.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ current_user.full_name or current_user.username }} ({{ t('profile.role_admin') if current_user.role == 'admin' else t('profile.role_manager') }})</p>
   </div>
 </div>
 
 <div class="card">
   <div style="margin-bottom:14px">
-    <strong>Telegram ulanishim</strong>
+    <strong>{{ t('profile.telegram_title') }}</strong>
     <p class="text-faint" style="font-size:12.5px; margin:4px 0 0">
-      Bitta tugma bilan ulaysiz -- hech qanday ID qo'lda kiritilmaydi. Shaxsiy chatga faqat
-      sizga tegishli narsalar keladi (qayta aloqa eslatmalari, lidlar bo'yicha savollar) --
-      umumiy xarajat/byudjet hisobotlari bu yerga kelmaydi.
+      {{ t('profile.telegram_note') }}
     </p>
   </div>
   <div style="display:flex; flex-direction:column; gap:12px; max-width:480px">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border:1px solid var(--border-light); border-radius:10px; padding:12px 14px">
       <div>
-        <div style="font-size:13.5px; font-weight:600">Shaxsiy Telegram</div>
+        <div style="font-size:13.5px; font-weight:600">{{ t('profile.personal_telegram') }}</div>
         {% if my_telegram_connected %}
-          <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">✅ Ulangan</span>
+          <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">{{ t('profile.connected') }}</span>
         {% else %}
-          <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">Ulanmagan</span>
+          <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">{{ t('profile.not_connected') }}</span>
         {% endif %}
       </div>
       <form method="post" action="{{ url_for('settings_connect_telegram_personal') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn">{{ 'Qayta ulash' if my_telegram_connected else 'Bitta tugma bilan ulash' }}</button>
+        <button type="submit" class="btn">{{ t('profile.reconnect') if my_telegram_connected else t('profile.connect_one_click') }}</button>
       </form>
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border:1px solid var(--border-light); border-radius:10px; padding:12px 14px">
       <div>
-        <div style="font-size:13.5px; font-weight:600">Vazifalar guruhi</div>
-        <div class="text-faint" style="font-size:11.5px; margin-top:2px">Kompaniyadagi barcha xodim uchun UMUMIY -- bitta marta ulash yetarli</div>
+        <div style="font-size:13.5px; font-weight:600">{{ t('profile.tasks_group') }}</div>
+        <div class="text-faint" style="font-size:11.5px; margin-top:2px">{{ t('profile.tasks_group_note') }}</div>
         {% if tasks_group_connected %}
-          <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">✅ Ulangan</span>
+          <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">{{ t('profile.connected') }}</span>
         {% else %}
-          <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">Ulanmagan</span>
+          <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">{{ t('profile.not_connected') }}</span>
         {% endif %}
       </div>
       <form method="post" action="{{ url_for('settings_connect_telegram_tasks_group') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn toggle-all-btn-outline">{{ 'Boshqa guruh ulash' if tasks_group_connected else 'Guruhni ulash' }}</button>
+        <button type="submit" class="btn toggle-all-btn-outline">{{ t('profile.connect_other_group') if tasks_group_connected else t('profile.connect_group') }}</button>
       </form>
     </div>
     <span class="text-faint" style="font-size:12px">
-      Guruhni ulash uchun: tugmani bosing &rarr; Telegram guruh tanlash oynasini ko'rsatadi &rarr; guruhni tanlang.
+      {{ t('profile.group_howto') }}
     </span>
   </div>
 </div>

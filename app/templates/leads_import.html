@@ -1,23 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Excel import — Replix{% endblock %}
+{% block title %}{{ t('leads_import.title') }} — Replix{% endblock %}
 {% block content %}
-<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
-<h1>Excel/CSV'dan lead import qilish</h1>
-<p class="page-subtitle">Meta'dan eksport qilingan yoki boshqa manbadagi lead faylini yuklang (.xlsx yoki .csv)</p>
+<a href="{{ url_for('leads_list') }}" class="back-link">{{ t('lead_detail.back') }}</a>
+<h1>{{ t('leads_import.h1') }}</h1>
+<p class="page-subtitle">{{ t('leads_import.subtitle') }}</p>
 
 <div class="card" style="max-width:480px">
   <form method="post" enctype="multipart/form-data">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
-      <label>Fayl</label>
+      <label>{{ t('leads_import.file') }}</label>
       <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
     </div>
     <p class="text-faint" style="margin:0 0 16px; font-size:12.5px">
-      Birinchi qator sarlavha bo'lishi kerak. Tanib olinadigan ustun nomlari: <code>full_name</code>/<code>ism</code>,
-      <code>phone</code>/<code>telefon</code>, <code>email</code>, <code>campaign_name</code>/<code>kampaniya</code>.
-      Telefon raqami bo'yicha dublikatlar avtomatik o'tkazib yuboriladi.
+      {{ t('leads_import.help')|safe }}
     </p>
-    <button type="submit" class="block">Import qilish</button>
+    <button type="submit" class="block">{{ t('leads_import.submit') }}</button>
   </form>
 </div>
 {% endblock %}

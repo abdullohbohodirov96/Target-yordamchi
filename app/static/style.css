@@ -466,6 +466,36 @@ a { color: inherit; text-decoration: none; }
 :root[data-theme="dark"] .theme-toggle .theme-icon-sun { display: block; }
 :root[data-theme="dark"] .theme-toggle .theme-label-to-light { display: inline; }
 
+/* ---------- Til almashtirgich (UZ/RU/EN), sidebar pastida ----------
+   2026-09, ko'p tillilik 2-bosqich. Mavzu tugmasi bilan bir qatorda,
+   oddiy nav-band ko'rinishida. YIG'ILGAN sidebar'da (faqat ikonka) chip
+   ichida joriy til kodi turadi (bosilsa navbatdagi tilga o'tadi);
+   OCHIQ sidebar/mobil drawer'da esa `.nav-text` ichidagi uch bo'lakli
+   "pill" ko'rinadi -- faol til oq/ko'k, qolganlari xira. Pill `.nav-text`
+   qoidalariga bo'ysunadi (yig'ilganda width:0/opacity:0 -- ko'rinmaydi). */
+.lang-switch { cursor: default; padding-top: 6px; padding-bottom: 6px; }
+.lang-switch:hover { background: none; }
+.lang-switch-current {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1;
+  text-decoration: none; cursor: pointer;
+}
+.lang-switch:hover .lang-switch-current { background: var(--surface-hover); color: var(--ink); }
+.nav-text.lang-switch-options {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  border-radius: 8px; background: var(--border-light); flex-shrink: 0;
+}
+.lang-switch-opt {
+  font-size: 11.5px; font-weight: 600; line-height: 1; padding: 6px 9px;
+  border-radius: 6px; color: var(--text-dim); text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+}
+.lang-switch-opt:hover { color: var(--ink); }
+.lang-switch-opt.active { background: var(--card); color: var(--blue); box-shadow: var(--shadow-sm); }
+@media (max-width: 720px) {
+  /* Sensorli ekranda bosish maydoni kattaroq bo'lsin. */
+  .lang-switch-opt { padding: 9px 12px; font-size: 12.5px; }
+}
+
 /* Qorong'i rejimda logotipning och varianti (base.html'dagi izohga
    qarang): asl "eplix" harflari to'q siyohrang -- to'q fonda yo'qoladi. */
 .brand-full-logo-dark, .login-logo-dark, .lp-logo-dark { display: none; }

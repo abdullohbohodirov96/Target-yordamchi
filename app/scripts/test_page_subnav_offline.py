@@ -219,6 +219,10 @@ def test_inner_pages_keep_their_group_subnav():
             assert 'class="page-subnav"' in html and "Menejerlar" in html, f"{path}: Boshqaruv subnav yo'q"
             assert re.search(r'class="nav-item active"[^>]*aria-label="Boshqaruv"', html), f"{path}: sidebar'da Boshqaruv active emas"
             sec = _secondary_subnav(html)
+            # 2026-09, ko'p tillilik: subnav yozuvlari endi `t()` orqali
+            # chiqadi va Jinja autoescape apostrofni `&#39;` qilib yozadi
+            # (brauzerda bir xil ko'rinadi) -- solishtirishdan oldin qaytariladi.
+            sec = sec.replace("&#39;", "'")
             assert re.search(r'class="page-subnav-item active"><span>' + re.escape(label) + r'</span>', sec), f"{path}: '{label}' pill active emas"
     print("OK: ichki sahifalar (yangi lid, import, voronka, savollar, vazifalar, kompaniya, brend) o'z guruhi subnav'ini saqlaydi")
 

@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Menejer faoliyati — Replix{% endblock %}
+{% block title %}{{ t('manager_activity.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Menejer faoliyati</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Har bir menejer tanlangan kun ichida nechta lead bilan ishlagani va nechtasini kvalifikatsiya qilgani.</p>
+    <h1>{{ t('manager_activity.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('manager_activity.subtitle') }}</p>
   </div>
   <div class="page-head-actions" style="display:flex; gap:8px">
-    <a href="{{ url_for('manager_daily_activity', date=yesterday) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == yesterday }}">Kecha</a>
-    <a href="{{ url_for('manager_daily_activity', date=today) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == today }}">Bugun</a>
+    <a href="{{ url_for('manager_daily_activity', date=yesterday) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == yesterday }}">{{ t('period.yesterday') }}</a>
+    <a href="{{ url_for('manager_daily_activity', date=today) }}" class="btn toggle-all-btn-outline {{ 'active' if selected_date == today }}">{{ t('period.today') }}</a>
     <form method="get" style="display:flex; gap:6px; align-items:center">
       <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
     </form>
@@ -21,12 +21,12 @@
   <table>
     <thead>
       <tr>
-        <th>Menejer</th>
-        <th class="num">Gaplashgan lidlar</th>
-        <th class="num">Sifatli qilingan</th>
-        <th class="num">Sifatsiz qilingan</th>
-        <th class="num">Sotilgan</th>
-        <th class="num">Jami harakat</th>
+        <th>{{ t('manager_activity.th_manager') }}</th>
+        <th class="num">{{ t('manager_activity.th_contacted') }}</th>
+        <th class="num">{{ t('manager_activity.th_qualified') }}</th>
+        <th class="num">{{ t('manager_activity.th_unqualified') }}</th>
+        <th class="num">{{ t('manager_activity.th_sold') }}</th>
+        <th class="num">{{ t('manager_activity.th_events') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -40,7 +40,7 @@
         <td class="num text-dim">{{ r.events }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-faint" style="text-align:center; padding:24px 0">Bu kunda hech qanday lead bilan ishlanmagan.</td></tr>
+      <tr><td colspan="6" class="text-faint" style="text-align:center; padding:24px 0">{{ t('manager_activity.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -48,7 +48,6 @@
 </div>
 
 <p class="text-faint" style="font-size:12.5px; margin-top:12px">
-  "Gaplashgan lidlar" -- shu kun ichida kamida bir marta statusi/izohi saqlangan ALOHIDA lidlar soni
-  (bitta lead bir necha marta saqlansa ham bir marta hisoblanadi). "Jami harakat" -- barcha saqlashlar soni (takrorlar bilan).
+  {{ t('manager_activity.footnote') }}
 </p>
 {% endblock %}

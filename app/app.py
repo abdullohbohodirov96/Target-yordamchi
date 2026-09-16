@@ -416,10 +416,12 @@ def _set_tenant_scope():
 
 # ---------------------------------------------------------------------------
 # Ko'p tillilik (2026-09, foydalanuvchi so'rovi: "сделай на русском, на
-# узбекском и на всех") -- HOZIRCHA faqat mijoz birinchi ko'radigan
-# sahifalar uchun (bosh sahifa, kirish, ro'yxatdan o'tish; `lang.py`ga
-# qarang). `?lang=ru` bilan bir marta o'tilsa, tanlov cookie-sessiyada
-# saqlanadi -- keyingi sahifalarda qayta ko'rsatish shart emas.
+# узбекском и на всех"). 1-bosqichda faqat mijoz birinchi ko'radigan
+# sahifalar (bosh sahifa, kirish, ro'yxatdan o'tish) edi; 2-bosqichda
+# (ingliz tili + ichki CRM qobig'i + asosiy CRM sahifalari, `lang.py`ga
+# qarang) HAR BIR sahifa uchun ishlaydi. `?lang=ru` bilan bir marta
+# o'tilsa, tanlov cookie-sessiyada saqlanadi -- keyingi sahifalarda qayta
+# ko'rsatish shart emas.
 # ---------------------------------------------------------------------------
 @app.before_request
 def _set_language():
@@ -429,10 +431,25 @@ def _set_language():
     g.lang = flask_session.get("lang", lang_module.DEFAULT_LANG)
 
 
-app.jinja_env.globals["t"] = lambda key: lang_module.translate(key, getattr(g, "lang", lang_module.DEFAULT_LANG))
+def _lang_url(code: str) -> str:
+    """Til almashtirgich havolasi: JORIY sahifaning URL'i (barcha query
+    parametrlari -- filtr/sahifa/sana saqlanib qoladi) + `lang=<code>`.
+    Oddiy `?lang=ru` bo'lsa, masalan /leads?status=new dagi filtr yo'qolib
+    ketardi. Endpoint aniqlanmasa (404 va h.k.) oddiy `?lang=`ga qaytadi."""
+    try:
+        args = request.args.to_dict(flat=False)
+        args["lang"] = [code]
+        return url_for(request.endpoint, **(request.view_args or {}), **args)
+    except Exception:
+        return "?lang=" + code
+
+
+# `t('key')` va dinamik qismli `t('leads.count', n=5)` -- ikkalasi ham.
+app.jinja_env.globals["t"] = lambda key, **kw: lang_module.translate(key, getattr(g, "lang", lang_module.DEFAULT_LANG), **kw)
 app.jinja_env.globals["current_lang"] = lambda: getattr(g, "lang", lang_module.DEFAULT_LANG)
 app.jinja_env.globals["supported_langs"] = lang_module.SUPPORTED_LANGS
 app.jinja_env.globals["lang_labels"] = lang_module.LANG_LABELS
+app.jinja_env.globals["lang_url"] = _lang_url
 
 
 @app.teardown_request

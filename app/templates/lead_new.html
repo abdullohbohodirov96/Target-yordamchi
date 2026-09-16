@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Yangi lead — Replix{% endblock %}
+{% block title %}{{ t('lead_new.title') }} — Replix{% endblock %}
 {% block content %}
-<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
-<h1>Yangi lead qo'shish</h1>
-<p class="page-subtitle">Qo'lda kelgan (qo'ng'iroq, DM, do'kon va h.k.) leadni bu yerdan qo'shing</p>
+<a href="{{ url_for('leads_list') }}" class="back-link">{{ t('lead_detail.back') }}</a>
+<h1>{{ t('lead_new.h1') }}</h1>
+<p class="page-subtitle">{{ t('lead_new.subtitle') }}</p>
 
 <div class="card" style="max-width:480px">
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field"><label>Ism familiya</label><input type="text" name="full_name" autofocus></div>
-    <div class="field"><label>Telefon</label><input type="text" name="phone" placeholder="+998..."></div>
-    <div class="field"><label>Qo'shimcha telefon (ixtiyoriy)</label><input type="text" name="phone2" placeholder="+998..."></div>
-    <div class="field"><label>Email (ixtiyoriy)</label><input type="text" name="email"></div>
-    <div class="field"><label>Kampaniya nomi (ixtiyoriy)</label><input type="text" name="campaign_name"></div>
-    <div class="field"><label>Adset nomi (ixtiyoriy)</label><input type="text" name="adset_name"></div>
-    <div class="field"><label>Reklama / video nomi (ixtiyoriy)</label><input type="text" name="ad_name"></div>
-    <button type="submit" class="block">Qo'shish</button>
+    <div class="field"><label>{{ t('lead_new.full_name') }}</label><input type="text" name="full_name" autofocus></div>
+    <div class="field"><label>{{ t('lead_new.phone') }}</label><input type="text" name="phone" placeholder="+998..."></div>
+    <div class="field"><label>{{ t('lead_new.phone2') }}</label><input type="text" name="phone2" placeholder="+998..."></div>
+    <div class="field"><label>{{ t('lead_new.email') }}</label><input type="text" name="email"></div>
+    <div class="field"><label>{{ t('lead_new.campaign') }}</label><input type="text" name="campaign_name"></div>
+    <div class="field"><label>{{ t('lead_new.adset') }}</label><input type="text" name="adset_name"></div>
+    <div class="field"><label>{{ t('lead_new.ad') }}</label><input type="text" name="ad_name"></div>
+    <button type="submit" class="block">{{ t('common.add') }}</button>
   </form>
 </div>
 {% endblock %}

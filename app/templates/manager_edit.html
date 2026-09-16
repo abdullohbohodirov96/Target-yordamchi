@@ -1,50 +1,50 @@
 {% extends "base.html" %}
-{% block title %}{{ m.username }} — Tahrirlash — Replix{% endblock %}
+{% block title %}{{ m.username }} — {{ t('manager_edit.title') }} — Replix{% endblock %}
 {% block content %}
-<a href="{{ url_for('managers') }}" class="back-link">&larr; Menejerlar ro'yxatiga qaytish</a>
+<a href="{{ url_for('managers') }}" class="back-link">{{ t('manager_edit.back') }}</a>
 <h1>{{ m.full_name or m.username }}</h1>
-<p class="page-subtitle">Username, ism, rol, faollik va parolni shu yerdan o'zgartirish mumkin</p>
+<p class="page-subtitle">{{ t('manager_edit.subtitle') }}</p>
 
 <div class="card" style="max-width:420px">
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
-      <label>Username</label>
+      <label>{{ t('managers.username') }}</label>
       <input type="text" name="username" value="{{ m.username }}" required>
     </div>
     <div class="field">
-      <label>To'liq ism</label>
+      <label>{{ t('managers.full_name') }}</label>
       <input type="text" name="full_name" value="{{ m.full_name or '' }}">
     </div>
     <div class="field">
-      <label>Telefon raqami (ixtiyoriy)</label>
+      <label>{{ t('managers.phone_optional') }}</label>
       <input type="text" name="phone_number" value="{{ m.phone_number or '' }}" placeholder="+998901234567">
     </div>
     <div class="field">
-      <label>Moi Zvonki login/email (ixtiyoriy) — qo'ng'iroqlarni shu menejerga bog'lash uchun</label>
-      <input type="text" name="moizvonki_login" value="{{ m.moizvonki_login or '' }}" placeholder="menejer@pochta.uz">
+      <label>{{ t('managers.moizvonki') }}</label>
+      <input type="text" name="moizvonki_login" value="{{ m.moizvonki_login or '' }}" placeholder="{{ t('managers.moizvonki_placeholder') }}">
     </div>
     <div class="field">
-      <label>Telegram ID (ixtiyoriy) — qayta aloqa eslatmasi shaxsan shu yerga yuboriladi</label>
-      <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789">
+      <label>{{ t('managers.telegram_id') }}</label>
+      <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="{{ t('managers.telegram_placeholder') }}">
     </div>
     <div class="field">
-      <label>Ish boshlagan sana (ixtiyoriy, KPI rejasini oy o'rtasidan proratsiya qilish uchun)</label>
+      <label>{{ t('managers.hire_date') }}</label>
       <input type="date" name="hire_date" value="{{ m.hire_date.strftime('%Y-%m-%d') if m.hire_date else '' }}">
     </div>
     <div class="field">
-      <label>Rol</label>
+      <label>{{ t('managers.role') }}</label>
       <select name="role">
-        <option value="manager" {{ 'selected' if m.role=='manager' }}>Menejer</option>
-        <option value="admin" {{ 'selected' if m.role=='admin' }}>Admin</option>
+        <option value="manager" {{ 'selected' if m.role=='manager' }}>{{ t('managers.role_manager') }}</option>
+        <option value="admin" {{ 'selected' if m.role=='admin' }}>{{ t('managers.role_admin') }}</option>
       </select>
     </div>
     <div class="field">
-      <label>Yangi parol (ixtiyoriy — bo'sh qoldirsangiz o'zgarmaydi)</label>
-      <input type="password" name="password" placeholder="Yangi parol">
+      <label>{{ t('manager_edit.new_password') }}</label>
+      <input type="password" name="password" placeholder="{{ t('manager_edit.new_password_placeholder') }}">
     </div>
     <div class="field">
-      <label>Dostup berilgan bo'limlar (menejer uchun; admin uchun har doim hammasi ochiq)</label>
+      <label>{{ t('managers.modules') }}</label>
       {% for key, label in modules %}
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
         <input type="checkbox" name="allowed_modules" value="{{ key }}" id="mod_{{ key }}" style="width:auto" {{ 'checked' if key in m.allowed_modules }}>
@@ -54,9 +54,9 @@
     </div>
     <div class="field" style="display:flex; align-items:center; gap:8px">
       <input type="checkbox" name="is_active" id="is_active" style="width:auto" {{ 'checked' if m.is_active }}>
-      <label for="is_active" style="margin:0">Faol hisob</label>
+      <label for="is_active" style="margin:0">{{ t('manager_edit.active') }}</label>
     </div>
-    <button type="submit" class="block">Saqlash</button>
+    <button type="submit" class="block">{{ t('common.save') }}</button>
   </form>
 </div>
 {% endblock %}

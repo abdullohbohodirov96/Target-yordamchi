@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Qayta aloqa — Replix{% endblock %}
+{% block title %}{{ t('followups.title') }} — Replix{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Qayta aloqa</h1>
-    <p class="page-subtitle" style="margin-bottom:0">{{ 'Barcha menejerlar bo\'yicha' if is_admin else 'Sizga biriktirilgan lidlar bo\'yicha' }} rejalashtirilgan qayta aloqalar -- eng shoshilinchi (kechikkan/bugungi) tepada</p>
+    <h1>{{ t('followups.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('followups.subtitle', scope=(t('followups.scope_all') if is_admin else t('followups.scope_mine'))) }}</p>
   </div>
 </div>
 
 <div class="kpi-grid" style="margin-bottom:20px">
-  <div class="kpi-card"><div class="kpi-label">Muddati o'tgan</div><div class="kpi-value bad">{{ overdue_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Bugun</div><div class="kpi-value" style="color:var(--warn)">{{ today_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Jami rejalashtirilgan</div><div class="kpi-value">{{ rows|length }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('followups.overdue') }}</div><div class="kpi-value bad">{{ overdue_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('period.today') }}</div><div class="kpi-value" style="color:var(--warn)">{{ today_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('followups.total_planned') }}</div><div class="kpi-value">{{ rows|length }}</div></div>
 </div>
 
 <div class="panel">
@@ -19,13 +19,13 @@
   <table>
     <thead>
       <tr>
-        <th>Holat</th>
-        <th>Ism</th>
-        <th>Telefon</th>
-        {% if is_admin %}<th>Menejer</th>{% endif %}
-        <th>Lead holati</th>
-        <th>Qayta aloqa sanasi</th>
-        <th>Izoh</th>
+        <th>{{ t('followups.th_status') }}</th>
+        <th>{{ t('followups.th_name') }}</th>
+        <th>{{ t('followups.th_phone') }}</th>
+        {% if is_admin %}<th>{{ t('followups.th_manager') }}</th>{% endif %}
+        <th>{{ t('followups.th_lead_status') }}</th>
+        <th>{{ t('followups.th_date') }}</th>
+        <th>{{ t('followups.th_note') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -33,14 +33,14 @@
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=r.id) }}'">
         <td>
           {% if r.urgency == 'overdue' %}
-          <span class="badge badge-color-bad">{{ -r.days_diff }} kun kechikdi</span>
+          <span class="badge badge-color-bad">{{ t('lead_detail.days_overdue', n=-r.days_diff) }}</span>
           {% elif r.urgency == 'today' %}
-          <span class="badge badge-color-warn">bugun</span>
+          <span class="badge badge-color-warn">{{ t('lead_detail.today') }}</span>
           {% else %}
-          <span class="badge badge-color-dim">{{ r.days_diff }} kundan keyin</span>
+          <span class="badge badge-color-dim">{{ t('lead_detail.in_days', n=r.days_diff) }}</span>
           {% endif %}
         </td>
-        <td>{{ r.full_name or 'Noma\'lum' }}</td>
+        <td>{{ r.full_name or t('followups.unknown') }}</td>
         <td class="text-dim">{{ r.phone or '—' }}</td>
         {% if is_admin %}<td class="text-dim">{{ r.assigned_manager }}</td>{% endif %}
         <td class="text-dim">{{ r.status }}</td>
@@ -48,7 +48,7 @@
         <td class="text-dim">{{ r.next_contact_note or '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="{{ 7 if is_admin else 6 }}">Hali qayta aloqa rejalashtirilmagan -- lead sahifasida "Qayta aloqa" bo'limidan sana belgilang.</td></tr>
+      <tr class="empty-row"><td colspan="{{ 7 if is_admin else 6 }}">{{ t('followups.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

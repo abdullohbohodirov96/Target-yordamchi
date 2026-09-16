@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Kompaniyalar — Replix{% endblock %}
+{% block title %}{{ t('companies.title') }} — Replix{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Kompaniyalar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Multi-tenant asosi -- har bir mijoz-kompaniyaning tarif/to'lov holati. Faqat platforma egasi ko'radi.</p>
+    <h1>{{ t('companies.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('companies.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
     <a href="{{ url_for('landing_contact_submissions_view') }}" class="btn toggle-all-btn-outline">
-      Sayt murojaatlari
+      {{ t('companies.site_submissions') }}
     </a>
     <a href="{{ url_for('ai_conversations_view') }}" class="btn toggle-all-btn-outline">
-      AI-suhbatlar
+      {{ t('companies.ai_conversations') }}
     </a>
     <button type="button" class="btn" id="newCompanyBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      Yangi kompaniya
+      {{ t('companies.new_company') }}
     </button>
   </div>
 </div>
@@ -23,27 +23,27 @@
 <div class="modal-overlay{{ ' open' if show_new_company_modal }}" id="newCompanyModal">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h2>Yangi kompaniya qo'shish</h2>
-      <button type="button" class="modal-close" id="newCompanyClose" aria-label="Yopish">
+      <h2>{{ t('companies.new_company_title') }}</h2>
+      <button type="button" class="modal-close" id="newCompanyClose" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="page-subtitle" style="margin-top:-6px">Mijozlar endi <a href="{{ url_for('signup') }}" class="text-blue" target="_blank">/signup</a> orqali o'zlari ham ro'yxatdan o'ta oladi -- bu forma faqat SIZ qo'lda (masalan telefon/uchrashuvda kelishilgan mijoz uchun) kompaniya ochib berish uchun. Yangi kompaniya 5 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi.</p>
+      <p class="page-subtitle" style="margin-top:-6px">{{ t('companies.new_note_prefix') }} <a href="{{ url_for('signup') }}" class="text-blue" target="_blank">/signup</a> {{ t('companies.new_note_suffix') }}</p>
       <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" required autofocus></div>
-        <div class="field"><label>Email (ixtiyoriy)</label><input type="email" name="email" placeholder="mijoz@misol.uz"></div>
+        <div class="field"><label>{{ t('companies.name') }}</label><input type="text" name="name" required autofocus></div>
+        <div class="field"><label>{{ t('companies.email_optional') }}</label><input type="email" name="email" placeholder="{{ t('companies.email_placeholder') }}"></div>
         <div class="field">
-          <label>Tarif</label>
+          <label>{{ t('companies.plan') }}</label>
           <select name="plan">
-            <option value="trial">Sinov (trial)</option>
-            <option value="start">Boshlang'ich</option>
-            <option value="business">Biznes</option>
-            <option value="unlimited">Cheklovsiz</option>
+            <option value="trial">{{ t('companies.plan_trial') }}</option>
+            <option value="start">{{ t('companies.plan_start') }}</option>
+            <option value="business">{{ t('companies.plan_business') }}</option>
+            <option value="unlimited">{{ t('companies.plan_unlimited') }}</option>
           </select>
         </div>
-        <button type="submit" class="block">Qo'shish</button>
+        <button type="submit" class="block">{{ t('common.add') }}</button>
       </form>
     </div>
   </div>
@@ -52,34 +52,34 @@
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Nomi</th><th>Manba</th><th>Admin login</th><th>Tarif</th><th>Menejerlar</th><th>To'lov muddati</th><th>Holat</th><th>Qo'shilgan</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('companies.th_name') }}</th><th>{{ t('companies.th_source') }}</th><th>{{ t('companies.th_admin') }}</th><th>{{ t('companies.th_plan') }}</th><th>{{ t('companies.th_managers') }}</th><th>{{ t('companies.th_paid_until') }}</th><th>{{ t('companies.th_status') }}</th><th>{{ t('companies.th_created') }}</th><th></th></tr></thead>
     <tbody>
       {% for c in companies %}
       <tr class="rowlink" onclick="window.location='{{ url_for('company_edit', company_id=c.id) }}'">
-        <td>{{ c.name }}{% if c.id == 1 %} <span class="badge badge-color-blue">siz</span>{% endif %}{% if c.is_new %} <span class="badge badge-color-good">yangi</span>{% endif %}</td>
+        <td>{{ c.name }}{% if c.id == 1 %} <span class="badge badge-color-blue">{{ t('companies.badge_you') }}</span>{% endif %}{% if c.is_new %} <span class="badge badge-color-good">{{ t('companies.badge_new') }}</span>{% endif %}</td>
         <td class="text-dim">
-          {% if c.source == 'self_signup' %}<span class="badge badge-color-blue">o'zi ro'yxatdan o'tgan</span>
-          {% else %}<span class="badge badge-color-dim">admin qo'shgan</span>{% endif %}
+          {% if c.source == 'self_signup' %}<span class="badge badge-color-blue">{{ t('companies.source_self') }}</span>
+          {% else %}<span class="badge badge-color-dim">{{ t('companies.source_admin') }}</span>{% endif %}
         </td>
         <td class="text-dim">{{ c.first_admin_username or '—' }}</td>
         <td class="text-dim">{{ c.plan_name }}</td>
         <td class="text-dim">{{ c.manager_count }}</td>
-        <td class="text-dim">{{ c.paid_until.strftime('%Y-%m-%d') if c.paid_until else 'cheklovsiz' }}</td>
+        <td class="text-dim">{{ c.paid_until.strftime('%Y-%m-%d') if c.paid_until else t('companies.unlimited') }}</td>
         <td>
-          {% if not c.is_active %}<span class="badge badge-color-dim">to'xtatilgan</span>
-          {% elif c.is_paid_up %}<span class="badge badge-color-good">faol</span>
-          {% else %}<span class="badge badge-color-bad">to'lov tugagan</span>{% endif %}
+          {% if not c.is_active %}<span class="badge badge-color-dim">{{ t('companies.status_suspended') }}</span>
+          {% elif c.is_paid_up %}<span class="badge badge-color-good">{{ t('companies.status_active') }}</span>
+          {% else %}<span class="badge badge-color-bad">{{ t('companies.status_expired') }}</span>{% endif %}
         </td>
         <td class="text-dim">{{ c.created_at.strftime('%d.%m.%Y') if c.created_at else '—' }}</td>
         <td class="num" onclick="event.stopPropagation()">
-          <a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue">Tahrirlash</a>
+          <a href="{{ url_for('company_edit', company_id=c.id) }}" class="text-blue">{{ t('common.edit') }}</a>
           {# 2026-09, foydalanuvchi so'rovi: "kompaniyalarni tanlab, leadlarga
              kirish mumkin bo'lsin ... crm ko'rish tugmasini qo'shish kerak
              ko'kda" -- impersonatsiyadan farqli, hisobga kirib-chiqmasdan
              (`db.scoped_as`, `/leads?company_id=...`), qaysi forma(lar) va
              yangi/ishlangan holatni oldindan tanlab, to'g'ridan-to'g'ri
              CRM'ga o'tkazadi. #}
-          <button type="button" class="text-blue crm-view-open" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px" data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">CRM ko'rish</button>
+          <button type="button" class="text-blue crm-view-open" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px" data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">{{ t('companies.crm_view') }}</button>
           {% if c.id != 1 %}
           {# 2026-09, "CEO dashboard + impersonatsiya" ishi: platforma egasi
              mijoz kompaniyaning admin hisobi nomidan to'liq kirib, ular
@@ -90,23 +90,23 @@
           {% if not impersonation_active %}
           <form method="post" action="{{ url_for('company_impersonate', company_id=c.id) }}" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">Ko'rish</button>
+            <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">{{ t('companies.view') }}</button>
           </form>
           {% endif %}
           <form method="post" action="{{ url_for('company_toggle_active', company_id=c.id) }}" style="display:inline"
-                {% if c.is_active %}onsubmit="return confirm('Rostdan ham &#39;{{ c.name }}&#39; to\'xtatilsinmi? Bu kompaniyaning hamma foydalanuvchisi tizimga kira olmay qoladi.')"{% endif %}>
+                {% if c.is_active %}onsubmit="return confirm({{ t('companies.confirm_suspend', name=c.name)|tojson|forceescape }})"{% endif %}>
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="text-blue" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px">
-              {{ "To'xtatish" if c.is_active else "Yoqish" }}
+              {{ t('companies.suspend') if c.is_active else t('companies.activate') }}
             </button>
           </form>
           <button type="button" class="text-bad company-delete-open" style="background:none; border:none; padding:0; font:inherit; cursor:pointer; margin-left:10px"
-                  data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">O'chirish</button>
+                  data-company-id="{{ c.id }}" data-company-name="{{ c.name }}">{{ t('common.delete') }}</button>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="9">Hali kompaniya yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="9">{{ t('companies.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -121,24 +121,23 @@
 <div class="modal-overlay" id="companyDeleteModal">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h2 class="text-bad">Kompaniyani o'chirish</h2>
-      <button type="button" class="modal-close" id="companyDeleteClose" aria-label="Yopish">
+      <h2 class="text-bad">{{ t('companies.delete_title') }}</h2>
+      <button type="button" class="modal-close" id="companyDeleteClose" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
+      {# Statik HTML (ichida <span id="companyDeleteName"> -- JS to'ldiradi), shuning uchun `|safe`. #}
       <p class="page-subtitle" style="margin-top:-6px">
-        <strong>"<span id="companyDeleteName"></span>"</strong> kompaniyasi va unga tegishli BARCHA ma'lumot
-        (menejerlar, leadlar, qo'ng'iroqlar, SMM, Instagram xabarlari, sozlamalar) <strong class="text-bad">butunlay va qaytarib bo'lmaydigan tarzda</strong> o'chiriladi.
-        Faqat kirishni to'xtatmoqchi bo'lsangiz, buning o'rniga "To'xtatish"ni ishlating.
+        {{ t('companies.delete_warning')|safe }}
       </p>
       <form method="post" id="companyDeleteForm">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
-          <label>Tasdiqlash uchun kompaniya nomini aynan shunday yozing: <strong id="companyDeleteNameHint"></strong></label>
+          <label>{{ t('companies.delete_confirm_label') }} <strong id="companyDeleteNameHint"></strong></label>
           <input type="text" id="companyDeleteInput" name="confirm_name" autocomplete="off" autofocus>
         </div>
-        <button type="submit" class="block" id="companyDeleteSubmit" disabled style="background:var(--bad-fill)">Butunlay o'chirish</button>
+        <button type="submit" class="block" id="companyDeleteSubmit" disabled style="background:var(--bad-fill)">{{ t('companies.delete_forever') }}</button>
       </form>
     </div>
   </div>
@@ -152,31 +151,31 @@
 <div class="modal-overlay" id="crmViewModal">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h2>"<span id="crmViewCompanyName"></span>" — CRM ko'rish</h2>
-      <button type="button" class="modal-close" id="crmViewClose" aria-label="Yopish">
+      <h2>"<span id="crmViewCompanyName"></span>" — {{ t('companies.crm_view') }}</h2>
+      <button type="button" class="modal-close" id="crmViewClose" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="page-subtitle" style="margin-top:-6px">Kerak bo'lsa, faqat ma'lum forma(lar)dan kelgan va/yoki yangi/ishlangan lidlarni tanlab ko'rsatishingiz mumkin. Hech narsa belgilamasangiz, hammasi ko'rsatiladi.</p>
+      <p class="page-subtitle" style="margin-top:-6px">{{ t('companies.crm_view_note') }}</p>
 
       <div class="field">
-        <label>Holat</label>
+        <label>{{ t('companies.status') }}</label>
         <select id="crmViewStatusGroup">
-          <option value="">Hammasi</option>
-          <option value="new">Yangi (hali bog'lanilmagan)</option>
-          <option value="processed">Ishlangan (bog'lanilgan/sifatli/sifatsiz/sotilgan)</option>
+          <option value="">{{ t('common.all') }}</option>
+          <option value="new">{{ t('companies.group_new') }}</option>
+          <option value="processed">{{ t('companies.group_processed') }}</option>
         </select>
       </div>
 
       <div class="field">
-        <label>Forma(lar)</label>
+        <label>{{ t('companies.forms') }}</label>
         <div id="crmViewFormsList" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px">
-          <span class="text-faint" style="font-size:13px">Yuklanmoqda...</span>
+          <span class="text-faint" style="font-size:13px">{{ t('companies.loading') }}</span>
         </div>
       </div>
 
-      <button type="button" class="block" id="crmViewGoBtn">CRM'ga o'tish</button>
+      <button type="button" class="block" id="crmViewGoBtn">{{ t('companies.go_crm') }}</button>
     </div>
   </div>
 </div>
@@ -240,13 +239,13 @@
       currentCompanyId = btn.getAttribute('data-company-id');
       nameEl.textContent = btn.getAttribute('data-company-name');
       statusSel.value = '';
-      formsList.innerHTML = '<span class="text-faint" style="font-size:13px">Yuklanmoqda...</span>';
+      formsList.innerHTML = '<span class="text-faint" style="font-size:13px">' + {{ t('companies.loading')|tojson }} + '</span>';
       overlay.classList.add('open');
 
       var url = "{{ url_for('company_lead_forms', company_id=0) }}".replace('/0/', '/' + currentCompanyId + '/');
       fetch(url).then(function (r) { return r.json(); }).then(function (data) {
         if (!data.forms || !data.forms.length) {
-          formsList.innerHTML = '<span class="text-faint" style="font-size:13px">Bu kompaniyada hali Instant Formadan kelgan lead yo\'q.</span>';
+          formsList.innerHTML = '<span class="text-faint" style="font-size:13px">' + {{ t('companies.no_forms')|tojson }} + '</span>';
           return;
         }
         formsList.innerHTML = data.forms.map(function (f) {
@@ -255,7 +254,7 @@
             (f.name || f.id).replace(/</g, '&lt;') + ' <span class="text-faint">(' + f.count + ')</span></label>';
         }).join('');
       }).catch(function () {
-        formsList.innerHTML = '<span class="text-bad" style="font-size:13px">Formalarni yuklab bo\'lmadi.</span>';
+        formsList.innerHTML = '<span class="text-bad" style="font-size:13px">' + {{ t('companies.forms_error')|tojson }} + '</span>';
       });
     });
   });

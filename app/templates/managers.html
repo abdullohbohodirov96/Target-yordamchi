@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}{{ page_title or "Menejerlar" }} — Replix{% endblock %}
+{% block title %}{{ page_title or t('managers.title') }} — Replix{% endblock %}
 {% block content %}
 {% if back_url %}
-<a href="{{ back_url }}" class="back-link">&larr; Kompaniyaga qaytish</a>
+<a href="{{ back_url }}" class="back-link">{{ t('managers.back_company') }}</a>
 {% endif %}
 <div class="page-head">
   <div>
-    <h1>{{ page_title or "Menejerlar" }}</h1>
+    <h1>{{ page_title or t('managers.title') }}</h1>
     <p class="page-subtitle" style="margin-bottom:0">
-      {% if back_url %}Platforma egasi sifatida shu kompaniyaning menejerlarini boshqaryapsiz.
-      {% else %}Faqat admin yangi menejer/admin hisob qo'sha oladi{% endif %}
+      {% if back_url %}{{ t('managers.subtitle_owner') }}
+      {% else %}{{ t('managers.subtitle') }}{% endif %}
     </p>
   </div>
   <div class="page-head-actions">
     <button type="button" class="btn" id="newManagerBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      Yangi hisob
+      {{ t('managers.new_account') }}
     </button>
   </div>
 </div>
@@ -23,30 +23,30 @@
 <div class="modal-overlay{{ ' open' if show_new_manager_modal }}" id="newManagerModal">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h2>Yangi hisob qo'shish</h2>
-      <button type="button" class="modal-close" id="newManagerClose" aria-label="Yopish">
+      <h2>{{ t('managers.new_account_title') }}</h2>
+      <button type="button" class="modal-close" id="newManagerClose" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
       <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field"><label>Username</label><input type="text" name="username" required autofocus></div>
-        <div class="field"><label>To'liq ism</label><input type="text" name="full_name"></div>
-        <div class="field"><label>Parol</label><input type="password" name="password" required></div>
-        <div class="field"><label>Telefon raqami (ixtiyoriy)</label><input type="text" name="phone_number" placeholder="+998901234567"></div>
-        <div class="field"><label>Moi Zvonki login/email (ixtiyoriy) — qo'ng'iroqlarni shu menejerga bog'lash uchun</label><input type="text" name="moizvonki_login" placeholder="menejer@pochta.uz"></div>
-        <div class="field"><label>Telegram ID (ixtiyoriy) — qayta aloqa eslatmasi shaxsan shu yerga yuboriladi</label><input type="text" name="telegram_user_id" placeholder="masalan 123456789"></div>
-        <div class="field"><label>Ish boshlagan sana (ixtiyoriy, KPI rejasini oy o'rtasidan proratsiya qilish uchun)</label><input type="date" name="hire_date"></div>
+        <div class="field"><label>{{ t('managers.username') }}</label><input type="text" name="username" required autofocus></div>
+        <div class="field"><label>{{ t('managers.full_name') }}</label><input type="text" name="full_name"></div>
+        <div class="field"><label>{{ t('managers.password') }}</label><input type="password" name="password" required></div>
+        <div class="field"><label>{{ t('managers.phone_optional') }}</label><input type="text" name="phone_number" placeholder="+998901234567"></div>
+        <div class="field"><label>{{ t('managers.moizvonki') }}</label><input type="text" name="moizvonki_login" placeholder="{{ t('managers.moizvonki_placeholder') }}"></div>
+        <div class="field"><label>{{ t('managers.telegram_id') }}</label><input type="text" name="telegram_user_id" placeholder="{{ t('managers.telegram_placeholder') }}"></div>
+        <div class="field"><label>{{ t('managers.hire_date') }}</label><input type="date" name="hire_date"></div>
         <div class="field">
-          <label>Rol</label>
+          <label>{{ t('managers.role') }}</label>
           <select name="role">
-            <option value="manager">Menejer</option>
-            <option value="admin">Admin</option>
+            <option value="manager">{{ t('managers.role_manager') }}</option>
+            <option value="admin">{{ t('managers.role_admin') }}</option>
           </select>
         </div>
         <div class="field">
-          <label>Dostup berilgan bo'limlar (menejer uchun; admin uchun har doim hammasi ochiq)</label>
+          <label>{{ t('managers.modules') }}</label>
           {% for key, label in modules %}
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
             <input type="checkbox" name="allowed_modules" value="{{ key }}" id="new_mod_{{ key }}" style="width:auto" {{ 'checked' if key in default_modules }}>
@@ -54,7 +54,7 @@
           </div>
           {% endfor %}
         </div>
-        <button type="submit" class="block">Qo'shish</button>
+        <button type="submit" class="block">{{ t('common.add') }}</button>
       </form>
     </div>
   </div>
@@ -63,7 +63,7 @@
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Username</th><th>Ism</th><th>Rol</th><th>Telefon</th><th>Moi Zvonki login</th><th>Telegram ID</th><th>Ish boshlagan</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('managers.th_username') }}</th><th>{{ t('managers.th_name') }}</th><th>{{ t('managers.th_role') }}</th><th>{{ t('managers.th_phone') }}</th><th>{{ t('managers.th_moizvonki') }}</th><th>{{ t('managers.th_telegram') }}</th><th>{{ t('managers.th_hired') }}</th><th>{{ t('managers.th_active') }}</th><th></th></tr></thead>
     <tbody>
       {% for m in managers %}
       <tr class="rowlink" onclick="window.location='{{ url_for('manager_edit', manager_id=m.id) }}'">
@@ -74,8 +74,8 @@
         <td class="text-dim">{{ m.moizvonki_login or '—' }}</td>
         <td class="text-dim">{{ m.telegram_user_id or '—' }}</td>
         <td class="text-dim">{{ m.hire_date.strftime('%d.%m.%Y') if m.hire_date else '—' }}</td>
-        <td><span class="badge {{ 'badge-color-good' if m.is_active else 'badge-color-dim' }}">{{ 'faol' if m.is_active else 'nofaol' }}</span></td>
-        <td class="num"><a href="{{ url_for('manager_edit', manager_id=m.id) }}" class="text-blue" onclick="event.stopPropagation()">Tahrirlash</a></td>
+        <td><span class="badge {{ 'badge-color-good' if m.is_active else 'badge-color-dim' }}">{{ t('managers.active') if m.is_active else t('managers.inactive') }}</span></td>
+        <td class="num"><a href="{{ url_for('manager_edit', manager_id=m.id) }}" class="text-blue" onclick="event.stopPropagation()">{{ t('common.edit') }}</a></td>
       </tr>
       {% endfor %}
     </tbody>
