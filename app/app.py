@@ -44,7 +44,7 @@ import manager_reporting
 import lang as lang_module
 import tz_utils
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, IgDmAdSource, CannedReply, ImpersonationLog, MetaEventLog
+from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, IgDmAdSource, CannedReply, ImpersonationLog, MetaEventLog, KVEntry
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -236,12 +236,14 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
     try:
         manager_row = session.query(Manager).filter_by(username=current_user.username).first() if current_user.is_authenticated else None
         company_id = getattr(current_user, "company_id", None) if current_user.is_authenticated else None
-        session.add(AssistantUnanswered(
+        row = AssistantUnanswered(
             company_id=company_id,
             manager_id=manager_row.id if manager_row else None,
             manager_name=manager_name,
             question=question[:2000],
-        ))
+            origin="web",  # javob-relesi (pastga qarang) shu orqali qaysi mexanizm (web_chat_history vs Telegram) ishlatilishini biladi
+        )
+        session.add(row)
         session.commit()
     except Exception:
         logger.exception("Javobsiz savolni saqlashda xatolik")
@@ -253,6 +255,15 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
     # kunlik hisobot/CPL hard-kill ogohlantirishi ketadigan guruh) DARHOL
     # Telegram xabari yuboriladi -- oldin bu faqat "Sozlamalar" sahifasidagi
     # ro'yxatda (aktiv tekshirib turishni talab qiladi) ko'rinardi.
+    #
+    # 2026-09 QO'SHIMCHA ("javob-relesi"): endi bu xabar `tg_send_tracked()`
+    # bilan yuboriladi -- BIRINCHI muvaffaqiyatli yuborilgan nishonning
+    # `message_id`si (o'sha chat_id bilan BIRGA) qatorga yoziladi, shunda
+    # platforma egasi aynan SHU xabarga Telegram'da REPLY qilsa, webhook
+    # javobni to'g'ri manager'ning web-suhbatiga qaytarib qo'ya oladi.
+    # Qolgan (agar bo'lsa) nishonlarga ODATDAGIDEK (kuzatilmagan) xabar
+    # ketaveradi -- barcha nishonlarga ogohlantirish borishi shart, faqat
+    # BITTASI (birinchi muvaffaqiyatli) "javob eshiti"ga aylanadi.
     try:
         company_name = None
         if company_id:
@@ -263,10 +274,23 @@ def _log_unanswered_question(session, manager_name: str | None, question: str) -
             "\U0001F914 AI-yordamchi javob topolmadi\n"
             + (f"Kompaniya: {company_name}\n" if company_name else "")
             + f"Kim so'radi: {who_asked}\n"
-            f"Savol: {question[:500]}"
+            f"Savol: {question[:500]}\n\n"
+            "↩️ Javob berish uchun shu xabarga REPLY qilib yozing -- javobingiz avtomatik shu odamga yetkaziladi."
         )
+        tracked_saved = False
         for chat_id in _daily_report_targets():
-            tg_send(chat_id, text)
+            if not tracked_saved:
+                result = tg_send_tracked(chat_id, text)
+                if result.get("ok") and result.get("message_id"):
+                    try:
+                        row.notify_chat_id = str(chat_id)
+                        row.notify_message_id = result["message_id"]
+                        session.commit()
+                    except Exception:
+                        logger.exception("notify_message_id'ni saqlashda xatolik (row_id=%s)", row.id)
+                    tracked_saved = True
+            else:
+                tg_send(chat_id, text)
     except Exception:
         logger.exception("Javobsiz savol haqida Telegram xabarini yuborishda xatolik")
 
@@ -633,6 +657,31 @@ def tg_send_checked(chat_id: int, text: str) -> dict:
         return {"ok": False, "error": meta_api.safe_error_message(e)}
 
 
+def tg_send_tracked(chat_id: int, text: str) -> dict:
+    """`tg_send_checked()` bilan BIR XIL tuzilish, lekin ustiga yuborilgan
+    xabarning `message_id`sini ham qaytaradi -- 2026-09, "AI-yordamchi
+    javobsiz savoliga javob-relesi" ishi: platforma egasiga ketgan
+    ogohlantirish xabarining `message_id`si `AssistantUnanswered.
+    notify_message_id`ga yozib qo'yiladi, shunda u shu xabarga REPLY
+    qilganda webhook qaysi savol haqida ekanini topa oladi.
+
+    Alohida funksiya sifatida qo'shildi (`tg_send_checked`ning o'zi
+    o'zgartirilmadi) -- boshqa chaqiruvchi joylar uning aynan hozirgi
+    `{"ok", "error"}` shaklidagi natijasiga tayanadi."""
+    import requests
+    if not TELEGRAM_TOKEN:
+        return {"ok": False, "message_id": None, "error": "TELEGRAM_BOT_TOKEN server tomonida sozlanmagan."}
+    try:
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": text}, timeout=20)
+        body = r.json()
+        if body.get("ok"):
+            return {"ok": True, "message_id": (body.get("result") or {}).get("message_id"), "error": None}
+        return {"ok": False, "message_id": None, "error": body.get("description", str(body))}
+    except Exception as e:
+        logger.exception("Telegramga tracked xabar yuborishda xatolik")
+        return {"ok": False, "message_id": None, "error": meta_api.safe_error_message(e)}
+
+
 _OWNER_ONLY_COMMANDS = {"/status", "/analyze", "/pause", "/resume"}
 _BOT_IDENTITY_CACHE: dict = {}
 
@@ -950,11 +999,45 @@ def _handle_company_free_text(chat_id: int, company: Company, user_text: str) ->
     if unanswered:
         session = get_session()
         try:
-            session.add(AssistantUnanswered(
+            row = AssistantUnanswered(
                 company_id=company.id, manager_id=None, manager_name="Telegram",
                 question=user_text[:2000],
-            ))
+                origin="telegram", chat_id=str(chat_id),
+            )
+            session.add(row)
             session.commit()
+
+            # 2026-09 TUZATISH ("javob-relesi" ishi paytida aniqlandi):
+            # ILGARI bu yerda savol FAQAT bazaga yozilardi -- platforma
+            # egasiga HECH QANDAY Telegram ogohlantirishi ketmasdi (faqat
+            # web yo'li -- `_log_unanswered_question` -- xabar yuborardi).
+            # Bu javob-relesini FOYDASIZ qilardi (javob berish uchun
+            # REPLY qilinadigan xabarning O'ZI yo'q edi). Endi xuddi web
+            # yo'lidagi bilan bir xil uslubdagi xabar, `_daily_report_
+            # targets()`ning barcha nishonlariga, `tg_send_tracked()`
+            # orqali yuboriladi -- birinchi muvaffaqiyatli yuborilgan
+            # xabarning `message_id`si qatorga saqlanadi.
+            try:
+                text = (
+                    "\U0001F914 AI-yordamchi javob topolmadi (Telegram)\n"
+                    f"Kompaniya: {company.name}\n"
+                    "Kim so'radi: Telegram (kompaniya chati)\n"
+                    f"Savol: {user_text[:500]}\n\n"
+                    "↩️ Javob berish uchun shu xabarga REPLY qilib yozing -- javobingiz avtomatik shu chatga yetkaziladi."
+                )
+                tracked_saved = False
+                for target_chat_id in _daily_report_targets():
+                    if not tracked_saved:
+                        result = tg_send_tracked(target_chat_id, text)
+                        if result.get("ok") and result.get("message_id"):
+                            row.notify_chat_id = str(target_chat_id)
+                            row.notify_message_id = result["message_id"]
+                            session.commit()
+                            tracked_saved = True
+                    else:
+                        tg_send(target_chat_id, text)
+            except Exception:
+                logger.exception("Telegram AI: javobsiz savol haqida ogohlantirish yuborishda xatolik")
         except Exception:
             logger.exception("Telegram AI: javobsiz savolni yozishda xatolik")
             session.rollback()
@@ -1487,6 +1570,116 @@ def api_assistant():
     return jsonify({"reply": result, "is_admin": is_admin})
 
 
+# ---------------------------------------------------------------------------
+# 2026-09, "AI-yordamchi javob-relesi" so'rovi: AI javob topolmagan savol
+# haqida platforma egasiga Telegram orqali ogohlantirish ketadi
+# (`_log_unanswered_question()`/`_handle_company_free_text()`, yuqorida --
+# `tg_send_tracked()` orqali, `notify_chat_id`/`notify_message_id` bilan
+# `AssistantUnanswered`ga saqlanadi). Platforma egasi SHU xabarga Telegram
+# ichida oddiygina REPLY qilib javob yozsa, javob ASL so'ragan suhbatga
+# (web-vidjet tarixi yoki tegishli Telegram chat) avtomatik qaytariladi --
+# bu funksiya SHU relesning o'zi.
+# ---------------------------------------------------------------------------
+
+def _try_handle_assistant_reply(chat_id: int, message: dict) -> bool:
+    """`webhook()`dan, ODATDAGI buyruq/erkin-matn dispetcheridan OLDIN
+    chaqiriladi. `True` qaytarsa -- bu xabar "javob-rele"si sifatida
+    to'liq ishlov berilgan, webhook shu yerda to'xtashi kerak. `False` --
+    hech narsa mos kelmadi (yoki reply umuman yo'q), chaqiruvchi ODATDAGI
+    yo'lga (buyruq/mention/erkin-matn) o'tishi kerak -- bu funksiya HECH
+    QACHON haqiqiy foydalanuvchi xabarini "yutib" yubormasligi kerak.
+
+    XAVFSIZLIK + TO'G'RILIK (MUHIM): Telegram'ning `message_id`si HAR BIR
+    CHAT ICHIDA mustaqil hisoblanadi (global emas) -- shuning uchun
+    moslashtirish FAQAT `notify_message_id` bo'yicha emas, ANIQ o'sha
+    xabar yuborilgan `notify_chat_id` bilan BIRGA (ikkalasi ham) bo'lishi
+    SHART, aks holda boshqa chatdagi tasodifan bir xil raqamli xabarga
+    REPLY qilingan xabar noto'g'ri savolga "javob" sifatida bog'lanib
+    qolishi mumkin edi. Ustiga, `_is_owner_telegram_chat()` bilan
+    qo'shimcha mustaqil tasdiq ham talab qilinadi -- bitta tekshiruv
+    yetarli bo'lmasin."""
+    reply_to = message.get("reply_to_message")
+    if not reply_to or not reply_to.get("message_id"):
+        return False
+    if not _is_owner_telegram_chat(chat_id):
+        # Faqat platforma egasining O'Z chatidan kelgan REPLY'lar
+        # ko'rib chiqiladi -- boshqa har qanday chat oddiy xabar sifatida
+        # (odatdagi dispetcherga) davom etadi.
+        return False
+
+    session = get_session()
+    try:
+        with db.unscoped():
+            row = (
+                session.query(AssistantUnanswered)
+                .filter_by(
+                    notify_message_id=reply_to["message_id"],
+                    notify_chat_id=str(chat_id),
+                    answered_at=None,
+                )
+                .first()
+            )
+            if row is None:
+                return False
+
+            answer_text = (message.get("text") or "").strip()
+            if not answer_text:
+                return False
+
+            # Javob bergan kishining ismi: avval shu chatga bog'langan
+            # Manager (`telegram_user_id`) bo'lsa uning to'liq ismi,
+            # aks holda Telegram'ning o'z `from.first_name`/`username`i.
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
+            from_info = message.get("from") or {}
+            answered_by = (
+                (manager.full_name if manager and manager.full_name else None)
+                or from_info.get("first_name")
+                or from_info.get("username")
+                or "Admin"
+            )
+
+            row.answered_at = dt.datetime.utcnow()
+            row.answered_by = answered_by
+            row.answer_text = answer_text[:2000]
+            session.commit()
+
+            # `with db.unscoped()`dan chiqishdan OLDIN (va `session.close()`
+            # dan OLDIN) kerakli maydonlarni oddiy Python o'zgaruvchilariga
+            # ko'chirib olamiz -- `expire_on_commit` sababli obyektning o'zi
+            # keyinroq (sessiya yopilgandan keyin) ishlatilsa DetachedInstance
+            # xatosiga olib kelishi mumkin edi.
+            origin = row.origin
+            origin_manager_id = row.manager_id
+            origin_chat_id = row.chat_id
+
+        relay_text = f"\U0001F464 {answered_by} javob berdi:\n{answer_text}"
+        if origin == "web":
+            if origin_manager_id:
+                key = f"web_chat_history:{origin_manager_id}"
+                history = kv_store.get_json(key, default=[])
+                history.append({"role": "assistant", "content": relay_text})
+                kv_store.set_json(key, history[-12:])  # web-vidjet tarixi bilan bir xil chegara (12)
+            # `manager_id is None` -- kutilmagan holat (web-yo'l doim
+            # manager_id'ni to'ldiradi), lekin xato bermasdan jim
+            # o'tkaziladi -- javob-relesi ishlamasa ham platforma egasi
+            # "✅ yuborildi" ko'rmaydi (pastga qarang), shu bilan sezadi.
+        elif origin == "telegram" and origin_chat_id:
+            try:
+                target_chat_id = int(origin_chat_id)
+            except (TypeError, ValueError):
+                target_chat_id = None
+            if target_chat_id is not None:
+                tg_send(target_chat_id, relay_text)
+
+        tg_send(chat_id, "✅ Javobingiz yuborildi.")
+        return True
+    except Exception:
+        logger.exception("AI-yordamchi javob-relesi xatosi (chat_id=%s)", chat_id)
+        return False
+    finally:
+        session.close()
+
+
 @app.route("/api/webhook", methods=["POST"])
 @csrf.exempt  # Telegram server-serverga chaqiradi -- brauzer sessiyasi/CSRF tokeni yo'q
 def webhook():
@@ -1498,6 +1691,19 @@ def webhook():
     chat_id = message["chat"]["id"]
     chat_type = message.get("chat", {}).get("type", "private")
     text = message["text"].strip()
+
+    try:
+        if _try_handle_assistant_reply(chat_id, message):
+            return jsonify({"ok": True})
+    except Exception:
+        # `_try_handle_assistant_reply()`ning o'zi ICHKARIDA try/except
+        # bilan o'ralgan (hech qachon bu yergacha xato tashlab yetib
+        # kelmasligi kerak) -- bu tashqi qatlam FAQAT qo'shimcha
+        # kafolat: ISTALGAN kutilmagan xato ham botning ODATDAGI
+        # ishlashini (pastdagi dispetcher) hech qachon to'xtatmasligi
+        # kerak.
+        logger.exception("Webhook: javob-rele tekshiruvida kutilmagan xatolik")
+
     try:
         if text.startswith("/"):
             parts = text.split()
@@ -5678,6 +5884,135 @@ def landing_contact_submissions_view():
         except (TypeError, ValueError):
             pass
     return render_template("landing_contact_submissions.html", submissions=rows)
+
+
+@app.route("/companies/ai-suhbatlar")
+@login_required
+@platform_owner_required
+def ai_conversations_view():
+    """2026-09, "superadmin AI-suhbatlar paneli" so'rovi: platforma egasi
+    BUTUN PLATFORMA bo'yicha AI-yordamchi (web vidjet + Telegram bot)
+    suhbatlarini -- va ular ichida AI javob TOPOLMAGAN savollarni (javob-
+    relesi bilan birga) -- BITTA sahifada ko'radi. Faqat O'QISH uchun
+    (hech narsa o'zgartirmaydi, javob berish Telegram orqali -- yuqoridagi
+    `_try_handle_assistant_reply()`ga qarang).
+
+    Web/Telegram suhbat tarixi `kv_store` (`KVEntry`)da saqlanadi --
+    kalitlar orqali (`web_chat_history:<manager_id>` / `conv:<chat_id>`)
+    LIKE bilan qidiriladi. `KVEntry`ning o'zi tenant-filtriga TUSHMAYDI
+    (`_COMPANY_SCOPED_MODELS`da yo'q), lekin undan topilgan `manager_id`
+    orqali `Manager`ni (tenant-filtrga tushadi) qidirishda `db.unscoped()`
+    SHART -- aks holda faqat platforma egasining O'Z kompaniyasidagi
+    menejerlar topiladi, boshqa mijoz-kompaniyalarniki "orfan" bo'lib
+    ko'rinib qoladi."""
+    session = get_session()
+    try:
+        # 1) Web suhbatlar -- 'web_chat_history:<manager_id>'
+        web_rows = session.query(KVEntry).filter(KVEntry.key.like("web_chat_history:%")).all()
+        web_conversations = []
+        for kv in web_rows:
+            try:
+                manager_id = int(kv.key.split(":", 1)[1])
+            except (IndexError, ValueError):
+                continue
+            try:
+                history = json.loads(kv.value)
+            except (TypeError, ValueError):
+                history = []
+            if not isinstance(history, list):
+                history = []
+            with db.unscoped():
+                manager = session.get(Manager, manager_id)
+                company = session.get(Company, manager.company_id) if manager and manager.company_id else None
+            web_conversations.append({
+                "manager_id": manager_id,
+                "manager_name": (manager.full_name or manager.username) if manager else None,
+                "company_name": company.name if company else None,
+                "orphaned": manager is None,
+                "message_count": len(history),
+                "updated_at": kv.updated_at,
+            })
+        web_conversations.sort(key=lambda r: r["updated_at"] or dt.datetime.min, reverse=True)
+
+        # 2) Telegram suhbatlar -- 'conv:<chat_id>'
+        tg_rows = session.query(KVEntry).filter(KVEntry.key.like("conv:%")).all()
+        tg_conversations = []
+        for kv in tg_rows:
+            chat_id_str = kv.key.split(":", 1)[1]
+            try:
+                history = json.loads(kv.value)
+            except (TypeError, ValueError):
+                history = []
+            if not isinstance(history, list):
+                history = []
+            with db.unscoped():
+                manager = session.query(Manager).filter_by(telegram_user_id=chat_id_str).first()
+                mgr_company = session.get(Company, manager.company_id) if manager and manager.company_id else None
+            group_company = session.query(Company).filter_by(telegram_group_id=chat_id_str).first()
+            if manager is not None:
+                label = f"{manager.full_name or manager.username} ({mgr_company.name if mgr_company else 'kompaniyasiz'})"
+            elif group_company is not None:
+                label = f"{group_company.name} (guruh)"
+            else:
+                label = f"Noma'lum chat (ID: {chat_id_str})"
+            tg_conversations.append({
+                "chat_id": chat_id_str,
+                "label": label,
+                "message_count": len(history),
+                "updated_at": kv.updated_at,
+            })
+        tg_conversations.sort(key=lambda r: r["updated_at"] or dt.datetime.min, reverse=True)
+
+        # 3) Javobsiz savollar -- BARCHA kompaniyalar (tenant-filtr o'chirilgan)
+        with db.unscoped():
+            unanswered_rows = (
+                session.query(AssistantUnanswered)
+                .order_by(AssistantUnanswered.is_resolved.asc(), AssistantUnanswered.created_at.desc())
+                .limit(200)
+                .all()
+            )
+            unanswered = []
+            for u in unanswered_rows:
+                company = session.get(Company, u.company_id) if u.company_id else None
+                unanswered.append({
+                    "id": u.id, "question": u.question,
+                    "manager_name": u.manager_name or "—",
+                    "company_name": company.name if company else "—",
+                    "origin": u.origin, "created_at": u.created_at,
+                    "answered_at": u.answered_at, "answered_by": u.answered_by,
+                    "answer_text": u.answer_text,
+                })
+
+        # Drill-in: bitta manager (web) yoki bitta chat (Telegram) transkripti
+        transcript = None
+        transcript_kind = None
+        transcript_title = None
+        manager_id_param = request.args.get("manager_id", type=int)
+        chat_id_param = request.args.get("chat_id", type=str)
+        if manager_id_param:
+            history = kv_store.get_json(f"web_chat_history:{manager_id_param}", default=[])
+            transcript = history if isinstance(history, list) else []
+            transcript_kind = "web"
+            with db.unscoped():
+                manager = session.get(Manager, manager_id_param)
+            transcript_title = (manager.full_name or manager.username) if manager else f"Manager #{manager_id_param} (o'chirilgan)"
+        elif chat_id_param:
+            history = kv_store.get_json(f"conv:{chat_id_param}", default=[])
+            transcript = history if isinstance(history, list) else []
+            transcript_kind = "telegram"
+            transcript_title = f"Telegram chat ID: {chat_id_param}"
+
+        return render_template(
+            "ai_conversations.html",
+            web_conversations=web_conversations,
+            tg_conversations=tg_conversations,
+            unanswered=unanswered,
+            transcript=transcript,
+            transcript_kind=transcript_kind,
+            transcript_title=transcript_title,
+        )
+    finally:
+        session.close()
 
 
 @app.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])

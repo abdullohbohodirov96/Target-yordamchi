@@ -846,6 +846,30 @@ class AssistantUnanswered(Base):
     is_resolved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
 
+    # 2026-09, "superadmin AI-suhbatlar paneli + javob-relesi" so'rovi:
+    # savol qayerdan kelgani ("web" -- vidjet, "telegram" -- bot) va, agar
+    # Telegram bo'lsa, ANIQ qaysi chat so'raganini bilish kerak -- shunda
+    # platforma egasi javob yozganda uni ASL suhbatga qaytarib yuborish
+    # mumkin. `chat_id`/`notify_chat_id` boshqa Telegram ID ustunlari bilan
+    # bir xil konvensiya (`Manager.telegram_user_id`, `Company.
+    # telegram_group_id`, `BotPrompt.telegram_chat_id` -- barchasi
+    # `String(32)`) bilan saqlanadi -- BigInteger EMAS, bu kodda ataylab
+    # matn sifatida saqlash konvensiyasi tanlangan.
+    origin = Column(String(16), nullable=False, default="web")  # "web" | "telegram"
+    chat_id = Column(String(32), nullable=True)  # FAQAT origin="telegram" -- savol so'ragan Telegram chat
+
+    # Platforma egasiga yuborilgan ogohlantirish xabarining O'ZI qaysi
+    # chatga va qaysi `message_id` bilan ketgani -- webhook'da kelgan
+    # REPLY shu ikkalasini (BIRGALIKDA, faqat message_id EMAS -- Telegram
+    # message_id har bir chat ICHIDA alohida hisoblanadi) solishtirib,
+    # qaysi savolga javob berilayotganini aniq topadi.
+    notify_chat_id = Column(String(32), nullable=True)
+    notify_message_id = Column(Integer, nullable=True)
+
+    answered_at = Column(DateTime, nullable=True)
+    answered_by = Column(String(128), nullable=True)
+    answer_text = Column(Text, nullable=True)
+
 
 class ImpersonationLog(Base):
     """2026-09, foydalanuvchi so'rovi (item C -- "CEO dashboard +

@@ -56,10 +56,18 @@ def test_unanswered_web_question_notifies_owner_telegram_immediately():
         _signup(client, company_name="Savol MChJ", admin_username="savol_admin")
 
         sent = []
+
+        def _fake_tracked(cid, text):
+            sent.append((cid, text))
+            return {"ok": True, "message_id": 111, "error": None}
+
+        # 2026-09, "javob-relesi" ishi: BIRINCHI (va bu testda yagona)
+        # nishonga endi `tg_send_tracked()` orqali yuboriladi (`tg_send`
+        # EMAS) -- shu orqali `notify_message_id` qatorga saqlanadi.
         with mock.patch.object(app_module.orchestrator, "classify_intent", return_value=("LIGHT", "")), \
              mock.patch.object(app_module.orchestrator, "execute_intent", return_value=None), \
              mock.patch.object(app_module.orchestrator, "call_light_chat", return_value="Menda bu bo'yicha aniq ma'lumot yo'q. [[UNANSWERED]]"), \
-             mock.patch.object(app_module, "tg_send", side_effect=lambda cid, text: sent.append((cid, text))):
+             mock.patch.object(app_module, "tg_send_tracked", side_effect=_fake_tracked):
             r = client.post("/api/assistant", json={"message": "Yer yuzida nechta chumoli bor?"})
             assert r.status_code == 200
             body = r.get_json()
@@ -76,6 +84,9 @@ def test_unanswered_web_question_notifies_owner_telegram_immediately():
             with db_module.unscoped():
                 row = session.query(db_module.AssistantUnanswered).first()
             assert row is not None and "chumoli" in row.question
+            assert row.origin == "web"
+            assert row.notify_chat_id == "-100777111"
+            assert row.notify_message_id == 111
         finally:
             session.close()
     print("OK: AI-yordamchi javob topolmaganda, savol AssistantUnanswered'ga yoziladi VA platforma egasiga DARHOL Telegram xabari boradi")
