@@ -229,13 +229,18 @@ def save_brand_logo(session, company_id: int, file_storage_or_bytes, filename: s
     rel_dir = Path(str(company_id))
     abs_dir = Path(BRAND_ROOT) / rel_dir
     abs_dir.mkdir(parents=True, exist_ok=True)
-    # Eski logotip (boshqa kengaytmali) qolib ketmasin.
-    for old in abs_dir.glob("logo.*"):
+    # Eski logotip (boshqa kengaytmali) VA eski tozalangan nusxa/marker
+    # qolib ketmasin.
+    for old in list(abs_dir.glob("logo.*")) + list(abs_dir.glob("logo_clean.*")):
         try:
             old.unlink()
         except OSError:
             pass
     (abs_dir / f"logo{ext}").write_bytes(data)
+    # 2026-09, foydalanuvchi shikoyati: oq/qora fonli (shaffof bo'lmagan)
+    # logotip reklamada "oq quti" bo'lib ko'rinardi -- fon YUKLASH paytida
+    # BIR MARTA avtomatik kesiladi (`logo_clean.png`), render shu faylni oladi.
+    _ensure_clean_logo(abs_dir / f"logo{ext}")
 
     kit = _get_or_create_brand_kit(session, company_id)
     kit.logo_storage_path = str(rel_dir / f"logo{ext}")
@@ -243,6 +248,134 @@ def save_brand_logo(session, company_id: int, file_storage_or_bytes, filename: s
     kit.updated_at = dt.datetime.utcnow()
     session.commit()
     return kit
+
+
+# ---------------------------------------------------------------------------
+# LOGOTIP FONINI AVTOMATIK KESISH (2026-09, foydalanuvchi shikoyati:
+# "logotipning oq/qora fonini o'zi kesib, to'g'ri joylashtirsin").
+#
+# NEGA ML (rembg/onnxruntime) EMAS: deploy `render.yaml` -> `plan: starter`
+# (512 MB RAM, bitta gunicorn worker + APScheduler bir jarayonda). rembg
+# onnxruntime + ~170 MB U2Net og'irliklarini talab qiladi va inferensiya
+# paytida 300+ MB xotira oladi -- production'ni yiqitish xavfi katta.
+# Logotip -- deyarli har doim BIR XIL rangli (oq/qora/och) fon ustidagi
+# belgi, shuning uchun oddiy evristika yetarli va xavfsiz:
+#   1. Rasmda allaqachon haqiqiy shaffoflik bo'lsa -- tegilmaydi.
+#   2. Chekka (border) piksellarining mediana rangi topiladi; chekka
+#      bir xil rangda bo'lmasa (foto/gradient) -- tegilmaydi (taxmin
+#      qilinmaydi -- xato kesishdan ko'ra asl holda qoldirish yaxshi).
+#   3. Har bir piksel uchun fon rangigacha Chebyshev masofa hisoblanadi
+#      (`ImageChops`, sof Pillow, numpy'siz): <= T0 -> to'liq shaffof,
+#      >= T1 -> to'liq ko'rinadi, oralig'i -- yumshoq (anti-aliasing,
+#      qirralar tishli chiqmaydi). T0/T1 KONSERVATIV: JPEG artefaktlari
+#      (+-10..15) kesiladi, lekin och-kulrang detallar saqlanib qoladi.
+#   MA'LUM CHEKLOV: logotip fon bilan deyarli bir xil rangli katta
+#   yuzalarga ega bo'lsa (masalan oq fondagi oq-krem belgi), o'sha
+#   qismlar ham shaffof bo'ladi -- bunday holatda foydalanuvchi shaffof
+#   PNG yuklashi kerak (forma shuni tavsiya qiladi).
+# Natija `logo_clean.png` (RGBA) -- `brand_logo_file_path()` shu faylni
+# qaytaradi; u yo'q bo'lsa (eski yuklangan logotiplar) BIRINCHI o'qishda
+# o'zi yaratiladi ("self-heal", qayta yuklash shart emas). Kesish kerak
+# bo'lmasa `logo_clean.skip` markeri yoziladi (har renderda qayta tahlil
+# qilinmasin).
+# ---------------------------------------------------------------------------
+LOGO_CLEAN_NAME = "logo_clean.png"
+LOGO_CLEAN_SKIP = "logo_clean.skip"
+LOGO_INNER_PAD = 0.06       # logotip qutisi ichidagi hoshiya (qisqa tomonga nisbatan)
+_LOGO_BG_T0 = 18            # shu masofagacha -- to'liq shaffof
+_LOGO_BG_T1 = 56            # shundan uzoq -- to'liq ko'rinadi
+_LOGO_BORDER_TOL = 40       # chekka bir xillik tekshiruvi (Chebyshev)
+_LOGO_BORDER_MIN_FRAC = 0.85  # chekka piksellarining kamida shuncha qismi fon rangida bo'lsin
+
+
+def _has_real_transparency(img) -> bool:
+    """RGBA rasmda MA'NOLI shaffoflik bormi (kamida ~1% piksel alpha<250)."""
+    if img.mode not in ("RGBA", "LA"):
+        return False
+    alpha = img.getchannel("A")
+    lo, _hi = alpha.getextrema()
+    if lo >= 250:
+        return False
+    hist = alpha.histogram()
+    total = max(1, img.width * img.height)
+    return sum(hist[:250]) / total >= 0.01
+
+
+def _border_background_color(rgb) -> "tuple[int, int, int] | None":
+    """Chekka (4 tomon) piksellarining mediana rangi -- agar chekka
+    yetarlicha BIR XIL bo'lsa, aks holda None (fon aniqlanmadi)."""
+    w, h = rgb.size
+    strip = max(1, int(min(w, h) * 0.03))
+    boxes = [(0, 0, w, strip), (0, h - strip, w, h), (0, 0, strip, h), (w - strip, 0, w, h)]
+    pixels: list = []
+    for box in boxes:
+        pixels.extend(rgb.crop(box).getdata())
+    if not pixels:
+        return None
+    chans = list(zip(*pixels))
+    median = tuple(sorted(ch)[len(ch) // 2] for ch in chans)
+    near = sum(1 for p in pixels if max(abs(p[i] - median[i]) for i in range(3)) <= _LOGO_BORDER_TOL)
+    if near / len(pixels) < _LOGO_BORDER_MIN_FRAC:
+        return None
+    return median
+
+
+def remove_logo_background(img) -> "tuple[object, bool]":
+    """Pillow rasm -> (RGBA rasm, o'zgardimi). Yuqoridagi evristika;
+    shaffoflik allaqachon bo'lsa yoki fon aniqlanmasa -- (asl RGBA, False)."""
+    from PIL import Image, ImageChops
+    rgba = img.convert("RGBA")
+    if rgba.width < 8 or rgba.height < 8 or _has_real_transparency(rgba):
+        return rgba, False
+    rgb = rgba.convert("RGB")
+    bg = _border_background_color(rgb)
+    if bg is None:
+        return rgba, False
+    r, g, b = rgb.split()
+    dist = None
+    for ch, val in ((r, bg[0]), (g, bg[1]), (b, bg[2])):
+        d = ImageChops.difference(ch, Image.new("L", rgb.size, val))
+        dist = d if dist is None else ImageChops.lighter(dist, d)
+    t0, t1 = _LOGO_BG_T0, _LOGO_BG_T1
+    alpha = dist.point(lambda v: 0 if v <= t0 else (255 if v >= t1 else int(255 * (v - t0) / (t1 - t0))))
+    # Asl alpha (masalan 255 dan bir oz kam bo'lgan) bilan birlashtirish.
+    alpha = ImageChops.darker(alpha, rgba.getchannel("A"))
+    out = rgba.copy()
+    out.putalpha(alpha)
+    if out.getchannel("A").getbbox() is None:
+        # Hammasi kesilib ketdi (bir rangli rasm) -- xavfsiz tomon: asl holat.
+        return rgba, False
+    return out, True
+
+
+def _ensure_clean_logo(original_path: "Path") -> "Path | None":
+    """`logo_clean.png` (fon kesilgan) yo'lini qaytaradi: bor bo'lsa --
+    darhol; yo'q bo'lsa asl fayldan BIR MARTA yaratadi (atomik yozish).
+    Kesish kerak bo'lmasa `logo_clean.skip` marker yoziladi va None
+    qaytadi (asl fayl ishlatiladi). Har qanday xato -> None (render asl
+    faylni oladi, hech narsa yiqilmaydi)."""
+    original_path = Path(original_path)
+    d = original_path.parent
+    clean, skip = d / LOGO_CLEAN_NAME, d / LOGO_CLEAN_SKIP
+    if clean.exists():
+        return clean
+    if skip.exists() or not original_path.exists():
+        return None
+    try:
+        from PIL import Image
+        with Image.open(original_path) as raw:
+            raw.load()
+            out, changed = remove_logo_background(raw)
+        if not changed:
+            skip.write_bytes(b"")
+            return None
+        tmp = d / f".{LOGO_CLEAN_NAME}.{os.getpid()}.tmp"
+        out.save(tmp, format="PNG", optimize=True)
+        os.replace(tmp, clean)
+        return clean
+    except Exception as e:  # noqa: BLE001 -- logotip tozalash render'ni to'xtatmasin
+        logger.warning("creative_studio: logotip fonini kesib bo'lmadi (%s): %s", original_path, e)
+        return None
 
 
 def _normalize_color(value: "str | None") -> "str | None":
@@ -269,7 +402,23 @@ def save_brand_colors(session, company_id: int, primary: "str | None", secondary
 
 
 def brand_logo_file_path(brand_kit) -> "Path | None":
-    """Logotipning diskdagi to'liq yo'li (brend kit/logotip bo'lmasa `None`)."""
+    """Render/ko'rsatish uchun logotipning diskdagi yo'li (brend kit/
+    logotip bo'lmasa `None`). Fon kesilgan `logo_clean.png` bo'lsa (yoki
+    shu chaqiruvda bir marta yaratilsa) -- o'sha; aks holda asl fayl.
+    Asl fayl o'chirilgan bo'lsa ham yo'l qaytariladi (chaqiruvchi
+    `.exists()` tekshiradi -- avvalgi xatti-harakat saqlangan)."""
+    if brand_kit is None or not getattr(brand_kit, "logo_storage_path", None):
+        return None
+    original = Path(BRAND_ROOT) / brand_kit.logo_storage_path
+    if original.exists():
+        clean = _ensure_clean_logo(original)
+        if clean is not None:
+            return clean
+    return original
+
+
+def brand_logo_original_path(brand_kit) -> "Path | None":
+    """Foydalanuvchi yuklagan ASL logotip fayli (kesilmagan)."""
     if brand_kit is None or not getattr(brand_kit, "logo_storage_path", None):
         return None
     return Path(BRAND_ROOT) / brand_kit.logo_storage_path
@@ -285,15 +434,22 @@ def brand_logo_file_path(brand_kit) -> "Path | None":
 CREATIVE_BRIEF_QUESTIONS = [
     ("focus", "Aynan qaysi mahsulot/xizmatga urg'u berilsin?",
      "Masalan: erkaklar klassik tuflisi, yangi kolleksiya", True),
+    # 2026-09: telefon -- kompaniya profilida (`ctx['phone']`) bo'lmasa
+    # MAJBURIY (O'zbekiston bozorida reklama rasmi odatda raqam bilan
+    # chiqadi; AI matn yozuvchisi ham shuni ishlatadi). Profilda bo'lsa
+    # so'ralmaydi (`visible_brief_questions`). Majburiy savollar oldinda turadi.
+    ("phone", "Mijozlar bog'lanadigan telefon raqamingiz? (reklama rasmida ko'rsatiladi)",
+     "Masalan: +998 90 123 45 67", True),
     ("offer_text", "Aksiya/chegirma yoki maxsus taklif bormi? (bo'lsa matnini yozing, bo'lmasa 'yo'q' deb qoldiring)",
      "Masalan: -30% chegirma, bepul yetkazib berish", True),
-    ("cta_preference", "Qanday chaqiriq matni bo'lsin? (bo'sh qoldirsangiz AI o'zi tanlaydi)",
-     "Masalan: Hoziroq buyurtma bering, Batafsil", True),
+    ("cta_preference", "Qanday chaqiriq matni bo'lsin? (bo'sh qoldirsangiz AI biznesingizga mos tanlaydi)",
+     "Masalan: Hoziroq buyurtma bering, Narxini bilib oling", True),
     ("style_notes", "Rasm qanday ko'rinishda bo'lsin? (muhit, rang, kayfiyat -- ixtiyoriy)",
      "Masalan: oq studiya foni, tabiiy yorug'lik, premium ko'rinish", True),
 ]
 _BRIEF_BY_KEY = {k: (k, q, ph, opt) for k, q, ph, opt in CREATIVE_BRIEF_QUESTIONS}
 _NEGATIVE_ANSWERS = {"yo'q", "yoq", "yo`q", "yoʻq", "нет", "no", "-", "yok"}
+_PHONE_DIGITS_RE = re.compile(r"\d")
 
 
 def _answered(value) -> bool:
@@ -309,29 +465,56 @@ def _question_dict(key: str, *, required: bool) -> dict:
     return {"key": k, "question": q, "placeholder": ph, "optional": (opt and not required), "required": required}
 
 
+def normalize_phone(value: "str | None") -> str:
+    """Telefonni yengil tozalaydi: faqat raqam, '+', bo'sh joy, qavs va
+    tire qoladi; kamida 7 ta raqam bo'lmasa `CreativeError`. (Formatni
+    qat'iy majburlamaymiz -- foydalanuvchi qanday yozsa, shunday chiqadi.)"""
+    v = re.sub(r"[^\d+()\-\s]", "", str(value or "")).strip()
+    v = re.sub(r"\s+", " ", v)
+    if len(_PHONE_DIGITS_RE.findall(v)) < 7:
+        raise CreativeError("Telefon raqami noto'g'ri ko'rinadi -- masalan +998 90 123 45 67 shaklida yozing.")
+    return v[:32]
+
+
+def phone_known(ctx: dict) -> bool:
+    return bool((ctx or {}).get("phone"))
+
+
+def visible_brief_questions(ctx: dict) -> list[tuple]:
+    """Shu kompaniya uchun UMUMAN ma'noli brif savollari (kalit, savol,
+    placeholder, ixtiyoriymi): telefon profilda bo'lsa so'ralmaydi."""
+    return [q for q in CREATIVE_BRIEF_QUESTIONS if not (q[0] == "phone" and phone_known(ctx))]
+
+
 def missing_questions(ctx: dict, existing_answers: dict) -> list[dict]:
     """`company_context.build_company_context()` natijasi (ctx) VA
     hozirgacha yig'ilgan `existing_answers`dan kelib chiqib HALI kerak
     bo'lgan savollarni qaytaradi.
 
-    Qoida: `ctx['missing_fields']`da 'product_or_service' bo'lsa VA
-    `existing_answers['focus']` ham bo'sh bo'lsa -- 'focus' MAJBURIY
-    (`required=True`). Kamida bitta majburiy savol bo'lsa, hali javob
-    berilmagan (kaliti `existing_answers`da umuman yo'q) ixtiyoriy
-    savollar ham BIR MARTA birga qaytariladi (foydalanuvchi bitta formada
-    hammasini ko'rsin). Bo'sh ro'yxat = hammasi yetarli, generatsiyaga
-    tayyor. (Ixtiyoriy savollarni UI istalgan vaqtda alohida ham
-    ko'rsatishi mumkin -- `CREATIVE_BRIEF_QUESTIONS`.)"""
+    MAJBURIY (`required=True`) savollar:
+      - 'focus'  -- `ctx['missing_fields']`da 'product_or_service' bo'lsa
+                    (profilda mahsulot yo'q) VA `existing_answers['focus']`
+                    bo'sh bo'lsa;
+      - 'phone'  -- `ctx['phone']` bo'sh bo'lsa VA javobda ham bo'lmasa
+                    (2026-09: "to'liq ma'lumot olgandan keyin generatsiya").
+    Kamida bitta majburiy savol bo'lsa, hali javob berilmagan (kaliti
+    `existing_answers`da umuman yo'q) ixtiyoriy savollar ham BIR MARTA
+    birga qaytariladi (foydalanuvchi bitta formada hammasini ko'rsin --
+    generatsiya faqat hammasi yig'ilgach). Bo'sh ro'yxat = hammasi
+    yetarli, generatsiyaga tayyor."""
     ctx = ctx or {}
     existing_answers = existing_answers or {}
     out: list[dict] = []
     product_missing = "product_or_service" in (ctx.get("missing_fields") or []) or not (ctx.get("profile_answers") or {}).get("product_or_service")
     if product_missing and not _answered(existing_answers.get("focus")):
         out.append(_question_dict("focus", required=True))
+    if not phone_known(ctx) and not _answered(existing_answers.get("phone")):
+        out.append(_question_dict("phone", required=True))
     if not out:
         return []
-    for key, *_ in CREATIVE_BRIEF_QUESTIONS:
-        if key == "focus" or key in existing_answers:
+    required_keys = {q["key"] for q in out}
+    for key, *_ in visible_brief_questions(ctx):
+        if key in required_keys or key in existing_answers:
             continue
         out.append(_question_dict(key, required=False))
     return out
@@ -383,7 +566,17 @@ def submit_brief_answer(session, asset: "db.CreativeAsset", key: str, value: str
     if key not in _BRIEF_BY_KEY:
         raise CreativeError("Noma'lum brif savoli.")
     answers = asset.get_brief_answers()
-    answers[key] = (value or "").strip()[:500]
+    value = (value or "").strip()[:500]
+    if key == "phone" and value:
+        value = normalize_phone(value)
+        # Kompaniya profilida telefon bo'lmasa -- shu raqam profilga ham
+        # yoziladi (keyingi kreativlarda va AI rejalarda qayta so'ralmaydi).
+        # Mavjud raqam HECH QACHON ustidan yozilmaydi.
+        company = _load_company(session, asset)
+        if company is not None and not (getattr(company, "phone", None) or "").strip():
+            company.phone = value
+            logger.info("creative_studio: kompaniya %s telefoni brifdan to'ldirildi", company.id)
+    answers[key] = value
     asset.set_brief_answers(answers)
     _refresh_missing(session, asset)
     asset.updated_at = dt.datetime.utcnow()
@@ -409,14 +602,25 @@ def _split_features(text: "str | None", n: int = 4) -> list[str]:
     return [_short(p, 32) for p in parts[:n]]
 
 
-def placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None") -> dict:
-    """Shablon/standart qatlamlardagi `{{...}}` placeholder'lar uchun REAL
-    matnlar (o'zbekcha, kompaniya konteksti + brif javoblaridan):
+FALLBACK_CTA = "Bog'laning"
+
+
+def brief_phone(ctx: dict, brief_answers: dict) -> str:
+    """Reklamada ko'rsatiladigan telefon: brif javobi, bo'lmasa profil."""
+    return ((brief_answers or {}).get("phone") or "").strip() or ((ctx or {}).get("phone") or "").strip()
+
+
+def fallback_placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None") -> dict:
+    """AI'SIZ (deterministik) placeholder qiymatlari -- `placeholder_values`
+    ning zaxira yo'li (AI matn yozuvchisi ishlamasa) va shablondan tezkor
+    yaratish uchun:
       headline    -- focus (brif) yoki best_seller yoki product_or_service (QISQA)
       subheadline -- offer_text ("yo'q" bo'lmasa) yoki extra_notes
-      cta_text    -- cta_preference yoki shablonning default_cta yoki "Batafsil"
+      cta_text    -- cta_preference yoki shablonning default_cta yoki FALLBACK_CTA
+                     (2026-09: umumiy "Batafsil" ENDI ishlatilmaydi)
       offer_text  -- offer_text yoki "AKSIYA"; price_text -- price_range;
       brand_name  -- kompaniya nomi; quote_text -- extra_notes/offer;
+      phone / phone_line -- brif yoki profil telefoni ("Tel: ..." ko'rinishida);
       feature_1..4 -- extra_notes'dan vergul bo'yicha bo'laklar.
     Bo'sh qiymatli placeholder'li qatlam chizilmaydi (`resolve_layers`)."""
     ctx = ctx or {}
@@ -430,17 +634,161 @@ def placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None") 
     extra = (profile.get("extra_notes") or "").strip()
     headline_src = focus or profile.get("best_seller") or profile.get("product_or_service") or ctx.get("company_name") or ""
     features = _split_features(extra)
+    phone = brief_phone(ctx, brief_answers)
     values = {
         "headline": _short(headline_src, 48),
         "subheadline": _short(offer, 70) if offer else _short(extra, 70),
-        "cta_text": cta or ((template or {}).get("default_cta") or "Batafsil"),
+        "cta_text": cta or ((template or {}).get("default_cta") or FALLBACK_CTA),
         "offer_text": _short(offer, 28) if offer else "AKSIYA",
         "price_text": _short(profile.get("price_range") or "", 24),
         "brand_name": (ctx.get("company_name") or "").strip(),
         "quote_text": _short(extra or offer, 110),
+        "phone": phone,
+        "phone_line": f"Tel: {phone}" if phone else "",
     }
     for i in range(4):
         values[f"feature_{i + 1}"] = features[i] if i < len(features) else ""
+    return values
+
+
+# ---------------------------------------------------------------------------
+# AI MATN YOZUVCHISI (2026-09, foydalanuvchi shikoyati: "armatura
+# sotishimiz kerak" deb yozgan xom javobi AYNAN sarlavha bo'lib chiqdi --
+# AI buni to'g'ri, chiroyli reklama matniga aylantirsin; CTA ham
+# umumiy "Batafsil" emas, biznesga mos bo'lsin).
+# Arzon matn modeli (`OPENAI_MODEL`, standart gpt-4o-mini -- orchestrator
+# yengil so'rovlar bilan bir xil), chat/completions, JSON javob, qisqa
+# prompt, max_tokens kichik. HAR QANDAY xato -> None (chaqiruvchi
+# `fallback_placeholder_values`ga qaytadi) -- rasm generatsiyasini
+# HECH QACHON to'xtatmaydi.
+# ---------------------------------------------------------------------------
+OPENAI_TEXT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+_OPENAI_COPY_TIMEOUT = 40
+_COPY_LIMITS = {"headline": 48, "subheadline": 80, "cta_text": 32}
+
+_COPY_SYSTEM_PROMPT = """Sen O'zbekiston bozori uchun Facebook/Instagram reklama rasmlariga matn yozadigan professional kopirayter san.
+Vazifa: kompaniya ma'lumotlari va mijozning XOM javoblaridan reklama rasmiga qo'yiladigan TOZA, SAVODLI, JOZIBALI o'zbekcha (lotin) matn tuzish.
+FAQAT JSON qaytar (izohsiz, ``` belgisiz):
+{"headline": "...", "subheadline": "...", "cta_text": "..."}
+QOIDALAR:
+- headline: 2-6 so'z, ko'pi bilan 40 belgi, o'qishga oson, reklama uslubida (masalan "Sifatli armatura — zavod narxida"). Mijozning xom so'zlarini AYNAN ko'chirma ("sotishimiz kerak", "reklama qilmoqchimiz" kabi ichki gaplar bo'lmasin) -- lekin haqiqiy faktlarni (mahsulot, aksiya, raqamlar) SAQLA, yangi va'da/raqam O'YLAB TOPMA.
+- subheadline: 1 qisqa gap, ko'pi bilan 70 belgi -- taklif/foyda/kafolat/yetkazib berish (aksiya bo'lsa, shuni). Aksiya ham, boshqa fakt ham bo'lmasa -- mahsulot haqida qisqa ishonchli gap.
+- cta_text: 2-4 so'z, buyruq maylida, AYNAN shu biznesga mos ("Buyurtma bering", "Narxini bilib oling", "Qo'ng'iroq qiling", "Navbatga yoziling", "Ko'rishga keling"). Umumiy "Batafsil" YOZMA. Agar mijoz o'zi chaqiriq matnini bergan bo'lsa -- uni AYNAN qaytar.
+- Apostroflar to'g'ri: o', g', so'm, ko'ring. Emoji, qo'shtirnoq, undov belgilarini ko'p ishlatma."""
+
+
+def _copy_user_content(ctx: dict, brief_answers: dict, template: "dict | None") -> str:
+    profile = ctx.get("profile_answers") or {}
+    lines = [
+        f"Kompaniya: {ctx.get('company_name') or '-'}",
+        f"Soha: {((ctx.get('business_category') or {}).get('label')) or '-'}",
+        f"Mahsulot/xizmat: {profile.get('product_or_service') or '-'}",
+        f"Eng ko'p sotiladigani: {profile.get('best_seller') or '-'}",
+        f"Auditoriya: {profile.get('target_audience') or '-'}",
+        f"Narx segmenti: {profile.get('price_range') or '-'}",
+        f"Qo'shimcha (profil): {profile.get('extra_notes') or '-'}",
+        f"Telefon: {brief_phone(ctx, brief_answers) or '-'}",
+        "",
+        "MIJOZNING XOM JAVOBLARI (shu reklama uchun):",
+        f"- Nimaga urg'u: {brief_answers.get('focus') or '-'}",
+        f"- Aksiya/taklif: {brief_answers.get('offer_text') or '-'}",
+        "- Chaqiriq matni (mijoz xohishi): " + (brief_answers.get("cta_preference") or "(bermagan -- o'zing tanla)"),
+        f"- Uslub izohi: {brief_answers.get('style_notes') or '-'}",
+    ]
+    if template:
+        lines.append(f"Shablon: {template.get('name')} (tavsiya etilgan chaqiriq: {template.get('default_cta') or '-'})")
+    return "\n".join(lines)
+
+
+def _request_ad_copy(body: dict):
+    """Chat/completions HTTP chaqiruvi -- alohida funksiya (testlar shuni
+    mock qiladi; rasm chaqiruvi `_openai_request` bilan aralashmasin)."""
+    import call_analysis
+    api_key = os.environ.get("OPENAI_API_KEY")
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    return call_analysis._openai_request("POST", OPENAI_CHAT_URL, headers=headers, json_body=body, timeout=_OPENAI_COPY_TIMEOUT)
+
+
+def _parse_copy_json(text: str) -> "dict | None":
+    t = (text or "").strip()
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t, flags=re.I)
+    try:
+        data = json.loads(t)
+    except (TypeError, ValueError):
+        m = re.search(r"\{.*\}", t, re.S)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except ValueError:
+            return None
+    if not isinstance(data, dict):
+        return None
+    out = {}
+    for key, limit in _COPY_LIMITS.items():
+        v = data.get(key)
+        if isinstance(v, str) and v.strip():
+            out[key] = " ".join(v.strip().split())[:limit].strip(' "\'')
+    return out or None
+
+
+def generate_ad_copy(ctx: dict, brief_answers: dict, template: "dict | None") -> "dict | None":
+    """AI kopirayter: {"headline", "subheadline", "cta_text"} (faqat
+    mavjud/bo'sh bo'lmagan kalitlar) yoki None (kalit sozlanmagan, kredit
+    tugagan, tarmoq/HTTP xatosi, JSON buzuq). HECH QACHON exception
+    ko'tarmaydi -- rasm generatsiyasi davom etadi (zaxira matn bilan)."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+    body = {
+        "model": OPENAI_TEXT_MODEL, "temperature": 0.5, "max_tokens": 160,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": _COPY_SYSTEM_PROMPT},
+            {"role": "user", "content": _copy_user_content(ctx or {}, brief_answers or {}, template)},
+        ],
+    }
+    try:
+        resp = _request_ad_copy(body)
+    except Exception as e:  # noqa: BLE001 -- tarmoq va h.k.
+        logger.warning("creative_studio: AI matn yozuvchisi tarmoq xatosi: %s", e)
+        return None
+    try:
+        if resp.status_code == 429 and _is_quota_exhausted_response(resp):
+            logger.error("creative_studio: AI matn yozuvchisi -- OpenAI kredit tugagan: %s", _extract_openai_error(resp))
+            return None
+        if resp.status_code != 200:
+            logger.warning("creative_studio: AI matn yozuvchisi HTTP %s: %s", resp.status_code, _extract_openai_error(resp))
+            return None
+        content = resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:  # noqa: BLE001 -- kutilmagan javob shakli
+        logger.warning("creative_studio: AI matn yozuvchisi javobini o'qib bo'lmadi: %s", e)
+        return None
+    parsed = _parse_copy_json(content)
+    if not parsed:
+        logger.warning("creative_studio: AI matn yozuvchisi JSON qaytarmadi")
+    return parsed
+
+
+def placeholder_values(ctx: dict, brief_answers: dict, template: "dict | None", *, use_ai: bool = True) -> dict:
+    """Shablon/standart qatlamlardagi `{{...}}` placeholder'lar uchun REAL
+    matnlar: `fallback_placeholder_values` (deterministik) USTIGA AI
+    kopirayter natijasi (`generate_ad_copy`: headline/subheadline/cta_text)
+    qo'yiladi. Mijoz `cta_preference` bergan bo'lsa -- u har doim ustun.
+    AI ishlamasa -- faqat zaxira qiymatlar (generatsiya to'xtamaydi).
+    `use_ai=False` -- shablondan tezkor yaratish (OpenAI'siz va'dasi)."""
+    values = fallback_placeholder_values(ctx, brief_answers, template)
+    if not use_ai:
+        return values
+    copy_ = generate_ad_copy(ctx, brief_answers, template)
+    if not copy_:
+        return values
+    for key in ("headline", "subheadline"):
+        if copy_.get(key):
+            values[key] = copy_[key]
+    cta_pref = ((brief_answers or {}).get("cta_preference") or "").strip()
+    if not cta_pref and copy_.get("cta_text"):
+        values["cta_text"] = copy_["cta_text"]
     return values
 
 
@@ -588,12 +936,17 @@ def default_layers() -> list[dict]:
     return [
         {"id": "cta_badge", "type": "badge", "x": 0.06, "y": 0.06, "w": 0.34, "h": 0.07, "align": "center",
          "font": "bold", "size_ratio": 0.026, "color": "#FFFFFF", "bg_color": "#111111", "opacity": 0.92, "text": "{{cta_text}}"},
-        {"id": "logo", "type": "logo", "x": 0.80, "y": 0.06, "w": 0.14, "h": 0.09, "align": "right"},
+        # 2026-09: keng wordmark-logotiplar uchun quti kengaytirildi (0.14 -> 0.22)
+        {"id": "logo", "type": "logo", "x": 0.72, "y": 0.06, "w": 0.22, "h": 0.10, "align": "right"},
         {"id": "bottom_panel", "type": "panel", "x": 0.0, "y": 0.62, "w": 1.0, "h": 0.38, "bg_color": "#000000", "opacity": 0.75, "gradient": True},
         {"id": "headline", "type": "text", "x": 0.06, "y": 0.72, "w": 0.88, "h": 0.12, "align": "left",
          "font": "bold", "size_ratio": 0.062, "color": "#FFFFFF", "text": "{{headline}}"},
         {"id": "subheadline", "type": "text", "x": 0.06, "y": 0.85, "w": 0.88, "h": 0.08, "align": "left",
          "font": "regular", "size_ratio": 0.03, "color": "#E5E7EB", "text": "{{subheadline}}"},
+        # 2026-09: telefon (brif/profil) -- lid-reklama uchun odatiy element;
+        # raqam bo'lmasa qatlam yashirin (`resolve_layers`).
+        {"id": "phone", "type": "text", "x": 0.06, "y": 0.935, "w": 0.88, "h": 0.05, "align": "left",
+         "font": "bold", "size_ratio": 0.028, "color": "#FFFFFF", "text": "{{phone_line}}"},
     ]
 
 
@@ -863,18 +1216,27 @@ def _draw_logo(canvas, layer, W, H, logo_path: "Path | None"):
     except Exception as e:  # noqa: BLE001 -- buzilgan logotip render'ni to'xtatmasin
         logger.warning("creative_studio: logotip ochilmadi (%s): %s", logo_path, e)
         return
+    # Avto-moslash: ko'rinadigan qism (shaffof hoshiyalarsiz) olinadi --
+    # fon kesilgan yoki keng shaffof hoshiyali PNG ham to'rtburchakni
+    # to'liq ishlatadi.
+    bbox = logo.getchannel("A").getbbox()
+    if bbox and (bbox[2] - bbox[0]) >= 2 and (bbox[3] - bbox[1]) >= 2:
+        logo = logo.crop(bbox)
     x, y = int(layer["x"] * W), int(layer["y"] * H)
     w, h = max(1, int(layer["w"] * W)), max(1, int(layer["h"] * H))
-    scale = min(w / logo.width, h / logo.height)
+    # Ichki hoshiya (~6%) -- logotip qutiga "yopishib" turmasin.
+    pad = int(min(w, h) * LOGO_INNER_PAD)
+    iw, ih = max(1, w - 2 * pad), max(1, h - 2 * pad)
+    scale = min(iw / logo.width, ih / logo.height)
     nw, nh = max(1, int(logo.width * scale)), max(1, int(logo.height * scale))
     logo = logo.resize((nw, nh), Image.LANCZOS)
     align = layer.get("align") or "right"
     if align == "left":
-        lx = x
+        lx = x + pad
     elif align == "center":
         lx = x + (w - nw) // 2
     else:
-        lx = x + w - nw
+        lx = x + w - pad - nw
     ly = y + (h - nh) // 2
     canvas.alpha_composite(logo, (lx, ly))
 
@@ -946,8 +1308,9 @@ def _render_asset(session, asset) -> None:
     asset.width, asset.height = size
 
 
-def _initial_layers_for(asset, ctx: dict, template: "dict | None") -> list[dict]:
-    values = placeholder_values(ctx, asset.get_brief_answers(), template)
+def _initial_layers_for(asset, ctx: dict, template: "dict | None", values: "dict | None" = None) -> list[dict]:
+    if values is None:
+        values = placeholder_values(ctx, asset.get_brief_answers(), template, use_ai=False)
     source = template["layers"] if template else default_layers()
     return resolve_layers(source, values)
 
@@ -999,9 +1362,14 @@ def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> 
         asset.base_image_storage_path = _asset_rel(asset, "base.png")
         asset.openai_response_id = (response_id or "")[:128] or None
         if not (keep_layers and asset.get_layers()):
-            asset.set_layers(_initial_layers_for(asset, ctx, template))
+            # AI kopirayter (arzon matn modeli) -- xom brif javoblari
+            # o'rniga savodli sarlavha/tavsif/chaqiriq; ishlamasa zaxira.
+            values = placeholder_values(ctx, asset.get_brief_answers(), template, use_ai=True)
+            asset.set_layers(_initial_layers_for(asset, ctx, template, values))
+            if not asset.title:
+                asset.title = values.get("headline") or None
         if not asset.title:
-            asset.title = placeholder_values(ctx, asset.get_brief_answers(), template).get("headline") or None
+            asset.title = fallback_placeholder_values(ctx, asset.get_brief_answers(), template).get("headline") or None
         _render_asset(session, asset)
         asset.status = "ready"
         asset.missing_fields_json = "[]"

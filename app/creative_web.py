@@ -96,7 +96,8 @@ def brief_questions_for(ctx: dict, asset) -> "tuple[list[dict], list[dict]]":
     missing = creative_studio.missing_questions(ctx, answers)
     required_keys = {q["key"] for q in missing if q.get("required")}
     all_q = []
-    for key, question, placeholder, optional in creative_studio.CREATIVE_BRIEF_QUESTIONS:
+    # Telefon profilda bo'lsa savol umuman ko'rsatilmaydi (2026-09).
+    for key, question, placeholder, optional in creative_studio.visible_brief_questions(ctx):
         all_q.append({
             "key": key, "question": question, "placeholder": placeholder,
             "required": key in required_keys, "optional": key not in required_keys,
@@ -109,7 +110,21 @@ def brief_questions_for(ctx: dict, asset) -> "tuple[list[dict], list[dict]]":
 # SERIALIZATSIYA
 # ---------------------------------------------------------------------------
 
-def serialize_asset(asset, brand_kit, quota: "dict | None", *, ctx: "dict | None" = None, urls: "dict | None" = None) -> dict:
+def target_options(ctx: "dict | None", *, can_create: bool) -> dict:
+    """"Targetga ochish" (2026-09) mini-formasi uchun: maqsadlar ro'yxati,
+    hudud so'raladimi (profilda standart hudud bo'lmasa), ruxsat (admin)."""
+    import campaign_draft
+    ctx = ctx or {}
+    return {
+        "can_create": bool(can_create),
+        "objectives": [{"value": o, "label": campaign_draft.OBJECTIVE_LABELS[o]} for o in campaign_draft.OBJECTIVES],
+        "default_objective": "MESSAGES",
+        "needs_location": not bool(ctx.get("default_location")),
+        "default_location": ctx.get("default_location") or "",
+    }
+
+
+def serialize_asset(asset, brand_kit, quota: "dict | None", *, ctx: "dict | None" = None, urls: "dict | None" = None, target: "dict | None" = None) -> dict:
     """JS muharriri uchun TO'LIQ ko'rinish. `urls` -- app.py `url_for` bilan
     hisoblab beradi: image (final PNG), base_image (matnsiz fon), export_png,
     export_pdf, base (asset marshrutlari ildizi, masalan /kreativ/12), list,
@@ -146,8 +161,10 @@ def serialize_asset(asset, brand_kit, quota: "dict | None", *, ctx: "dict | None
         "quota": quota or {},
         "brand": brand_info(brand_kit, urls.get("brand_logo")),
         "base_url": urls.get("base") or f"/kreativ/{asset.id}",
-        "urls": {k: urls.get(k) for k in ("export_png", "export_pdf", "list", "templates", "brand_settings", "pricing", "autopilot", "new")},
+        "urls": {k: urls.get(k) for k in ("export_png", "export_pdf", "list", "templates", "brand_settings", "pricing", "autopilot", "new", "target_create", "autopilot_new")},
         "from_autopilot": urls.get("from_autopilot_draft_id"),
+        # 2026-09: "Targetga ochish" -- tayyor kreativdan Avtopilot qoralamasi
+        "target": target or {"can_create": False, "objectives": [], "needs_location": False, "default_location": "", "default_objective": "MESSAGES"},
     }
     return out
 
@@ -173,6 +190,12 @@ def list_assets_for_company(session, company_id: int, image_url_builder=None, *,
             "created_at": a.created_at, "updated_at": a.updated_at,
         })
     return out
+
+
+# Asosiy /kreativ sahifasida dastlab ko'rsatiladigan shablonlar soni
+# (qolganlari "Yana ... ta" tugmasi bilan o'sha joyda ochiladi, sahifa
+# almashmaydi).
+INLINE_TEMPLATES_INITIAL = 8
 
 
 def template_cards(preview_url_builder=None) -> list[dict]:

@@ -1841,6 +1841,25 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-inline-form { display: inline; margin: 0; }
 .cs-empty { text-align: left; }
 .cs-empty h2 { margin-bottom: 8px; }
+/* Asosiy sahifadagi INLINE shablon tanlagich (2026-09): kartochkalar
+   galereyadagidan ixchamroq, butun rasm -- tugma (bir bosishda tanlash). */
+.cs-grid { padding-bottom: 20px; }
+.cs-inline-tpl { margin-top: 22px; padding-bottom: 72px; }
+.cs-inline-tpl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
+.cs-inline-tpl-head h2 { font-size: 16px; margin: 0 0 4px; }
+.cs-inline-tpl-head p { margin: 0; font-size: 12.5px; line-height: 1.45; max-width: 720px; }
+.cs-inline-tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.cs-inline-tpl-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; min-width: 0; transition: box-shadow 0.12s, transform 0.12s; }
+.cs-inline-tpl-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.cs-inline-tpl-card form { display: flex; flex-direction: column; flex: 1; margin: 0; }
+/* Bir xil kvadrat plitkalar (4:5 / 9:16 preview'lar to'liq ko'rinadi -- contain) */
+.cs-inline-tpl-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; padding: 0; border: 0; background: #E9ECF1; overflow: hidden; cursor: pointer; }
+.cs-inline-tpl-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cs-inline-tpl-hover { position: absolute; inset: auto 0 0 0; padding: 6px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(11, 99, 245, 0.88); opacity: 0; transition: opacity 0.12s; }
+.cs-inline-tpl-thumb:hover .cs-inline-tpl-hover, .cs-inline-tpl-thumb:focus-visible .cs-inline-tpl-hover { opacity: 1; }
+.cs-inline-tpl-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.cs-inline-tpl-name { font-weight: 700; color: var(--ink); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-inline-tpl-body .ap-mini-btn { align-self: flex-start; }
 
 /* ---- Shablonlar galereyasi ---- */
 .cs-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -1925,6 +1944,18 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .cs-color-row { display: flex; align-items: center; gap: 10px; }
 .cs-color-row input[type="color"] { width: 46px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; flex-shrink: 0; }
 .cs-color-row input[type="text"] { width: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+/* Muharrir o'ng panelidagi rang maydoni (swatch + HEX) -- tor panelga sig'sin */
+.cs-side .cs-color-row { gap: 6px; }
+.cs-side .cs-color-row input[type="color"] { width: 36px; height: 32px; }
+.cs-side .cs-color-row input[type="text"].cs-hex-input { width: 0; flex: 1; min-width: 70px; padding: 6px 8px; text-transform: uppercase; }
+.cs-hex-input.invalid { border-color: #DC2626 !important; box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15); }
+/* Avtopilot wizard: Kreativ studiyadan kelgan rasm banneri (2026-09) */
+.ap-creative-banner { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; border-color: var(--blue); }
+.ap-creative-banner-thumb { flex-shrink: 0; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; background: var(--border-light); display: block; }
+.ap-creative-banner-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Muharrir: "Targetga ochish" mini-forma (2026-09) */
+.cs-target-form { display: flex; flex-direction: column; gap: 8px; }
+.cs-target-form .ap-grid-2 { gap: 8px; }
 
 @media (max-width: 1100px) { .cs-layout { grid-template-columns: minmax(0, 1fr) 300px; } }
 @media (max-width: 900px) {

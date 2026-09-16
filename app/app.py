@@ -7068,6 +7068,69 @@ def autopilot_list():
         session.close()
 
 
+def _autopilot_create_ai_draft(session, company, ctx, assets, answers: dict, resolve_geo) -> "db.CampaignDraft":
+    """AI reja -> yangi `CampaignDraft` (commit). `/avtopilot/yangi` wizard'i
+    va Kreativ studiyadagi "Targetga ochish" (2026-09) BIR XIL yo'ldan
+    o'tadi. `PlannerUnavailableError` / `DraftPatchError` chaqiruvchida."""
+    result = ai_campaign_planner.plan_campaign(
+        ctx, answers, meta_assets=assets, resolve_geo=resolve_geo,
+        resolve_interests=autopilot_web.resolve_interests_factory(company),
+    )
+    state = result["state"]
+    draft = db.CampaignDraft(
+        company_id=company.id, created_by_manager_id=_autopilot_manager_id(),
+        title=(state.get("campaign") or {}).get("name") or "Yangi kampaniya", source="AI", status="draft",
+        objective=state.get("objective"), sync_status="local",
+    )
+    draft.set_state(state)
+    draft.set_field_sources(result["field_sources"])
+    draft.set_ai_plan(result["plan"])
+    session.add(draft)
+    session.flush()
+    autopilot_web.log_event(session, draft, actor="ai", action="ai_generated_plan", scope="all",
+                            details={"answers": {k: v for k, v in answers.items() if k != "media"}, "warnings": result["plan"].get("warnings"),
+                                     "reasoning_summary": result["plan"].get("reasoning_summary")},
+                            manager_id=_autopilot_manager_id())
+    session.commit()
+    return draft
+
+
+def _autopilot_attach_creative(session, draft, asset, company, assets) -> "str | None":
+    """Tayyor `CreativeAsset`ni qoralama mediasi qilib biriktiradi va
+    `ad.media`ga tanlaydi (xuddi `POST /avtopilot/<id>/media/from-kreativ`).
+    Qaytaradi: foydalanuvchiga ko'rsatiladigan xato matni yoki None
+    (Meta'ga yuklash xatosi ham shu yerda -- qoralama baribir yaratiladi)."""
+    try:
+        row = autopilot_web.media_from_creative_asset(session, draft, asset, _autopilot_manager_id())
+    except campaign_media.MediaError as e:
+        return f"Kreativ biriktirilmadi: {e}"
+    upload_err = autopilot_web.try_upload_to_meta(session, row, company)
+    existing = autopilot_web.media_for_draft(session, draft)
+    idx = next((m["index"] for m in existing if m["id"] == row.id), None)
+    try:
+        autopilot_web.apply_and_persist_patch(
+            session, draft, autopilot_web.media_patch_for_row(row, idx), source="USER_OVERRIDDEN",
+            manager_id=_autopilot_manager_id(), actor="user", action="media_selected",
+            details={"media_id": row.id, "creative_asset_id": asset.id, "upload_error": upload_err, "source": "creative_studio"},
+            company=company, assets=assets,
+        )
+    except campaign_draft.DraftPatchError as e:
+        return f"Kreativ biriktirilmadi: {e}"
+    return upload_err
+
+
+def _autopilot_creative_for_wizard(session, company, raw_id) -> "db.CreativeAsset | None":
+    """`?creative_asset_id=` -- faqat o'z kompaniyasining TAYYOR kreativi."""
+    try:
+        asset_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    asset = session.get(db.CreativeAsset, asset_id)
+    if asset is None or company is None or asset.company_id != company.id or asset.status != "ready" or not asset.final_storage_path:
+        return None
+    return asset
+
+
 @app.route("/avtopilot/yangi", methods=["GET", "POST"])
 @login_required
 @module_required("target")
@@ -7090,6 +7153,21 @@ def autopilot_new():
         objectives = [{"value": o, "label": campaign_draft.OBJECTIVE_LABELS[o], "meta": campaign_draft.OBJECTIVE_META[o]} for o in campaign_draft.OBJECTIVES]
         form = {"objective": "MESSAGES", "budget": "", "location": ctx.get("default_location") or "", "location_key": "", "location_type": "",
                 "duration_days": str(ai_campaign_planner.DEFAULT_DURATION_DAYS), "product_focus": ""}
+        # 2026-09, Kreativ studiya "Targetga ochish": tayyor kreativ media
+        # sifatida biriktiriladi (fayl yuklash o'rniga), maydonlar oldindan
+        # to'ldirilgan bo'lishi mumkin (`?objective=&budget=&product_focus=`).
+        creative_asset = _autopilot_creative_for_wizard(session, company, request.values.get("creative_asset_id"))
+        creative_info = None
+        if creative_asset is not None:
+            creative_info = {"id": creative_asset.id, "title": creative_asset.title or f"Kreativ #{creative_asset.id}",
+                             "thumbnail_url": url_for("creative_image_file", asset_id=creative_asset.id),
+                             "editor_url": url_for("creative_editor", asset_id=creative_asset.id)}
+        if request.method == "GET":
+            for key in ("objective", "budget", "product_focus"):
+                v = (request.args.get(key) or "").strip()
+                if v and (key != "objective" or v.upper() in campaign_draft.OBJECTIVE_META):
+                    form[key] = v.upper() if key == "objective" else v
+        tpl_kwargs = {"creative": creative_info}
 
         if request.method == "POST":
             if current_user.role != "admin":
@@ -7108,13 +7186,16 @@ def autopilot_new():
             if location_name:
                 answers["locations"] = [location_name]
             media_file = request.files.get("media")
-            if media_file is not None and media_file.filename:
+            if creative_asset is not None:
+                answers["media"] = f"rasm (Kreativ studiya #{creative_asset.id})"
+                media_file = None
+            elif media_file is not None and media_file.filename:
                 answers["media"] = f"{'video' if (media_file.content_type or '').startswith('video') else 'rasm'} ({media_file.filename})"
             still_missing = ai_campaign_planner.missing_questions(ctx, answers)
             if still_missing:
                 flash("To'ldiring: " + "; ".join(q["question"] for q in still_missing), "error")
                 return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
-                                       form=form, connection=conn, ctx=ctx), 400
+                                       form=form, connection=conn, ctx=ctx, **tpl_kwargs), 400
 
             # Typeahead'dan tanlangan hudud (key bilan) -- Meta'ni qayta so'ramasdan shu key ishlatiladi
             base_geo = autopilot_web.resolve_geo_factory(company)
@@ -7127,37 +7208,21 @@ def autopilot_new():
                 return base_geo(name)
 
             try:
-                result = ai_campaign_planner.plan_campaign(
-                    ctx, answers, meta_assets=assets, resolve_geo=resolve_geo,
-                    resolve_interests=autopilot_web.resolve_interests_factory(company),
-                )
+                draft = _autopilot_create_ai_draft(session, company, ctx, assets, answers, resolve_geo)
             except ai_campaign_planner.PlannerUnavailableError as e:
                 flash(str(e), "error")
                 return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
-                                       form=form, connection=conn, ctx=ctx), 503
+                                       form=form, connection=conn, ctx=ctx, **tpl_kwargs), 503
             except campaign_draft.DraftPatchError as e:
                 flash(str(e), "error")
                 return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
-                                       form=form, connection=conn, ctx=ctx), 400
+                                       form=form, connection=conn, ctx=ctx, **tpl_kwargs), 400
 
-            state = result["state"]
-            draft = db.CampaignDraft(
-                company_id=company.id, created_by_manager_id=_autopilot_manager_id(),
-                title=(state.get("campaign") or {}).get("name") or "Yangi kampaniya", source="AI", status="draft",
-                objective=state.get("objective"), sync_status="local",
-            )
-            draft.set_state(state)
-            draft.set_field_sources(result["field_sources"])
-            draft.set_ai_plan(result["plan"])
-            session.add(draft)
-            session.flush()
-            autopilot_web.log_event(session, draft, actor="ai", action="ai_generated_plan", scope="all",
-                                    details={"answers": {k: v for k, v in answers.items() if k != "media"}, "warnings": result["plan"].get("warnings"),
-                                             "reasoning_summary": result["plan"].get("reasoning_summary")},
-                                    manager_id=_autopilot_manager_id())
-            session.commit()
-
-            if media_file is not None and media_file.filename:
+            if creative_asset is not None:
+                err = _autopilot_attach_creative(session, draft, creative_asset, company, assets)
+                if err:
+                    flash(err, "error")
+            elif media_file is not None and media_file.filename:
                 try:
                     row = campaign_media.save_uploaded_media(session, company.id, draft.id, media_file, media_file.filename, media_file.content_type)
                     upload_err = autopilot_web.try_upload_to_meta(session, row, company)
@@ -7176,7 +7241,7 @@ def autopilot_new():
             return redirect(url_for("autopilot_review", draft_id=draft.id))
 
         return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
-                               form=form, connection=conn, ctx=ctx)
+                               form=form, connection=conn, ctx=ctx, **tpl_kwargs)
     finally:
         session.close()
 
@@ -7940,6 +8005,7 @@ def _creative_urls(asset, from_autopilot: "str | None") -> dict:
         "export_pdf": url_for("creative_export_pdf", asset_id=asset.id),
         "list": url_for("creative_list"), "templates": url_for("creative_templates_gallery"), "new": url_for("creative_new"),
         "brand_settings": url_for("settings_brand_kit"), "brand_logo": url_for("brand_logo_file"), "pricing": url_for("pricing"),
+        "target_create": url_for("creative_target_create", asset_id=asset.id), "autopilot_new": url_for("autopilot_new"),
     }
     if from_autopilot and str(from_autopilot).isdigit():
         urls["from_autopilot_draft_id"] = int(from_autopilot)
@@ -7952,6 +8018,7 @@ def _creative_payload(session, asset, company) -> dict:
     return creative_web.serialize_asset(
         asset, creative_studio.get_brand_kit(session, company.id), creative_web.quota_info(session, company),
         ctx=ctx, urls=_creative_urls(asset, request.args.get("from_autopilot")),
+        target=creative_web.target_options(ctx, can_create=(getattr(current_user, "role", None) == "admin")),
     )
 
 
@@ -7978,8 +8045,12 @@ def creative_list():
         quota = creative_web.quota_info(session, company) if company else {}
         from_autopilot = request.args.get("from_autopilot")
         draft_id = int(from_autopilot) if from_autopilot and from_autopilot.isdigit() else None
+        # 2026-09, foydalanuvchi so'rovi: shablonlar alohida sahifaga
+        # yashirilmasin -- asosiy sahifada ham ko'rinsin (bir bosishda tanlash).
+        templates = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"))
         return render_template("creative_list.html", assets=assets, quota=quota, from_autopilot=draft_id,
-                               aspect=request.args.get("aspect") or "")
+                               aspect=request.args.get("aspect") or "", templates=templates,
+                               templates_initial=creative_web.INLINE_TEMPLATES_INITIAL)
     finally:
         session.close()
 
@@ -8215,6 +8286,92 @@ def creative_delete(asset_id: int):
         session.close()
 
 
+@app.route("/kreativ/<int:asset_id>/target-yarat", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_target_create(asset_id: int):
+    """2026-09, "Targetga ochish": TAYYOR kreativdan bir bosishda Avtopilot
+    qoralamasi. Tana (forma yoki JSON): objective, budget, location,
+    duration_days, product_focus (ixtiyoriy -- bo'lmasa kreativ brifi/
+    sarlavhasi). AI rejalashtiruvchi maqsad+byudjetni profildan taxmin qila
+    OLMAYDI (`ai_campaign_planner.missing_questions` -- mavjud "kamchilik"
+    mexanizmi): yetishmasa qoralama YARATILMAYDI, foydalanuvchi mavjud
+    wizard'ga (`/avtopilot/yangi?creative_asset_id=...`) yo'naltiriladi --
+    u yerda kreativ allaqachon biriktirilgan, maydonlar oldindan
+    to'ldirilgan. Hammasi bo'lsa: reja -> qoralama -> kreativ media qilib
+    biriktiriladi -> /avtopilot/<id>. Ruxsat: faqat admin (qoralama
+    yaratish kabi). Hech qachon xom xato/yiqilish -- doim tushunarli sahifa."""
+    company = _current_company()
+    wants_json = request.is_json
+    body = (request.get_json(silent=True) or {}) if wants_json else request.form
+    session = get_session()
+    try:
+        asset = _creative_load_asset(session, asset_id, company)
+        editor_url = url_for("creative_editor", asset_id=asset.id)
+
+        def _fail(msg: str, code: int = 400):
+            if wants_json:
+                return jsonify({"error": msg}), code
+            flash(msg, "error")
+            return redirect(editor_url)
+
+        if current_user.role != "admin":
+            return _fail("Kampaniya tuzish faqat admin uchun. Menejer sifatida rasmni faqat yaratishingiz/eksport qilishingiz mumkin.", 403)
+        if asset.status != "ready" or not asset.final_storage_path:
+            return _fail("Avval rasmni yaratib, saqlang -- keyin targetga ochish mumkin.")
+
+        ctx = company_context_module.build_company_context(company, session)
+        assets = autopilot_web.safe_meta_assets(company)
+        conn = autopilot_web.connection_status(company, assets)
+        brief = asset.get_brief_answers()
+        product_focus = (str(body.get("product_focus") or "").strip() or (brief.get("focus") or "").strip() or (asset.title or "").strip() or None)
+        objective = str(body.get("objective") or "").strip().upper()
+        answers = {
+            "objective": objective, "budget": str(body.get("budget") or "").strip(),
+            "duration_days": str(body.get("duration_days") or "").strip() or ai_campaign_planner.DEFAULT_DURATION_DAYS,
+            "product_focus": product_focus, "currency": conn.get("currency"),
+            "media": f"rasm (Kreativ studiya #{asset.id})",
+        }
+        location_name = str(body.get("location") or "").strip()
+        if location_name:
+            answers["locations"] = [location_name]
+        missing = ai_campaign_planner.missing_questions(ctx, answers)
+        if missing:
+            params = {"creative_asset_id": asset.id}
+            if product_focus:
+                params["product_focus"] = product_focus[:300]
+            if objective in campaign_draft.OBJECTIVE_META:
+                params["objective"] = objective
+            if answers["budget"]:
+                params["budget"] = answers["budget"]
+            wizard_url = url_for("autopilot_new", **params)
+            msg = "Kampaniya uchun yana bir nechta ma'lumot kerak: " + "; ".join(q["question"] for q in missing) + ". Rasm allaqachon biriktirilgan."
+            if wants_json:
+                return jsonify({"ok": False, "needs_input": True, "missing": missing, "redirect": wizard_url, "error": msg}), 200
+            flash(msg, "warning")
+            return redirect(wizard_url)
+
+        try:
+            draft = _autopilot_create_ai_draft(session, company, ctx, assets, answers, autopilot_web.resolve_geo_factory(company))
+        except ai_campaign_planner.PlannerUnavailableError as e:
+            return _fail(str(e), 503)
+        except campaign_draft.DraftPatchError as e:
+            return _fail(str(e), 400)
+        except Exception:  # noqa: BLE001 -- friendly xato, xom matn faqat logda
+            logger.exception("Kreativ studiya: targetga ochishda reja tuzilmadi (asset=%s)", asset_id)
+            return _fail("AI reja tuzilmadi -- birozdan keyin qayta urinib ko'ring yoki Avtopilotda qo'lda boshlang.", 500)
+        attach_err = _autopilot_attach_creative(session, draft, asset, company, assets)
+        review_url = url_for("autopilot_review", draft_id=draft.id)
+        if wants_json:
+            return jsonify({"ok": True, "draft_id": draft.id, "redirect": review_url, "attach_error": attach_err})
+        if attach_err:
+            flash(attach_err, "error")
+        flash("AI reja tuzdi va kreativ reklama rasmi sifatida biriktirildi -- endi har bir darajani ko'rib chiqing va tasdiqlang.", "success")
+        return redirect(review_url)
+    finally:
+        session.close()
+
+
 @app.route("/sozlamalar/brend", methods=["GET", "POST"])
 @login_required
 @module_required("target")
@@ -8262,10 +8419,13 @@ def brand_logo_file():
     session = get_session()
     try:
         kit = creative_studio.get_brand_kit(session, company.id) if company else None
+        # Fon kesilgan nusxa (`logo_clean.png`) bo'lsa o'sha beriladi -- u
+        # doim PNG; asl fayl bo'lsa o'z turi.
         path = creative_studio.brand_logo_file_path(kit)
         if not path or not path.exists():
             abort(404)
-        return send_file(str(path), mimetype=kit.logo_content_type or "image/png", max_age=300, conditional=True)
+        mimetype = "image/png" if path.suffix.lower() == ".png" else (kit.logo_content_type or "image/png")
+        return send_file(str(path), mimetype=mimetype, max_age=300, conditional=True)
     finally:
         session.close()
 

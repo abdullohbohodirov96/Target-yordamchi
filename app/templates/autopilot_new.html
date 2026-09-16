@@ -32,8 +32,21 @@
 </div>
 {% endif %}
 
+{% if creative %}
+{# 2026-09, Kreativ studiya "Targetga ochish": tayyor kreativ media sifatida
+   biriktiriladi -- fayl yuklash bosqichi yashiriladi. #}
+<div class="card ap-creative-banner" id="ap-creative-banner">
+  <a href="{{ creative.editor_url }}" class="ap-creative-banner-thumb"><img src="{{ creative.thumbnail_url }}" alt="{{ creative.title }}"></a>
+  <div>
+    <h2 style="margin:0 0 4px">Reklama rasmi: Kreativ studiyadan</h2>
+    <p class="page-subtitle" style="margin:0">"{{ creative.title }}" (#{{ creative.id }}) qoralama yaratilgach avtomatik biriktiriladi va reklama mediasi sifatida tanlanadi. Qolgan savollarga javob bering -- AI rejani tuzadi.</p>
+  </div>
+</div>
+{% endif %}
+
 <form method="post" enctype="multipart/form-data" class="card ap-wizard" id="ap-wizard-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if creative %}<input type="hidden" name="creative_asset_id" value="{{ creative.id }}">{% endif %}
 
   <div class="ap-wizard-step">
     <div class="ap-wizard-step-head"><span class="ap-step-num">1</span><div><h2>Reklamadan asosiy maqsadingiz nima?</h2><p class="text-faint">Maqsad Meta'dagi kampaniya turini, optimallashtirishni va tugmani belgilaydi.</p></div></div>
@@ -99,7 +112,7 @@
     <div class="field"><textarea name="product_focus" rows="2" placeholder="masalan: Oshxona mebeli, buyurtma asosida, 3 kunda tayyor">{{ form.product_focus }}</textarea></div>
   </div>
 
-  <div class="ap-wizard-step">
+  <div class="ap-wizard-step" {% if creative %}hidden{% endif %}>
     <div class="ap-wizard-step-head"><span class="ap-step-num">6</span><div><h2>Rasm yoki video <span class="text-faint" style="font-weight:400">(ixtiyoriy, keyin ham yuklash mumkin)</span></h2><p class="text-faint">AI rasm yaratmaydi -- reklama vizuali sizdan. JPG/PNG/WEBP (30 MB gacha) yoki MP4/MOV (50 MB gacha).</p></div></div>
     <label class="ap-dropzone" id="ap-dropzone">
       <input type="file" name="media" id="ap-media" accept="image/*,video/mp4,video/quicktime,video/webm">

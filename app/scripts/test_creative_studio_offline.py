@@ -21,9 +21,15 @@ rasm-generatsiya) yadrosi, `creative_studio.py` + `creative_templates.py`
   9. Multi-tenant: B kompaniya A rasmlarini/brend kitini ko'rmaydi
      (`db.scoped_as`), yangi modellar `_COMPANY_SCOPED_MODELS`da.
  10. `plans` -- limitlar va FEATURE_MATRIX qatori.
+ 11. (2026-09) Logotip fonini avtomatik kesish: oq/qora fonli logotip ->
+     `logo_clean.png` (burchak alpha=0), shaffof PNG -> tegilmaydi (skip
+     marker), eski logotip birinchi o'qishda o'zi tozalanadi (self-heal).
+ 12. (2026-09) AI kopirayter: telefon savoli (`ctx['phone']` bo'sh bo'lsa
+     MAJBURIY), `generate_ad_copy` mock -- muvaffaqiyat/xato/buzuq JSON,
+     CTA endi hech qachon umumiy "Batafsil" emas, xato bo'lsa "Bog'laning".
 
 HAQIQIY tarmoqqa HECH QACHON chiqmaydi (`creative_studio._openai_request`
-mock qilinadi).
+va AI kopirayter `creative_studio._request_ad_copy` mock qilinadi).
 
 Ishga tushirish:
     cd app && python3 scripts/test_creative_studio_offline.py
@@ -62,6 +68,12 @@ creative_studio.BRAND_ROOT = Path(_TMPDIR) / "brand_kit"
 
 failures = []
 
+# AI kopirayter (chat/completions) butun test davomida OFFLINE: standart
+# holatda "tarmoq xatosi" -> zaxira matn. Alohida testlar ichida boshqacha
+# mock qilinadi (`test_ai_copywriter_and_phone`).
+_COPY_OFFLINE = mock.patch.object(creative_studio, "_request_ad_copy", side_effect=RuntimeError("offline"))
+_COPY_OFFLINE.start()
+
 
 def check(name, cond):
     print(("OK  " if cond else "FAIL") + " " + name)
@@ -95,8 +107,8 @@ def _ok_openai_response():
     return _FakeResp(200, {"created": 1700000000, "data": [{"b64_json": base64.b64encode(_png_bytes(2, 2)).decode()}]})
 
 
-def _company(session, name, plan="business", *, full_profile=True):
-    c = db_module.Company(name=name, plan=plan, is_active=True, business_category="clothing_fashion")
+def _company(session, name, plan="business", *, full_profile=True, phone="+998 90 000 00 00"):
+    c = db_module.Company(name=name, plan=plan, is_active=True, business_category="clothing_fashion", phone=phone)
     if full_profile:
         c.business_profile_answers = json.dumps({
             "product_or_service": "Erkaklar oyoq kiyimi, 30 dan ortiq model",
@@ -150,16 +162,31 @@ def test_missing_questions_and_placeholders():
     import company_context
     empty_ctx = company_context.build_company_context(None)
     q = creative_studio.missing_questions(empty_ctx, {})
-    check("bo'sh ctx -> barcha savollar", [x["key"] for x in q] == [k for k, *_ in creative_studio.CREATIVE_BRIEF_QUESTIONS])
-    check("focus majburiy, qolganlari ixtiyoriy", q[0]["required"] is True and all(not x["required"] for x in q[1:]))
+    check("bo'sh ctx -> barcha savollar (majburiylar oldinda)", [x["key"] for x in q] == ["focus", "phone", "offer_text", "cta_preference", "style_notes"])
+    check("focus + phone majburiy, qolganlari ixtiyoriy", q[0]["required"] is True and q[1]["required"] is True and all(not x["required"] for x in q[2:]))
     session = db_module.get_session()
     try:
         c = _company(session, "Full Co")
         full_ctx = company_context.build_company_context(c, session)
-        check("to'liq ctx -> bo'sh ro'yxat", creative_studio.missing_questions(full_ctx, {}) == [])
-        check("bo'sh ctx + focus javobi -> bo'sh ro'yxat", creative_studio.missing_questions(empty_ctx, {"focus": "Tufli"}) == [])
-        q2 = creative_studio.missing_questions(empty_ctx, {"offer_text": "", "cta_preference": ""})
+        check("to'liq ctx (mahsulot + telefon) -> bo'sh ro'yxat", creative_studio.missing_questions(full_ctx, {}) == [])
+        check("bo'sh ctx + focus + phone javobi -> bo'sh ro'yxat", creative_studio.missing_questions(empty_ctx, {"focus": "Tufli", "phone": "+998901234567"}) == [])
+        q2 = creative_studio.missing_questions(empty_ctx, {"offer_text": "", "cta_preference": "", "phone": "+998901234567"})
         check("ko'rib chiqilgan ixtiyoriy savollar qayta so'ralmaydi", [x["key"] for x in q2] == ["focus", "style_notes"])
+        # Telefon: profilda yo'q -> majburiy; bor -> umuman ko'rsatilmaydi
+        c_nophone = _company(session, "No Phone Co", phone=None)
+        np_ctx = company_context.build_company_context(c_nophone, session)
+        qn = creative_studio.missing_questions(np_ctx, {})
+        check("profilda telefon yo'q -> phone MAJBURIY (mahsulot bor bo'lsa ham)", [x["key"] for x in qn if x["required"]] == ["phone"])
+        check("majburiy bilan birga ixtiyoriylar ham bir martada", [x["key"] for x in qn] == ["phone", "focus", "offer_text", "cta_preference", "style_notes"] or [x["key"] for x in qn][0] == "phone" and len(qn) == 5)
+        check("telefon javobidan keyin bo'sh", creative_studio.missing_questions(np_ctx, {"phone": "+998 91 111 22 33"}) == [])
+        check("visible_brief_questions: telefon bor -> savol yo'q", "phone" not in [k for k, *_ in creative_studio.visible_brief_questions(full_ctx)] and "phone" in [k for k, *_ in creative_studio.visible_brief_questions(np_ctx)])
+        for bad in ("", "abc", "12 34"):
+            try:
+                creative_studio.normalize_phone(bad)
+                check(f"normalize_phone rad etadi: {bad!r}", False)
+            except creative_studio.CreativeError:
+                check(f"normalize_phone rad etadi: {bad!r}", True)
+        check("normalize_phone tozalaydi", creative_studio.normalize_phone(" +998 (90) 123-45-67 tel ") == "+998 (90) 123-45-67")
 
         vals = creative_studio.placeholder_values(full_ctx, {"offer_text": "-30% chegirma", "cta_preference": "Buyurtma bering"}, None)
         check("headline best_seller'dan", vals["headline"] == "Klassik charm tufli")
@@ -168,6 +195,9 @@ def test_missing_questions_and_placeholders():
         check("feature'lar extra_notes'dan", vals["feature_1"] == "Bepul yetkazib berish" and vals["feature_3"] == "chinakam charm" and vals["feature_4"] == "")
         vals2 = creative_studio.placeholder_values(full_ctx, {"offer_text": "yo'q"}, creative_templates.get_template("bold_sale"))
         check("'yo'q' -> offer_text standart AKSIYA, cta shablondan", vals2["offer_text"] == "AKSIYA" and vals2["cta_text"] == "Hoziroq xarid qiling")
+        check("phone/phone_line profildan", vals["phone"] == "+998 90 000 00 00" and vals["phone_line"] == "Tel: +998 90 000 00 00")
+        check("shablonsiz CTA zaxirasi 'Batafsil' EMAS", creative_studio.placeholder_values(full_ctx, {}, None)["cta_text"] == creative_studio.FALLBACK_CTA != "Batafsil")
+        check("hech bir shablon default_cta 'Batafsil' emas", all(t.get("default_cta") != "Batafsil" for t in creative_templates.CREATIVE_TEMPLATES))
         prompt = creative_studio.build_image_prompt(full_ctx, {"focus": "Qishki etik", "style_notes": "qor fon"}, creative_templates.get_template("luxury_dark"))
         check("prompt: no text + focus + style", "no text" in prompt and "Qishki etik" in prompt and "qor fon" in prompt and "luxurious" in prompt)
         check("_size_for_aspect", creative_studio._size_for_aspect("1:1") == "1024x1024" and creative_studio._size_for_aspect("9:16") == "1024x1536" and creative_studio._size_for_aspect("x") == "1024x1024")
@@ -362,6 +392,12 @@ def test_generate_flow():
                 check(f"create_draft_asset noto'g'ri {kwargs} rad etiladi", False)
             except creative_studio.CreativeError:
                 check(f"create_draft_asset noto'g'ri {kwargs} rad etiladi", True)
+
+        # Shablonsiz (standart qatlamlar) -- telefon qatlami profildan
+        a_def = creative_studio.create_draft_asset(session, c, None)
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()):
+            creative_studio.generate_base_image(session, a_def, c, plan)
+        check("standart qatlamlarda telefon qatlami (profil raqami)", any(l["id"] == "phone" and l["text"] == "Tel: +998 90 000 00 00" and not l.get("hidden") for l in a_def.get_layers()))
     finally:
         session.close()
 
@@ -533,6 +569,167 @@ def test_plans():
     check("image_generation_limit_for_plan", plans.image_generation_limit_for_plan("business") == 30 and plans.image_generation_limit_for_plan(None) == 0)
 
 
+# ---------------------------------------------------------------------------
+# 11) Logotip fonini avtomatik kesish (2026-09)
+# ---------------------------------------------------------------------------
+def _wordmark_png(bg, fg, fmt="PNG", size=(400, 140)):
+    from PIL import ImageDraw, ImageFont
+    im = Image.new("RGB", size, bg)
+    d = ImageDraw.Draw(im)
+    d.text((20, 30), "BREND", font=ImageFont.truetype(str(creative_studio.FONT_BOLD), 72), fill=fg)
+    buf = io.BytesIO()
+    im.save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def test_logo_background_removal():
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Logo BG Co")
+        d = creative_studio.BRAND_ROOT / str(c.id)
+        for name, data, fname, ct in (("oq fon PNG", _wordmark_png((255, 255, 255), (20, 20, 20)), "logo.png", "image/png"),
+                                      ("qora fon PNG", _wordmark_png((0, 0, 0), (245, 245, 245)), "logo.png", "image/png"),
+                                      ("oq fon JPEG", _wordmark_png((255, 255, 255), (200, 30, 30), fmt="JPEG"), "logo.jpg", "image/jpeg")):
+            kit = creative_studio.save_brand_logo(session, c.id, data, fname, ct)
+            used = creative_studio.brand_logo_file_path(kit)
+            clean = d / creative_studio.LOGO_CLEAN_NAME
+            check(f"{name}: logo_clean.png yaratildi va render shu faylni oladi", clean.exists() and used == clean and not (d / creative_studio.LOGO_CLEAN_SKIP).exists())
+            with Image.open(clean) as im:
+                im = im.convert("RGBA")
+                corners = [im.getpixel(p)[3] for p in ((0, 0), (im.width - 1, 0), (0, im.height - 1), (im.width - 1, im.height - 1))]
+                center_alpha = im.getchannel("A").getbbox()
+                check(f"{name}: burchaklar shaffof (alpha=0), belgi saqlangan", all(a == 0 for a in corners) and center_alpha is not None)
+                # Harflar (fon rangidan uzoq) to'liq ko'rinadi
+                hist = im.getchannel("A").histogram()
+                check(f"{name}: matn piksellari to'liq alpha (255)", hist[255] > 500)
+            check(f"{name}: asl fayl ham saqlanadi", creative_studio.brand_logo_original_path(kit).exists() and creative_studio.brand_logo_original_path(kit).name == fname)
+        # Allaqachon shaffof PNG -- tegilmaydi, skip marker
+        kit = creative_studio.save_brand_logo(session, c.id, _rgba_png_bytes(), "logo.png", "image/png")
+        check("shaffof PNG -> tozalanmaydi (skip marker), asl fayl ishlatiladi",
+              not (d / creative_studio.LOGO_CLEAN_NAME).exists() and (d / creative_studio.LOGO_CLEAN_SKIP).exists()
+              and creative_studio.brand_logo_file_path(kit).name == "logo.png")
+        # remove_logo_background: gradient/foto (chekka bir xil emas) -> tegilmaydi
+        grad = creative_studio.background_image({"type": "gradient", "colors": ["#000000", "#FFFFFF"], "direction": "horizontal"}, (200, 100))
+        _out, changed = creative_studio.remove_logo_background(grad)
+        check("chekkasi bir xil bo'lmagan rasm (gradient) -> tegilmaydi", changed is False)
+        # Bir rangli rasm (hamma narsa fon) -> xavfsiz: tegilmaydi
+        _out, changed = creative_studio.remove_logo_background(Image.new("RGB", (50, 50), (255, 255, 255)))
+        check("bir rangli rasm -> tegilmaydi", changed is False)
+        # Och-kulrang detal (fon rangiga yaqin, lekin T1 dan uzoq) saqlanadi
+        from PIL import ImageDraw
+        im = Image.new("RGB", (300, 120), (255, 255, 255))
+        ImageDraw.Draw(im).rectangle((20, 40, 280, 80), fill=(190, 190, 190))
+        out, changed = creative_studio.remove_logo_background(im)
+        check("fon rangiga yaqinroq (kulrang) detal saqlanadi", changed and out.getpixel((150, 60))[3] == 255 and out.getpixel((5, 5))[3] == 0)
+
+        # Self-heal: ESKI yuklangan (tozalanmagan) logotip -- birinchi o'qishda o'zi tozalanadi
+        for f in d.glob("logo_clean.*"):
+            f.unlink()
+        (d / "logo.png").write_bytes(_wordmark_png((255, 255, 255), (0, 0, 0)))
+        kit = creative_studio.get_brand_kit(session, c.id)
+        used = creative_studio.brand_logo_file_path(kit)
+        check("eski logotip self-heal: birinchi o'qishda logo_clean.png yaratildi", used.name == creative_studio.LOGO_CLEAN_NAME and used.exists())
+        with Image.open(used) as im:
+            check("self-heal natijasi shaffof", im.convert("RGBA").getpixel((0, 0))[3] == 0)
+        # Render: logotip zonasida fon rangi (oq quti) YO'Q, faqat harflar
+        base_path = Path(_TMPDIR) / "base_logo_bg.png"
+        base_path.write_bytes(_png_bytes(600, 600, (40, 120, 60)))
+        out_path = Path(_TMPDIR) / "out_logo_bg.png"
+        creative_studio.render_composite(base_path, [{"id": "logo", "type": "logo", "x": 0.6, "y": 0.05, "w": 0.35, "h": 0.15, "align": "right"}], kit, out_path, target_size=(600, 600))
+        with Image.open(out_path) as im:
+            region = im.convert("RGB").crop((360, 30, 570, 120))
+            whites = sum(1 for p in region.getdata() if p[0] > 240 and p[1] > 240 and p[2] > 240)
+            blacks = sum(1 for p in region.getdata() if p[0] < 40 and p[1] < 40 and p[2] < 40)
+            check("renderda oq quti yo'q, qora harflar bor", whites < 30 and blacks > 100)
+        # Yangi logotip yuklansa eski clean/skip o'chadi
+        creative_studio.save_brand_logo(session, c.id, _rgba_png_bytes(), "logo.png", "image/png")
+        check("yangi yuklashda eski logo_clean.png o'chirildi", not (d / creative_studio.LOGO_CLEAN_NAME).exists())
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# 12) AI kopirayter + telefon (2026-09)
+# ---------------------------------------------------------------------------
+def _copy_resp(content, status=200):
+    return _FakeResp(status, {"choices": [{"message": {"content": content}}]})
+
+
+def test_ai_copywriter_and_phone():
+    import company_context
+    session = db_module.get_session()
+    try:
+        c = _company(session, "Armatura Co", full_profile=False, phone=None)
+        ctx = company_context.build_company_context(c, session)
+        raw = {"focus": "armatura sotishimiz kerak", "offer_text": "yo'q", "phone": "+998 90 123 45 67"}
+        good = json.dumps({"headline": "Sifatli armatura — zavod narxida", "subheadline": "Toshkent bo'ylab yetkazib beramiz", "cta_text": "Narxini bilib oling"}, ensure_ascii=False)
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(good)) as req:
+            vals = creative_studio.placeholder_values(ctx, raw, None)
+        check("AI matn: chat/completions bir marta, JSON rejimi, arzon model", req.call_count == 1 and req.call_args.args[0]["response_format"] == {"type": "json_object"} and req.call_args.args[0]["model"] == creative_studio.OPENAI_TEXT_MODEL and req.call_args.args[0]["max_tokens"] <= 300)
+        check("AI matn: promptda xom javob + telefon + kompaniya", "armatura sotishimiz kerak" in req.call_args.args[0]["messages"][1]["content"] and "+998 90 123 45 67" in req.call_args.args[0]["messages"][1]["content"] and "Armatura Co" in req.call_args.args[0]["messages"][1]["content"])
+        check("AI matn: sarlavha xom javob EMAS, AI natijasi", vals["headline"] == "Sifatli armatura — zavod narxida" and vals["subheadline"] == "Toshkent bo'ylab yetkazib beramiz")
+        check("AI matn: CTA kontekstga mos (Batafsil emas)", vals["cta_text"] == "Narxini bilib oling")
+        check("AI matn: telefon qiymatlari brifdan", vals["phone"] == "+998 90 123 45 67" and vals["phone_line"] == "Tel: +998 90 123 45 67")
+        # cta_preference bo'lsa -- AI CTA'si emas, mijozniki
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(good)):
+            vals_pref = creative_studio.placeholder_values(ctx, dict(raw, cta_preference="Qo'ng'iroq qiling"), None)
+        check("cta_preference AI'dan ustun", vals_pref["cta_text"] == "Qo'ng'iroq qiling" and vals_pref["headline"] == "Sifatli armatura — zavod narxida")
+        # ``` bilan o'ralgan JSON ham o'qiladi
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp("```json\n" + good + "\n```")):
+            check("```json``` o'rami tozalanadi", creative_studio.placeholder_values(ctx, raw, None)["headline"] == "Sifatli armatura — zavod narxida")
+        # Xato holatlari -> zaxira (xom, lekin crash yo'q), CTA "Bog'laning"
+        for label, patch_kwargs in (("tarmoq xatosi", {"side_effect": RuntimeError("boom")}),
+                                    ("HTTP 500", {"return_value": _FakeResp(500, {"error": {"message": "RAW"}})}),
+                                    ("kredit tugagan 429", {"return_value": _FakeResp(429, {"error": {"code": "insufficient_quota", "message": "quota"}})}),
+                                    ("buzuq JSON", {"return_value": _copy_resp("bu json emas")}),
+                                    ("bo'sh JSON", {"return_value": _copy_resp("{}")})):
+            with mock.patch.object(creative_studio, "_request_ad_copy", **patch_kwargs):
+                try:
+                    v = creative_studio.placeholder_values(ctx, raw, None)
+                    check(f"AI matn {label} -> zaxira, crash yo'q, CTA='Bog\'laning'", v["headline"] == "armatura sotishimiz kerak" and v["cta_text"] == "Bog'laning")
+                except Exception as e:  # noqa: BLE001
+                    check(f"AI matn {label} -> zaxira, crash yo'q", False)
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": ""}), mock.patch.object(creative_studio, "_request_ad_copy") as req:
+            creative_studio.placeholder_values(ctx, raw, None)
+            check("OPENAI_API_KEY yo'q -> AI matn chaqirilmaydi", req.call_count == 0)
+        with mock.patch.object(creative_studio, "_request_ad_copy") as req:
+            creative_studio.placeholder_values(ctx, raw, None, use_ai=False)
+            check("use_ai=False -> chaqirilmaydi (shablon rejimi)", req.call_count == 0)
+        # Juda uzun AI matn qisqartiriladi
+        with mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(json.dumps({"headline": "x" * 200, "cta_text": "y" * 100}))):
+            v = creative_studio.placeholder_values(ctx, raw, None)
+            check("AI matn uzunligi chegaralanadi", len(v["headline"]) <= 48 and len(v["cta_text"]) <= 32)
+
+        # To'liq oqim: telefon so'raladi, javob profilga yoziladi, generatsiyada AI matn qatlamga tushadi
+        a = creative_studio.create_draft_asset(session, c, None)
+        missing = json.loads(a.missing_fields_json)
+        check("draft: focus + phone majburiy (profil bo'sh)", "focus" in missing and "phone" in missing)
+        creative_studio.submit_brief_answer(session, a, "focus", "armatura sotishimiz kerak")
+        try:
+            creative_studio.submit_brief_answer(session, a, "phone", "raqam yo'q")
+            check("noto'g'ri telefon rad etiladi", False)
+        except creative_studio.CreativeError:
+            check("noto'g'ri telefon rad etiladi", True)
+        creative_studio.submit_brief_answer(session, a, "phone", "+998 90 123 45 67")
+        check("telefon javobi profilga ham yozildi (bo'sh edi)", c.phone == "+998 90 123 45 67")
+        check("telefondan keyin missing bo'sh", json.loads(a.missing_fields_json) == [])
+        with mock.patch.object(creative_studio, "_openai_request", return_value=_ok_openai_response()) as img_req, \
+                mock.patch.object(creative_studio, "_request_ad_copy", return_value=_copy_resp(good)) as copy_req:
+            creative_studio.generate_base_image(session, a, c, plans.PLANS["business"])
+        check("generatsiya: rasm 1 marta, AI matn 1 marta", img_req.call_count == 1 and copy_req.call_count == 1)
+        layers = {l["id"]: l for l in a.get_layers()}
+        check("qatlamlar: AI sarlavha, AI CTA, telefon", layers["headline"]["text"] == "Sifatli armatura — zavod narxida" and layers["cta_badge"]["text"] == "Narxini bilib oling" and layers["phone"]["text"] == "Tel: +998 90 123 45 67")
+        check("title AI sarlavhadan", a.title == "Sifatli armatura — zavod narxida")
+        # Ikkinchi kompaniya: telefon profilda bor -> so'ralmaydi, ustidan yozilmaydi
+        c2 = _company(session, "Phone Co", full_profile=False)
+        a2 = creative_studio.create_draft_asset(session, c2, None)
+        check("profilda telefon bor -> so'ralmaydi", "phone" not in json.loads(a2.missing_fields_json) and "focus" in json.loads(a2.missing_fields_json))
+        creative_studio.submit_brief_answer(session, a2, "phone", "+998 93 999 99 99")
+        check("mavjud profil telefoni ustidan yozilmaydi", c2.phone == "+998 90 000 00 00")
+    finally:
+        session.close()
+
+
 test_templates()
 test_missing_questions_and_placeholders()
 test_quota()
@@ -541,6 +738,8 @@ test_render_composite_and_brand_kit()
 test_create_from_template_and_export()
 test_multitenant_isolation()
 test_plans()
+test_logo_background_removal()
+test_ai_copywriter_and_phone()
 
 print()
 if failures:

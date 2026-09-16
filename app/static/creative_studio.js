@@ -634,6 +634,31 @@
       inp.addEventListener('change', function () { var v = clamp(Number(inp.value) / 100, min / 100, max / 100); if (isNaN(v)) { return; } l[key] = round3(v); onchange && onchange(); markDirty(); });
       return inp;
     }
+    // "#RGB" / "RRGGBB" / " #rrggbb " -> "#RRGGBB" yoki null (noto'g'ri).
+    function normalizeHex(v) {
+      var s = String(v || '').trim().replace(/^#/, '');
+      if (/^[0-9a-f]{3}$/i.test(s)) { s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2]; }
+      return /^[0-9a-f]{6}$/i.test(s) ? ('#' + s.toUpperCase()) : null;
+    }
+    // Rang tanlagich (swatch) + qo'lda yoziladigan HEX maydoni, ikki
+    // tomonlama sinxron (brend kit formasidagi naqsh). 2026-09,
+    // foydalanuvchi so'rovi: "rang kodini o'zim yozib/qo'yib qo'yay".
+    function colorField(label, current, onchange) {
+      var cur = normalizeHex(current) || '#111111';
+      var swatch = h('input', { type: 'color', value: cur, title: label });
+      var hex = h('input', { type: 'text', class: 'cs-hex-input', value: cur, placeholder: '#RRGGBB', maxlength: 7, spellcheck: 'false', 'aria-label': label + ' (HEX)' });
+      swatch.addEventListener('input', function () { var v = normalizeHex(swatch.value); if (!v) { return; } hex.value = v; hex.classList.remove('invalid'); onchange(v); });
+      hex.addEventListener('input', function () {
+        var v = normalizeHex(hex.value);
+        hex.classList.toggle('invalid', !v && hex.value.trim() !== '');
+        if (v) { swatch.value = v; onchange(v); }
+      });
+      var finalize = function () { var v = normalizeHex(hex.value); if (v) { hex.value = v; swatch.value = v; onchange(v); } else { hex.value = swatch.value.toUpperCase(); } hex.classList.remove('invalid'); };
+      hex.addEventListener('change', finalize);
+      hex.addEventListener('blur', finalize);
+      hex.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); finalize(); } });
+      return propField(label, h('div', { class: 'cs-color-row' }, [swatch, hex]));
+    }
 
     function renderSide() {
       var a = store.asset;
@@ -664,6 +689,9 @@
         exp.appendChild(use);
       }
       side.appendChild(h('div', { class: 'cs-side-section' }, [h('h3', { class: 'ap-section-title', text: 'Eksport' }), exp, store.dirty ? h('div', { class: 'ap-field-hint', text: 'Eksport oxirgi SAQLANGAN holatni beradi -- avval "Saqlash"ni bosing.' }) : null]));
+
+      // ---- Targetga ochish (2026-09): tayyor kreativdan Avtopilot qoralamasi
+      if (!a.from_autopilot && a.urls.target_create) { side.appendChild(renderTargetSection()); }
 
       // ---- Qatlamlar ro'yxati
       var list = h('div', { class: 'cs-layer-list' });
@@ -697,9 +725,7 @@
           ta.addEventListener('input', function () { l.text = ta.value; if (l.hidden && ta.value.trim()) { delete l.hidden; } markDirty(); });
           sec.appendChild(propField('Matn', ta, String(l.text || '').indexOf('{{') >= 0 ? 'Bu qatlam uchun ma\'lumot topilmadi -- matn kiritsangiz ko\'rinadi.' : null));
           var g = h('div', { class: 'ap-grid-2' });
-          var color = h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(l.color || '') ? l.color : '#111111' });
-          color.addEventListener('input', function () { l.color = color.value.toUpperCase(); markDirty(); });
-          g.appendChild(propField('Matn rangi', color));
+          g.appendChild(colorField('Matn rangi', l.color, function (v) { l.color = v; markDirty(); }));
           var font = h('select', {}, [h('option', { value: 'bold', text: 'Qalin', selected: l.font !== 'regular' }), h('option', { value: 'regular', text: 'Oddiy', selected: l.font === 'regular' })]);
           font.addEventListener('change', function () { l.font = font.value; markDirty(); });
           g.appendChild(propField('Shrift', font));
@@ -715,9 +741,7 @@
         }
         if (l.type === 'badge' || l.type === 'panel') {
           var g3 = h('div', { class: 'ap-grid-2' });
-          var bg = h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(l.bg_color || '') ? l.bg_color : '#111111' });
-          bg.addEventListener('input', function () { l.bg_color = bg.value.toUpperCase(); markDirty(); });
-          g3.appendChild(propField('Fon rangi', bg));
+          g3.appendChild(colorField('Fon rangi', l.bg_color, function (v) { l.bg_color = v; markDirty(); }));
           var op = h('input', { type: 'range', min: 0, max: 100, step: 5, value: Math.round((l.opacity == null ? 1 : Number(l.opacity)) * 100) });
           op.addEventListener('input', function () { l.opacity = round3(Number(op.value) / 100); markDirty(); });
           g3.appendChild(propField('Shaffoflik', op));
@@ -762,7 +786,7 @@
       var a = store.asset;
       var l;
       if (type === 'text') { l = { id: 'text_' + Date.now(), type: 'text', x: 0.08, y: 0.4, w: 0.84, h: 0.12, align: 'left', font: 'bold', size_ratio: 0.05, color: '#FFFFFF', text: 'Yangi matn' }; }
-      else if (type === 'badge') { l = { id: 'badge_' + Date.now(), type: 'badge', x: 0.08, y: 0.5, w: 0.4, h: 0.07, align: 'center', font: 'bold', size_ratio: 0.026, color: '#FFFFFF', bg_color: '#111111', opacity: 0.95, text: 'Batafsil' }; }
+      else if (type === 'badge') { l = { id: 'badge_' + Date.now(), type: 'badge', x: 0.08, y: 0.5, w: 0.4, h: 0.07, align: 'center', font: 'bold', size_ratio: 0.026, color: '#FFFFFF', bg_color: '#111111', opacity: 0.95, text: 'Buyurtma bering' }; }
       else { l = { id: 'logo', type: 'logo', x: 0.8, y: 0.06, w: 0.14, h: 0.09, align: 'right' }; }
       a.layers = a.layers || [];
       a.layers.push(l);
@@ -776,6 +800,53 @@
       return api('/layers', { method: 'POST', body: { layers: store.asset.layers } }).then(function () {
         store.busy = null; setMsg('Saqlandi -- yakuniy rasm qayta chizildi.', 'ok'); render();
       }).catch(function (e) { store.busy = null; setMsg('Saqlanmadi: ' + e.message, 'err'); renderSide(); throw e; });
+    }
+
+    // "Targetga ochish": maqsad + kunlik byudjet (+ hudud, profilda bo'lmasa)
+    // -> POST /kreativ/<id>/target-yarat (oddiy forma, sahifa almashadi).
+    // Server yetishmagan ma'lumot bo'lsa Avtopilot wizard'iga (kreativ
+    // biriktirilgan holda) yo'naltiradi, aks holda darhol /avtopilot/<id>.
+    function renderTargetSection() {
+      var a = store.asset;
+      var t = a.target || {};
+      var sec = h('div', { class: 'cs-side-section', id: 'cs-target-section' }, [h('h3', { class: 'ap-section-title', text: 'Targetga ochish' })]);
+      if (!t.can_create) {
+        sec.appendChild(h('div', { class: 'ap-field-hint', text: 'Bu rasmdan Avtopilot kampaniyasini faqat admin tuza oladi. Rasmni PNG qilib yuklab olib, adminga bering.' }));
+        return sec;
+      }
+      sec.appendChild(h('div', { class: 'ap-field-hint', style: 'margin-bottom:8px', text: 'Shu rasm bilan AI to\'liq kampaniya rejasini (Campaign → Ad Set → Ad) tuzadi -- siz faqat ko\'rib chiqib tasdiqlaysiz.' }));
+      var form = h('form', { method: 'post', action: a.urls.target_create, class: 'cs-target-form', id: 'cs-target-form' });
+      form.appendChild(h('input', { type: 'hidden', name: 'csrf_token', value: CSRF }));
+      var obj = h('select', { name: 'objective' }, (t.objectives || []).map(function (o) { return h('option', { value: o.value, text: o.label, selected: o.value === (t.default_objective || 'MESSAGES') }); }));
+      form.appendChild(propField('Maqsad', obj));
+      var budget = h('input', { type: 'number', name: 'budget', min: 1, step: 'any', inputmode: 'decimal', placeholder: 'masalan 200000', required: true });
+      form.appendChild(propField('Kunlik byudjet', budget, 'Reklama hisobi valyutasida. Byudjetni AI taxmin qila olmaydi.'));
+      if (t.needs_location) {
+        var loc = h('input', { type: 'text', name: 'location', placeholder: 'masalan Toshkent', required: true });
+        form.appendChild(propField('Shahar/hudud', loc, 'Profilda standart hudud yo\'q -- reklama qayerda chiqadi?'));
+      }
+      var btn = h('button', { type: 'submit', class: 'btn ap-btn-sm ap-btn-publish', html: svgIcon('rocket') + ' Targetga ochish' });
+      btn.querySelector('svg').style.cssText = 'width:13px;height:13px;vertical-align:-2px;margin-right:4px';
+      form.appendChild(btn);
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!form.reportValidity()) { return; }
+        btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> AI reja tuzmoqda…';
+        // Saqlash sidebar'ni qayta chizadi (bu forma DOM'dan chiqadi) --
+        // shuning uchun qiymatlar oldindan olinib, yangi yashirin forma yuboriladi.
+        var values = { csrf_token: CSRF, objective: obj.value, budget: budget.value, location: (form.querySelector('input[name="location"]') || {}).value || '' };
+        var go = function () {
+          var f = h('form', { method: 'post', action: a.urls.target_create, hidden: true });
+          Object.keys(values).forEach(function (k) { f.appendChild(h('input', { type: 'hidden', name: k, value: values[k] })); });
+          document.body.appendChild(f);
+          store.dirty = false;  // beforeunload ogohlantirishi chiqmasin
+          f.submit();
+        };
+        if (store.dirty) { saveLayers().then(go).catch(function () { /* xabar ko'rsatildi, sidebar qayta chizildi */ }); } else { go(); }
+      });
+      sec.appendChild(form);
+      sec.appendChild(h('div', { class: 'ap-field-hint', style: 'margin-top:8px' }, [h('a', { href: a.urls.autopilot_new + '?creative_asset_id=' + a.id, text: 'Barcha savollar bilan (Avtopilot wizard)' })]));
+      return sec;
     }
 
     function useInAutopilot() {
@@ -800,6 +871,17 @@
   // ==================================================================
   // GALEREYA: "Bu reklamada ishlatish" (Avtopilotdan kelinganda)
   // ==================================================================
+  // Asosiy sahifadagi inline shablonlar: "Yana N ta" -- sahifa almashmaydi
+  var tplToggle = document.getElementById('cs-inline-tpl-toggle');
+  if (tplToggle) {
+    tplToggle.addEventListener('click', function () {
+      var expanded = tplToggle.getAttribute('aria-expanded') === 'true';
+      document.querySelectorAll('#cs-inline-tpl .cs-inline-tpl-more').forEach(function (c) { c.hidden = expanded; });
+      tplToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+      tplToggle.textContent = expanded ? tplToggle.dataset.more : tplToggle.dataset.less;
+    });
+  }
+
   var list = document.getElementById('cs-list');
   if (list && list.dataset.fromAutopilot && list.dataset.autopilotUrl) {
     var csrfList = list.dataset.csrf;

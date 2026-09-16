@@ -20,7 +20,7 @@ AYNAN shu koordinatalarni ishlatadi):
     "style_prompt": "...",             # OpenAI FON-rasm promptiga qo'shiladigan INGLIZCHA uslub
     "background": {"type": "solid"|"gradient", "colors": [...], "direction": "vertical"|"horizontal"|"diagonal"},
     "aspect_default": "1:1" | "4:5" | "9:16",
-    "default_cta": "Batafsil",         # brifda CTA berilmasa shu shablonga mos standart
+    "default_cta": "Buyurtma bering",  # brifda CTA berilmasa (va AI ham tanlamasa) shu shablonga mos standart -- umumiy "Batafsil" EMAS (2026-09)
     "layers": [ ... ]                  # BOSHLANG'ICH qatlamlar (muharrirda o'zgartiriladi)
   }
 
@@ -81,7 +81,7 @@ CREATIVE_TEMPLATES = [
         "style_prompt": f"clean minimalist studio background, soft white and light grey tones, soft diffused lighting, plenty of negative space at the bottom for overlay text, {_NO_TEXT}",
         "background": {"type": "solid", "colors": ["#F4F4F2"]},
         "aspect_default": "1:1",
-        "default_cta": "Batafsil",
+        "default_cta": "Buyurtma bering",
         "layers": [
             _badge("cta_badge", 0.08, 0.06, 0.30, 0.07, "{{cta_text}}", bg_color="#111111", color="#FFFFFF"),
             _logo(0.80, 0.06, 0.14, 0.09),
@@ -130,7 +130,7 @@ CREATIVE_TEMPLATES = [
         "style_prompt": f"modern technology background, deep blue to violet gradient, subtle glowing geometric shapes and light particles, futuristic clean feel, empty area at the bottom left for overlay text, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#1E3A8A", "#7C3AED"], "direction": "diagonal"},
         "aspect_default": "1:1",
-        "default_cta": "Batafsil",
+        "default_cta": "Narxini bilib oling",
         "layers": [
             _badge("cta_badge", 0.06, 0.06, 0.28, 0.07, "{{cta_text}}", bg_color="#22D3EE", color="#0B1020"),
             _logo(0.80, 0.06, 0.14, 0.09),
@@ -253,7 +253,7 @@ CREATIVE_TEMPLATES = [
         "style_prompt": f"fresh mint green and white background, clean flat product presentation, soft even lighting, subject in the upper center, lower half kept plain for overlay blocks, {_NO_TEXT}",
         "background": {"type": "gradient", "colors": ["#D1FAE5", "#ECFDF5"], "direction": "vertical"},
         "aspect_default": "1:1",
-        "default_cta": "Batafsil",
+        "default_cta": "Batafsil ma'lumot oling",
         "layers": [
             _text("headline", 0.06, 0.06, 0.70, 0.10, "{{headline}}", size_ratio=0.05, color="#064E3B"),
             _logo(0.80, 0.06, 0.14, 0.09),

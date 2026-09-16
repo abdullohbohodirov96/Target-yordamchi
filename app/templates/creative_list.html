@@ -88,11 +88,50 @@
     <p class="page-subtitle" style="margin-bottom:14px">Ikki yo'l bor: <strong>AI bilan yaratish</strong> -- kompaniyangiz haqida 1-4 ta savolga javob berasiz, AI matnsiz fon rasmini yaratadi, sarlavha/chaqiriq/logotip ustiga aniq shrift bilan qo'yiladi. Yoki <strong>shablondan boshlash</strong> -- 20 ta tayyor dizayndan birini tanlab, o'z mahsulot fotosi va matningiz bilan moslashtirasiz (AI kvotasi sarflanmaydi).</p>
     <div style="display:flex; gap:10px; flex-wrap:wrap">
       <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">✨ AI bilan yaratish</a>
-      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">🖼️ Shablonlarni ko'rish</a>
+      <a href="#cs-inline-tpl" class="btn btn-outline">🖼️ Shablondan boshlash (pastda)</a>
     </div>
   </div>
   {% endif %}
   <div id="cs-list-msg" class="ap-modal-msg" hidden></div>
+
+  {# 2026-09, foydalanuvchi so'rovi: shablonlar asosiy sahifada ham ko'rinsin
+     -- bir bosishda tanlash ("Shundan boshlash" -> /kreativ/yangi, xuddi
+     to'liq galereyadagi kabi). Dastlab {{ templates_initial }} ta, qolgani
+     shu yerda ochiladi; to'liq galereya (kategoriya filtri bilan) alohida. #}
+  {% if templates %}
+  <section class="cs-inline-tpl" id="cs-inline-tpl" aria-label="Tayyor shablonlar">
+    <div class="cs-inline-tpl-head">
+      <div>
+        <h2>Tayyor shablonlar</h2>
+        <p class="text-faint">Shablonni tanlang -- AI fon yaratadi yoki o'z mahsulot fotongizni qo'yasiz; matn, logotip va ranglar kompaniyangizga moslanadi. Har bir rasm -- tayyor reklama qanday chiqishining haqiqiy namunasi.</p>
+      </div>
+      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none;white-space:nowrap">Barcha {{ templates|length }} ta (kategoriya bo'yicha)</a>
+    </div>
+    <div class="cs-inline-tpl-grid">
+      {% for t in templates %}
+      <div class="cs-inline-tpl-card{% if loop.index > templates_initial %} cs-inline-tpl-more{% endif %}" data-template-key="{{ t.key }}" {% if loop.index > templates_initial %}hidden{% endif %}>
+        <form method="get" action="{{ url_for('creative_new') }}">
+          <input type="hidden" name="template_key" value="{{ t.key }}">
+          {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
+          <button type="submit" class="cs-inline-tpl-thumb" title="{{ t.name }} -- shundan boshlash">
+            <img src="{{ t.preview_url }}" alt="{{ t.name }}: namuna" loading="lazy">
+            <span class="cs-inline-tpl-hover">Shundan boshlash</span>
+          </button>
+          <div class="cs-inline-tpl-body">
+            <div class="cs-inline-tpl-name" title="{{ t.description }}">{{ t.name }} <span class="cs-tpl-aspect">{{ t.aspect_default }}</span></div>
+            <button type="submit" class="ap-mini-btn primary">Shundan boshlash</button>
+          </div>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% if templates|length > templates_initial %}
+    <div style="margin-top:12px">
+      <button type="button" class="ap-mini-btn" id="cs-inline-tpl-toggle" data-more="Yana {{ templates|length - templates_initial }} ta shablonni ko'rsatish" data-less="Kamroq ko'rsatish">Yana {{ templates|length - templates_initial }} ta shablonni ko'rsatish</button>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
 </div>
 
 <script src="{{ url_for('static', filename='creative_studio.js') }}?v={{ asset_v('creative_studio.js') }}"></script>

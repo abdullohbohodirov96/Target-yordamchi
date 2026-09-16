@@ -18,6 +18,15 @@ aktivlari (`meta_publish.get_meta_assets`) -- mock. Tekshiriladi:
      creative_asset_id; boshqa kompaniya asset'i 404; admin emas 403.
  10. /sozlamalar/brend GET/POST -- logo + ranglar saqlanadi va qaytadi.
  11. Sidebar'da "Kreativ studiya" bandi; Avtopilot sahifasida galereya URL'i.
+ 12. (2026-09) Telefon savoli web oqimida (profilda yo'q -> majburiy,
+     javob profilga yoziladi); /kreativ sahifasida INLINE shablonlar
+     (bir bosishda "Shundan boshlash"); muharrir JSON'ida `target`.
+ 13. (2026-09) POST /kreativ/<id>/target-yarat ("Targetga ochish"): AI
+     planner mock -> yangi CampaignDraft + kreativ media sifatida
+     biriktirilgan + redirect /avtopilot/<id>; maqsad/byudjet yetishmasa
+     -> wizard'ga (creative_asset_id bilan) yo'naltiradi, qoralama
+     YARATILMAYDI; wizard POST creative_asset_id bilan ham biriktiradi;
+     tayyor bo'lmagan kreativ / boshqa kompaniya / menejer -> xato.
 
 Ishga tushirish:
     cd app && python3 scripts/test_creative_web_offline.py
@@ -53,6 +62,9 @@ import campaign_draft  # noqa: E402
 import campaign_media  # noqa: E402
 import creative_studio  # noqa: E402
 import business_profile  # noqa: E402
+import orchestrator  # noqa: E402
+import meta_api  # noqa: E402
+import ai_campaign_planner  # noqa: E402
 
 app_module.app.config["TESTING"] = True
 app_module.app.config["WTF_CSRF_ENABLED"] = False
@@ -62,6 +74,9 @@ creative_studio.CREATIVE_ROOT = Path(_TMPDIR) / "creative_studio"
 creative_studio.BRAND_ROOT = Path(_TMPDIR) / "brand_kit"
 
 failures = []
+
+# AI kopirayter (chat/completions) OFFLINE -- zaxira matn ishlatiladi.
+mock.patch.object(creative_studio, "_request_ad_copy", side_effect=RuntimeError("offline")).start()
 
 
 def check(name, cond):
@@ -109,7 +124,7 @@ try:
         "target_audience": "25-45 yosh ayollar, Toshkent shahri", "price_range": "o'rta",
     })
     B = db_module.Company(name="Boshqa MChJ", plan="business", is_active=True)
-    T = db_module.Company(name="Sinov MChJ", plan="trial", is_active=True, business_category="clothing_fashion")
+    T = db_module.Company(name="Sinov MChJ", plan="trial", is_active=True, business_category="clothing_fashion", phone="+998 71 200 00 00")
     T.business_profile_answers = business_profile.serialize_business_profile_answers({"product_or_service": "Ayollar kiyimi"})
     _session.add_all([A, B, T])
     _session.commit()
@@ -171,6 +186,8 @@ def test_login_required_and_empty_gallery():
     check("galereya 200 + bo'sh holat tushuntirishi", r.status_code == 200 and "Hali kreativ yo'q" in html)
     check("kvota ko'rsatkichi (business: 0/30)", "0/30 rasm" in html)
     check("sidebar'da Kreativ studiya bandi", 'data-tooltip="Kreativ studiya (AI rasm)"' in html and 'href="/kreativ"' in html)
+    check("/kreativ: INLINE shablonlar bo'limi (20 ta karta, 8 tasi ochiq, 'Shundan boshlash')", 'id="cs-inline-tpl"' in html and html.count('data-template-key="') == 20 and html.count('class="cs-inline-tpl-card cs-inline-tpl-more" data-template-key=') == 12 and 'name="template_key" value="bold_sale"' in html and 'id="cs-inline-tpl-toggle"' in html)
+    check("/kreativ: inline shablon preview PNG + to'liq galereyaga havola", "/static/creative_templates/warm_food.png" in html and 'href="/kreativ/shablonlar"' in html)
     r = admin.get("/kreativ/shablonlar")
     html = r.get_data(as_text=True)
     check("shablonlar galereyasi 200, 20 ta karta", r.status_code == 200 and html.count('class="cs-tpl-card"') == 20)
@@ -192,7 +209,7 @@ def test_new_ai_and_template():
     ASSET_ID = int(m.group(1))
     a = _row(db_module.CreativeAsset, ASSET_ID)
     check("status=collecting_brief, kind=ai_generated, template yo'q", a.status == "collecting_brief" and a.kind == "ai_generated" and a.template_key is None and a.company_id == A_ID)
-    check("missing_fields: focus majburiy", "focus" in json.loads(a.missing_fields_json))
+    check("missing_fields: focus + phone majburiy (profilda telefon yo'q)", "focus" in json.loads(a.missing_fields_json) and "phone" in json.loads(a.missing_fields_json))
 
     # Shablon bilan AI rejimi -> template_key saqlanadi
     r = admin.post("/kreativ/yangi", data={"mode": "ai", "template_key": "bold_sale", "aspect": ""})
@@ -225,18 +242,32 @@ def test_brief_flow():
     html = page.get_data(as_text=True)
     check("muharrir 200 + creative_studio.js + CSRF", page.status_code == 200 and "creative_studio.js" in html and 'data-csrf="' in html)
     data = _asset_json(html)
-    check("JSON: collecting_brief, 4 ta savol, focus majburiy", data["status"] == "collecting_brief" and len(data["questions"]) == 4 and [q["key"] for q in data["missing_questions"]] == ["focus"])
+    check("JSON: collecting_brief, 5 ta savol (telefon bilan), focus+phone majburiy", data["status"] == "collecting_brief" and len(data["questions"]) == 5 and [q["key"] for q in data["missing_questions"]] == ["focus", "phone"])
+    check("JSON: muharrir 'target' bo'limi (admin, maqsadlar)", data["target"]["can_create"] is True and any(o["value"] == "MESSAGES" for o in data["target"]["objectives"]) and data["urls"]["target_create"] == f"/kreativ/{ASSET_ID}/target-yarat")
     check("JSON: kvota business 0/30, can_generate", data["quota"]["limit"] == 30 and data["quota"]["can_generate"] is True)
     r = admin.post(f"/kreativ/{ASSET_ID}/brief", json={"key": "offer_text", "value": "-20% chegirma"})
     d = r.get_json()
-    check("ixtiyoriy javob saqlandi, focus hali majburiy", r.status_code == 200 and d["asset"]["brief_answers"]["offer_text"] == "-20% chegirma" and [q["key"] for q in d["asset"]["missing_questions"]] == ["focus"])
+    check("ixtiyoriy javob saqlandi, focus/phone hali majburiy", r.status_code == 200 and d["asset"]["brief_answers"]["offer_text"] == "-20% chegirma" and [q["key"] for q in d["asset"]["missing_questions"]] == ["focus", "phone"])
     with mock.patch.object(creative_studio, "_openai_request") as req:
         r = admin.post(f"/kreativ/{ASSET_ID}/generate", json={})
     check("brif to'liq emas -> 400 + o'zbekcha + OpenAI chaqirilmagan", r.status_code == 400 and "savol" in r.get_json()["error"] and req.call_count == 0)
     check("brif to'liq emas -> status o'zgarmadi", r.get_json()["asset"]["status"] == "collecting_brief")
     r = admin.post(f"/kreativ/{ASSET_ID}/brief", json={"key": "focus", "value": "Oshxona mebeli, yangi kolleksiya"})
     d = r.get_json()
-    check("majburiy javobdan keyin missing_questions bo'sh", r.status_code == 200 and d["asset"]["missing_questions"] == [] and d["asset"]["brief_answers"]["focus"].startswith("Oshxona"))
+    check("focus javobidan keyin faqat phone majburiy", r.status_code == 200 and [q["key"] for q in d["asset"]["missing_questions"]] == ["phone"] and d["asset"]["brief_answers"]["focus"].startswith("Oshxona"))
+    r = admin.post(f"/kreativ/{ASSET_ID}/brief", json={"key": "phone", "value": "raqam"})
+    check("noto'g'ri telefon -> 400 (o'zbekcha)", r.status_code == 400 and "Telefon" in r.get_json()["error"])
+    r = admin.post(f"/kreativ/{ASSET_ID}/brief", json={"key": "phone", "value": "+998 90 123 45 67"})
+    d = r.get_json()
+    check("telefon javobidan keyin missing_questions bo'sh", r.status_code == 200 and d["asset"]["missing_questions"] == [] and d["asset"]["brief_answers"]["phone"] == "+998 90 123 45 67")
+    s_ = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            check("telefon kompaniya profiliga yozildi", s_.get(db_module.Company, A_ID).phone == "+998 90 123 45 67")
+    finally:
+        s_.close()
+    page = admin.get(f"/kreativ/{ASSET_ID}")
+    check("profilda telefon paydo bo'lgach savol 4 taga tushadi (phone yashirin)", len(_asset_json(page.get_data(as_text=True))["questions"]) == 4)
     r = admin.post(f"/kreativ/{ASSET_ID}/brief", json={"key": "xyz", "value": "a"})
     check("noma'lum savol 400", r.status_code == 400)
 
@@ -251,7 +282,9 @@ def test_generate_and_quota():
     check("generate 200, OpenAI 1 marta", r.status_code == 200 and d.get("ok") and req.call_count == 1)
     check("status=ready + image_url + layers", d["asset"]["status"] == "ready" and d["asset"]["image_url"] and d["asset"]["is_ready"] and len(d["asset"]["layers"]) >= 3)
     check("kvota 1/30", d["asset"]["quota"]["used"] == 1 and d["asset"]["quota"]["remaining"] == 29)
-    check("headline brifdan (Oshxona mebeli)", any("Oshxona" in (l.get("text") or "") for l in d["asset"]["layers"]))
+    check("headline brifdan (Oshxona mebeli) -- AI kopirayter offline, zaxira", any("Oshxona" in (l.get("text") or "") for l in d["asset"]["layers"]))
+    check("telefon qatlami standart qatlamlarda", any(l["id"] == "phone" and l["text"] == "Tel: +998 90 123 45 67" for l in d["asset"]["layers"]))
+    check("CTA 'Batafsil' emas", not any((l.get("text") or "") == "Batafsil" for l in d["asset"]["layers"]))
     r = admin.get(f"/kreativ/{ASSET_ID}/rasm.png")
     check("rasm.png 200 image/png", r.status_code == 200 and r.mimetype == "image/png" and len(r.data) > 100)
     r = admin.get(f"/kreativ/{ASSET_ID}/fon.png")
@@ -324,7 +357,7 @@ def test_multitenant():
     b = _client("cs_admin_b")
     for path, method in [(f"/kreativ/{ASSET_ID}", "GET"), (f"/kreativ/{ASSET_ID}/rasm.png", "GET"), (f"/kreativ/{ASSET_ID}/eksport.png", "GET"),
                          (f"/kreativ/{ASSET_ID}/eksport.pdf", "GET"), (f"/kreativ/{ASSET_ID}/brief", "POST"), (f"/kreativ/{ASSET_ID}/generate", "POST"),
-                         (f"/kreativ/{ASSET_ID}/layers", "POST"), (f"/kreativ/{ASSET_ID}/ochirish", "POST")]:
+                         (f"/kreativ/{ASSET_ID}/layers", "POST"), (f"/kreativ/{ASSET_ID}/ochirish", "POST"), (f"/kreativ/{ASSET_ID}/target-yarat", "POST")]:
         r = b.open(path, method=method, json={} if method == "POST" else None)
         check(f"B: A kreativi {method} {path.split(str(ASSET_ID))[-1] or '/'} -> 404", r.status_code == 404)
     html = b.get("/kreativ").get_data(as_text=True).replace("&#39;", "'")
@@ -431,6 +464,131 @@ def test_brand_kit():
     check("Sozlamalar hub'ida Brend kit kartasi", 'href="/sozlamalar/brend"' in html)
 
 
+# ---------------------------------------------------------------------------
+# 13) "Targetga ochish" -- kreativdan Avtopilot qoralamasi (2026-09)
+# ---------------------------------------------------------------------------
+LLM_PLAN = {
+    "campaign_name": "Replix | Nur Mebel | MESSAGES | Toshkent | Sep26", "adset_name": "Toshkent | 25-45", "ad_name": "Oshxona mebeli | v1",
+    "age_min": 25, "age_max": 45, "genders": [2], "locations": ["Tashkent"], "interests": [],
+    "advantage_audience": True, "placements_mode": "automatic", "destination_type": "INSTAGRAM_DIRECT",
+    "primary_text_variants": ["Oshxona mebeli buyurtma asosida", "Matn 2", "Matn 3"], "headline_variants": ["Nur Mebel", "S2", "S3"], "description_variants": ["D1", "D2", "D3"],
+    "cta": "SEND_MESSAGE", "messages": {"greeting": "Assalomu alaykum!", "quick_replies": ["Narxi qancha?"]},
+    "reasoning_summary": "Mebel uchun ayollar 25-45.", "explanations": {}, "confidence": {}, "warnings": [],
+}
+
+
+def _fake_geo(query, location_types=None, *, access_token=None):
+    return [{"key": "2430536", "name": "Tashkent", "type": "city", "country_code": "UZ", "region": "Tashkent"}]
+
+
+def _planner_mock():
+    return mock.patch.object(orchestrator, "_call_agent", return_value=json.loads(json.dumps(LLM_PLAN)))
+
+
+def test_target_create():
+    with _assets_mock():
+        # Muharrir sahifasi: tayyor kreativda target-yarat URL + JS bo'limi
+        html = admin.get(f"/kreativ/{ASSET_ID}").get_data(as_text=True)
+        # A profili: "Toshkent shahri" auditoriyadan standart hudud chiqadi -> hudud so'ralmaydi
+        check("muharrir: target_create URL + needs_location=False (profildan Toshkent)", f"/kreativ/{ASSET_ID}/target-yarat" in html and _asset_json(html)["target"]["needs_location"] is False and _asset_json(html)["target"]["default_location"])
+        check("JS: 'Targetga ochish' bo'limi mavjud", "Targetga ochish" in Path(__file__).resolve().parent.parent.joinpath("static", "creative_studio.js").read_text(encoding="utf-8"))
+
+        # a) Maqsad/byudjet berilmagan -> qoralama YARATILMAYDI, wizard'ga (kreativ bilan)
+        s_ = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                before = s_.query(db_module.CampaignDraft).filter_by(company_id=A_ID).count()
+        finally:
+            s_.close()
+        with _planner_mock() as llm:
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", data={})
+        loc = r.headers.get("Location", "")
+        check("ma'lumot yetishmasa -> 302 wizard'ga creative_asset_id bilan, planner chaqirilmagan", r.status_code in (302, 303) and loc.startswith("/avtopilot/yangi") and f"creative_asset_id={ASSET_ID}" in loc and "product_focus=" in loc and llm.call_count == 0)
+        s_ = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                check("yetishmasa qoralama yaratilmadi", s_.query(db_module.CampaignDraft).filter_by(company_id=A_ID).count() == before)
+        finally:
+            s_.close()
+        r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "MESSAGES"})
+        d = r.get_json()
+        check("JSON: needs_input + missing (byudjet) + redirect", r.status_code == 200 and d["needs_input"] is True and {q["key"] for q in d["missing"]} == {"budget"} and "creative_asset_id" in d["redirect"])
+        # Wizard GET: kreativ banneri, media bosqichi yashirin, maydonlar oldindan
+        html = admin.get(loc).get_data(as_text=True)
+        check("wizard: kreativ banneri + hidden creative_asset_id + media bosqichi yashirin", 'id="ap-creative-banner"' in html and f'name="creative_asset_id" value="{ASSET_ID}"' in html and f"/kreativ/{ASSET_ID}/rasm.png" in html and "Oshxona mebeli" in html)
+
+        # b) Hammasi berilgan -> reja + qoralama + kreativ media + redirect
+        with _planner_mock() as llm, mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", data={"objective": "MESSAGES", "budget": "150000", "location": "Toshkent"})
+        m = re.search(r"/avtopilot/(\d+)$", r.headers.get("Location", ""))
+        check("to'liq -> 302 /avtopilot/<id>, planner 1 marta", r.status_code in (302, 303) and bool(m) and llm.call_count == 1)
+        draft_id = int(m.group(1))
+        s_ = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                draft = s_.get(db_module.CampaignDraft, draft_id)
+                media = s_.query(db_module.CampaignDraftMedia).filter_by(draft_id=draft_id).all()
+                st = draft.get_state()
+                check("yangi qoralama: A kompaniyasi, AI, MESSAGES, byudjet 150000", draft.company_id == A_ID and draft.source == "AI" and draft.objective == "MESSAGES" and st["adset"]["daily_budget"] == 150000.0)
+                check("planner'ga product_focus kreativ brifidan ketdi", "Oshxona mebeli" in llm.call_args.args[1])
+                check("kreativ media sifatida biriktirildi (creative_asset_id)", len(media) == 1 and media[0].creative_asset_id == ASSET_ID and media[0].kind == "image")
+                check("ad.media tanlangan", (st["ad"].get("media") or {}).get("media_id") == media[0].id)
+                evs = s_.query(db_module.CampaignDraftEvent).filter_by(draft_id=draft_id).all()
+                check("audit: ai_generated_plan + media_selected (creative_studio)", any(e.action == "ai_generated_plan" for e in evs) and any(e.action == "media_selected" and "creative_studio" in (e.details_json or "") for e in evs))
+        finally:
+            s_.close()
+        page = admin.get(f"/avtopilot/{draft_id}")
+        check("ko'rib chiqish sahifasi ochiladi (200)", page.status_code == 200)
+        # JSON varianti
+        with _planner_mock(), mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "LEADS", "budget": "90000", "location": "Toshkent"})
+        d = r.get_json()
+        check("JSON varianti: ok + draft_id + redirect", r.status_code == 200 and d["ok"] and d["redirect"] == f"/avtopilot/{d['draft_id']}")
+
+        # c) Wizard POST creative_asset_id bilan -> biriktiradi (media faylsiz)
+        with _planner_mock(), mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post("/avtopilot/yangi", data={"objective": "MESSAGES", "budget": "120000", "location": "Toshkent", "creative_asset_id": str(ASSET_ID)})
+        m = re.search(r"/avtopilot/(\d+)$", r.headers.get("Location", ""))
+        check("wizard POST (creative_asset_id) -> redirect", r.status_code in (302, 303) and bool(m))
+        s_ = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                media = s_.query(db_module.CampaignDraftMedia).filter_by(draft_id=int(m.group(1))).all()
+                check("wizard: kreativ biriktirildi", len(media) == 1 and media[0].creative_asset_id == ASSET_ID)
+        finally:
+            s_.close()
+
+        # d) Xato holatlari
+        with _planner_mock(), mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "MESSAGES", "budget": "-5", "location": "Toshkent"})
+        check("noto'g'ri byudjet -> needs_input (crash yo'q)", r.status_code == 200 and r.get_json().get("needs_input") is True)
+        with mock.patch.object(orchestrator, "_call_agent", side_effect=orchestrator.AgentUnavailableError("down")), mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "MESSAGES", "budget": "100000", "location": "Toshkent"})
+        check("planner ishlamasa -> 503 o'zbekcha (crash yo'q)", r.status_code == 503 and "javob bera olmadi" in r.get_json()["error"])
+        with mock.patch.object(orchestrator, "_call_agent", side_effect=orchestrator.AgentUnavailableError("down")), mock.patch.object(meta_api, "search_geo_location", _fake_geo):
+            r = admin.post(f"/kreativ/{ASSET_ID}/target-yarat", data={"objective": "MESSAGES", "budget": "100000", "location": "Toshkent"})
+        check("planner ishlamasa (forma) -> muharrirga qaytadi", r.status_code in (302, 303) and r.headers["Location"].endswith(f"/kreativ/{ASSET_ID}"))
+        # Tayyor bo'lmagan kreativ
+        s_ = db_module.get_session()
+        try:
+            with db_module.unscoped():
+                na = db_module.CreativeAsset(company_id=A_ID, status="collecting_brief", kind="ai_generated", aspect="1:1")
+                s_.add(na); s_.commit(); na_id = na.id
+        finally:
+            s_.close()
+        r = admin.post(f"/kreativ/{na_id}/target-yarat", json={"objective": "MESSAGES", "budget": "100000", "location": "Toshkent"})
+        check("tayyor bo'lmagan kreativ -> 400", r.status_code == 400 and "yaratib" in r.get_json()["error"])
+        check("wizard: tayyor bo'lmagan creative_asset_id e'tiborsiz (banner yo'q)", 'id="ap-creative-banner"' not in admin.get(f"/avtopilot/yangi?creative_asset_id={na_id}").get_data(as_text=True))
+        m_ = _client("cs_manager_a")
+        r = m_.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "MESSAGES", "budget": "100000", "location": "Toshkent"})
+        check("menejer -> 403", r.status_code == 403)
+        page = m_.get(f"/kreativ/{ASSET_ID}")
+        check("menejer JSON: target.can_create False", _asset_json(page.get_data(as_text=True))["target"]["can_create"] is False)
+        b = _client("cs_admin_b")
+        check("B: A kreativi target-yarat 404", b.post(f"/kreativ/{ASSET_ID}/target-yarat", json={"objective": "MESSAGES", "budget": "1"}).status_code == 404)
+        check("B: wizard A kreativini ko'rmaydi", 'id="ap-creative-banner"' not in b.get(f"/avtopilot/yangi?creative_asset_id={ASSET_ID}").get_data(as_text=True))
+
+
 def test_delete():
     r = admin.post(f"/kreativ/{TPL_ASSET_ID}/ochirish", json={})
     check("ochirish JSON 200", r.status_code == 200 and r.get_json()["ok"])
@@ -452,6 +610,7 @@ if __name__ == "__main__":
     test_multitenant()
     test_autopilot_from_creative()
     test_brand_kit()
+    test_target_create()
     test_delete()
     if failures:
         print("\nXATOLAR:", failures)
