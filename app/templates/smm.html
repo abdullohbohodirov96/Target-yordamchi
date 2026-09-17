@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}SMM hisobot — Replix{% endblock %}
+{% block title %}{{ t('smm.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>SMM hisobot</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Instagram va Facebook sahifasi bo'yicha obunachilar o'sishi, postlar statistikasi va umumiy faollik. Bu bo'lim faqat adminga ko'rinadi.</p>
+    <h1>{{ t('smm.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('smm.subtitle') }}</p>
   </div>
   {% set cdp_id = 'smm' %}
   {% set cdp_presets = smm_period_presets %}
@@ -22,15 +22,14 @@
 
 {% if not configured %}
 <div class="card" style="margin-bottom:20px; border-color:var(--bad-border)">
-  <h2 class="text-bad">Meta ulanmagan</h2>
+  <h2 class="text-bad">{{ t('smm.not_connected_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:8px">
-    SMM statistikasi ko'rinishi uchun avval Facebook sahifangiz (va unga ulangan Instagram Business
-    akkauntingiz) ulanishi kerak.
+    {{ t('smm.not_connected_text') }}
   </p>
   {% if current_user.role == 'admin' %}
-  <a href="{{ url_for('connect_accounts') }}" class="btn">Akkauntni ulash</a>
+  <a href="{{ url_for('connect_accounts') }}" class="btn">{{ t('dashboard.connect_account') }}</a>
   {% else %}
-  <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+  <p class="page-subtitle" style="margin:0">{{ t('dashboard.ask_admin') }}</p>
   {% endif %}
 </div>
 {% endif %}
@@ -39,11 +38,11 @@
 <details class="card" style="margin-bottom:20px" {{ 'open' if sync_status.errors }}>
   <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
     <span>
-      <strong>Sinxronizatsiya holati</strong>
-      {% if sync_status.last_run_at %}<span class="text-faint" style="font-weight:400">(oxirgi: {{ sync_status.last_run_at[:16].replace('T',' ') }} UTC)</span>{% endif %}
-      {% if sync_status.errors %}<span class="badge badge-color-bad" style="margin-left:8px">{{ sync_status.errors|length }} xato</span>{% endif %}
+      <strong>{{ t('shared.sync_status_title') }}</strong>
+      {% if sync_status.last_run_at %}<span class="text-faint" style="font-weight:400">{{ t('shared.last_run', time=sync_status.last_run_at[:16].replace('T',' ')) }}</span>{% endif %}
+      {% if sync_status.errors %}<span class="badge badge-color-bad" style="margin-left:8px">{{ t('shared.errors_n', n=sync_status.errors|length) }}</span>{% endif %}
     </span>
-    <span class="text-faint" style="font-size:12px; font-weight:400">bosib ochish/yopish</span>
+    <span class="text-faint" style="font-size:12px; font-weight:400">{{ t('shared.toggle_hint') }}</span>
   </summary>
   <div style="margin-top:12px">
     {% if sync_status.errors %}
@@ -65,10 +64,10 @@
        ko'rsatiladi. #}
     <div style="margin-bottom:10px">
       {% if current_user.role == 'admin' %}
-      <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
-      <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsatlaridan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+      <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">{{ t('shared.reconnect_fb_btn') }}</a>
+      <span class="text-faint" style="font-size:12px; margin-left:8px">{{ t('shared.reconnect_note') }}</span>
       {% else %}
-      <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+      <span class="text-faint" style="font-size:13px">{{ t('shared.reconnect_admin_only') }}</span>
       {% endif %}
     </div>
     {% endif %}
@@ -87,11 +86,11 @@
    ODDIY TUGMA (JS bilan, sahifa qayta yuklanmasdan) almashtiriladi, ma'lumot
    allaqachon ikkalasi uchun ham serverda tayyor bo'lgani uchun. #}
 <div class="tabs" id="smmPlatformTabs" style="margin-bottom:0">
-  <button type="button" class="smm-tab-btn active" data-platform="instagram">Instagram</button>
-  <button type="button" class="smm-tab-btn" data-platform="facebook">Facebook</button>
+  <button type="button" class="smm-tab-btn active" data-platform="instagram">{{ t('smm.tab_instagram') }}</button>
+  <button type="button" class="smm-tab-btn" data-platform="facebook">{{ t('smm.tab_facebook') }}</button>
 </div>
 
-{% for key, label, color in [('instagram', 'Instagram', '#DB2777'), ('facebook', 'Facebook', '#2563EB')] %}
+{% for key, label, color in [('instagram', t('smm.tab_instagram'), '#DB2777'), ('facebook', t('smm.tab_facebook'), '#2563EB')] %}
 {% set p = platforms[key] %}
 <div class="card smm-platform-panel" data-platform="{{ key }}" style="margin:20px 0 20px{{ '; display:none' if key != 'instagram' }}">
   <h2 style="display:flex; align-items:center; gap:8px">
@@ -101,47 +100,47 @@
 
   {% if not p.has_snapshots and not p.has_posts %}
   <p class="page-subtitle" style="margin:0">
-    {% if configured %}Hali ma'lumot yig'ilmagan -- birinchi sinxronizatsiya kutilmoqda (avtomatik ishlaydi).{% else %}Meta ulanmagani uchun ma'lumot yo'q.{% endif %}
+    {% if configured %}{{ t('smm.no_data_yet') }}{% else %}{{ t('smm.no_data_not_connected') }}{% endif %}
   </p>
   {% else %}
 
   <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:16px">
-    <div class="kpi-card"><div class="kpi-label">Obunachilar</div><div class="kpi-value">{{ p.followers_count if p.followers_count is not none else '—' }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_followers') }}</div><div class="kpi-value">{{ p.followers_count if p.followers_count is not none else '—' }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">O'sish ({{ period_label }})</div>
+      <div class="kpi-label">{{ t('smm.kpi_growth', period=period_label) }}</div>
       <div class="kpi-value {{ 'good' if p.growth and p.growth > 0 else ('bad' if p.growth and p.growth < 0) }}">{{ '{:+d}'.format(p.growth) if p.growth is not none else '—' }}</div>
-      {% if p.growth is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
+      {% if p.growth is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.no_history') }}</div>{% endif %}
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">O'sish (bu oy)</div>
+      <div class="kpi-label">{{ t('smm.kpi_growth_month') }}</div>
       <div class="kpi-value {{ 'good' if p.growth_month and p.growth_month > 0 else ('bad' if p.growth_month and p.growth_month < 0) }}">{{ '{:+d}'.format(p.growth_month) if p.growth_month is not none else '—' }}</div>
-      {% if p.growth_month is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">yetarli tarix yo'q</div>{% endif %}
+      {% if p.growth_month is none %}<div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.no_history') }}</div>{% endif %}
     </div>
-    <div class="kpi-card"><div class="kpi-label">Postlar ({{ period_label }})</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_posts', period=period_label) }}</div><div class="kpi-value">{{ p.posts_count_period }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">Umumiy qamrov</div>
+      <div class="kpi-label">{{ t('smm.kpi_reach') }}</div>
       <div class="kpi-value">{{ p.total_reach if p.total_reach is not none else '—' }}</div>
       {% if p.total_reach is none and p.posts_in_period_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ 'Instagram' if key=='instagram' else 'Facebook' }} bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.platform_no_metric', platform=(t('smm.tab_instagram') if key=='instagram' else t('smm.tab_facebook'))) }}</div>
       {% elif p.reach_missing_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.reach_missing_count }} ta postda bu ma'lumot yo'q</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.missing_in_n_posts', n=p.reach_missing_count) }}</div>
       {% endif %}
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Umumiy ko'rishlar</div>
+      <div class="kpi-label">{{ t('smm.kpi_impressions') }}</div>
       <div class="kpi-value">{{ p.total_impressions if p.total_impressions is not none else '—' }}</div>
       {% if p.total_impressions is none and p.posts_in_period_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ 'Instagram' if key=='instagram' else 'Facebook' }} bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.platform_no_metric', platform=(t('smm.tab_instagram') if key=='instagram' else t('smm.tab_facebook'))) }}</div>
       {% elif p.impressions_missing_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.impressions_missing_count }} ta postda bu ma'lumot yo'q</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.missing_in_n_posts', n=p.impressions_missing_count) }}</div>
       {% endif %}
     </div>
-    <div class="kpi-card"><div class="kpi-label">Engagement rate</div><div class="kpi-value">{{ (p.engagement_rate ~ '%') if p.engagement_rate is not none else '—' }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_engagement_rate') }}</div><div class="kpi-value">{{ (p.engagement_rate ~ '%') if p.engagement_rate is not none else '—' }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">Yangi obunachi (postlardan)</div>
+      <div class="kpi-label">{{ t('smm.kpi_new_followers') }}</div>
       <div class="kpi-value">{{ p.total_follows if p.total_follows is not none else '—' }}</div>
       {% if key == 'facebook' %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">Facebook bu ko'rsatkichni post darajasida bermaydi</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.fb_no_follows_metric') }}</div>
       {% elif p.total_reach is none and p.posts_in_period_count %}
       {# MUHIM TUZATISH (2026-08, foydalanuvchi shikoyati: "smm haliyam
          notori ishlayapti"): avval bu holatda HAR DOIM "Reels'da bu
@@ -152,53 +151,53 @@
          xabariga qarang). Reels-sabab FAQAT reach/boshqa ko'rsatkichlar
          MUVAFFAQIYATLI kelib, faqat follows'ning o'zi yo'q bo'lganda
          to'g'ri. #}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">Instagram bu ko'rsatkichni bermadi (ruxsat/API cheklovi) -- tepadagi "Sinxronizatsiya holati" panelida aniq sababni ko'ring</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.ig_no_reach_detail') }}</div>
       {% elif p.total_follows is none and p.posts_in_period_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">Reels turidagi videolarda bu ko'rsatkichni Meta umuman bermaydi</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.reels_no_metric') }}</div>
       {% elif p.follows_missing_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.follows_missing_count }} ta postda bu ma'lumot yo'q (asosan Reels)</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.missing_in_n_posts', n=p.follows_missing_count) }} (asosan Reels)</div>
       {% endif %}
     </div>
   </div>
 
   <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:16px">
-    <div class="kpi-card"><div class="kpi-label">Like</div><div class="kpi-value">{{ p.total_likes }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Komment</div><div class="kpi-value">{{ p.total_comments }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_likes') }}</div><div class="kpi-value">{{ p.total_likes }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_comments') }}</div><div class="kpi-value">{{ p.total_comments }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">Share (repost)</div>
+      <div class="kpi-label">{{ t('smm.kpi_shares') }}</div>
       <div class="kpi-value">{{ p.total_shares if p.total_shares is not none else '—' }}</div>
       {% if p.total_shares is none and p.posts_in_period_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ 'Instagram' if key=='instagram' else 'Facebook' }} bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.platform_no_metric', platform=(t('smm.tab_instagram') if key=='instagram' else t('smm.tab_facebook'))) }}</div>
       {% elif p.shares_missing_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.shares_missing_count }} ta postda bu ma'lumot yo'q</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.missing_in_n_posts', n=p.shares_missing_count) }}</div>
       {% endif %}
     </div>
     {% if key == 'instagram' %}
     <div class="kpi-card">
-      <div class="kpi-label">Saqlangan</div>
+      <div class="kpi-label">{{ t('smm.kpi_saved') }}</div>
       <div class="kpi-value">{{ p.total_saved if p.total_saved is not none else '—' }}</div>
       {% if p.total_saved is none and p.posts_in_period_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">Instagram bu ko'rsatkichni bermadi (ruxsat/API cheklovi)</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.platform_no_metric', platform=t('smm.tab_instagram')) }}</div>
       {% elif p.saved_missing_count %}
-      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ p.saved_missing_count }} ta postda bu ma'lumot yo'q</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('smm.missing_in_n_posts', n=p.saved_missing_count) }}</div>
       {% endif %}
     </div>
     {% endif %}
-    <div class="kpi-card"><div class="kpi-label">Jami faollik</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('smm.kpi_total_engagement') }}</div><div class="kpi-value">{{ p.total_engagement }}</div></div>
   </div>
 
   {% if p.chart|length > 1 %}
   <div style="position:relative; height:220px; margin-bottom:20px"><canvas id="chart-{{ key }}"></canvas></div>
   {% endif %}
 
-  <h3 style="margin:0 0 8px">Eng faol postlar</h3>
+  <h3 style="margin:0 0 8px">{{ t('smm.top_posts_title') }}</h3>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Sana</th><th>Muqova</th><th>Turi</th><th>Matn</th><th class="num">Like</th><th class="num">Komment</th><th class="num">Share</th>{% if key == 'instagram' %}<th class="num">Saqlangan</th>{% endif %}<th class="num">Yangi obunachi</th><th class="num">Qamrov</th><th class="num">Jami faollik</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('smm.th_date') }}</th><th>{{ t('smm.th_cover') }}</th><th>{{ t('smm.th_type') }}</th><th>{{ t('smm.th_text') }}</th><th class="num">{{ t('smm.kpi_likes') }}</th><th class="num">{{ t('smm.kpi_comments') }}</th><th class="num">{{ t('smm.th_share') }}</th>{% if key == 'instagram' %}<th class="num">{{ t('smm.kpi_saved') }}</th>{% endif %}<th class="num">{{ t('smm.th_new_followers') }}</th><th class="num">{{ t('smm.th_reach') }}</th><th class="num">{{ t('smm.kpi_total_engagement') }}</th><th></th></tr></thead>
     <tbody>
       {% for post in p.top_posts %}
       {% set mt = post.media_type or 'STATUS' %}
-      {% set mt_label = {'VIDEO': 'Video', 'REEL': 'Reels', 'IMAGE': 'Rasm', 'CAROUSEL_ALBUM': 'Albom', 'LINK': 'Havola', 'STATUS': 'Matn'}.get(mt, mt) %}
+      {% set mt_label = {'VIDEO': t('smm.mt_video'), 'REEL': t('smm.mt_reel'), 'IMAGE': t('smm.mt_image'), 'CAROUSEL_ALBUM': t('smm.mt_album'), 'LINK': t('smm.mt_link'), 'STATUS': t('smm.mt_status')}.get(mt, mt) %}
       {% set mt_color = {'VIDEO': 'blue', 'REEL': 'blue', 'IMAGE': 'dim', 'CAROUSEL_ALBUM': 'warn', 'LINK': 'good', 'STATUS': 'dim'}.get(mt, 'dim') %}
       <tr>
         <td class="text-dim">{{ post.posted_at.strftime('%Y-%m-%d') if post.posted_at else '—' }}</td>
@@ -237,10 +236,10 @@
         <td class="num">{{ post.follows_count if post.follows_count is not none else '—' }}</td>
         <td class="num">{{ post.reach if post.reach is not none else '—' }}</td>
         <td class="num text-good-strong">{{ post.engagement }}</td>
-        <td>{% if post.permalink %}<a href="{{ post.permalink }}" target="_blank" rel="noopener" class="text-blue">ko'rish</a>{% endif %}</td>
+        <td>{% if post.permalink %}<a href="{{ post.permalink }}" target="_blank" rel="noopener" class="text-blue">{{ t('smm.view_post') }}</a>{% endif %}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="{{ 12 if key == 'instagram' else 11 }}">Bu davr uchun post topilmadi.</td></tr>
+      <tr class="empty-row"><td colspan="{{ 12 if key == 'instagram' else 11 }}">{{ t('smm.no_posts_period') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -324,7 +323,7 @@
     data: {
       labels: {{ p.chart|map(attribute='date')|list|tojson }},
       datasets: [{
-        label: 'Obunachilar',
+        label: {{ t('smm.kpi_followers')|tojson }},
         data: {{ p.chart|map(attribute='followers')|list|tojson }},
         borderColor: '{{ color }}',
         backgroundColor: '{{ color }}22',

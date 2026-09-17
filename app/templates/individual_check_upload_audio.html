@@ -1,43 +1,42 @@
 {% extends "base.html" %}
-{% block title %}Audio yuklash — Replix{% endblock %}
+{% block title %}{{ t('individual_check_upload.title') }} — Replix{% endblock %}
 {% block content %}
 
-<a href="{{ url_for('individual_check') }}" class="back-link">&larr; Audio ro'yxatiga qaytish</a>
-<h1>Bitta audio qo'shish</h1>
+<a href="{{ url_for('individual_check') }}" class="back-link">{{ t('individual_check_upload.back_link') }}</a>
+<h1>{{ t('individual_check_upload.h1') }}</h1>
 <p class="page-subtitle">
-  Moi Zvonki sinxronizatsiyasidan TASHQARI, bitta audio faylni qo'lda yuklab, yangi qo'ng'iroq
-  yozuvi sifatida ro'yxatga qo'shish.
+  {{ t('individual_check_upload.subtitle') }}
 </p>
 
 <div class="card" style="max-width:480px">
   <form method="post" enctype="multipart/form-data">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
-      <label>Audio fayl</label>
+      <label>{{ t('individual_check_upload.field_audio') }}</label>
       <input type="file" name="audio_file" accept="audio/*,.mp3,.wav,.ogg,.oga,.m4a,.mp4,.webm" required autofocus>
     </div>
     <div class="field">
-      <label>Telefon raqami (ixtiyoriy)</label>
+      <label>{{ t('individual_check_upload.field_phone') }}</label>
       <input type="text" name="phone_number" placeholder="+998...">
     </div>
     <div class="field">
-      <label>Menejer (ixtiyoriy)</label>
+      <label>{{ t('individual_check_upload.field_manager') }}</label>
       <select name="manager_id">
-        <option value="">— Tanlanmagan —</option>
+        <option value="">{{ t('individual_check_upload.opt_not_selected') }}</option>
         {% for m in managers %}
         <option value="{{ m.id }}">{{ m.name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label>Yo'nalish (ixtiyoriy)</label>
+      <label>{{ t('individual_check_upload.field_direction') }}</label>
       <select name="direction">
-        <option value="">— Noma'lum —</option>
-        <option value="incoming">Kiruvchi</option>
-        <option value="outgoing">Chiquvchi</option>
+        <option value="">{{ t('individual_check_upload.opt_unknown') }}</option>
+        <option value="incoming">{{ t('individual_check_upload.opt_incoming') }}</option>
+        <option value="outgoing">{{ t('individual_check_upload.opt_outgoing') }}</option>
       </select>
     </div>
-    <button type="submit" class="block">Yuklash</button>
+    <button type="submit" class="block">{{ t('individual_check_upload.submit') }}</button>
   </form>
 </div>
 

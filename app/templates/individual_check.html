@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Audio — Replix{% endblock %}
+{% block title %}{{ t('individual_check.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Audio</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Moi Zvonki qo'ng'iroq yozuvlari lidlar bilan solishtirilib, menejer HAQIQATDA gaplashganmi tekshiriladi. Bu bo'lim faqat adminga ko'rinadi.</p>
+    <h1>{{ t('individual_check.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('individual_check.subtitle') }}</p>
   </div>
   {% set cdp_id = 'ic' %}
   {% set cdp_presets = [
-    ('today','Bugun'), ('yesterday','Kecha'),
-    ('last_7d',"7 kun"), ('last_30d','30 kun'), ('last_90d','90 kun'),
-    ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
-    ('this_month','Shu oy'), ('last_month',"O'tgan oy"), ('this_year','Shu yil'),
-    ('maximum','Maksimal'),
+    ('today', t('period.today')), ('yesterday', t('period.yesterday')),
+    ('last_7d', t('period.last_7d_short')), ('last_30d', t('period.last_30d_short')), ('last_90d', t('period.last_90d_short')),
+    ('this_week_mon_today', t('period.this_week')), ('last_week_mon_sun', t('period.last_week')),
+    ('this_month', t('period.this_month')), ('last_month', t('period.last_month')), ('this_year', t('period.this_year')),
+    ('maximum', t('period.maximum')),
   ] %}
   {% set cdp_preset_param = 'period' %}
   {% set cdp_current_preset = period %}
@@ -28,32 +28,29 @@
 
 {% if not configured %}
 <div class="card" style="margin-bottom:20px; border-color:var(--bad-border)">
-  <h2 class="text-bad">Moi Zvonki hali ulanmagan</h2>
+  <h2 class="text-bad">{{ t('individual_check.not_configured_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu bo'lim ishlashi uchun Render'dagi environment variable'larga <code>MOIZVONKI_API_ADDRESS</code> va
-    <code>MOIZVONKI_API_KEY</code> qo'shilishi kerak (Moi Zvonki akkauntingizda Sozlamalar → Integratsiya bo'limidan olinadi).
-    Bu ulanmagani uchun pastdagi ro'yxat BO'SH — bu "hech kim gaplashmagan" degani EMAS, shunchaki qo'ng'iroq
-    ma'lumotlari hali CRM'ga tushmayapti degani.
+    {{ t('individual_check.not_configured_text')|safe }}
   </p>
 </div>
 {% elif not has_data %}
 <div class="card" style="margin-bottom:20px">
-  <p class="page-subtitle" style="margin:0">Moi Zvonki ulangan, lekin tanlangan davr uchun hali qo'ng'iroq yozuvlari topilmadi.</p>
+  <p class="page-subtitle" style="margin:0">{{ t('individual_check.no_data_period') }}</p>
 </div>
 {% endif %}
 
 <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:20px">
-  <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ total_sessions or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Shubhali (&lt;{{ min_real_talk_seconds }} son)</div><div class="kpi-value {{ 'bad' if suspicious_count }}">{{ suspicious_count or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Faol menejerlar</div><div class="kpi-value">{{ manager_summary|length }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('analytics.call_total_sessions') }}</div><div class="kpi-value">{{ total_sessions or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('individual_check.kpi_suspicious', n=min_real_talk_seconds) }}</div><div class="kpi-value {{ 'bad' if suspicious_count }}">{{ suspicious_count or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('individual_check.kpi_active_managers') }}</div><div class="kpi-value">{{ manager_summary|length }}</div></div>
 </div>
 
 <div class="card" style="margin-bottom:20px">
-  <h2>Menejerlar bo'yicha kunlik aloqa tahlili</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer kuniga o'rtacha nechta odam bilan gaplashganini ko'rsatadi (sessiya = 2 soat ichidagi qo'ng'iroqlar bittasi hisoblanadi).</p>
+  <h2>{{ t('individual_check.daily_analysis_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('individual_check.daily_analysis_subtitle') }}</p>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Menejer</th><th class="num">Jami sessiya</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun (odam)</th><th class="num">O'rtacha davomiylik</th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_manager') }}</th><th class="num">{{ t('individual_check.th_total_sessions') }}</th><th class="num">{{ t('analytics.th_active_days') }}</th><th class="num">{{ t('individual_check.th_avg_per_day_person') }}</th><th class="num">{{ t('individual_check.th_avg_duration') }}</th></tr></thead>
     <tbody>
       {% for m in manager_summary %}
       <tr>
@@ -64,7 +61,7 @@
         <td class="num">{{ m.avg_duration_label }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="5">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="5">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -74,8 +71,8 @@
 <div class="panel">
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 16px 0">
     <div>
-      <h2 style="margin:0">Qo'ng'iroq sessiyalari</h2>
-      <p class="page-subtitle" style="margin:4px 0 0">Sessiya umumiy davomiyligi <strong>{{ min_real_talk_seconds }} soniya</strong>dan kam bo'lsa — "shubhali" deb belgilanadi.</p>
+      <h2 style="margin:0">{{ t('individual_check.sessions_title') }}</h2>
+      <p class="page-subtitle" style="margin:4px 0 0">{{ t('individual_check.sessions_subtitle', n=min_real_talk_seconds)|safe }}</p>
     </div>
     {# 2026-09, interfeys auditi: audio yuklash (`individual_check_upload_audio`)
        va chegara saqlash (`individual_check_set_threshold`) route'lari
@@ -83,7 +80,7 @@
        ham ko'rinar, bosganda "faqat admin uchun" xabari bilan dashboard'ga
        qaytarib yuborardi. Endi faqat admin'ga ko'rsatiladi. #}
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">+ Bitta audio qo'shish</a>
+    <a href="{{ url_for('individual_check_upload_audio') }}" class="btn">{{ t('individual_check.add_audio_btn') }}</a>
     {% endif %}
   </div>
   {% if current_user.role == 'admin' %}
@@ -93,16 +90,16 @@
     {% if period %}<input type="hidden" name="period" value="{{ period }}">{% endif %}
     {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
     {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
-    <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">Chegara (soniyada):</label>
+    <label for="min_real_talk_seconds" class="page-subtitle" style="margin:0">{{ t('individual_check.threshold_label') }}</label>
     <input type="number" min="0" step="1" id="min_real_talk_seconds" name="min_real_talk_seconds" value="{{ min_real_talk_seconds }}" style="width:100px; padding:6px 8px">
-    <button type="submit" class="btn">Saqlash</button>
+    <button type="submit" class="btn">{{ t('common.save') }}</button>
   </form>
   {% else %}
-  <p class="page-subtitle" style="padding:0 16px 16px; margin-top:10px">Chegarani faqat admin o'zgartira oladi.</p>
+  <p class="page-subtitle" style="padding:0 16px 16px; margin-top:10px">{{ t('individual_check.threshold_admin_only') }}</p>
   {% endif %}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Telefon</th><th>Lead</th><th>Menejer</th><th>Boshlangan</th><th class="num">Qo'ng'iroqlar soni</th><th class="num">Umumiy davomiylik</th><th>Holat</th><th>Yozuv</th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_phone') }}</th><th>{{ t('individual_check.th_lead') }}</th><th>{{ t('analytics.th_manager') }}</th><th>{{ t('individual_check.th_started') }}</th><th class="num">{{ t('individual_check.th_call_count') }}</th><th class="num">{{ t('individual_check.th_total_duration') }}</th><th>{{ t('analytics.th_status') }}</th><th>{{ t('individual_check.th_recording') }}</th></tr></thead>
     <tbody>
       {% for s in sessions %}
       <tr class="{{ 'rowlink' if s.lead_id }}" {% if s.lead_id %}onclick="window.location='{{ url_for('lead_detail', lead_id=s.lead_id) }}'"{% endif %}>
@@ -111,25 +108,25 @@
         <td>{{ s.manager_name }}</td>
         <td class="text-dim">{{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '—' }}</td>
         <td class="num">{{ s.call_count }}</td>
-        <td class="num">{{ (s.total_duration // 60) }} daq {{ s.total_duration % 60 }} son</td>
+        <td class="num">{{ t('individual_check.duration', min=(s.total_duration // 60), sec=(s.total_duration % 60)) }}</td>
         <td>
           {% if s.is_suspicious %}
-          <span class="badge badge-color-bad">shubhali</span>
+          <span class="badge badge-color-bad">{{ t('individual_check.badge_suspicious') }}</span>
           {% else %}
-          <span class="badge badge-color-good">normal</span>
+          <span class="badge badge-color-good">{{ t('individual_check.badge_normal') }}</span>
           {% endif %}
         </td>
         <td onclick="event.stopPropagation()">
           {% if s.recordings %}
           <audio controls preload="none" style="height:30px; max-width:200px" src="{{ s.recordings[0] }}"></audio>
-          {% if s.recordings|length > 1 %}<div class="text-faint" style="font-size:11px">+{{ s.recordings|length - 1 }} ta yana</div>{% endif %}
+          {% if s.recordings|length > 1 %}<div class="text-faint" style="font-size:11px">{{ t('individual_check.more_recordings', n=s.recordings|length - 1) }}</div>{% endif %}
           {% else %}
           <span class="text-faint">—</span>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="8">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="8">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
