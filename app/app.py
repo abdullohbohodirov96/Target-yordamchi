@@ -1952,7 +1952,7 @@ def login():
                 return redirect(url_for("dashboard"))
         finally:
             session.close()
-        flash("Login yoki parol xato.", "error")
+        flash(lang_module.translate("login.flash_bad_credentials", g.lang), "error")
     return render_template("login.html")
 
 
@@ -2041,15 +2041,15 @@ def signup():
         try:
             error = None
             if not company_name:
-                error = "Kompaniya nomini kiriting."
+                error = lang_module.translate("signup.err_company_name", g.lang)
             elif not admin_username or len(admin_username) < 3:
-                error = "Login kamida 3 belgidan iborat bo'lishi kerak."
+                error = lang_module.translate("signup.err_username_short", g.lang)
             elif not re.fullmatch(r"[a-z0-9_.]+", admin_username):
-                error = "Login faqat lotin harflari, raqam, \".\" va \"_\" belgilaridan iborat bo'lishi mumkin."
+                error = lang_module.translate("signup.err_username_chars", g.lang)
             elif not password or len(password) < 6:
-                error = "Parol kamida 6 belgidan iborat bo'lishi kerak."
+                error = lang_module.translate("signup.err_password_short", g.lang)
             elif password != password2:
-                error = "Parollar mos kelmadi."
+                error = lang_module.translate("signup.err_password_mismatch", g.lang)
             else:
                 # `Manager.username` ATAYLAB GLOBAL unique -- login formasi
                 # kompaniya tanlashni talab qilmasligi uchun (`_managers_view`
@@ -2057,9 +2057,9 @@ def signup():
                 with db.unscoped():
                     username_taken = session.query(Manager).filter_by(username=admin_username).first() is not None
                 if username_taken:
-                    error = "Bu login allaqachon band. Boshqa login tanlang."
+                    error = lang_module.translate("signup.err_username_taken", g.lang)
                 elif email and session.query(Company).filter_by(email=email).first():
-                    error = "Bu email allaqachon boshqa kompaniyada ro'yxatdan o'tgan."
+                    error = lang_module.translate("signup.err_email_taken", g.lang)
 
             if error:
                 flash(error, "error")
@@ -2094,11 +2094,21 @@ def signup():
                 )
                 login_user(ManagerUser(admin))
                 if requested_plan == "trial":
-                    flash(f"Xush kelibsiz, {company_name}! {plan_def.period_days} kunlik bepul sinov muddatingiz boshlandi.", "success")
+                    flash(
+                        lang_module.translate(
+                            "signup.flash_welcome_trial", g.lang,
+                            company=company_name, days=plan_def.period_days,
+                        ),
+                        "success",
+                    )
                 else:
                     flash(
-                        f"Xush kelibsiz, {company_name}! \"{plan_def.name}\" tarifi tanlandi -- "
-                        f"{_SIGNUP_GRACE_DAYS} kun ichida to'lovni yakunlang (\"To'lov\" sahifasida).",
+                        lang_module.translate(
+                            "signup.flash_welcome_paid", g.lang,
+                            company=company_name,
+                            plan_name=plans.localized_plan(plan_def, g.lang).name,
+                            grace_days=_SIGNUP_GRACE_DAYS,
+                        ),
                         "success",
                     )
                 # 2026-09 QAYTA ISHLASH (foydalanuvchi: "biznes ochayotganda,

@@ -2268,6 +2268,27 @@ _APP_STRINGS = [
     ("pricing.trial_ended_label", "Sinov tugadi", "Пробный период окончен", "Trial ended"),
     ("pricing.switch_to_plan_btn", "Shu tarifga o'tish", "Перейти на этот тариф", "Switch to this plan"),
     ("pricing.register_btn", "Ro'yxatdan o'tish", "Зарегистрироваться", "Sign up"),
+    ("signup.admin_username_placeholder", "masalan: acme_admin", "например: acme_admin", "e.g.: acme_admin"),
+
+    # ---- landing.html (qolgan qamrovsiz joylar) ----
+    ("landing.page_title", "Replix — Meta Ads + CRM bitta tizimda", "Replix — Meta Ads + CRM в одной системе", "Replix — Meta Ads + CRM in one system"),
+    ("landing.badge_instagram_connected", "Instagram ulandi", "Instagram подключен", "Instagram connected"),
+    ("landing.badge_sales", "sotuv", "продаж", "sales"),
+    ("landing.badge_ai_realtime", "AI real vaqtda javob beradi", "AI отвечает в реальном времени", "AI responds in real time"),
+    ("landing.call_us", "Qo'ng'iroq qiling", "Позвоните нам", "Call us"),
+    ("landing.write_telegram", "Telegram orqali yozing", "Напишите в Telegram", "Message us on Telegram"),
+
+    # ---- app.py: login/signup flash xabarlari ----
+    ("login.flash_bad_credentials", "Login yoki parol xato.", "Неверный логин или пароль.", "Incorrect login or password."),
+    ("signup.err_company_name", "Kompaniya nomini kiriting.", "Введите название компании.", "Enter a company name."),
+    ("signup.err_username_short", "Login kamida 3 belgidan iborat bo'lishi kerak.", "Логин должен содержать не менее 3 символов.", "The login must be at least 3 characters."),
+    ("signup.err_username_chars", "Login faqat lotin harflari, raqam, \".\" va \"_\" belgilaridan iborat bo'lishi mumkin.", "Логин может содержать только латинские буквы, цифры, \".\" и \"_\".", "The login may only contain Latin letters, digits, \".\" and \"_\"."),
+    ("signup.err_password_short", "Parol kamida 6 belgidan iborat bo'lishi kerak.", "Пароль должен содержать не менее 6 символов.", "The password must be at least 6 characters."),
+    ("signup.err_password_mismatch", "Parollar mos kelmadi.", "Пароли не совпадают.", "Passwords don't match."),
+    ("signup.err_username_taken", "Bu login allaqachon band. Boshqa login tanlang.", "Этот логин уже занят. Выберите другой логин.", "This login is already taken. Choose another login."),
+    ("signup.err_email_taken", "Bu email allaqachon boshqa kompaniyada ro'yxatdan o'tgan.", "Этот email уже зарегистрирован в другой компании.", "This email is already registered with another company."),
+    ("signup.flash_welcome_trial", "Xush kelibsiz, {company}! {days} kunlik bepul sinov muddatingiz boshlandi.", "Добро пожаловать, {company}! Ваш {days}-дневный бесплатный пробный период начался.", "Welcome, {company}! Your {days}-day free trial has started."),
+    ("signup.flash_welcome_paid", "Xush kelibsiz, {company}! \"{plan_name}\" tarifi tanlandi -- {grace_days} kun ichida to'lovni yakunlang (\"To'lov\" sahifasida).", "Добро пожаловать, {company}! Выбран тариф «{plan_name}» -- завершите оплату в течение {grace_days} дней (на странице «Оплата»).", "Welcome, {company}! The \"{plan_name}\" plan was selected -- complete payment within {grace_days} days (on the \"Payment\" page)."),
 
     # ---- _pricing_matrix.html ----
     ("pricing_matrix.h3", "Barcha funksiyalarni solishtiring", "Сравните все функции", "Compare all features"),

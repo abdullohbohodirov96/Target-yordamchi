@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Ro'yxatdan o'tish — Replix{% endblock %}
+{% block title %}{{ t('signup.submit') }} — Replix{% endblock %}
 {% block flash %}{% endblock %}
 {% block extra_head %}<meta name="robots" content="noindex, follow"><link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}?v={{ asset_v('landing.css') }}">{% endblock %}
 {% block content %}
@@ -39,7 +39,7 @@
 
       <div class="auth-form-grid">
         <div class="field full"><label>{{ t('signup.company_name') }}</label><input type="text" name="company_name" value="{{ form.company_name }}" required autofocus></div>
-        <div class="field"><label>{{ t('signup.admin_username') }}</label><input type="text" name="admin_username" value="{{ form.admin_username }}" placeholder="masalan: acme_admin" required></div>
+        <div class="field"><label>{{ t('signup.admin_username') }}</label><input type="text" name="admin_username" value="{{ form.admin_username }}" placeholder="{{ t('signup.admin_username_placeholder') }}" required></div>
         <div class="field"><label>{{ t('signup.admin_full_name') }}</label><input type="text" name="admin_full_name" value="{{ form.admin_full_name }}"></div>
         <div class="field full"><label>{{ t('signup.email') }}</label><input type="email" name="email" value="{{ form.email }}" placeholder="siz@kompaniya.uz"></div>
         <div class="field"><label>{{ t('signup.password') }}</label><input type="password" name="password" required minlength="6"></div>
