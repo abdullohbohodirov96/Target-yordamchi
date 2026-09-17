@@ -142,7 +142,10 @@ client.post("/login", data={"username": "dmp_admin", "password": "parol123"})
 
 r = client.get("/instagram-xabarlar?period=last_7d")
 check("sahifa 200 qaytaradi", r.status_code == 200)
-html = r.get_data(as_text=True)
+# 3-bosqich, ko'p tillilik: matnlar endi t() orqali chiqadi, Jinja
+# autoescape ' belgisini &#39;ga aylantiradi -- literal solishtirish uchun
+# normalizatsiya (avvalgi bosqichlardagi bilan bir xil yondashuv).
+html = r.get_data(as_text=True).replace("&#39;", "'")
 check("'Davr bo'yicha tahlil' bo'limi ko'rinadi", "Davr bo'yicha tahlil" in html)
 check("kalendar-tanlagich ulangan (boshqa sahifalar bilan bir xil)", "la-dp" in html or "cdp" in html or "So'nggi 7 kun" in html)
 check("eski 'Hozirgi holat' bo'limi ham saqlanib qolgan", "Hozirgi holat" in html)

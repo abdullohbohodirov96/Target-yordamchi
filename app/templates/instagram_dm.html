@@ -20,11 +20,11 @@
 
 {% macro dm_channel_badge(channel) %}
 {% if channel == 'facebook' %}
-<span class="dm-channel-badge" title="Facebook Messenger orqali">
+<span class="dm-channel-badge" title="{{ t('instagram_dm.badge_fb_title') }}">
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877F2"/><path fill="#fff" d="M15.3 12.6h-2.1V20h-3v-7.4H8.6v-2.5h1.6V8.5c0-1.8 1-3.3 3.5-3.3h2.1v2.6h-1.3c-.6 0-.9.3-.9.9v1.4h2.3l-.3 2.5z"/></svg>
 </span>
 {% else %}
-<span class="dm-channel-badge" title="Instagram Direct orqali">
+<span class="dm-channel-badge" title="{{ t('instagram_dm.badge_ig_title') }}">
   <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="url(#dmIgGrad)"/><rect x="6.2" y="6.2" width="11.6" height="11.6" rx="3.4" fill="none" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="12" r="2.9" fill="none" stroke="#fff" stroke-width="1.5"/><circle cx="16" cy="8" r="0.9" fill="#fff"/></svg>
 </span>
 {% endif %}
@@ -32,25 +32,22 @@
 
 <div class="page-head">
   <div>
-    <h1>Chat</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Instagram Direct (DM) suhbatlar -- shu yerdan to'g'ridan-to'g'ri javob yozing. Javobsiz qolsa, {{ unanswered_alert_minutes }}+ daqiqadan so'ng Telegram guruhingizga ogohlantirish boradi.</p>
+    <h1>{{ t('instagram_dm.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('instagram_dm.subtitle', n=unanswered_alert_minutes) }}</p>
   </div>
   <div class="page-head-actions">
     <a href="{{ url_for('instagram_dm', refresh=1, c=selected_id) if selected_id else url_for('instagram_dm', refresh=1) }}" class="btn btn-outline">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M5 15a7 7 0 0011.9 3.1M19 9A7 7 0 007.1 5.9"/></svg>
-      Yangilash
+      {{ t('instagram_dm.refresh') }}
     </a>
   </div>
 </div>
 
 {% if not configured %}
 <div class="card" style="margin-bottom:20px; border-color:var(--bad-border)">
-  <h2 class="text-bad">Instagram DM ulanmagan</h2>
+  <h2 class="text-bad">{{ t('instagram_dm.not_connected_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Bu bo'lim ishlashi uchun Marketplace bo'limida Meta (Facebook/Instagram) ulangan bo'lishi VA Instagram Business
-    akkauntga xabar o'qish/yozish ruxsati (<code>instagram_manage_messages</code>) berilgan bo'lishi kerak. O'z
-    akkauntingiz uchun bu odatda Meta App Dashboard → App Roles → "Instagram Testers" bo'limiga akkauntingizni
-    tester sifatida qo'shish orqali (to'liq ommaviy App Review shart emas) yoqiladi.
+    {{ t('instagram_dm.not_connected_text')|safe }}
   </p>
 </div>
 {% endif %}
@@ -65,14 +62,14 @@
      TANLANGAN DAVR ichida nima bo'lganini (trend, javob tezligi, davr
      taqsimoti) ko'rsatadi. -->
 <div class="page-head" style="margin-top:0">
-  <h2 style="margin:0">Davr bo'yicha tahlil</h2>
+  <h2 style="margin:0">{{ t('instagram_dm.period_analysis_title') }}</h2>
   {% set cdp_id = 'dm' %}
   {% set cdp_presets = [
-    ('today','Bugun'), ('yesterday','Kecha'),
-    ('last_7d',"So'nggi 7 kun"), ('last_30d',"So'nggi 30 kun"), ('last_90d',"So'nggi 90 kun"),
-    ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
-    ('this_month',"Shu oy"), ('last_month',"O'tgan oy"), ('this_year',"Shu yil"),
-    ('maximum','Maksimal'),
+    ('today', t('period.today')), ('yesterday', t('period.yesterday')),
+    ('last_7d', t('period.last_7d')), ('last_30d', t('period.last_30d')), ('last_90d', t('period.last_90d')),
+    ('this_week_mon_today', t('period.this_week')), ('last_week_mon_sun', t('period.last_week')),
+    ('this_month', t('period.this_month')), ('last_month', t('period.last_month')), ('this_year', t('period.this_year')),
+    ('maximum', t('period.maximum')),
   ] %}
   {% set cdp_preset_param = 'period' %}
   {% set cdp_current_preset = dm_period %}
@@ -86,28 +83,28 @@
 </div>
 
 <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom:16px">
-  <div class="kpi-card"><div class="kpi-label">Yangi suhbatlar</div><div class="kpi-value">{{ dm_analytics.new_conversations }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Mijoz xabarlari</div><div class="kpi-value">{{ dm_analytics.customer_messages }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_new_conversations') }}</div><div class="kpi-value">{{ dm_analytics.new_conversations }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_customer_messages') }}</div><div class="kpi-value">{{ dm_analytics.customer_messages }}</div></div>
   <div class="kpi-card">
-    <div class="kpi-label">O'rtacha javob vaqti</div>
-    <div class="kpi-value">{{ (dm_analytics.avg_response_minutes ~ " daq.") if dm_analytics.avg_response_minutes is not none else "—" }}</div>
+    <div class="kpi-label">{{ t('instagram_dm.kpi_avg_response') }}</div>
+    <div class="kpi-value">{{ t('instagram_dm.minutes_suffix', n=dm_analytics.avg_response_minutes) if dm_analytics.avg_response_minutes is not none else "—" }}</div>
   </div>
-  <div class="kpi-card"><div class="kpi-label">🔥 Issiq (davrda)</div><div class="kpi-value good">{{ dm_analytics.hot_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">🌤 Iliq (davrda)</div><div class="kpi-value">{{ dm_analytics.warm_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">❄️ Sovuq (davrda)</div><div class="kpi-value text-dim">{{ dm_analytics.cold_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_hot') }}</div><div class="kpi-value good">{{ dm_analytics.hot_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_warm') }}</div><div class="kpi-value">{{ dm_analytics.warm_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_cold') }}</div><div class="kpi-value text-dim">{{ dm_analytics.cold_count }}</div></div>
 </div>
 
 {% if dm_analytics.daily_trend %}
 <div class="card" style="margin-bottom:16px">
-  <h2 style="margin-top:0">Kunlik mijoz xabarlari</h2>
+  <h2 style="margin-top:0">{{ t('instagram_dm.daily_messages_title') }}</h2>
   <div style="height:220px"><canvas id="chart-dm-trend"></canvas></div>
 </div>
 {% endif %}
 
 {% if dm_analytics.top_reasons %}
 <div class="card" style="margin-bottom:20px">
-  <h2 style="margin-top:0">AI bahosining eng ko'p uchragan sabablari</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Davrda faol bo'lgan suhbatlarning AI tahlilida eng ko'p qaytarilgan sabablar (mavjud tahlildan -- yangi AI chaqiruvi qilinmaydi).</p>
+  <h2 style="margin-top:0">{{ t('instagram_dm.top_reasons_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('instagram_dm.top_reasons_subtitle') }}</p>
   <div style="display:flex; flex-direction:column; gap:8px">
     {% for r in dm_analytics.top_reasons %}
     <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--border-light)">
@@ -121,12 +118,12 @@
 
 {% if dm_analytics.by_ad %}
 <div class="card" style="margin-bottom:20px">
-  <h2 style="margin-top:0">Reklamalar (target) bo'yicha taqsimot</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Davrda qaysi Meta reklamasi orqali DM suhbati boshlangani va shundan nechtasi sifatli (🔥) chiqqani. Yaxshi natija bergan reklamaning "Copy" matnini oching va Meta Ads Manager'da qo'lda nusxalab, o'xshash reklama yarating.</p>
+  <h2 style="margin-top:0">{{ t('instagram_dm.by_ad_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('instagram_dm.by_ad_subtitle') }}</p>
   <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>Reklama</th><th>Suhbatlar</th><th>🔥 Sifatli</th><th>🌤 O'rtacha</th><th>❄️ Sifatsiz</th><th>Sotilgan</th><th>Copy</th></tr>
+        <tr><th>{{ t('instagram_dm.th_ad') }}</th><th>{{ t('instagram_dm.th_conversations') }}</th><th>{{ t('instagram_dm.th_hot') }}</th><th>{{ t('instagram_dm.th_warm') }}</th><th>{{ t('instagram_dm.th_cold') }}</th><th>{{ t('instagram_dm.th_sold') }}</th><th>{{ t('instagram_dm.th_copy') }}</th></tr>
       </thead>
       <tbody>
         {% for a in dm_analytics.by_ad %}
@@ -140,7 +137,7 @@
           <td>
             {% if a.ad_copy %}
             <details>
-              <summary class="text-blue" style="cursor:pointer">Ko'rish</summary>
+              <summary class="text-blue" style="cursor:pointer">{{ t('instagram_dm.view') }}</summary>
               <div style="white-space:pre-wrap; margin-top:6px; font-size:13px; max-width:340px">{{ a.ad_copy }}</div>
             </details>
             {% else %}<span class="text-faint">—</span>{% endif %}
@@ -153,49 +150,49 @@
 </div>
 {% endif %}
 
-<h2>Hozirgi holat</h2>
+<h2>{{ t('instagram_dm.current_status_title') }}</h2>
 
 {% if sync_status and sync_status.errors %}
 <details class="card" style="margin-bottom:20px" open>
   <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
-    <span><strong>Sinxronizatsiya holati</strong>
-      {% if sync_status.last_run_at %}<span class="text-faint" style="font-weight:400">(oxirgi: {{ sync_status.last_run_at[:16].replace('T',' ') }} UTC)</span>{% endif %}
-      <span class="badge badge-color-bad" style="margin-left:8px">{{ sync_status.errors|length }} xato</span>
+    <span><strong>{{ t('shared.sync_status_title') }}</strong>
+      {% if sync_status.last_run_at %}<span class="text-faint" style="font-weight:400">{{ t('shared.last_run', time=sync_status.last_run_at[:16].replace('T',' ')) }}</span>{% endif %}
+      <span class="badge badge-color-bad" style="margin-left:8px">{{ t('shared.errors_n', n=sync_status.errors|length) }}</span>
     </span>
-    <span class="text-faint" style="font-size:12px; font-weight:400">bosib ochish/yopish</span>
+    <span class="text-faint" style="font-size:12px; font-weight:400">{{ t('shared.toggle_hint') }}</span>
   </summary>
   <div class="flash flash-error" style="margin-top:12px">
     {% for e in sync_status.errors %}<div>{{ e }}</div>{% endfor %}
   </div>
   <div style="margin-top:10px">
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
-    <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsatlaridan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">{{ t('shared.reconnect_fb_btn') }}</a>
+    <span class="text-faint" style="font-size:12px; margin-left:8px">{{ t('shared.reconnect_note') }}</span>
     {% else %}
-    <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+    <span class="text-faint" style="font-size:13px">{{ t('shared.reconnect_admin_only') }}</span>
     {% endif %}
   </div>
 </details>
 {% endif %}
 
 <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom:20px">
-  <div class="kpi-card"><div class="kpi-label">Jami suhbatlar</div><div class="kpi-value">{{ stats.total_conversations }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_total_conversations') }}</div><div class="kpi-value">{{ stats.total_conversations }}</div></div>
   <div class="kpi-card">
-    <div class="kpi-label">Javobsiz</div>
+    <div class="kpi-label">{{ t('instagram_dm.kpi_unanswered') }}</div>
     <div class="kpi-value {{ 'bad' if stats.unanswered_count else '' }}">{{ stats.unanswered_count }}</div>
   </div>
-  <div class="kpi-card"><div class="kpi-label">Bugungi yangi mijoz xabari</div><div class="kpi-value">{{ stats.new_customer_messages_today }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">🔥 Issiq lidlar</div><div class="kpi-value good">{{ stats.hot_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">🌤 Iliq</div><div class="kpi-value">{{ stats.warm_count }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">❄️ Sovuq</div><div class="kpi-value text-dim">{{ stats.cold_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_new_today') }}</div><div class="kpi-value">{{ stats.new_customer_messages_today }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_hot_leads') }}</div><div class="kpi-value good">{{ stats.hot_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_warm2') }}</div><div class="kpi-value">{{ stats.warm_count }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('instagram_dm.kpi_cold2') }}</div><div class="kpi-value text-dim">{{ stats.cold_count }}</div></div>
 </div>
 
 <div class="dm-layout">
   <div class="dm-list-panel panel">
     <div class="dm-list-head">
       <div class="dm-filter-tabs">
-        <a href="{{ url_for('instagram_dm') }}" class="dm-filter-tab {{ 'active' if not only_unanswered }}">Barchasi <span class="text-faint">{{ stats.total_conversations }}</span></a>
-        <a href="{{ url_for('instagram_dm', filter='unanswered') }}" class="dm-filter-tab {{ 'active' if only_unanswered }}">Javobsiz <span class="text-faint">{{ stats.unanswered_count }}</span></a>
+        <a href="{{ url_for('instagram_dm') }}" class="dm-filter-tab {{ 'active' if not only_unanswered }}">{{ t('instagram_dm.filter_all') }} <span class="text-faint">{{ stats.total_conversations }}</span></a>
+        <a href="{{ url_for('instagram_dm', filter='unanswered') }}" class="dm-filter-tab {{ 'active' if only_unanswered }}">{{ t('instagram_dm.filter_unanswered') }} <span class="text-faint">{{ stats.unanswered_count }}</span></a>
       </div>
     </div>
     <div class="dm-list">
@@ -212,10 +209,10 @@
             {% if c.last_message_at %}<span class="dm-list-item-time">{{ c.last_message_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
           </div>
           <div class="dm-list-item-preview">
-            {% if c.last_message_from == 'business' %}<span class="text-faint">Siz: </span>{% endif %}{{ c.last_message_text or '—' }}
+            {% if c.last_message_from == 'business' %}<span class="text-faint">{{ t('instagram_dm.you_prefix') }}</span>{% endif %}{{ c.last_message_text or '—' }}
           </div>
           <div class="dm-list-item-badges">
-            {% if c.is_unanswered %}<span class="badge badge-color-bad">Javobsiz</span>{% endif %}
+            {% if c.is_unanswered %}<span class="badge badge-color-bad">{{ t('instagram_dm.badge_unanswered') }}</span>{% endif %}
             {% if c.ai_lead_quality == 'hot' %}<span class="badge badge-color-good">🔥</span>
             {% elif c.ai_lead_quality == 'warm' %}<span class="badge badge-color-blue">🌤</span>
             {% elif c.ai_lead_quality == 'cold' %}<span class="badge badge-color-dim">❄️</span>{% endif %}
@@ -224,8 +221,8 @@
       </a>
       {% else %}
       <div class="dm-empty">
-        <p>{{ "Hali Instagram DM suhbati yo'q." if configured else "Instagram hali ulanmagan." }}</p>
-        {% if configured %}<a href="{{ url_for('instagram_dm', refresh=1) }}" class="text-blue">Hozir tekshirib ko'rish</a>{% endif %}
+        <p>{{ t('instagram_dm.empty_no_conversations') if configured else t('instagram_dm.empty_not_connected') }}</p>
+        {% if configured %}<a href="{{ url_for('instagram_dm', refresh=1) }}" class="text-blue">{{ t('instagram_dm.check_now') }}</a>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -240,23 +237,23 @@
       </div>
       <div>
         <strong>{{ selected.customer }}</strong>
-        <div class="text-faint" style="font-size:12px">{{ "Facebook Messenger" if selected.channel == 'facebook' else "Instagram Direct" }} orqali
-          {% if selected.ai_lead_quality == 'hot' %} · <span class="text-good">🔥 Issiq lid</span>
-          {% elif selected.ai_lead_quality == 'warm' %} · <span class="text-blue">🌤 Iliq lid</span>
-          {% elif selected.ai_lead_quality == 'cold' %} · <span class="text-dim">❄️ Sovuq lid</span>{% endif %}
+        <div class="text-faint" style="font-size:12px">{{ t('instagram_dm.via_channel', channel=(t('instagram_dm.via_fb') if selected.channel == 'facebook' else t('instagram_dm.via_ig'))) }}
+          {% if selected.ai_lead_quality == 'hot' %} · <span class="text-good">{{ t('instagram_dm.hot_lead') }}</span>
+          {% elif selected.ai_lead_quality == 'warm' %} · <span class="text-blue">{{ t('instagram_dm.warm_lead') }}</span>
+          {% elif selected.ai_lead_quality == 'cold' %} · <span class="text-dim">{{ t('instagram_dm.cold_lead') }}</span>{% endif %}
         </div>
       </div>
     </div>
     {% if selected.ai_summary %}
-    <div class="dm-ai-summary"><strong>AI xulosasi:</strong> {{ selected.ai_summary }}</div>
+    <div class="dm-ai-summary"><strong>{{ t('instagram_dm.ai_summary_label') }}</strong> {{ selected.ai_summary }}</div>
     {% endif %}
 
     {% if selected.source_ad_id %}
     <div class="dm-ai-summary" style="background:var(--purple-bg)">
-      <strong>Target:</strong> {{ selected.source_ad_name or selected.source_ad_id }}
+      <strong>{{ t('instagram_dm.target_label') }}</strong> {{ selected.source_ad_name or selected.source_ad_id }}
       {% if selected.source_ad_copy %}
       <details style="margin-top:4px">
-        <summary class="text-blue" style="cursor:pointer; font-size:13px">Reklama copy'sini ko'rish</summary>
+        <summary class="text-blue" style="cursor:pointer; font-size:13px">{{ t('instagram_dm.view_ad_copy') }}</summary>
         <div style="white-space:pre-wrap; margin-top:6px; font-size:13px">{{ selected.source_ad_copy }}</div>
       </details>
       {% endif %}
@@ -266,13 +263,13 @@
     <div style="margin:0 0 10px">
       {% if selected.linked_lead_id %}
       <a href="{{ url_for('lead_detail', lead_id=selected.linked_lead_id) }}" class="badge badge-color-good" style="text-decoration:none">
-        ✓ Lidga bog'langan{% if selected.linked_lead_status == 'sold' %} · Sotildi{% endif %} — ko'rish
+        {{ t('instagram_dm.linked_to_lead', sold=(' · ' ~ t('instagram_dm.sold_suffix')) if selected.linked_lead_status == 'sold' else '') }}
       </a>
       {% else %}
       <form method="post" action="{{ url_for('instagram_dm_to_lead') }}" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="conversation_id" value="{{ selected.id }}">
-        <button type="submit" class="btn btn-outline" style="padding:6px 12px; font-size:12.5px">Lid sifatida saqlash</button>
+        <button type="submit" class="btn btn-outline" style="padding:6px 12px; font-size:12.5px">{{ t('instagram_dm.save_as_lead') }}</button>
       </form>
       {% endif %}
     </div>
@@ -286,33 +283,33 @@
         </div>
       </div>
       {% else %}
-      <div class="dm-empty"><p>Bu suhbatda hali xabar yo'q.</p></div>
+      <div class="dm-empty"><p>{{ t('instagram_dm.no_messages_yet') }}</p></div>
       {% endfor %}
     </div>
 
     {% if canned_replies %}
     <div class="dm-templates" id="dmTemplates">
-      {% for t in canned_replies %}
-      <button type="button" class="dm-template-chip" data-text="{{ t.text }}">{{ t.title }}</button>
+      {% for ct in canned_replies %}
+      <button type="button" class="dm-template-chip" data-text="{{ ct.text }}">{{ ct.title }}</button>
       {% endfor %}
-      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">⚙ Shablonlar</button>
+      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">{{ t('instagram_dm.manage_templates') }}</button>
     </div>
     {% else %}
     <div class="dm-templates">
-      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">+ Shablon yaratish</button>
+      <button type="button" class="dm-template-chip dm-template-manage" id="dmTemplateManageBtn">{{ t('instagram_dm.create_template') }}</button>
     </div>
     {% endif %}
 
     <form method="post" action="{{ url_for('instagram_dm_reply') }}" class="dm-composer">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="conversation_id" value="{{ selected.id }}">
-      <textarea name="text" id="dmReplyText" placeholder="Xabar yozing..." rows="2" required></textarea>
-      <button type="submit" class="btn">Yuborish</button>
+      <textarea name="text" id="dmReplyText" placeholder="{{ t('instagram_dm.composer_placeholder') }}" rows="2" required></textarea>
+      <button type="submit" class="btn">{{ t('instagram_dm.send') }}</button>
     </form>
     {% else %}
     <div class="dm-empty dm-empty-center">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:40px;height:40px;opacity:0.3"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.465L3 21l1.633-4.276C3.6 15.36 3 13.73 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-      <p>Chap tomondan suhbatni tanlang</p>
+      <p>{{ t('instagram_dm.select_conversation_hint') }}</p>
     </div>
     {% endif %}
   </div>
@@ -324,28 +321,28 @@
 <div class="modal-overlay" id="dmTemplateModal">
   <div class="modal-dialog">
     <div class="modal-header">
-      <h2>Javob shablonlari</h2>
-      <button type="button" class="modal-close" id="dmTemplateModalClose" aria-label="Yopish">
+      <h2>{{ t('instagram_dm.templates_modal_title') }}</h2>
+      <button type="button" class="modal-close" id="dmTemplateModalClose" aria-label="{{ t('instagram_dm.close_aria') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="page-subtitle" style="margin-top:-6px">Tayyor javoblar -- yaratib qo'ysangiz, keyin javob yozayotganda bitta bosish bilan matnga qo'shib olasiz. Butun jamoa (barcha menejerlar) bir xil ro'yxatni ko'radi.</p>
+      <p class="page-subtitle" style="margin-top:-6px">{{ t('instagram_dm.templates_modal_subtitle') }}</p>
 
       {% if canned_replies %}
       <div style="margin-bottom:16px">
-        {% for t in canned_replies %}
+        {% for ct in canned_replies %}
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--border-light)">
           <div>
-            <div style="font-weight:600; font-size:13.5px">{{ t.title }}</div>
-            <div class="text-dim" style="font-size:13px; margin-top:2px">{{ t.text }}</div>
+            <div style="font-weight:600; font-size:13.5px">{{ ct.title }}</div>
+            <div class="text-dim" style="font-size:13px; margin-top:2px">{{ ct.text }}</div>
           </div>
-          <form method="post" action="{{ url_for('instagram_dm_templates') }}" style="flex-shrink:0" onsubmit="return confirm('&#39;{{ t.title }}&#39; shabloni o\'chirilsinmi?')">
+          <form method="post" action="{{ url_for('instagram_dm_templates') }}" style="flex-shrink:0" onsubmit="return confirm({{ t('instagram_dm.confirm_delete_template', title=ct.title)|tojson|forceescape }})">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
-            <input type="hidden" name="template_id" value="{{ t.id }}">
+            <input type="hidden" name="template_id" value="{{ ct.id }}">
             <input type="hidden" name="c" value="{{ selected_id or '' }}">
-            <button type="submit" class="text-bad" style="background:none; border:none; padding:0; font:inherit; cursor:pointer">O'chirish</button>
+            <button type="submit" class="text-bad" style="background:none; border:none; padding:0; font:inherit; cursor:pointer">{{ t('common.delete') }}</button>
           </form>
         </div>
         {% endfor %}
@@ -356,9 +353,9 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
         <input type="hidden" name="c" value="{{ selected_id or '' }}">
-        <div class="field"><label>Shablon nomi</label><input type="text" name="title" placeholder="Masalan: Narx so'ralganda" required maxlength="64"></div>
-        <div class="field"><label>Matni</label><textarea name="text" rows="3" placeholder="Tayyor javob matni..." required></textarea></div>
-        <button type="submit" class="block">Shablon qo'shish</button>
+        <div class="field"><label>{{ t('instagram_dm.template_field_title') }}</label><input type="text" name="title" placeholder="{{ t('instagram_dm.template_title_placeholder') }}" required maxlength="64"></div>
+        <div class="field"><label>{{ t('instagram_dm.template_field_text') }}</label><textarea name="text" rows="3" placeholder="{{ t('instagram_dm.template_text_placeholder') }}" required></textarea></div>
+        <button type="submit" class="block">{{ t('instagram_dm.add_template_btn') }}</button>
       </form>
     </div>
   </div>
@@ -382,7 +379,7 @@ new Chart(document.getElementById('chart-dm-trend'), {
   data: {
     labels: {{ dm_analytics.daily_trend|map(attribute='day_label')|list|tojson }},
     datasets: [{
-      label: 'Mijoz xabarlari',
+      label: {{ t('instagram_dm.kpi_customer_messages')|tojson }},
       data: {{ dm_analytics.daily_trend|map(attribute='count')|list|tojson }},
       backgroundColor: '#0B63F5',
       borderRadius: 4,
