@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Facebook hisobini tanlash — Replix{% endblock %}
+{% block title %}{{ t('fb_choose.title') }} — Replix{% endblock %}
 {% block hide_chrome %}yes{% endblock %}
 {% block flash %}{% endblock %}
 {% block content %}
 <div class="wizard-shell">
   <div class="wizard-card">
     <div class="login-brand"><img class="login-logo" src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"><img class="login-logo login-logo-dark" src="{{ url_for('static', filename='brand/logo-full-dark.png') }}" alt="Replix"></div>
-    <h1 class="wizard-title">Qaysi hisobni ulaymiz?</h1>
-    <p class="login-subtitle" style="margin-bottom:26px">Facebook'da sizga tegishli bir nechta sahifa/reklama hisobi topildi. Har bir qadamda nima tanlashingiz kerakligi pastda tushuntirilgan — shoshilmasdan tanlang, keyin istalgan vaqt Marketplace bo'limidan qayta ulashingiz mumkin.</p>
+    <h1 class="wizard-title">{{ t('fb_choose.h1') }}</h1>
+    <p class="login-subtitle" style="margin-bottom:26px">{{ t('fb_choose.subtitle') }}</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -25,11 +25,11 @@
       <div class="wizard-step">
         <div class="wizard-step-num">1</div>
         <div class="wizard-step-body">
-          <label class="wizard-step-label">Facebook sahifa (Page) <span class="wizard-required">majburiy</span></label>
-          <p class="wizard-step-hint">Instagram akkauntingiz odatda shu sahifaga ulangan bo'ladi — agar bir nechta sahifa ko'rinsa, yonida <strong>"Instagram ulangan"</strong> deb yozilganini tanlang.</p>
+          <label class="wizard-step-label">{{ t('fb_choose.page_label') }} <span class="wizard-required">{{ t('fb_choose.required') }}</span></label>
+          <p class="wizard-step-hint">{{ t('fb_choose.page_hint')|safe }}</p>
           <select name="page_id" class="wizard-select" required>
             {% for p in pages %}
-            <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} — Instagram ulangan ✓{% endif %}</option>
+            <option value="{{ p.id }}">{{ p.name }}{% if p.ig %} {{ t('fb_choose.page_ig') }}{% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -39,10 +39,10 @@
       <div class="wizard-step">
         <div class="wizard-step-num">2</div>
         <div class="wizard-step-body">
-          <label class="wizard-step-label">Business Portfolio <span class="wizard-optional">ixtiyoriy</span></label>
-          <p class="wizard-step-hint">Reklama hisobingiz biror Business Manager ostida bo'lsa, shu yerdan tanlang — pastdagi reklama hisobi/Pixel ro'yxati shunga qarab yangilanadi. Shaxsiy (Business'siz) reklama hisobingiz bo'lsa, bo'sh qoldiring.</p>
+          <label class="wizard-step-label">{{ t('fb_choose.business_label') }} <span class="wizard-optional">{{ t('fb_choose.optional') }}</span></label>
+          <p class="wizard-step-hint">{{ t('fb_choose.business_hint') }}</p>
           <select name="business_id" id="meta-business-select" class="wizard-select">
-            <option value="">— shaxsiy reklama hisobi (Business tanlanmasin) —</option>
+            <option value="">{{ t('fb_choose.business_none') }}</option>
             {% for b in businesses %}
             <option value="{{ b.id }}">{{ b.name }}</option>
             {% endfor %}
@@ -55,10 +55,10 @@
       <div class="wizard-step">
         <div class="wizard-step-num">{{ 3 if businesses else 2 }}</div>
         <div class="wizard-step-body">
-          <label class="wizard-step-label">Meta reklama hisobi (Ad Account) <span class="wizard-optional">ixtiyoriy</span></label>
-          <p class="wizard-step-hint">Faqat Target/reklama tahlili funksiyasi uchun kerak. Instagram xabarlar yoki CRM'ga bu shart emas — agar hozircha ulamoqchi bo'lmasangiz, bo'sh qoldirib "Ulash"ni bosavering.</p>
+          <label class="wizard-step-label">{{ t('fb_choose.ad_account_label') }} <span class="wizard-optional">{{ t('fb_choose.optional') }}</span></label>
+          <p class="wizard-step-hint">{{ t('fb_choose.ad_account_hint') }}</p>
           <select name="ad_account_id" id="meta-account-select" class="wizard-select">
-            <option value="">— tanlanmasin —</option>
+            <option value="">{{ t('fb_choose.none') }}</option>
           </select>
         </div>
       </div>
@@ -66,20 +66,20 @@
       <div class="wizard-step">
         <div class="wizard-step-num">{{ 4 if businesses else 3 }}</div>
         <div class="wizard-step-body">
-          <label class="wizard-step-label">Dataset / Pixel <span class="wizard-optional">ixtiyoriy</span></label>
-          <p class="wizard-step-hint">Bu -- xarid/lid hodisalarini Meta'ga qayta yuboradigan (CAPI) sozlama. Tanlanmasa, hisobingizga biriktirilgan birinchi Pixel avtomatik ishlatiladi.</p>
+          <label class="wizard-step-label">{{ t('fb_choose.dataset_label') }} <span class="wizard-optional">{{ t('fb_choose.optional') }}</span></label>
+          <p class="wizard-step-hint">{{ t('fb_choose.dataset_hint') }}</p>
           <select name="dataset_id" id="meta-dataset-select" class="wizard-select">
-            <option value="">— avtomatik aniqlansin —</option>
+            <option value="">{{ t('fb_choose.auto') }}</option>
           </select>
         </div>
       </div>
       {% endif %}
 
-      <button type="submit" class="block wizard-submit">Ulash</button>
+      <button type="submit" class="block wizard-submit">{{ t('fb_choose.submit') }}</button>
     </form>
 
     <p style="text-align:center; margin:18px 0 0">
-      <a href="{{ url_for('connect_accounts') }}" class="text-blue">&larr; Bekor qilish</a>
+      <a href="{{ url_for('connect_accounts') }}" class="text-blue">{{ t('fb_choose.cancel') }}</a>
     </p>
   </div>
 </div>
@@ -112,8 +112,8 @@
     var businessId = businessSelect ? businessSelect.value : "";
     var assets = (businessId && BUSINESS_ASSETS[businessId]) || {accounts: FALLBACK_ACCOUNTS, pixels: []};
     var accounts = businessId ? (assets.accounts || []) : FALLBACK_ACCOUNTS;
-    fillSelect(accountSelect, accounts, "— tanlanmasin —");
-    fillSelect(datasetSelect, assets.pixels || [], "— avtomatik aniqlansin —");
+    fillSelect(accountSelect, accounts, {{ t('fb_choose.none')|tojson }});
+    fillSelect(datasetSelect, assets.pixels || [], {{ t('fb_choose.auto')|tojson }});
   }
 
   if (businessSelect) {

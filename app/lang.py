@@ -1310,6 +1310,12 @@ _APP_STRINGS = [
     ("connect.ev_test", "Test", "Тест", "Test"),
     ("connect.capi_empty", "Hali hech qanday CAPI hodisasi yuborilmagan — CRM'da bironta lead holatini o'zgartirganingizda (yoki yuqoridagi \"Ulanishni tekshirish\" tugmasi bilan) shu yerda ko'rinadi.", "Пока ни одно событие CAPI не отправлено — появится здесь, когда вы измените статус какого-либо лида в CRM (или нажмёте «Проверить подключение» выше).", "No CAPI events sent yet — they'll appear here once you change a lead's status in the CRM (or press \"Test connection\" above)."),
     ("connect.later", "Keyinroq ulayman, hoziroq boshqaruv paneliga o'tish →", "Подключу позже, перейти в панель управления →", "I'll connect later, go to the dashboard now →"),
+    ("connect.label_business", "Business:", "Business:", "Business:"),
+    ("connect.label_ad_account", "Ad Account:", "Ad Account:", "Ad Account:"),
+    ("connect.label_dataset", "Dataset:", "Dataset:", "Dataset:"),
+    ("connect.capi_short_label", "Conversions API (CAPI):", "Conversions API (CAPI):", "Conversions API (CAPI):"),
+    ("connect.dataset_id_short", "Dataset ID:", "Dataset ID:", "Dataset ID:"),
+    ("connect.capi_token_short", "CAPI Token:", "CAPI Token:", "CAPI Token:"),
 
     # ---- connect_facebook_choose.html ----
     ("fb_choose.title", "Facebook hisobini tanlash", "Выбор аккаунта Facebook", "Choose Facebook account"),

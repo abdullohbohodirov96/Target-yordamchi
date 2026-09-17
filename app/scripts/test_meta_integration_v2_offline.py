@@ -351,7 +351,11 @@ def test_capi_event_log_visible_on_connect_accounts_page():
             session.close()
 
         html = client.get("/connect-accounts").get_data(as_text=True)
-        check("CAPI hodisalar bo'limi sahifada ko'rinadi", "Conversions API (CAPI) — so'nggi hodisalar" in html)
+        # 2026-09, ko'p tillilik: bu bo'lim endi `t()` orqali chiqadi va
+        # Jinja autoescape apostrofni `&#39;` qilib yozadi (brauzerda bir
+        # xil ko'rinadi) -- solishtirishdan oldin qaytariladi.
+        html_norm = html.replace("&#39;", "'")
+        check("CAPI hodisalar bo'limi sahifada ko'rinadi", "Conversions API (CAPI) — so'nggi hodisalar" in html_norm)
         check("7 kunlik 'yuborildi' yig'indisi to'g'ri (1 ta)", "1 ta yuborildi" in html)
         check("7 kunlik 'xato' yig'indisi to'g'ri (1 ta)", "1 ta xato" in html)
         check("'Yangi lead' o'zbekcha nom bilan ko'rinadi (xom 'Lead' emas)", "Yangi lead" in html)

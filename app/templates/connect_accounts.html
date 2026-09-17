@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Akkauntlarni ulash — Replix{% endblock %}
+{% block title %}{{ t('connect.title') }} — Replix{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Akkauntlarni ulash</h1>
+    <h1>{{ t('connect.title') }}</h1>
     <p class="page-subtitle" style="margin-bottom:0">
-      "{{ plan.name }}" tarifingiz bo'yicha
-      {% if plan.can_connect_meta_ads %}Instagram va Facebook (Meta Ads) hisoblaringizni ulashingiz mumkin.
-      {% else %}faqat Instagram akkauntingizni ulashingiz mumkin — to'liq Meta Ads ulanishi yuqoriroq tariflarda ochiladi.{% endif %}
+      {{ t('connect.subtitle_prefix', plan=plan.name) }}
+      {% if plan.can_connect_meta_ads %}{{ t('connect.subtitle_meta') }}
+      {% else %}{{ t('connect.subtitle_ig_only') }}{% endif %}
     </p>
   </div>
 </div>
@@ -17,25 +17,25 @@
 {% if fb_already_connected %}
 <div class="card" style="max-width:560px; margin-bottom:20px; border-left:4px solid {{ 'var(--bad, #DC2626)' if company.meta_integration_status == 'reauth_required' else 'var(--good, #16A34A)' }}">
   {% if company.meta_integration_status == 'reauth_required' %}
-  <h2>&#128308; Meta ulanishi muddati tugagan</h2>
+  <h2>{{ t('connect.reauth_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px">
-    Token muddati o'tgan yoki bekor qilingan -- reklama/Conversions API ma'lumotlari YANGILANMAYAPTI. Pastdagi tugma bilan qayta ulang.
+    {{ t('connect.reauth_text') }}
   </p>
   {% else %}
-  <h2>&#10003; Meta Ads: ULANGAN</h2>
+  <h2>{{ t('connect.meta_connected_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px">
-    {% if company.meta_business_name %}Business: <strong>{{ company.meta_business_name }}</strong> &middot; {% endif %}
-    {% if company.meta_ad_account_name or company.meta_ad_account_id %}Ad Account: <strong>{{ company.meta_ad_account_name or company.meta_ad_account_id }}</strong> &middot; {% endif %}
-    {% if company.meta_dataset_name or company.meta_pixel_id %}Dataset: <strong>{{ company.meta_dataset_name or company.meta_pixel_id }}</strong>{% endif %}
+    {% if company.meta_business_name %}{{ t('connect.label_business') }} <strong>{{ company.meta_business_name }}</strong> &middot; {% endif %}
+    {% if company.meta_ad_account_name or company.meta_ad_account_id %}{{ t('connect.label_ad_account') }} <strong>{{ company.meta_ad_account_name or company.meta_ad_account_id }}</strong> &middot; {% endif %}
+    {% if company.meta_dataset_name or company.meta_pixel_id %}{{ t('connect.label_dataset') }} <strong>{{ company.meta_dataset_name or company.meta_pixel_id }}</strong>{% endif %}
   </p>
   <p class="text-faint" style="font-size:12.5px; margin:0 0 10px">
-    Sahifa ID: {{ company.meta_page_id }}{% if company.ig_business_id %} &middot; Instagram ulangan{% endif %}
-    {% if capi_configured %} &middot; Conversions API (CAPI): <span class="badge badge-color-good">ulangan</span>{% endif %}
-    {% if company.meta_last_event_at %} &middot; Oxirgi hodisa: {{ company.meta_last_event_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+    {{ t('connect.page_id') }} {{ company.meta_page_id }}{% if company.ig_business_id %} &middot; {{ t('connect.ig_connected') }}{% endif %}
+    {% if capi_configured %} &middot; {{ t('connect.capi_short_label') }} <span class="badge badge-color-good">{{ t('connect.badge_connected') }}</span>{% endif %}
+    {% if company.meta_last_event_at %} &middot; {{ t('connect.last_event') }} {{ company.meta_last_event_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
   </p>
   {% if company.meta_ad_account_id and not company.meta_pixel_id %}
   <p class="text-faint" style="font-size:12.5px; margin:0 0 10px">
-    Reklama hisobingizga biriktirilgan Meta Pixel topilmadi -- avval Meta Events Manager'da (Data Sources → Pixel) shu hisob uchun Pixel yarating, so'ng pastdagi tugma bilan qayta ulang, Pixel avtomatik topib olinadi (Conversions API uchun kerak).
+    {{ t('connect.no_pixel') }}
   </p>
   {% endif %}
   {% endif %}
@@ -44,23 +44,23 @@
     {% if fb_oauth_configured %}
     <a href="{{ url_for('connect_facebook_start') }}" class="btn toggle-all-btn toggle-all-btn-outline">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      {{ 'Qayta ulash' if company.meta_integration_status == 'reauth_required' else 'Boshqa sahifa/hisobga almashtirish' }}
+      {{ t('connect.reconnect') if company.meta_integration_status == 'reauth_required' else t('connect.switch_account') }}
     </a>
     {% endif %}
     {% if capi_configured %}
     <form method="post" action="{{ url_for('connect_meta_test') }}" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Ulanishni tekshirish</button>
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline">{{ t('connect.test_connection') }}</button>
     </form>
     {% endif %}
-    <form method="post" action="{{ url_for('connect_meta_disconnect') }}" style="display:inline" onsubmit="return confirm('Meta ulanishini uzishga ishonchingiz komilmi? Bu bilan barcha saqlangan Meta ma\'lumotlari (token, Pixel, Business) tozalanadi.');">
+    <form method="post" action="{{ url_for('connect_meta_disconnect') }}" style="display:inline" onsubmit="return confirm({{ t('connect.confirm_disconnect')|tojson }})">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <!-- BUG FIX (2026-09, vizual audit: "brendga to'g'irla, hamma joyni
            tekshir") -- bu tugma butunlay o'zbek tilidagi sahifada yagona
            inglizcha matn edi ("Disconnect"), ko'z tashlab qolgandek
            ko'rinardi. Endi pastdagi tasdiqlash dialogi bilan bir xil
            atamada ("ulanishni uzish"). -->
-      <button type="submit" class="toggle-all-btn toggle-all-btn-outline" style="color:var(--bad, #DC2626)">Ulanishni uzish</button>
+      <button type="submit" class="toggle-all-btn toggle-all-btn-outline" style="color:var(--bad, #DC2626)">{{ t('connect.disconnect') }}</button>
     </form>
   </div>
 </div>
@@ -69,66 +69,66 @@
 {% if fb_oauth_configured %}
   {% if not fb_already_connected %}
   <div class="card" style="max-width:560px; margin-bottom:20px">
-    <h2>Bitta tugma bilan ulash</h2>
+    <h2>{{ t('connect.one_click_title') }}</h2>
     <p class="page-subtitle" style="margin-top:-6px">
-      Facebook orqali kirib, {% if plan.can_connect_meta_ads %}sahifangiz, Instagram va reklama hisobingizni{% else %}sahifangiz va Instagram akkauntingizni{% endif %}
-      tanlaysiz — ID/token qo'lda kiritish shart emas.
+      {{ t('connect.one_click_text_1') }} {% if plan.can_connect_meta_ads %}{{ t('connect.one_click_assets_meta') }}{% else %}{{ t('connect.one_click_assets_ig') }}{% endif %}
+      {{ t('connect.one_click_text_2') }}
     </p>
     <a href="{{ url_for('connect_facebook_start') }}" class="btn block" style="background:#1877F2; border-color:#1877F2">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="vertical-align:-4px; margin-right:6px"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.9h2.54V9.85c0-2.5 1.49-3.89 3.78-3.89 1.1 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.9h-2.34V22c4.78-.8 8.44-4.95 8.44-9.94z"/></svg>
-      Facebook orqali ulash
+      {{ t('connect.fb_connect') }}
     </a>
-    <p class="text-faint" style="font-size:12px; margin:10px 0 0">Faqat siz administrator bo'lgan sahifa/hisoblar ko'rsatiladi. Bir nechtasi bo'lsa, keyingi qadamda tanlaysiz.</p>
+    <p class="text-faint" style="font-size:12px; margin:10px 0 0">{{ t('connect.fb_note') }}</p>
   </div>
   {% endif %}
 
-<p class="page-subtitle" style="max-width:560px">— yoki qo'lda kiriting —</p>
+<p class="page-subtitle" style="max-width:560px">{{ t('connect.or_manual') }}</p>
 {% endif %}
 
 <div class="card" style="max-width:560px; margin-bottom:20px">
-  <h2>Nega bu kerak?</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Akkauntlaringiz ulangach, Target sahifasida reklama xarajati/lead natijalari, Instagram xabarlar va SMM hisobot avtomatik ko'rina boshlaydi. Hoziroq ulamasangiz ham bo'ladi — keyinroq shu sahifaga qaytib ulashingiz mumkin.</p>
+  <h2>{{ t('connect.why_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('connect.why_text') }}</p>
 
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
-      <label>Instagram Business ID</label>
-      <input type="text" name="ig_business_id" value="{{ company.ig_business_id or '' }}" placeholder="masalan: 17841400000000000">
+      <label>{{ t('connect.ig_business_id') }}</label>
+      <input type="text" name="ig_business_id" value="{{ company.ig_business_id or '' }}" placeholder="{{ t('connect.ig_placeholder') }}">
     </div>
 
     <div class="field">
-      <label>Telegram guruh ID</label>
-      <input type="text" name="telegram_group_id" value="{{ company.telegram_group_id or '' }}" placeholder="masalan: -1001234567890">
+      <label>{{ t('connect.tg_group_id') }}</label>
+      <input type="text" name="telegram_group_id" value="{{ company.telegram_group_id or '' }}" placeholder="{{ t('connect.tg_placeholder') }}">
       <p class="text-faint" style="font-size:12px; margin:4px 0 0">
         {% if telegram_bot_username %}
-        Pastdagi "Guruhga qo'shish" tugmasi bilan avtomatik ulash osonroq -- yoki qo'lda: botni guruhingizga qo'shing, guruh ichida <code>/groupid</code> deb yozing, javobidagi ID'ni shu yerga joylashtiring.
+        {{ t('connect.tg_help_auto')|safe }}
         {% else %}
-        Botni guruhingizga qo'shing, guruh ichida <code>/groupid</code> deb yozing -- botning javobidagi ID'ni shu yerga joylashtiring.
+        {{ t('connect.tg_help_manual')|safe }}
         {% endif %}
-        Targeting/xarajat va CPL avtomatik pauza ogohlantirishlari shu guruhga yuboriladi.
+        {{ t('connect.tg_help_tail') }}
       </p>
     </div>
     {% if plan.can_connect_meta_ads %}
     <div class="field">
-      <label>Facebook sahifa (Page) ID</label>
-      <input type="text" name="meta_page_id" value="{{ company.meta_page_id or '' }}" placeholder="masalan: 100000000000000">
+      <label>{{ t('connect.fb_page_id') }}</label>
+      <input type="text" name="meta_page_id" value="{{ company.meta_page_id or '' }}" placeholder="{{ t('connect.fb_page_placeholder') }}">
     </div>
     <div class="field">
-      <label>Meta reklama hisobi (Ad Account) ID</label>
-      <input type="text" name="meta_ad_account_id" value="{{ company.meta_ad_account_id or '' }}" placeholder="masalan: act_1234567890">
+      <label>{{ t('connect.ad_account_id') }}</label>
+      <input type="text" name="meta_ad_account_id" value="{{ company.meta_ad_account_id or '' }}" placeholder="{{ t('connect.ad_account_placeholder') }}">
     </div>
     <div class="field">
-      <label>Meta Access Token</label>
-      <input type="password" name="meta_access_token" placeholder="{{ 'Saqlangan (o‘zgartirish uchun yangisini kiriting)' if company.meta_access_token else 'Business Suite -> System Users orqali olinadi' }}">
+      <label>{{ t('connect.access_token') }}</label>
+      <input type="password" name="meta_access_token" placeholder="{{ t('connect.token_saved') if company.meta_access_token else t('connect.token_howto') }}">
     </div>
     {% else %}
     <div class="flash flash-error" style="margin-bottom:16px">
-      To'liq Meta Ads (Facebook reklama hisobi) ulash "Boshlang'ich" va undan yuqori tariflarda ochiladi.
-      <a href="{{ url_for('pricing') }}" class="text-blue">Tariflarni ko'rish</a>
+      {{ t('connect.meta_locked_text') }}
+      <a href="{{ url_for('pricing') }}" class="text-blue">{{ t('connect.see_pricing') }}</a>
     </div>
     {% endif %}
 
-    <button type="submit" class="block">Saqlash</button>
+    <button type="submit" class="block">{{ t('common.save') }}</button>
   </form>
 
   {% if telegram_bot_username %}
@@ -136,25 +136,25 @@
     <form method="post" action="{{ url_for('connect_telegram_personal_link') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
-        📱 Telegramda shaxsan ulash (bir tugma)
+        {{ t('connect.tg_personal') }}
       </button>
     </form>
     <form method="post" action="{{ url_for('connect_telegram_group_link') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="toggle-all-btn toggle-all-btn-outline">
-        👥 Guruhga qo'shish (bir tugma)
+        {{ t('connect.tg_group') }}
       </button>
     </form>
   </div>
   <p class="text-faint" style="font-size:12px; margin:6px 0 0">
-    Tugmani bosing -- Telegram ochiladi, botga <b>Start</b> bossangiz (yoki guruh tanlab qo'shsangiz) ulanish o'zi avtomatik yakunlanadi.
+    {{ t('connect.tg_howto')|safe }}
   </p>
   {% endif %}
 
   {% if company.telegram_group_id %}
   <form method="post" action="{{ url_for('connect_telegram_test') }}" style="margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="toggle-all-btn toggle-all-btn-outline">Telegram guruhni tekshirish</button>
+    <button type="submit" class="toggle-all-btn toggle-all-btn-outline">{{ t('connect.tg_test') }}</button>
   </form>
   {% endif %}
 </div>
@@ -162,25 +162,25 @@
 {% if plan.can_connect_meta_ads %}
 <div class="card" style="max-width:560px; margin-bottom:20px">
   <details>
-    <summary class="text-blue" style="cursor:pointer; font-size:13px; list-style:none">Advanced / Qo'lda sozlash (Dataset ID + CAPI Access Token)</summary>
+    <summary class="text-blue" style="cursor:pointer; font-size:13px; list-style:none">{{ t('connect.advanced_summary') }}</summary>
     <div style="margin-top:12px">
       <p class="text-faint" style="font-size:12.5px; margin:0 0 12px">
-        Facebook orqali ulanish 60 kunda muddati tugaydigan token beradi. Agar Business Manager'ingizda MUDDATSIZ System User token yaratgan bo'lsangiz (Business Settings &rarr; System Users &rarr; Generate Token), uni shu yerga kiritib, Conversions API yuborilishini shu doimiy tokenga o'tkazishingiz mumkin -- OAuth ulanishidan MUSTAQIL ishlaydi.
+        {{ t('connect.advanced_text') }}
       </p>
       {% if manual_capi_configured %}
-      <p style="margin-bottom:12px"><span class="badge badge-color-good">ulangan</span> &middot; Dataset ID: {{ company.meta_capi_dataset_id }} &middot; CAPI Token: •••••••••••••• (saqlangan)</p>
+      <p style="margin-bottom:12px"><span class="badge badge-color-good">{{ t('connect.badge_connected') }}</span> &middot; {{ t('connect.dataset_id_short') }} {{ company.meta_capi_dataset_id }} &middot; {{ t('connect.capi_token_short') }} •••••••••••••• {{ t('connect.saved_paren') }}</p>
       {% endif %}
       <form method="post" action="{{ url_for('connect_meta_manual') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
-          <label>Dataset ID (Pixel ID)</label>
-          <input type="text" name="dataset_id" value="{{ company.meta_capi_dataset_id or '' }}" placeholder="masalan: 123456789012345">
+          <label>{{ t('connect.dataset_id') }}</label>
+          <input type="text" name="dataset_id" value="{{ company.meta_capi_dataset_id or '' }}" placeholder="{{ t('connect.dataset_placeholder') }}">
         </div>
         <div class="field">
-          <label>CAPI Access Token (System User)</label>
-          <input type="password" name="capi_access_token" placeholder="{{ 'Saqlangan (o‘zgartirish uchun yangisini kiriting)' if manual_capi_configured else 'System User -> Generate New Token orqali olinadi' }}">
+          <label>{{ t('connect.capi_token') }}</label>
+          <input type="password" name="capi_access_token" placeholder="{{ t('connect.token_saved') if manual_capi_configured else t('connect.capi_token_howto') }}">
         </div>
-        <button type="submit" class="block">Tekshirish va saqlash</button>
+        <button type="submit" class="block">{{ t('connect.verify_save') }}</button>
       </form>
     </div>
   </details>
@@ -195,20 +195,20 @@
    ishlayaptimi" degan savolga ilova ichida javob beradi. #}
 {% if capi_configured %}
 <div class="card" style="max-width:560px; margin-bottom:20px">
-  <h2>Conversions API (CAPI) — so'nggi hodisalar</h2>
+  <h2>{{ t('connect.capi_events_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px">
-    CRM'da lead holati o'zgarganda ("yangi" &rarr; "sifatli" &rarr; "sotildi") Meta'ga avtomatik yuboriladi -- shu orqali Meta algoritmi sizga qaysi lidlar HAQIQATAN sifatli ekanini o'rganadi va shunga o'xshash odamlarga ko'proq ko'rsatadi.
+    {{ t('connect.capi_events_text') }}
   </p>
   <p style="margin:0 0 12px; font-size:13px">
-    So'nggi 7 kunda: <span class="badge badge-color-good">{{ capi_sent_7d }} ta yuborildi</span>
-    {% if capi_failed_7d %}<span class="badge badge-color-bad">{{ capi_failed_7d }} ta xato</span>{% endif %}
+    {{ t('connect.last_7d') }} <span class="badge badge-color-good">{{ t('connect.sent_n', n=capi_sent_7d) }}</span>
+    {% if capi_failed_7d %}<span class="badge badge-color-bad">{{ t('connect.failed_n', n=capi_failed_7d) }}</span>{% endif %}
   </p>
   {% if recent_capi_events %}
   <div style="display:flex; flex-direction:column; gap:6px">
     {% for ev in recent_capi_events %}
     <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border-light); border-radius:var(--radius); font-size:12.5px">
-      {% if ev.status == 'sent' %}<span class="badge badge-color-good">yuborildi</span>{% else %}<span class="badge badge-color-bad">xato</span>{% endif %}
-      <span style="font-weight:600">{{ {'Lead': 'Yangi lead', 'QualifiedLead': 'Sifatli lead', 'Purchase': 'Sotuv', 'Test': 'Test'}.get(ev.event_name, ev.event_name) }}</span>
+      {% if ev.status == 'sent' %}<span class="badge badge-color-good">{{ t('connect.ev_sent') }}</span>{% else %}<span class="badge badge-color-bad">{{ t('connect.ev_failed') }}</span>{% endif %}
+      <span style="font-weight:600">{{ {'Lead': t('connect.ev_lead'), 'QualifiedLead': t('connect.ev_qualified'), 'Purchase': t('connect.ev_purchase'), 'Test': t('connect.ev_test')}.get(ev.event_name, ev.event_name) }}</span>
       {% if ev.lead_id %}<a href="{{ url_for('lead_detail', lead_id=ev.lead_id) }}" class="text-blue" style="text-decoration:none">#{{ ev.lead_id }}</a>{% endif %}
       <span class="text-faint" style="margin-left:auto; flex-shrink:0">{{ ev.created_at }}</span>
     </div>
@@ -218,13 +218,13 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="cp-empty" style="margin:0">Hali hech qanday CAPI hodisasi yuborilmagan — CRM'da bironta lead holatini o'zgartirganingizda (yoki yuqoridagi "Ulanishni tekshirish" tugmasi bilan) shu yerda ko'rinadi.</p>
+  <p class="cp-empty" style="margin:0">{{ t('connect.capi_empty') }}</p>
   {% endif %}
 </div>
 {% endif %}
 {% endif %}
 
 <p class="page-subtitle">
-  <a href="{{ url_for('dashboard') }}" class="text-blue">Keyinroq ulayman, hoziroq boshqaruv paneliga o'tish &rarr;</a>
+  <a href="{{ url_for('dashboard') }}" class="text-blue">{{ t('connect.later') }}</a>
 </p>
 {% endblock %}
