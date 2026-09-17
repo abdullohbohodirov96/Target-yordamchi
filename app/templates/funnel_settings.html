@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Voronka sozlamalari — Replix{% endblock %}
+{% block title %}{{ t('funnel.page_title') }} — Replix{% endblock %}
 {% block content %}
-<a href="{{ url_for('leads_list') }}" class="back-link">&larr; Lidlar ro'yxatiga qaytish</a>
-<h1>Voronka (funnel) bosqichlari</h1>
-<p class="page-subtitle">Bu yerda qo'shgan bosqichlaringiz lidlar sahifasidagi filtr tugmalarida va har bir lead'ning "Holat" tanlovida chiqadi. Har bir bosqich 4 ta hisob-kitob toifasidan (Faol/Sifatli/Sifatsiz/Sotildi) biriga tegishli bo'lishi kerak — dashboard'dagi CPL/ROI shu toifalarga asoslanadi.</p>
+<a href="{{ url_for('leads_list') }}" class="back-link">&larr; {{ t('funnel.back_leads') }}</a>
+<h1>{{ t('funnel.h1') }}</h1>
+<p class="page-subtitle">{{ t('funnel.subtitle') }}</p>
 
 <div class="card" style="max-width:480px; margin-bottom:24px">
-  <h2>Yangi bosqich qo'shish</h2>
+  <h2>{{ t('funnel.add_title') }}</h2>
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="add">
-    <div class="field"><label>Bosqich nomi</label><input type="text" name="label" placeholder="Masalan: Uchrashuv belgilandi" required></div>
+    <div class="field"><label>{{ t('funnel.field_label') }}</label><input type="text" name="label" placeholder="{{ t('funnel.field_label_placeholder') }}" required></div>
     <div class="field">
-      <label>Hisob-kitob toifasi</label>
+      <label>{{ t('funnel.field_category') }}</label>
       <select name="category">
         {% for key, label in categories %}
         <option value="{{ key }}">{{ label }}</option>
@@ -20,21 +20,21 @@
       </select>
     </div>
     <div class="field">
-      <label>Rangi</label>
+      <label>{{ t('funnel.field_color') }}</label>
       <select name="color">
         {% for c in colors %}
         <option value="{{ c }}">{{ c }}</option>
         {% endfor %}
       </select>
     </div>
-    <button type="submit" class="block">Qo'shish</button>
+    <button type="submit" class="block">{{ t('funnel.add_btn') }}</button>
   </form>
 </div>
 
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Bosqich</th><th>Toifa</th><th>Rang</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('funnel.th_stage') }}</th><th>{{ t('funnel.th_category') }}</th><th>{{ t('funnel.th_color') }}</th><th>{{ t('funnel.th_active') }}</th><th></th></tr></thead>
     <tbody>
       {% for s in stages %}
       <tr>
@@ -46,20 +46,20 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="stage_id" value="{{ s.id }}">
-            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if s.is_active else 'O\'chirilgan' }}</button>
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ t('funnel.status_active') if s.is_active else t('funnel.status_disabled') }}</button>
           </form>
         </td>
         <td>
-          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+          <form method="post" style="display:inline" onsubmit="return confirm({{ t('funnel.delete_confirm')|tojson|forceescape }});">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="stage_id" value="{{ s.id }}">
-            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">O'chirish</button>
+            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">{{ t('funnel.delete_btn') }}</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="5">Bosqichlar yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="5">{{ t('funnel.no_stages') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Brend kit — Replix{% endblock %}
+{% block title %}{{ t('brand_kit.page_title') }} — Replix{% endblock %}
 {% block content %}
 
 {# 2026-09, Kreativ studiya: brend kit -- logotip (PNG/JPG/WEBP, shaffof
@@ -9,13 +9,13 @@
 
 <div class="page-head">
   <div>
-    <h1>Brend kit</h1>
+    <h1>{{ t('brand_kit.h1') }}</h1>
     <p class="page-subtitle" style="margin-bottom:0">
-      Logotip va brend ranglari -- Kreativ studiya AI yaratgan har bir reklama rasmiga logotipingizni aniq (fayl sifatida, AI chizmaydi) qo'yadi va ranglaringizni fon uslubida hisobga oladi. Ixtiyoriy: logotipsiz ham rasm yaratiladi, shunchaki logotip qatlami bo'sh qoladi.
+      {{ t('brand_kit.subtitle') }}
     </p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ back_url }}" class="btn btn-outline">&larr; Orqaga</a>
+    <a href="{{ back_url }}" class="btn btn-outline">&larr; {{ t('brand_kit.back') }}</a>
   </div>
 </div>
 
@@ -24,45 +24,45 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="field" style="margin:0">
-      <label>Logotip</label>
+      <label>{{ t('brand_kit.field_logo') }}</label>
       <div class="cs-logo-row">
         <div class="cs-logo-preview" id="cs-logo-preview">
-          {% if brand.logo_url %}<img src="{{ brand.logo_url }}" alt="Logotip" id="cs-logo-img">{% else %}<span class="text-faint" id="cs-logo-empty">Logotip yuklanmagan</span><img alt="" id="cs-logo-img" hidden>{% endif %}
+          {% if brand.logo_url %}<img src="{{ brand.logo_url }}" alt="{{ t('brand_kit.field_logo') }}" id="cs-logo-img">{% else %}<span class="text-faint" id="cs-logo-empty">{{ t('brand_kit.logo_not_uploaded') }}</span><img alt="" id="cs-logo-img" hidden>{% endif %}
         </div>
         <div style="flex:1; min-width:0">
           <input type="file" name="logo" id="cs-logo-input" accept="image/png,image/jpeg,image/webp" {{ 'disabled' if current_user.role != 'admin' }}>
-          <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">PNG (shaffof fon -- tavsiya etiladi), JPG yoki WEBP, 8 MB gacha. Yangi fayl eskisini almashtiradi.</p>
+          <p class="text-faint" style="font-size:12px; margin:6px 0 0; line-height:1.45">{{ t('brand_kit.logo_note') }}</p>
         </div>
       </div>
     </div>
 
     <div class="ap-grid-2">
       <div class="field" style="margin:0">
-        <label>Asosiy rang</label>
+        <label>{{ t('brand_kit.field_primary_color') }}</label>
         <div class="cs-color-row">
           <input type="color" name="primary_color" id="cs-primary" value="{{ brand.primary_color or '#0B63F5' }}" {{ 'disabled' if current_user.role != 'admin' }}>
           <input type="text" id="cs-primary-hex" value="{{ brand.primary_color or '' }}" placeholder="#RRGGBB" readonly>
-          {% if not brand.primary_color %}<span class="text-faint" style="font-size:12px">hali tanlanmagan</span>{% endif %}
+          {% if not brand.primary_color %}<span class="text-faint" style="font-size:12px">{{ t('brand_kit.not_selected') }}</span>{% endif %}
         </div>
       </div>
       <div class="field" style="margin:0">
-        <label>Ikkinchi rang</label>
+        <label>{{ t('brand_kit.field_secondary_color') }}</label>
         <div class="cs-color-row">
           <input type="color" name="secondary_color" id="cs-secondary" value="{{ brand.secondary_color or '#7C22F0' }}" {{ 'disabled' if current_user.role != 'admin' }}>
           <input type="text" id="cs-secondary-hex" value="{{ brand.secondary_color or '' }}" placeholder="#RRGGBB" readonly>
-          {% if not brand.secondary_color %}<span class="text-faint" style="font-size:12px">hali tanlanmagan</span>{% endif %}
+          {% if not brand.secondary_color %}<span class="text-faint" style="font-size:12px">{{ t('brand_kit.not_selected') }}</span>{% endif %}
         </div>
       </div>
     </div>
-    <p class="text-faint" style="font-size:12px; margin:-8px 0 0; line-height:1.45">Rang tanlagichda bir marta bosib tanlang -- saqlashda ikkala rang ham yoziladi. AI fon promptiga "brend rang aksentlari" sifatida qo'shiladi.</p>
+    <p class="text-faint" style="font-size:12px; margin:-8px 0 0; line-height:1.45">{{ t('brand_kit.color_note') }}</p>
 
     {% if current_user.role == 'admin' %}
     <div style="display:flex; gap:16px; align-items:center; margin-top:4px">
-      <button type="submit" class="btn">Saqlash</button>
-      <a href="{{ url_for('creative_list') }}" class="text-faint" style="font-size:13px">Kreativ studiyaga o'tish</a>
+      <button type="submit" class="btn">{{ t('brand_kit.save_btn') }}</button>
+      <a href="{{ url_for('creative_list') }}" class="text-faint" style="font-size:13px">{{ t('brand_kit.go_to_studio') }}</a>
     </div>
     {% else %}
-    <div class="hint-box" style="margin:0">Brend kitni faqat admin o'zgartira oladi.</div>
+    <div class="hint-box" style="margin:0">{{ t('brand_kit.admin_only') }}</div>
     {% endif %}
   </form>
 </div>
@@ -75,22 +75,22 @@
    (`creative_list.html`/`creative_studio.js`); bu yerda faqat joriy holat
    ko'rsatiladi va o'sha oynaga olib boruvchi havola bor. #}
 <div class="card" style="max-width:640px; margin-top:16px">
-  <h2 style="margin-top:0; font-size:16px">Uslub</h2>
-  <p class="page-subtitle" style="margin-bottom:14px">AI kelajakdagi reklama fonlarini shu tanlovga moslab yaratadi (qo'shimcha ko'rsatma sifatida -- tanlangan shablon yoki brifni almashtirmaydi).</p>
+  <h2 style="margin-top:0; font-size:16px">{{ t('brand_kit.style_title') }}</h2>
+  <p class="page-subtitle" style="margin-bottom:14px">{{ t('brand_kit.style_subtitle') }}</p>
   {% if brand.preferred_style_labels %}
   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px">
     {% for label in brand.preferred_style_labels %}<span class="badge badge-color-blue">{{ label }}</span>{% endfor %}
   </div>
   {% else %}
-  <p class="text-faint" style="margin:0 0 12px; font-size:13px">Hali uslub tanlanmagan.</p>
+  <p class="text-faint" style="margin:0 0 12px; font-size:13px">{{ t('brand_kit.style_not_selected') }}</p>
   {% endif %}
   {% if brand.style_reference_url %}
   <div style="margin-bottom:12px">
-    <img src="{{ brand.style_reference_url }}" alt="Uslub namunasi" style="max-width:180px; max-height:120px; border-radius:8px; display:block; object-fit:cover">
-    <p class="text-faint" style="font-size:12px; margin:6px 0 0">Namuna rasm -- generatsiyalar rang palitrasi/kayfiyatini shunga yaqinlashtiradi (aynan nusxa emas).</p>
+    <img src="{{ brand.style_reference_url }}" alt="{{ t('brand_kit.style_reference_alt') }}" style="max-width:180px; max-height:120px; border-radius:8px; display:block; object-fit:cover">
+    <p class="text-faint" style="font-size:12px; margin:6px 0 0">{{ t('brand_kit.style_reference_note') }}</p>
   </div>
   {% endif %}
-  <a href="{{ url_for('creative_list') }}?open_style=1" class="ap-mini-btn" style="text-decoration:none">Uslubni sozlash</a>
+  <a href="{{ url_for('creative_list') }}?open_style=1" class="ap-mini-btn" style="text-decoration:none">{{ t('brand_kit.style_configure') }}</a>
 </div>
 
 <script>

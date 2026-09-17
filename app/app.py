@@ -2251,11 +2251,24 @@ def business_profile_view():
             return redirect(url_for("settings_business_profile"))
 
         company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
+        business_categories_tr = [
+            (k, lang_module.translate(f"business_profile.category_{k}", g.lang))
+            for k, _ in business_profile.BUSINESS_CATEGORIES
+        ]
+        business_questions_tr = [
+            (
+                k,
+                lang_module.translate(f"business_profile.question_{k}_label", g.lang),
+                lang_module.translate(f"business_profile.question_{k}_placeholder", g.lang),
+                lang_module.translate(f"business_profile.question_{k}_helper", g.lang),
+            )
+            for k, _, _, _ in business_profile.BUSINESS_PROFILE_QUESTIONS
+        ]
         return render_template(
             "business_profile_form.html",
             is_onboarding=is_onboarding,
-            business_categories=business_profile.BUSINESS_CATEGORIES,
-            business_questions=business_profile.BUSINESS_PROFILE_QUESTIONS,
+            business_categories=business_categories_tr,
+            business_questions=business_questions_tr,
             business_category=(company_row.business_category if company_row else None),
             business_category_note=(company_row.business_category_note if company_row else None),
             business_profile_answers=business_profile.parse_business_profile_answers(
@@ -9646,7 +9659,7 @@ def funnel_settings():
                     max_order = session.query(FunnelStage).count()
                     session.add(FunnelStage(key=key, label=label, category=category, color=color, sort_order=max_order, company_id=current_user.company_id))
                     session.commit()
-                    flash("Bosqich qo'shildi.", "success")
+                    flash(lang_module.translate("funnel.stage_added", g.lang), "success")
             elif action == "toggle":
                 stage_id = request.form.get("stage_id")
                 fs = session.get(FunnelStage, int(stage_id)) if stage_id else None
@@ -9659,18 +9672,19 @@ def funnel_settings():
                 if fs:
                     in_use = session.query(Lead).filter_by(status=fs.key).count()
                     if in_use:
-                        flash(f"O'chirib bo'lmadi: {in_use} ta lead shu bosqichda turibdi. Avval ularni boshqa bosqichga o'tkazing yoki shunchaki 'nofaol' qiling.", "error")
+                        flash(lang_module.translate("funnel.delete_blocked", g.lang, n=in_use), "error")
                     else:
                         session.delete(fs)
                         session.commit()
-                        flash("Bosqich o'chirildi.", "success")
+                        flash(lang_module.translate("funnel.stage_deleted", g.lang), "success")
             return redirect(url_for("funnel_settings"))
 
         all_stages = session.query(FunnelStage).order_by(FunnelStage.sort_order).all()
         rows = [{"id": s.id, "key": s.key, "label": s.label, "category": s.category, "color": s.color, "is_active": s.is_active} for s in all_stages]
     finally:
         session.close()
-    return render_template("funnel_settings.html", stages=rows, categories=FUNNEL_CATEGORIES, colors=FUNNEL_COLORS)
+    categories_tr = [(k, lang_module.translate(f"funnel.category_{k}", g.lang)) for k, _ in FUNNEL_CATEGORIES]
+    return render_template("funnel_settings.html", stages=rows, categories=categories_tr, colors=FUNNEL_COLORS)
 
 
 # ---------------------------------------------------------------------------

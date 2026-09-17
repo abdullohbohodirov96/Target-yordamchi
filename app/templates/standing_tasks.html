@@ -1,52 +1,48 @@
 {% extends "base.html" %}
-{% block title %}Doimiy vazifalar — Replix{% endblock %}
+{% block title %}{{ t('standing_tasks.page_title') }} — Replix{% endblock %}
 {% block content %}
-<h1>Doimiy vazifalar</h1>
+<h1>{{ t('standing_tasks.h1') }}</h1>
 <p class="page-subtitle">
-  Bular Telegram guruhida agentga berilgan DOIMIY/TAKRORLANUVCHI buyruqlar — masalan
-  "shu targetni har kuni 22:00 dan 08:00 gacha o'chirib tur" yoki "har kuni kechqurun
-  20:00 da ham hisobot ber". Agent ularni bir marta eshitib, keyin o'zi doimiy bajarib
-  turadi (har ~5 daqiqada tekshiradi). Shu yerdan ham to'xtatish/o'chirish mumkin —
-  Telegram'da <code>/vazifalar</code> va <code>/vazifa_off &lt;ID&gt;</code> buyruqlari bilan bir xil ishlaydi.
+  {{ t('standing_tasks.intro') }}
 </p>
 
 <div class="panel" style="margin-bottom:24px">
-  <h2 style="padding:16px 16px 0">⏰ Avtomatik yoqish / o'chirish</h2>
+  <h2 style="padding:16px 16px 0">⏰ {{ t('standing_tasks.auto_onoff_title') }}</h2>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Target</th><th>Yoqiladi</th><th>O'chadi</th><th>Joriy holat</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('standing_tasks.th_target') }}</th><th>{{ t('standing_tasks.th_on') }}</th><th>{{ t('standing_tasks.th_off') }}</th><th>{{ t('standing_tasks.th_current_state') }}</th><th>{{ t('standing_tasks.th_active') }}</th><th></th></tr></thead>
     <tbody>
-      {% for t in tasks %}
+      {% for ct in tasks %}
       <tr>
-        <td>{{ t.object_name }}</td>
-        <td class="num">{{ t.on_time }}</td>
-        <td class="num">{{ t.off_time }}</td>
+        <td>{{ ct.object_name }}</td>
+        <td class="num">{{ ct.on_time }}</td>
+        <td class="num">{{ ct.off_time }}</td>
         <td class="text-dim">
-          {% if t.last_error %}<span class="text-bad">xato: {{ t.last_error }}</span>
-          {% elif t.last_state %}{{ 'yoqiq' if t.last_state == 'on' else 'o\'chiq' }}
-          {% else %}hali tekshirilmagan{% endif %}
+          {% if ct.last_error %}<span class="text-bad">{{ t('standing_tasks.error_prefix') }}: {{ ct.last_error }}</span>
+          {% elif ct.last_state %}{{ t('standing_tasks.state_on') if ct.last_state == 'on' else t('standing_tasks.state_off') }}
+          {% else %}{{ t('standing_tasks.state_unchecked') }}{% endif %}
         </td>
         <td>
           <form method="post" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="kind" value="task">
-            <input type="hidden" name="item_id" value="{{ t.id }}">
-            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if t.is_active else 'O\'chirilgan' }}</button>
+            <input type="hidden" name="item_id" value="{{ ct.id }}">
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ t('standing_tasks.status_active') if ct.is_active else t('standing_tasks.status_disabled') }}</button>
           </form>
         </td>
         <td>
-          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+          <form method="post" style="display:inline" onsubmit="return confirm({{ t('standing_tasks.delete_confirm')|tojson|forceescape }});">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="kind" value="task">
-            <input type="hidden" name="item_id" value="{{ t.id }}">
-            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">O'chirish</button>
+            <input type="hidden" name="item_id" value="{{ ct.id }}">
+            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">{{ t('standing_tasks.delete_btn') }}</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="6">Hozircha yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="6">{{ t('standing_tasks.none_yet') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -54,11 +50,11 @@
 </div>
 
 <div class="panel">
-  <h2 style="padding:16px 16px 0">📊 Qo'shimcha doimiy hisobot vaqtlari</h2>
-  <p class="page-subtitle" style="padding:0 16px">Asosiy 09:00 dagi kunlik hisobotdan tashqari, foydalanuvchi so'ragan qo'shimcha vaqtlar.</p>
+  <h2 style="padding:16px 16px 0">📊 {{ t('standing_tasks.extra_reports_title') }}</h2>
+  <p class="page-subtitle" style="padding:0 16px">{{ t('standing_tasks.extra_reports_subtitle') }}</p>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Vaqt</th><th>Izoh</th><th>Oxirgi yuborilgan</th><th>Faol</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('standing_tasks.th_time') }}</th><th>{{ t('standing_tasks.th_note') }}</th><th>{{ t('standing_tasks.th_last_sent') }}</th><th>{{ t('standing_tasks.th_active') }}</th><th></th></tr></thead>
     <tbody>
       {% for r in reports %}
       <tr>
@@ -71,21 +67,21 @@
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="kind" value="report">
             <input type="hidden" name="item_id" value="{{ r.id }}">
-            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ 'Faol' if r.is_active else 'O\'chirilgan' }}</button>
+            <button type="submit" style="background:none; color:var(--text-dim); border:1px solid var(--border); padding:4px 10px">{{ t('standing_tasks.status_active') if r.is_active else t('standing_tasks.status_disabled') }}</button>
           </form>
         </td>
         <td>
-          <form method="post" style="display:inline" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+          <form method="post" style="display:inline" onsubmit="return confirm({{ t('standing_tasks.delete_confirm')|tojson|forceescape }});">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="kind" value="report">
             <input type="hidden" name="item_id" value="{{ r.id }}">
-            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">O'chirish</button>
+            <button type="submit" style="background:var(--bad-fill); padding:4px 10px">{{ t('standing_tasks.delete_btn') }}</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="5">Hozircha yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="5">{{ t('standing_tasks.none_yet') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
