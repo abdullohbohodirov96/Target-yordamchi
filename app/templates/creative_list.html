@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Kreativ studiya — Replix{% endblock %}
+{% block title %}{{ t('creative.title') }} — Replix{% endblock %}
 {% block content %}
 
 {# 2026-09, Kreativ studiya (AI rasm-generatsiya): kompaniyaning barcha
@@ -12,34 +12,34 @@
 
 <div class="page-head">
   <div>
-    <h1>Kreativ studiya</h1>
-    <p class="page-subtitle" style="margin-bottom:0">AI reklama rasmini kompaniyangiz haqidagi ma'lumotlardan yaratadi (yoki 20 ta tayyor shablondan boshlang), matn/logotipni brauzerda tahrirlaysiz, PNG/PDF yuklab olasiz yoki to'g'ridan-to'g'ri Avtopilotda ishlatasiz.</p>
+    <h1>{{ t('creative.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('creative.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
     {% if from_autopilot %}
-    <a href="{{ url_for('autopilot_review', draft_id=from_autopilot) }}" class="btn btn-outline">&larr; Avtopilotga qaytish</a>
+    <a href="{{ url_for('autopilot_review', draft_id=from_autopilot) }}" class="btn btn-outline">{{ t('creative.back_to_autopilot') }}</a>
     {% endif %}
-    <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">Shablonlar</a>
+    <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">{{ t('creative.templates') }}</a>
     <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      Yangi kreativ
+      {{ t('creative.new') }}
     </a>
   </div>
 </div>
 
 {% if from_autopilot %}
 <div class="hint-box good" style="margin:0 0 16px">
-  Avtopilot qoralamasi #{{ from_autopilot }} uchun rasm tanlayapsiz{% if aspect %} (tavsiya etilgan nisbat: {{ aspect }}){% endif %}. Tayyor kreativda "Bu reklamada ishlatish" tugmasini bosing yoki yangisini yarating.
+  {{ t('creative.for_autopilot_1', id=from_autopilot) }}{% if aspect %} {{ t('creative.for_autopilot_aspect', aspect=aspect) }}{% endif %}{{ t('creative.for_autopilot_2') }}
 </div>
 {% endif %}
 
 <div class="cs-quota-bar" id="cs-quota">
   <span class="cs-quota-label">{{ quota.label }}</span>
   {% if not quota.can_generate %}
-  <span class="text-faint" style="font-size:12px">AI generatsiya hozir yopiq -- shablondan boshlash bepul ishlaydi.</span>
-  <a href="{{ url_for('pricing') }}" class="ap-mini-btn primary" style="text-decoration:none">Tarifni oshiring</a>
+  <span class="text-faint" style="font-size:12px">{{ t('creative.quota_closed') }}</span>
+  <a href="{{ url_for('pricing') }}" class="ap-mini-btn primary" style="text-decoration:none">{{ t('creative.upgrade') }}</a>
   {% endif %}
-  <a href="{{ url_for('settings_brand_kit') }}?next={{ url_for('creative_list') }}" class="ap-mini-btn" style="text-decoration:none;margin-left:auto">Brend kit (logo, ranglar)</a>
+  <a href="{{ url_for('settings_brand_kit') }}?next={{ url_for('creative_list') }}" class="ap-mini-btn" style="text-decoration:none;margin-left:auto">{{ t('creative.brand_kit') }}</a>
 </div>
 
 <div class="cs-app" id="cs-list" data-csrf="{{ csrf_token() }}" data-from-autopilot="{{ from_autopilot or '' }}" data-autopilot-url="{{ url_for('autopilot_review', draft_id=from_autopilot) if from_autopilot else '' }}">
@@ -52,7 +52,7 @@
         <img src="{{ a.thumbnail_url }}" alt="{{ a.title }}" loading="lazy">
         {% else %}
         <span class="cs-card-placeholder">
-          {% if a.status == 'collecting_brief' %}Savol-javob davom etmoqda{% elif a.status == 'generating' %}AI yaratmoqda…{% elif a.status == 'failed' %}Xato -- qayta urinib ko'ring{% else %}Rasm yo'q{% endif %}
+          {% if a.status == 'collecting_brief' %}{{ t('creative.ph_collecting') }}{% elif a.status == 'generating' %}{{ t('creative.ph_generating') }}{% elif a.status == 'failed' %}{{ t('creative.ph_failed') }}{% else %}{{ t('creative.ph_none') }}{% endif %}
         </span>
         {% endif %}
       </a>
@@ -62,20 +62,20 @@
           <span class="badge badge-color-{{ a.status_color }}">{{ a.status_label }}</span>
           <span class="badge badge-color-{{ 'blue' if a.kind == 'ai_generated' else 'dim' }}">{{ a.kind_label }}</span>
           <span>{{ a.aspect }}</span>
-          {% if a.template_name %}<span title="Shablon">{{ a.template_name }}</span>{% endif %}
+          {% if a.template_name %}<span title="{{ t('creative.template_tip') }}">{{ a.template_name }}</span>{% endif %}
           <span>{{ a.updated_at.strftime('%d.%m.%Y %H:%M') if a.updated_at else '—' }}</span>
         </div>
         <div class="cs-card-actions">
-          <a href="{{ url_for('creative_editor', asset_id=a.id) }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none">{{ 'Tahrirlash' if a.is_ready else 'Davom etish' }}</a>
+          <a href="{{ url_for('creative_editor', asset_id=a.id) }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none">{{ t('creative.edit') if a.is_ready else t('creative.continue') }}</a>
           {% if a.is_ready %}
           <a href="{{ url_for('creative_export_png', asset_id=a.id) }}" class="ap-mini-btn" style="text-decoration:none">PNG</a>
           {% if from_autopilot %}
-          <button type="button" class="ap-mini-btn primary cs-use-btn" data-asset-id="{{ a.id }}">Bu reklamada ishlatish</button>
+          <button type="button" class="ap-mini-btn primary cs-use-btn" data-asset-id="{{ a.id }}">{{ t('creative.use_in_ad') }}</button>
           {% endif %}
           {% endif %}
-          <form method="post" action="{{ url_for('creative_delete', asset_id=a.id) }}" class="cs-inline-form" onsubmit="return confirm('Kreativni o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
+          <form method="post" action="{{ url_for('creative_delete', asset_id=a.id) }}" class="cs-inline-form" onsubmit="return confirm({{ t('creative.confirm_delete')|tojson }})">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="ap-mini-btn danger">O'chirish</button>
+            <button type="submit" class="ap-mini-btn danger">{{ t('common.delete') }}</button>
           </form>
         </div>
       </div>
@@ -84,11 +84,11 @@
   </div>
   {% else %}
   <div class="card cs-empty">
-    <h2>Hali kreativ yo'q</h2>
-    <p class="page-subtitle" style="margin-bottom:14px">Ikki yo'l bor: <strong>AI bilan yaratish</strong> -- kompaniyangiz haqida 1-4 ta savolga javob berasiz, AI matnsiz fon rasmini yaratadi, sarlavha/chaqiriq/logotip ustiga aniq shrift bilan qo'yiladi. Yoki <strong>shablondan boshlash</strong> -- 20 ta tayyor dizayndan birini tanlab, o'z mahsulot fotosi va matningiz bilan moslashtirasiz (AI kvotasi sarflanmaydi).</p>
+    <h2>{{ t('creative.empty_title') }}</h2>
+    <p class="page-subtitle" style="margin-bottom:14px">{{ t('creative.empty_text')|safe }}</p>
     <div style="display:flex; gap:10px; flex-wrap:wrap">
-      <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">✨ AI bilan yaratish</a>
-      <a href="#cs-inline-tpl" class="btn btn-outline">🖼️ Shablondan boshlash (pastda)</a>
+      <a href="{{ url_for('creative_new') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn">{{ t('creative.create_with_ai') }}</a>
+      <a href="#cs-inline-tpl" class="btn btn-outline">{{ t('creative.start_from_template_below') }}</a>
     </div>
   </div>
   {% endif %}
@@ -99,30 +99,30 @@
      to'liq galereyadagi kabi). Dastlab {{ templates_initial }} ta, qolgani
      shu yerda ochiladi; to'liq galereya (kategoriya filtri bilan) alohida. #}
   {% if templates %}
-  <section class="cs-inline-tpl" id="cs-inline-tpl" aria-label="Tayyor shablonlar">
+  <section class="cs-inline-tpl" id="cs-inline-tpl" aria-label="{{ t('creative.inline_title') }}">
     <div class="cs-inline-tpl-head">
       <div>
-        <h2>Tayyor shablonlar</h2>
-        <p class="text-faint">Shablonni tanlang -- AI fon yaratadi yoki o'z mahsulot fotongizni qo'yasiz; matn, logotip va ranglar kompaniyangizga moslanadi. Har bir rasm -- tayyor reklama qanday chiqishining haqiqiy namunasi.</p>
+        <h2>{{ t('creative.inline_title') }}</h2>
+        <p class="text-faint">{{ t('creative.inline_text') }}</p>
       </div>
-      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none;white-space:nowrap">Barcha {{ templates|length }} ta (kategoriya bo'yicha)</a>
+      <a href="{{ url_for('creative_templates_gallery') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="ap-mini-btn" style="text-decoration:none;white-space:nowrap">{{ t('creative.all_by_category', n=templates|length) }}</a>
     </div>
     <div class="cs-inline-tpl-grid">
-      {% for t in templates %}
-      <div class="cs-inline-tpl-card{% if loop.index > templates_initial %} cs-inline-tpl-more{% endif %}" data-template-key="{{ t.key }}" {% if loop.index > templates_initial %}hidden{% endif %}>
+      {% for tpl in templates %}
+      <div class="cs-inline-tpl-card{% if loop.index > templates_initial %} cs-inline-tpl-more{% endif %}" data-template-key="{{ tpl.key }}" {% if loop.index > templates_initial %}hidden{% endif %}>
         <form method="get" action="{{ url_for('creative_new') }}">
-          <input type="hidden" name="template_key" value="{{ t.key }}">
+          <input type="hidden" name="template_key" value="{{ tpl.key }}">
           {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
-          <button type="submit" class="cs-inline-tpl-thumb" title="{{ t.name }} -- shundan boshlash">
-            <img src="{{ t.preview_url }}" alt="{{ t.name }}: namuna" loading="lazy">
-            <span class="cs-inline-tpl-hover">Shundan boshlash</span>
+          <button type="submit" class="cs-inline-tpl-thumb" title="{{ t('creative.start_from_this_tip', name=tpl.name) }}">
+            <img src="{{ tpl.preview_url }}" alt="{{ t('creative.sample_alt', name=tpl.name) }}" loading="lazy">
+            <span class="cs-inline-tpl-hover">{{ t('creative.start_from_this') }}</span>
           </button>
           <div class="cs-inline-tpl-body">
             {# 2026-09 mobil audit: nom uzun bo'lsa nisbat belgisi (1:1/4:5)
                kartaning o'ng chetidan kesilib qolardi -- endi nom alohida
                span'da qisqaradi (ellipsis), belgi doim ko'rinadi. #}
-            <div class="cs-inline-tpl-name" title="{{ t.description }}"><span class="cs-inline-tpl-name-text">{{ t.name }}</span> <span class="cs-tpl-aspect">{{ t.aspect_default }}</span></div>
-            <button type="submit" class="ap-mini-btn primary">Shundan boshlash</button>
+            <div class="cs-inline-tpl-name" title="{{ tpl.description }}"><span class="cs-inline-tpl-name-text">{{ tpl.name }}</span> <span class="cs-tpl-aspect">{{ tpl.aspect_default }}</span></div>
+            <button type="submit" class="ap-mini-btn primary">{{ t('creative.start_from_this') }}</button>
           </div>
         </form>
       </div>
@@ -130,7 +130,7 @@
     </div>
     {% if templates|length > templates_initial %}
     <div style="margin-top:12px">
-      <button type="button" class="ap-mini-btn" id="cs-inline-tpl-toggle" data-more="Yana {{ templates|length - templates_initial }} ta shablonni ko'rsatish" data-less="Kamroq ko'rsatish">Yana {{ templates|length - templates_initial }} ta shablonni ko'rsatish</button>
+      <button type="button" class="ap-mini-btn" id="cs-inline-tpl-toggle" data-more="{{ t('creative.show_more', n=templates|length - templates_initial) }}" data-less="{{ t('creative.show_less') }}">{{ t('creative.show_more', n=templates|length - templates_initial) }}</button>
     </div>
     {% endif %}
   </section>
@@ -149,27 +149,27 @@
 <div class="modal-overlay" id="cs-style-modal">
   <div class="modal-dialog" style="max-width:560px">
     <div class="modal-header">
-      <h2>Qaysi uslubni yoqtirasiz?</h2>
-      <button type="button" class="modal-close" id="cs-style-modal-close" aria-label="Yopish">
+      <h2>{{ t('creative.style_title') }}</h2>
+      <button type="button" class="modal-close" id="cs-style-modal-close" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="text-faint" style="margin-top:0">AI kelajakdagi reklama rasmlarini shu tanlovga moslab yaratadi -- shablon yoki brifingizni almashtirmaydi, faqat qo'shimcha ko'rsatma bo'ladi. To'liq ixtiyoriy: istalgan vaqt o'tkazib yuborishingiz yoki keyinroq Sozlamalar &gt; Brend kit'dan o'zgartirishingiz mumkin.</p>
+      <p class="text-faint" style="margin-top:0">{{ t('creative.style_text')|safe }}</p>
       <div class="cs-style-grid" id="cs-style-grid"></div>
       <div class="cs-style-actions" style="margin-top:14px">
-        <button type="button" class="btn ap-btn-sm" id="cs-style-save" disabled>Tanlovni saqlash</button>
-        <span class="text-faint" style="font-size:12px">2-3 tasini tanlang</span>
+        <button type="button" class="btn ap-btn-sm" id="cs-style-save" disabled>{{ t('creative.style_save') }}</button>
+        <span class="text-faint" style="font-size:12px">{{ t('creative.style_pick_hint') }}</span>
       </div>
       <div style="margin:20px 0; border-top:1px solid var(--border-light)"></div>
-      <p class="text-faint" style="margin:0 0 8px">Yoki yoqtirgan uslubingizni ko'rsatuvchi bitta rasm yuklang -- AI kelajakdagi fonlarni shu rasmning rang palitrasi, yorug'lik va kayfiyatiga yaqinlashtiradi. <strong>Muhim:</strong> bu aynan shu rasmning nusxasi EMAS -- AI fonni qaytadan yaratadi, faqat uslubni shunga yo'naltiradi.</p>
+      <p class="text-faint" style="margin:0 0 8px">{{ t('creative.style_ref_text')|safe }}</p>
       <div class="cs-style-ref-row">
         <input type="file" id="cs-style-ref-input" accept="image/png,image/jpeg,image/webp">
-        <button type="button" class="ap-mini-btn" id="cs-style-ref-upload" disabled>Yuklash</button>
+        <button type="button" class="ap-mini-btn" id="cs-style-ref-upload" disabled>{{ t('creative.upload') }}</button>
       </div>
       <div id="cs-style-msg" class="ap-modal-msg" hidden></div>
       <div class="cs-style-actions" style="margin-top:18px; justify-content:flex-end">
-        <button type="button" class="ap-mini-btn" id="cs-style-skip">O'tkazib yuborish</button>
+        <button type="button" class="ap-mini-btn" id="cs-style-skip">{{ t('creative.skip') }}</button>
       </div>
     </div>
   </div>

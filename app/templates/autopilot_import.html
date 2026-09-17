@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Meta'dan import — Avtopilot — Replix{% endblock %}
+{% block title %}{{ t('autopilot.import_from_meta') }} — {{ t('autopilot.title') }} — Replix{% endblock %}
 {% block content %}
 
 {# 2026-09, Meta Ads Autopilot: Meta'da ALLAQACHON bor kampaniyani tanlab
@@ -9,22 +9,22 @@
 
 <div class="page-head">
   <div>
-    <h1>Meta'dan import</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Reklama hisobingizdagi mavjud kampaniyani tanlang -- u Replix'da qoralama sifatida ochiladi (birinchi Ad Set va birinchi reklama).</p>
+    <h1>{{ t('autopilot.import_from_meta') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('autopilot_import.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">Orqaga</a>
+    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">{{ t('autopilot_new.back') }}</a>
   </div>
 </div>
 
 {% if error %}
-<div class="flash flash-error">Kampaniyalar ro'yxati olinmadi: {{ error }}</div>
+<div class="flash flash-error">{{ t('autopilot_import.list_error', error=error) }}</div>
 {% endif %}
 
 <div class="panel">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Kampaniya</th><th>Meta maqsadi</th><th>Holat</th><th>Yangilangan</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('autopilot.th_campaign') }}</th><th>{{ t('autopilot_import.th_meta_objective') }}</th><th>{{ t('autopilot.th_status') }}</th><th>{{ t('autopilot.th_updated') }}</th><th></th></tr></thead>
     <tbody>
       {% for c in campaigns %}
       <tr>
@@ -40,13 +40,13 @@
           <form method="post" style="display:inline" onsubmit="this.querySelector('button').disabled=true">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="campaign_id" value="{{ c.id }}">
-            <button type="submit" class="btn toggle-all-btn">Import qilish</button>
+            <button type="submit" class="btn toggle-all-btn">{{ t('autopilot_import.import') }}</button>
           </form>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="5">{% if error %}Ro'yxat olinmadi.{% else %}Reklama hisobida kampaniya topilmadi.{% endif %}</td></tr>
+      <tr class="empty-row"><td colspan="5">{% if error %}{{ t('autopilot_import.empty_error') }}{% else %}{{ t('autopilot_import.empty') }}{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

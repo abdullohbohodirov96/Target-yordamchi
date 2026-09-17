@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Shablonlar — Kreativ studiya — Replix{% endblock %}
+{% block title %}{{ t('creative.templates') }} — {{ t('creative.title') }} — Replix{% endblock %}
 {% block content %}
 
 {# 2026-09, Kreativ studiya: 20 ta TAYYOR shablon (`creative_templates.py`,
@@ -10,35 +10,35 @@
 
 <div class="page-head">
   <div>
-    <h1>Tayyor shablonlar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">20 ta original dizayn -- shablonni tanlang, keyin AI fon yaratadi yoki o'z mahsulot fotongizni qo'yasiz; matn, logotip va ranglar avtomatik kompaniyangizga moslanadi, muharrirda hammasini o'zgartirish mumkin.</p>
+    <h1>{{ t('creative.inline_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('creative_gallery.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('creative_list') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">&larr; Kreativlar</a>
+    <a href="{{ url_for('creative_list') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">{{ t('creative_new.back') }}</a>
   </div>
 </div>
 
 <div class="cs-filter" id="cs-tpl-filter">
-  <button type="button" class="ap-mini-btn primary" data-cat="">Hammasi</button>
-  {% set _cat_labels = {'universal':'Universal','sale':'Aksiya','luxury':'Premium','tech':'Texnologiya','food':'Oziq-ovqat','real_estate':"Ko'chmas mulk",'fashion':'Moda','testimonial':'Ishonch','urgency':'Shoshilinch','features':'Xususiyatlar','launch':'Yangi mahsulot','seasonal':'Bayram','b2b':'B2B','beauty':"Go'zallik",'auto':'Avto','education':"Ta'lim",'collage':'Kollaj','story':'Story'} %}
+  <button type="button" class="ap-mini-btn primary" data-cat="">{{ t('common.all') }}</button>
+  {% set _cat_labels = {'universal': t('creative_gallery.cat_universal'), 'sale': t('creative_gallery.cat_sale'), 'luxury': t('creative_gallery.cat_luxury'), 'tech': t('creative_gallery.cat_tech'), 'food': t('creative_gallery.cat_food'), 'real_estate': t('creative_gallery.cat_real_estate'), 'fashion': t('creative_gallery.cat_fashion'), 'testimonial': t('creative_gallery.cat_testimonial'), 'urgency': t('creative_gallery.cat_urgency'), 'features': t('creative_gallery.cat_features'), 'launch': t('creative_gallery.cat_launch'), 'seasonal': t('creative_gallery.cat_seasonal'), 'b2b': t('creative_gallery.cat_b2b'), 'beauty': t('creative_gallery.cat_beauty'), 'auto': t('creative_gallery.cat_auto'), 'education': t('creative_gallery.cat_education'), 'collage': t('creative_gallery.cat_collage'), 'story': t('creative_gallery.cat_story')} %}
   {% for c in categories %}
   <button type="button" class="ap-mini-btn" data-cat="{{ c }}">{{ _cat_labels.get(c, c) }}</button>
   {% endfor %}
 </div>
 
 <div class="cs-tpl-grid" id="cs-tpl-grid">
-  {% for t in templates %}
-  <div class="cs-tpl-card" data-cat="{{ t.category }}">
-    <div class="cs-tpl-thumb cs-aspect-{{ t.aspect_default|replace(':', '-') }}">
-      <img src="{{ t.preview_url }}" alt="{{ t.name }}" loading="lazy">
+  {% for tpl in templates %}
+  <div class="cs-tpl-card" data-cat="{{ tpl.category }}">
+    <div class="cs-tpl-thumb cs-aspect-{{ tpl.aspect_default|replace(':', '-') }}">
+      <img src="{{ tpl.preview_url }}" alt="{{ tpl.name }}" loading="lazy">
     </div>
     <div class="cs-tpl-body">
-      <div class="cs-tpl-name">{{ t.name }} <span class="cs-tpl-aspect" title="{{ t.aspect_label }}">{{ t.aspect_default }}</span></div>
-      <div class="cs-tpl-desc">{{ t.description }}</div>
+      <div class="cs-tpl-name">{{ tpl.name }} <span class="cs-tpl-aspect" title="{{ tpl.aspect_label }}">{{ tpl.aspect_default }}</span></div>
+      <div class="cs-tpl-desc">{{ tpl.description }}</div>
       <form method="get" action="{{ url_for('creative_new') }}" class="cs-tpl-actions">
-        <input type="hidden" name="template_key" value="{{ t.key }}">
+        <input type="hidden" name="template_key" value="{{ tpl.key }}">
         {% if from_autopilot %}<input type="hidden" name="from_autopilot" value="{{ from_autopilot }}">{% endif %}
-        <button type="submit" class="btn ap-btn-sm">Shundan boshlash</button>
+        <button type="submit" class="btn ap-btn-sm">{{ t('creative.start_from_this') }}</button>
       </form>
     </div>
   </div>
