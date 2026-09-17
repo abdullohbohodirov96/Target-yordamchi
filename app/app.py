@@ -7792,6 +7792,40 @@ def autopilot_patch(draft_id: int):
         session.close()
 
 
+@app.route("/avtopilot/<int:draft_id>/save-draft", methods=["POST"])
+@login_required
+@module_required("target")
+def autopilot_save_draft(draft_id: int):
+    """"Qoralama sifatida saqlash" tugmasi (2026-09, foydalanuvchi so'rovi:
+    kampaniyani to'liq tekshiruv/nashrdan o'tkazmasdan, ANIQ "saqlandi" deb
+    bilish imkoni kerak). Har bir forma/chat tahriri ALLAQACHON darhol
+    saqlanadi (`autopilot_web.apply_and_persist_patch` har chaqiruvda
+    `session.commit()` qiladi) -- shuning uchun bu marshrut hech qanday
+    validatsiya yoki tasdiqni TALAB QILMAYDI va yangi patch qabul qilmaydi;
+    u shunchaki joriy (allaqachon saqlangan) holatni ANIQ tasdiqlaydi --
+    `updated_at`ni yangilaydi (ro'yxatda yuqoriga chiqadi) va audit-jurnalga
+    foydalanuvchi ONGLI RAVISHDA saqlaganini yozadi (avtomatik fon-saqlashdan
+    farqli o'laroq)."""
+    denied = _autopilot_admin_json()
+    if denied:
+        return denied
+    company = _current_company()
+    session = get_session()
+    try:
+        draft = _autopilot_load_draft(session, draft_id, company)
+        draft.updated_at = dt.datetime.utcnow()
+        autopilot_web.log_event(session, draft, actor="user", action="draft_saved", scope=None, details={}, manager_id=_autopilot_manager_id())
+        session.commit()
+        assets = autopilot_web.safe_meta_assets(company)
+        return jsonify({"ok": True, "draft": _autopilot_payload(session, draft, company, assets)})
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == 404:
+            raise
+        return _autopilot_json_error(e, "save-draft")
+    finally:
+        session.close()
+
+
 @app.route("/avtopilot/<int:draft_id>/ai-edit", methods=["POST"])
 @login_required
 @module_required("target")
@@ -7841,8 +7875,39 @@ def autopilot_ai_edit(draft_id: int):
                 autopilot_web.log_event(session, draft, actor="ai", action="ai_edit_rejected", scope=result["patch"].get("scope"),
                                         details={"message": message, "patch": result["patch"], "error": str(e)}, manager_id=_autopilot_manager_id())
                 session.commit()
+        # 2026-09 bugfix ("ikkita ad set qilib ber ..." -> AI oldin
+        # "alohida so'rashni iltimos qiling" deb rad etardi): bitta
+        # xabarda bir nechta ad set (auditoriya) so'ralganda, birinchisi
+        # yuqorida joriy qoralamaga qo'llandi -- QOLGAN har biri uchun
+        # joriy qoralamaning NUSXASI (yangi `CampaignDraft`) shu turgan
+        # so'rov (turn) ICHIDA yaratiladi va o'sha auditoriya patch'i
+        # darhol qo'llanadi -- foydalanuvchi ikkinchi marta yozishi shart
+        # emas (`ai_campaign_planner.chat_edit`ning `extra_ad_sets`i).
+        extra_drafts = []
+        for extra in result.get("extra_ad_sets") or []:
+            try:
+                new_draft = autopilot_web.duplicate_draft_for_new_adset(
+                    session, draft, label=extra.get("label"), manager_id=_autopilot_manager_id(),
+                )
+                if extra.get("patch"):
+                    autopilot_web.apply_and_persist_patch(
+                        session, new_draft, extra["patch"], source="USER_OVERRIDDEN", manager_id=_autopilot_manager_id(),
+                        actor="ai", action="ai_edit", details={"message": message, "patch": extra["patch"], "duplicated_from_draft_id": draft.id},
+                        company=company, assets=assets,
+                    )
+                extra_drafts.append({
+                    "id": new_draft.id, "title": new_draft.title,
+                    "label": extra.get("label"), "url": url_for("autopilot_review", draft_id=new_draft.id),
+                })
+            except campaign_draft.DraftPatchError as e:
+                warnings.append(f"Qo'shimcha ad set ({extra.get('label') or '?'}) yaratildi, lekin auditoriyasi qo'llanmadi: {e}")
+        if extra_drafts:
+            links = "; ".join(f"{d['title']} — {d['url']}" for d in extra_drafts)
+            reply = (reply.rstrip() + " ") if reply else ""
+            reply += f"Yana {len(extra_drafts)} ta ad set alohida qoralama sifatida yaratildi (ular alohida ko'rib chiqiladi/tasdiqlanadi): {links}"
         return jsonify({"reply": reply, "applied": applied, "clarify": bool(result.get("clarify")), "warnings": warnings,
-                        "changed_paths": changed, "reset_scopes": reset, "draft": _autopilot_payload(session, draft, company, assets, ctx)})
+                        "changed_paths": changed, "reset_scopes": reset, "extra_drafts": extra_drafts,
+                        "draft": _autopilot_payload(session, draft, company, assets, ctx)})
     except Exception as e:  # noqa: BLE001
         if getattr(e, "code", None) == 404:
             raise

@@ -32,6 +32,7 @@ ko'rsatadi (xom API matni ekranga chiqmaydi).
 import copy
 import json
 import datetime as dt
+from urllib.parse import urlparse
 
 STATE_VERSION = 1
 
@@ -899,8 +900,17 @@ def _validate_lead_form(lead_form: dict) -> list[dict]:
             if len(good_options) < 2:
                 errors.append(_err("ad", "lead_form.questions", "Bir nechta variantli savolda kamida 2 ta variant bo'lishi kerak."))
     privacy = (form.get("privacy_url") or "").strip()
-    if not privacy.startswith("http"):
-        errors.append(_err("ad", "lead_form.privacy_url", "Maxfiylik siyosati havolasi (privacy_url) kerak -- Meta buni talab qiladi."))
+    # 2026-09 bugfix: oldin faqat `startswith("http")` tekshirilardi -- bu
+    # "http://" yoki "http:noturli" kabi yaroqsiz/domensiz qiymatlarni ham
+    # LOKAL tekshiruvdan o'tkazib yuborardi, Meta esa buni rad etardi
+    # (foydalanuvchi "Hammasi joyida" ko'rib, keyin Meta xatosiga duch
+    # kelardi). Endi URL haqiqatan sxema (http/https) VA domen (netloc)ga
+    # ega ekanligi tekshiriladi -- to'liq Meta-tomon tekshiruv (havola
+    # ochiladimi) emas, lekin ko'pchilik yaroqsiz qiymatni shu yerda ushlaydi.
+    parsed = urlparse(privacy)
+    host = (parsed.netloc or "").split(":")[0]
+    if parsed.scheme not in ("http", "https") or not host or "." not in host:
+        errors.append(_err("ad", "lead_form.privacy_url", "Maxfiylik siyosati havolasi (privacy_url) to'g'ri, to'liq URL bo'lishi kerak (masalan https://sizning-sayt.uz/maxfiylik) -- Meta buni talab qiladi."))
     return errors
 
 

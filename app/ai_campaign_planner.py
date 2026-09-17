@@ -25,6 +25,7 @@ JIMGINA tuzilmaydi (foydalanuvchi buni kutmaydi).
 """
 
 import copy
+import os
 import logging
 import datetime as dt
 
@@ -32,6 +33,18 @@ import campaign_draft
 import company_context as company_context_module
 
 logger = logging.getLogger("ai_campaign_planner")
+
+# 2026-09 bugfix (privacy_url bo'sh qolib, "Instant Form yaratib bo'lmadi"
+# xatosi bilan tugagan nashr): Instant Form uchun HAR DOIM ishlaydigan,
+# ochiq maxfiylik siyosati sahifasi -- ilovaning O'ZINING `/maxfiylik-
+# siyosati` yo'li (`app.py`dagi `privacy_policy()`, Meta tekshiruvi uchun
+# maxsus doim ochiq qilib qurilgan). Bazaviy domen `app.py`dagi
+# `APP_CANONICAL_BASE_URL` BILAN BIR XIL manbadan (`APP_BASE_URL` muhit
+# o'zgaruvchisi) olinadi -- bu modul `app.py`ni import qila olmaydi
+# (aylanma import: `app.py` shu modulni import qiladi), shuning uchun
+# konstanta mustaqil o'qiladi, lekin qiymati bir xil bo'lib qoladi.
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://replix.uz").rstrip("/")
+DEFAULT_PRIVACY_POLICY_URL = f"{APP_BASE_URL}/maxfiylik-siyosati"
 
 
 class PlannerUnavailableError(Exception):
@@ -404,6 +417,22 @@ def plan_campaign(ctx: dict, answers: dict, *, meta_assets: "dict | None", resol
             questions.insert(0, {"type": "PHONE"})
         if not any(q["type"] == "FULL_NAME" for q in questions):
             questions.insert(0, {"type": "FULL_NAME"})
+        # 2026-09 bugfix ("Instant Form yaratib bo'lmadi -- ... maxfiylik
+        # havolasini tekshiring" -- publish `lead_form` bosqichida Meta
+        # rad etardi): oldin bu yer HAR DOIM "" (bo'sh) qoldirilib, faqat
+        # yumshoq ogohlantirish yozilardi -- foydalanuvchi buni ko'rmay
+        # yoki e'tiborsiz qoldirib, keyinroq forma orqali o'zi noto'g'ri/
+        # yaroqsiz havola kiritishi mumkin edi. Endi: LLM haqiqiy http(s)
+        # havola bergan bo'lsa O'SHA olinadi, aks holda ilovaning O'ZINING
+        # doim ochiq `/maxfiylik-siyosati` sahifasiga standart qilinadi --
+        # bo'sh emas, Meta uchun har doim ishlaydigan/ochiladigan havola.
+        # (Kompaniyaning o'z veb-sayti sozlamalarda hozircha yo'q --
+        # `business_profile.BUSINESS_PROFILE_QUESTIONS`da bunday maydon
+        # yo'q, shuning uchun undan afzal ko'radigan hech narsa yo'q.)
+        lf_privacy = str((lf or {}).get("privacy_url") or "").strip()
+        privacy_defaulted = not lf_privacy.startswith("http")
+        if privacy_defaulted:
+            lf_privacy = DEFAULT_PRIVACY_POLICY_URL
         ad["lead_form"] = {
             "mode": "new", "existing_form_id": None,
             "new_form": {
@@ -411,12 +440,17 @@ def plan_campaign(ctx: dict, answers: dict, *, meta_assets: "dict | None", resol
                 "intro_headline": str((lf or {}).get("intro_headline") or "")[:60],
                 "intro_description": str((lf or {}).get("intro_description") or "")[:300],
                 "questions": questions[:6],
-                "privacy_url": "",
+                "privacy_url": lf_privacy,
                 "thank_you_title": str((lf or {}).get("thank_you_title") or "Rahmat!")[:60],
                 "thank_you_body": str((lf or {}).get("thank_you_body") or "Tez orada siz bilan bog'lanamiz.")[:300],
             },
         }
-        warnings.append("Instant Form uchun maxfiylik siyosati havolasini (privacy_url) kiriting -- Meta buni talab qiladi.")
+        if privacy_defaulted:
+            warnings.append(
+                "Instant Form uchun maxfiylik siyosati havolasi ko'rsatilmagani sabab Replix'ning o'z "
+                f"sahifasi avtomatik qo'yildi ({lf_privacy}). Kompaniyangizning o'z maxfiylik siyosati "
+                "havolasi bo'lsa, 'Reklama' bo'limi -> 'Lead forma' sozlamalaridan tahrirlashingiz mumkin."
+            )
     if objective == "SALES" and not assets.get("has_pixel"):
         warnings.append("Sotuv maqsadi uchun Pixel kerak -- reklama hisobida Pixel tanlanmagan.")
 
@@ -459,7 +493,7 @@ def replan_preserving_overrides(old_state: dict, old_sources: dict, new_plan_sta
 # ---------------------------------------------------------------------------
 _CHAT_SYSTEM = """Sen Replix Meta Ads qoralamasining CHAT-TAHRIRLOVCHISISAN. Foydalanuvchi oddiy tilda buyruq beradi,
 sen uni STRUKTURALI patch'ga aylantirasan. FAQAT JSON qaytar:
-{"scope": "campaign" | "adset" | "ad" | "objective", "changes": {"<yo'l>": <qiymat>}, "reply": "<qisqa o'zbekcha javob>", "clarify": false}
+{"scope": "campaign" | "adset" | "ad" | "objective", "changes": {"<yo'l>": <qiymat>}, "reply": "<qisqa o'zbekcha javob>", "clarify": false, "extra_ad_sets": []}
 Agar buyruq tushunarsiz/ikki xil ma'noli bo'lsa: {"scope": null, "changes": {}, "reply": "<aniqlashtiruvchi savol>", "clarify": true}
 
 RUXSAT ETILGAN YO'LLAR (faqat shular; boshqa yo'l yozsang rad etiladi):
@@ -467,7 +501,8 @@ RUXSAT ETILGAN YO'LLAR (faqat shular; boshqa yo'l yozsang rad etiladi):
 
 QOIDALAR:
 - Yo'llar TO'LIQ yoziladi (masalan "adset.targeting.age_min"), scope -- yo'lning birinchi bo'lagi.
-- Bitta patch faqat BITTA scope'ga tegishli. Ikki scope kerak bo'lsa, eng muhimini qil va reply'da ikkinchisini alohida so'rashni ayt.
+- Bitta patch faqat BITTA scope'ga tegishli. Ikki scope (masalan campaign VA ad birga) kerak bo'lsa, eng muhimini qil va reply'da ikkinchisini alohida so'rashni ayt.
+- BIR XABARDA BIR NECHTA AD SET (turli auditoriya segmentlari) so'ralsa (masalan "ikkita ad set qil, biri X biri Y", "uchta auditoriya uchun alohida-alohida qil"): BUNI ALOHIDA SO'RASHNI HECH QACHON SO'RAMA -- HAMMASINI SHU BIR JAVOBDA BAJAR. Birinchi tasvirlangan auditoriyani odatdagidek "scope":"adset"/"changes"ga yoz (joriy ad set shunga moslashadi). Qolgan HAR BIR auditoriya uchun "extra_ad_sets" ro'yxatiga {"label": "<qisqa o'zbekcha nom>", "changes": {"adset.targeting...": ..., "adset.name": "..."}} qo'sh -- tizim har biri uchun ALOHIDA yangi ad set (mustaqil qoralama) yaratadi va shu auditoriya sozlamalarini darhol qo'llaydi. "extra_ad_sets"dagi "changes" faqat "adset.*" yo'llarni olishi mumkin (targeting/nom) -- reklama matni/kreativ asosiy ad setdan MEROS bo'ladi. HAR BIR ad set/auditoriya uchun O'ZINING alohida targeting'ini (interests/geo/yosh) yoz -- ikkinchisiga birinchisining AYNAN o'sha auditoriyasini nusxalab qo'yma, tavsiflangan farqqa (masalan "tijorat qurilish biznes egalari" vs "uy ta'mirlash qiluvchi uy egalari/prorablar") mos alohida qiziqish/auditoriya tanlа.
 - Hudud/qiziqish uchun Meta key/id'ni O'YLAB TOPMA: "adset.targeting.geo_locations.cities" uchun [{"name": "Toshkent"}] deb NOM yoz (tizim key'ni o'zi topadi); qo'shish uchun mavjud ro'yxatga yangi nomni qo'shib to'liq ro'yxatni qaytar; "faqat X" -- ro'yxatda faqat X.
 - Qiziqishlar: "adset.targeting.interests": [{"name": "..."}] (nom bilan). "broad qil" -> interests: [] va advantage_audience: true.
 - Yosh: age_min va age_max ikkalasini ham bir patch'da ber. Byudjet: "adset.daily_budget" -- son (masalan "200 ming" -> 200000).
@@ -490,6 +525,10 @@ MISOLLAR:
 "CTA'ni Send Message qil" -> {"scope":"ad","changes":{"ad.cta":"SEND_MESSAGE"},...}
 "3-rasmni tanla" -> {"scope":"ad","changes":{"ad.media.selected_variant":2},...}
 "Lead formga obyekt hajmi degan savol qo'sh" -> {"scope":"ad","changes":{"ad.lead_form.new_form.questions":{"$append":{"type":"CUSTOM","label":"Obyekt hajmi qancha?"}}},...}
+"Ikkita ad set qilib ber, biri tijorat bino quradigan biznes egalari, ikkinchisi uy ta'mirlash qiladigan uy egalari/prorablar" ->
+{"scope":"adset","changes":{"adset.name":"Tijorat qurilish biznes egalari","adset.targeting.interests":[{"name":"Commercial construction"},{"name":"Business owner"}]},
+ "reply":"2 ta ad set tuzildi: joriysi tijorat qurilish biznes egalariga moslashtirildi, ikkinchisi (yangi ad set/qoralama) uy ta'mirlash egalari/prorablarga.","clarify":false,
+ "extra_ad_sets":[{"label":"Uy ta'mirlash egalari","changes":{"adset.name":"Uy ta'mirlash egalari","adset.targeting.interests":[{"name":"Home improvement"},{"name":"General contractor"}]}}]}
 """
 
 
@@ -564,13 +603,54 @@ def _resolve_named_items_in_changes(changes: dict, state: dict, resolve_geo, res
     return out
 
 
+def _build_extra_adset_patch(changes: dict, state: dict, resolve_geo, resolve_interests, warnings: list[str]) -> "dict | None":
+    """2026-09 bugfix ("ikkita ad set qilib ber ..." -> AI "alohida
+    so'rashni iltimos qiling" deb rad etardi, chunki bitta qoralama =
+    bitta Campaign+Ad Set+Ad, ikkinchi ad set uchun sxemada joy yo'q edi):
+    `extra_ad_sets[].changes`ni asosiy patch bilan BIR XIL quvurdan
+    (allowlist -> nom->Meta id -> tip tekshiruvi) o'tkazadi, lekin FAQAT
+    "adset.*" yo'llarni oladi -- yangi ad set aynan shu bilan farqlanadi
+    (auditoriya/targeting), reklama matni/kreativ asosiy qoralamadan
+    nusxalanadi (chaqiruvchi -- `app.py` -- butun holatni klonlaydi).
+    Yaroqsiz/bo'sh bo'lsa -- xatoga chiqarmaydi, shunchaki `None` (chaqiruvchi
+    ogohlantirish qo'shadi), chunki bitta yaroqsiz qo'shimcha ad set asosiy
+    so'rovni yiqitmasligi kerak."""
+    if not isinstance(changes, dict) or not changes:
+        return None
+    full_changes: dict = {}
+    for key, value in changes.items():
+        full = campaign_draft._resolve_full_path("adset", str(key))
+        if not campaign_draft.is_allowed_path(full) or campaign_draft.scope_of_path(full) != "adset":
+            continue
+        full_changes[full] = value
+    if not full_changes:
+        return None
+    full_changes = _resolve_named_items_in_changes(full_changes, state, resolve_geo, resolve_interests, warnings)
+    try:
+        for path, value in full_changes.items():
+            if isinstance(value, dict) and ("$append" in value or "$remove_index" in value):
+                continue
+            campaign_draft.coerce_value(path, value)
+    except campaign_draft.DraftPatchError:
+        return None
+    return {"scope": "adset", "changes": full_changes}
+
+
 def chat_edit(ctx: dict, state: dict, message: str, *, resolve_geo, resolve_interests) -> dict:
     """Chat buyrug'ini patch'ga aylantiradi. Qaytaradi:
     {"patch": {"scope","changes"} | None, "reply": str, "clarify": bool,
-     "warnings": [str]}. `patch` -- HALI QO'LLANMAGAN; chaqiruvchi uni
+     "warnings": [str], "extra_ad_sets": [{"label","patch"}]}. `patch` --
+     HALI QO'LLANMAGAN; chaqiruvchi uni
     `campaign_draft.apply_patch(..., source="USER_OVERRIDDEN")` +
     `validate_state()` orqali o'tkazadi (chat orqali o'zgartirish ham
-    foydalanuvchining ANIQ qarori, shuning uchun USER_OVERRIDDEN)."""
+    foydalanuvchining ANIQ qarori, shuning uchun USER_OVERRIDDEN).
+
+    2026-09: `extra_ad_sets` -- BIR XABARDA bir nechta ad set (turli
+    auditoriya) so'ralganda, birinchisidan TASHQARI har biri uchun
+    ({"label","patch"}) -- chaqiruvchi (`app.py`) HAR BIRI uchun joriy
+    qoralamaning nusxasini (yangi `CampaignDraft`) yaratib, shu patch'ni
+    o'sha nusxaga qo'llaydi -- foydalanuvchi ikkinchi marta yozishi
+    shart emas (bitta suhbat davrida ichki tsikl)."""
     message = (message or "").strip()
     if not message:
         return {"patch": None, "reply": "Buyruq bo'sh -- nimani o'zgartiray?", "clarify": True, "warnings": []}
@@ -633,9 +713,28 @@ def chat_edit(ctx: dict, state: dict, message: str, *, resolve_geo, resolve_inte
             campaign_draft.coerce_value(path, value)
     except campaign_draft.DraftPatchError as e:
         return {"patch": None, "reply": f"Buyruqni qo'llab bo'lmadi: {e}", "clarify": False, "warnings": warnings}
+
+    # 2026-09: bitta xabarda bir nechta ad set (`extra_ad_sets`) -- har biri
+    # asosiy patch bilan bir xil quvurdan o'tadi, lekin faqat "adset.*"
+    # o'zgarishlarni oladi (yangi ad set -- yangi auditoriya). Yaroqsiz/bo'sh
+    # element butun chat javobini yiqitmaydi -- shunchaki tashlab yuboriladi
+    # + ogohlantirish (foydalanuvchi hali ham birinchi ad set natijasini oladi).
+    extra_ad_sets: list[dict] = []
+    for entry in raw.get("extra_ad_sets") or []:
+        if not isinstance(entry, dict):
+            continue
+        label = str(entry.get("label") or entry.get("name") or "").strip()[:120] or None
+        entry_changes = entry.get("changes") if isinstance(entry.get("changes"), dict) else {}
+        extra_patch = _build_extra_adset_patch(entry_changes, state, resolve_geo, resolve_interests, warnings)
+        if extra_patch is None:
+            warnings.append(f"Qo'shimcha ad set{(' (' + label + ')') if label else ''} yaratilmadi -- auditoriya/targeting aniqlanmadi.")
+            continue
+        extra_ad_sets.append({"label": label, "patch": extra_patch})
+
     return {
         "patch": {"scope": scope, "changes": full_changes},
         "reply": reply or "O'zgartirildi.",
         "clarify": False,
         "warnings": warnings,
+        "extra_ad_sets": extra_ad_sets,
     }

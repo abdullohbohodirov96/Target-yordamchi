@@ -201,14 +201,19 @@
   }
 
   function flushPending() {
-    if (store.inflight) { clearTimeout(store.timer); store.timer = setTimeout(flushPending, 300); return; }
+    // 2026-09: promise qaytaradi (avval yo'q edi) -- "Qoralama sifatida
+    // saqlash" tugmasi hali yuborilmagan (debounce navbatidagi) o'zgarishlar
+    // ketishini KUTIB, keyin aniq tasdiqlash so'rovini yuborishi uchun
+    // (mavjud chaqiruvchilar -- `setTimeout(flushPending, ...)` -- qaytgan
+    // qiymatga e'tibor bermaydi, xatti-harakati o'zgarmaydi).
+    if (store.inflight) { clearTimeout(store.timer); store.timer = setTimeout(flushPending, 300); return Promise.resolve(); }
     var scopes = Object.keys(store.pending);
-    if (!scopes.length) { return; }
+    if (!scopes.length) { return Promise.resolve(); }
     var scope = scopes[0];
     var changes = store.pending[scope];
     delete store.pending[scope];
     store.inflight = true;
-    api('/patch', { method: 'POST', body: { scope: scope, changes: changes } })
+    return api('/patch', { method: 'POST', body: { scope: scope, changes: changes } })
       .then(function () { store.saving = Object.keys(store.pending).length ? 'saving' : 'saved'; store.saveError = null; })
       .catch(function (e) {
         store.saving = 'error'; store.saveError = e.message;
@@ -217,8 +222,30 @@
       .then(function () {
         store.inflight = false;
         renderTopbar(); renderTree(); renderBottombar(); renderEditor();
-        if (Object.keys(store.pending).length) { flushPending(); }
+        if (Object.keys(store.pending).length) { return flushPending(); }
       });
+  }
+
+  // 2026-09, foydalanuvchi so'rovi: kampaniyani to'liq tekshiruv/nashrdan
+  // o'tkazmasdan turib ham "aniq saqlandi" deb ANIQ bilish imkoni. Forma/
+  // chat tahriri ALLAQACHON avtomatik saqlanadi (yuqoridagi debounce +
+  // `/patch`), lekin bu passiv va ko'zga tashlanmasligi mumkin -- shu
+  // tugma HAL QILUVCHI harakat: avval navbatdagi o'zgarishlarni darhol
+  // yuboradi, so'ng serverga ANIQ tasdiqlash so'rovini (`/save-draft`)
+  // yuboradi va chatda ko'rinadigan tasdiq ko'rsatadi.
+  function saveDraftExplicit(btn) {
+    var original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saqlanmoqda…';
+    clearTimeout(store.timer);
+    Promise.resolve(flushPending()).then(function () {
+      return api('/save-draft', { method: 'POST', body: {} });
+    }).then(function () {
+      btn.disabled = false; btn.textContent = original;
+      chatSystem('✓ Qoralama saqlandi. Istalgan payt "Avtopilot" ro\'yxatidan qaytib kirib davom ettirishingiz mumkin -- hech narsa yo\'qolmaydi.');
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = original;
+      chatSystem('Saqlashda xato: ' + e.message, 'err');
+    });
   }
 
   // ------------------------------------------------------------------
@@ -1191,7 +1218,7 @@
   // ------------------------------------------------------------------
   // CHAT (Replix AI)
   // ------------------------------------------------------------------
-  function chatPush(role, text, cls, meta) { store.chat.push({ role: role, text: text, cls: cls, meta: meta }); renderChat(); }
+  function chatPush(role, text, cls, meta, links) { store.chat.push({ role: role, text: text, cls: cls, meta: meta, links: links }); renderChat(); }
   function chatSystem(text, cls) { chatPush('ai', text, cls); }
   function renderChat() {
     var log = document.getElementById('ap-chat-log');
@@ -1202,6 +1229,16 @@
     store.chat.forEach(function (m) {
       var el = h('div', { class: 'ap-msg ' + (m.role === 'user' ? 'ap-msg-user' : 'ap-msg-ai') + (m.cls ? ' ' + m.cls : ''), text: m.text });
       if (m.meta) { el.appendChild(h('div', { class: 'ap-msg-meta', text: m.meta })); }
+      // 2026-09: bir xabarda bir nechta ad set yaratilganda -- yangi
+      // qoralama(lar)ga to'g'ridan-to'g'ri o'tish havolalari.
+      if (m.links && m.links.length) {
+        var linksWrap = h('div', { class: 'ap-msg-links' });
+        m.links.forEach(function (lk) {
+          var a = h('a', { href: lk.url, text: lk.label || lk.url, target: '_blank', rel: 'noopener' });
+          linksWrap.appendChild(a);
+        });
+        el.appendChild(linksWrap);
+      }
       log.appendChild(el);
     });
     if (store.chatTyping) { log.appendChild(h('div', { class: 'ap-msg-typing', text: 'Replix AI yozmoqda…' })); }
@@ -1231,7 +1268,10 @@
       if (r.applied && r.changed_paths && r.changed_paths.length) { meta.push('O\'zgardi: ' + r.changed_paths.join(', ')); }
       if (r.reset_scopes && r.reset_scopes.length) { meta.push('Tasdiq bekor qilindi: ' + r.reset_scopes.map(function (s) { return LEVEL_LABELS[s] || s; }).join(', ') + ' -- qayta ko\'rib chiqing.'); }
       if (r.warnings && r.warnings.length) { meta.push(r.warnings.join(' ')); }
-      chatPush('ai', r.reply || (r.applied ? 'O\'zgartirildi.' : 'Tushunmadim.'), r.clarify ? 'warn' : null, meta.join(' · ') || null);
+      var links = (r.extra_drafts && r.extra_drafts.length) ? r.extra_drafts.map(function (d) {
+        return { label: '→ ' + (d.label ? d.label + ' (' : '') + d.title + (d.label ? ')' : ''), url: d.url };
+      }) : null;
+      chatPush('ai', r.reply || (r.applied ? 'O\'zgartirildi.' : 'Tushunmadim.'), r.clarify ? 'warn' : null, meta.join(' · ') || null, links);
       if (r.applied && r.changed_paths && r.changed_paths.length) {
         var scope = r.changed_paths[0] === 'objective' ? 'campaign' : r.changed_paths[0].split('.')[0];
         if (LEVELS.indexOf(scope) >= 0 && store.tab !== scope) { setTab(scope); }
@@ -1252,6 +1292,15 @@
     var idx = LEVELS.indexOf(store.tab);
     var dots = h('span', { class: 'ap-approve-dots' }, LEVELS.map(function (l) { return h('span', { class: d.approvals[l] ? 'ok' : '', title: LEVEL_LABELS[l] }); }));
     var left = h('div', { class: 'ap-bottombar-left' }, [dots, h('span', { class: 'ap-bottombar-status', text: LEVELS.filter(function (l) { return d.approvals[l]; }).length + '/3 tasdiqlangan' + (d.has_meta_ids ? ' · Meta ID: ' + d.meta.campaign_id : '') })]);
+    // 2026-09, foydalanuvchi so'rovi: to'liq tekshiruv/tasdiq/nashrdan
+    // o'tmasdan ham, ANIQ "saqlandi" deb bilish tugmasi -- hech qanday
+    // tasdiq yoki tekshiruvni talab qilmaydi (holat allaqachon har bir
+    // tahrirda avtomatik saqlanadi, bu shunchaki buni ANIQ tasdiqlaydi).
+    if (IS_ADMIN && d.is_editable && (d.status === 'draft' || d.status === 'failed')) {
+      var saveBtn = h('button', { type: 'button', class: 'btn btn-outline ap-btn-sm', text: 'Qoralama sifatida saqlash' });
+      saveBtn.addEventListener('click', function () { saveDraftExplicit(saveBtn); });
+      left.appendChild(saveBtn);
+    }
     var right = h('div', { class: 'ap-bottombar-right' });
     // 2026-09, Target Analizi: faqat Meta'ga chiqarilgan (jonli/import
     // qilingan) kampaniyalar uchun ma'no beradi -- yangi, hali nashr

@@ -24,6 +24,7 @@ Ads Manager'ga o'xshash sahifada ko'rib, tasdiqlab, Meta'ga chiqaradi).
   - `publish_gate()`        -- "Nashr" tugmasi nega o'chiq ekanining sabablari.
 """
 
+import copy
 import html as html_stdlib
 import logging
 import json
@@ -56,6 +57,8 @@ ACTION_LABELS = {
     "meta_error": "Meta xatosi", "activated": "Faollashtirildi", "synced": "Sinxronlandi", "imported": "Meta'dan import",
     "archived": "Arxivlandi", "meta_creative_created": "Yangi kreativ yaratildi",
     "target_analysis_run": "Target Analizi ishga tushdi", "target_analysis_applied": "Target Analizi -- o'zgarish qo'llandi",
+    "ai_extra_adset_created": "AI qo'shimcha ad set (yangi qoralama) yaratdi",
+    "draft_saved": "Qoralama sifatida saqlandi",
 }
 ACTOR_LABELS = {"user": "Foydalanuvchi", "ai": "Replix AI", "system": "Tizim"}
 
@@ -448,6 +451,65 @@ def apply_and_persist_patch(session, draft, patch: dict, *, source: str, manager
     log_event(session, draft, actor=actor, action=action, scope=patch.get("scope"), details=info, manager_id=manager_id)
     session.commit()
     return {"changed_paths": changed, "reset_scopes": reset, "validation": validation}
+
+
+def duplicate_draft_for_new_adset(session, draft, *, label: "str | None", manager_id: "int | None") -> "db.CampaignDraft":
+    """2026-09 bugfix ("ikkita ad set qilib ber ..." -> AI oldin "alohida
+    so'rashni iltimos qiling" deb rad etardi): bu ilovada BITTA
+    `CampaignDraft` = BITTA Campaign+Ad Set+Ad (Meta Marketing API bilan
+    bir xil tuzilma) -- bitta qoralama ichida IKKINCHI ad set uchun sxemada
+    joy yo'q. Shuning uchun "yana bir ad set" AYNAN shunday amalga
+    oshiriladi: joriy qoralamaning TO'LIQ mustaqil nusxasi (holat, manba
+    yorliqlari, AI reja, media) yangi `CampaignDraft` sifatida yaratiladi --
+    chaqiruvchi (`ai_campaign_planner.chat_edit`ning `extra_ad_sets`i orqali,
+    `app.py`da) shu ustiga o'sha auditoriyaning targeting patch'ini darhol
+    qo'llaydi, foydalanuvchi ikkinchi marta yozishi SHART EMAS (bitta
+    suhbat davrida ichki tsikl).
+
+    Yangi qoralama Meta'ga HALI chiqarilmagan (meta_*_id yo'q, status=draft,
+    uchala tasdiq bekor) -- alohida ko'rib chiqiladi/tasdiqlanadi/nashr
+    qilinadi, xuddi qo'lda "nusxa olish" qilingandek."""
+    state = copy.deepcopy(draft.get_state())
+    sources = dict(draft.get_field_sources())
+    base_title = (state.get("campaign") or {}).get("name") or draft.title or "Yangi kampaniya"
+    if label:
+        title = f"{base_title} | {label}"[:255]
+        adset = state.setdefault("adset", {})
+        adset["name"] = (f"{(adset.get('name') or '').strip()} | {label}".strip(" |"))[:255]
+    else:
+        title = base_title
+    new_draft = db.CampaignDraft(
+        company_id=draft.company_id, created_by_manager_id=manager_id,
+        title=title, source="AI", status="draft",
+        objective=state.get("objective"), sync_status="local",
+        launch_active=getattr(draft, "launch_active", True),
+    )
+    new_draft.set_state(state)
+    new_draft.set_field_sources(sources)
+    new_draft.set_ai_plan(draft.get_ai_plan())
+    session.add(new_draft)
+    session.flush()
+    # Media: fizik fayl bitta (storage_path o'zgarmaydi), faqat DB qatori
+    # yangi `draft_id` bilan nusxalanadi -- shu orqali nashr quvuri
+    # (`meta_publish._find_media_row`) yangi qoralamani MUSTAQIL deb ko'radi.
+    with db.scoped_as(draft.company_id):
+        media_rows = (
+            session.query(db.CampaignDraftMedia)
+            .filter(db.CampaignDraftMedia.draft_id == draft.id)
+            .order_by(db.CampaignDraftMedia.id.asc())
+            .all()
+        )
+    for m in media_rows:
+        session.add(db.CampaignDraftMedia(
+            company_id=draft.company_id, draft_id=new_draft.id, kind=m.kind, filename=m.filename,
+            storage_path=m.storage_path, content_type=m.content_type, size_bytes=m.size_bytes,
+            width=m.width, height=m.height, meta_image_hash=m.meta_image_hash, meta_video_id=m.meta_video_id,
+            upload_status=m.upload_status, upload_error=m.upload_error, creative_asset_id=m.creative_asset_id,
+        ))
+    log_event(session, new_draft, actor="ai", action="ai_extra_adset_created", scope="all",
+              details={"duplicated_from_draft_id": draft.id, "label": label}, manager_id=manager_id)
+    session.commit()
+    return new_draft
 
 
 # ---------------------------------------------------------------------------

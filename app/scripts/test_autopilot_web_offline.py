@@ -299,6 +299,92 @@ def test_ai_edit_applies_and_logs():
         check("bo'sh buyruq 400", r.status_code == 400)
 
 
+def test_ai_edit_multi_adset():
+    """2026-09 bugfix: bitta chat xabarida bir nechta ad set (auditoriya)
+    so'ralganda AI oldin "alohida so'rashni iltimos qiling" deb rad
+    etardi. Endi: birinchi auditoriya joriy qoralamaga qo'llanadi,
+    qolganlari HAR BIRI uchun joriy qoralamaning nusxasi (yangi
+    `CampaignDraft`) SHU SO'ROV ICHIDA yaratiladi va o'sha auditoriya
+    darhol qo'llanadi -- foydalanuvchi ikkinchi marta yozmaydi."""
+    with _assets_mock(ASSETS), mock.patch.object(meta_api, "search_geo_location", fake_geo), mock.patch.object(meta_api, "search_targeting_interests", fake_interests):
+        llm_multi = {
+            "scope": "adset",
+            "changes": {"adset.name": "Tijorat quruvchilar", "adset.targeting.interests": [{"name": "Furniture"}]},
+            "reply": "2 ta ad set tuzildi.", "clarify": False,
+            "extra_ad_sets": [
+                {"label": "Uy egalari", "changes": {
+                    "adset.name": "Uy egalari", "adset.targeting.interests": [{"name": "Furniture"}],
+                    "adset.targeting.age_min": 30, "adset.targeting.age_max": 55,
+                }},
+            ],
+        }
+        with mock.patch.object(orchestrator, "_call_agent", return_value=llm_multi):
+            r = admin.post(f"/avtopilot/{DRAFT_ID}/ai-edit", json={
+                "message": "Ikkita ad set qilib ber, biri tijorat bino quradigan biznes egalari, ikkinchisi uy ta'mirlash qiladigan uy egalari",
+            })
+        data = r.get_json()
+        check("multi ad set: 200 + asosiy patch qo'llandi", r.status_code == 200 and data["applied"] is True)
+        check("multi ad set: extra_drafts -- 1 ta yangi qoralama", len(data.get("extra_drafts") or []) == 1)
+        extra = data["extra_drafts"][0]
+        check("multi ad set: yangi qoralama ID joriysidan BOSHQA", extra["id"] != DRAFT_ID)
+        check("multi ad set: reply foydalanuvchini alohida so'rashga YO'NALTIRMAYDI",
+              "alohida so'rashni" not in data["reply"].lower() and "alohida qoralama" in data["reply"])
+
+        new_row = _row(extra["id"])
+        old_row = _row(DRAFT_ID)
+        check("yangi qoralama -- bir xil kompaniya, status=draft, Meta ID yo'q (alohida tasdiqlanadi)",
+              new_row.company_id == A_ID and new_row.status == "draft" and not new_row.meta_campaign_id)
+        new_state = new_row.get_state()
+        old_state = old_row.get_state()
+        check("ikkala ad set nomi FARQLI (tavsiflangan auditoriyaga mos)", new_state["adset"]["name"] == "Uy egalari" and old_state["adset"]["name"] == "Tijorat quruvchilar")
+        check("yangi ad set O'ZINING targeting'iga ega (yosh 30-55, nusxa emas)",
+              new_state["adset"]["targeting"]["age_min"] == 30 and new_state["adset"]["targeting"]["age_max"] == 55
+              and old_state["adset"]["targeting"]["age_max"] != 55)
+        check("reklama matni/kreativ asosiy qoralamadan meros bo'ldi", new_state["ad"]["primary_text"] == old_state["ad"]["primary_text"])
+        evs = _events(extra["id"])
+        check("audit: yangi qoralamada ai_extra_adset_created yozildi",
+              any(a == "ai_extra_adset_created" and dd.get("duplicated_from_draft_id") == DRAFT_ID for _, a, dd in evs))
+        check("audit: yangi qoralamada ai_edit (auditoriya patch'i) ham yozildi", any(a == "ai_edit" for _, a, dd in evs))
+
+        # Yaroqsiz/bo'sh qo'shimcha ad set -- asosiy so'rovni yiqitmaydi, shunchaki o'tkazib yuboriladi
+        llm_bad_extra = {
+            "scope": "adset", "changes": {"adset.daily_budget": 250000},
+            "reply": "Byudjet yangilandi.", "clarify": False,
+            "extra_ad_sets": [{"label": "Bo'sh", "changes": {}}],
+        }
+        with mock.patch.object(orchestrator, "_call_agent", return_value=llm_bad_extra):
+            r = admin.post(f"/avtopilot/{DRAFT_ID}/ai-edit", json={"message": "Byudjetni 250 ming qil"})
+        data = r.get_json()
+        check("bo'sh qo'shimcha ad set -- asosiy o'zgarish baribir qo'llanadi", r.status_code == 200 and data["applied"] is True and data["draft"]["state"]["adset"]["daily_budget"] == 250000.0)
+        check("bo'sh qo'shimcha ad set -- yangi qoralama YARATILMAYDI", not data.get("extra_drafts"))
+
+
+def test_save_draft_endpoint():
+    """2026-09, foydalanuvchi so'rovi: to'liq tekshiruv/tasdiq/nashrdan
+    o'tmasdan ham qoralamani ANIQ "saqlandi" deb bilish. Har bir tahrir
+    ALLAQACHON avtomatik saqlanadi -- bu endpoint validatsiya/tasdiq talab
+    QILMAYDI, faqat ANIQ tasdiqlaydi (audit + updated_at)."""
+    before = _row(DRAFT_ID)
+    before_updated = before.updated_at
+    with _assets_mock(ASSETS):
+        r = admin.post(f"/avtopilot/{DRAFT_ID}/save-draft", json={})
+    data = r.get_json()
+    check("save-draft 200 + ok", r.status_code == 200 and data.get("ok") is True)
+    check("save-draft: validatsiya/tasdiq TALAB QILINMAYDI (draft hali to'liq emas)", data["draft"]["can_publish"] in (True, False))
+    after = _row(DRAFT_ID)
+    check("save-draft: updated_at yangilandi (ro'yxatda yuqoriga chiqadi)", after.updated_at is not None and (before_updated is None or after.updated_at >= before_updated))
+    evs = _events(DRAFT_ID)
+    check("audit: draft_saved (actor=user) yozildi", any(a == "draft_saved" and actor == "user" for actor, a, _ in evs))
+    # Menejer (admin emas) -- yozuvchi amal 403
+    m = _client("ap_manager_a")
+    r = m.post(f"/avtopilot/{DRAFT_ID}/save-draft", json={})
+    check("menejer save-draft 403", r.status_code == 403)
+    # Boshqa kompaniya qoralamasi -- 404
+    b = _client("ap_admin_b")
+    r = b.post(f"/avtopilot/{DRAFT_ID}/save-draft", json={})
+    check("boshqa kompaniya save-draft 404", r.status_code == 404)
+
+
 def test_approve_endpoints():
     with _assets_mock(ASSETS):
         r = admin.post(f"/avtopilot/{DRAFT_ID}/approve", json={"scope": "adset"})
@@ -630,6 +716,8 @@ if __name__ == "__main__":
     test_review_page()
     test_manual_patch_resets_only_adset_approval()
     test_ai_edit_applies_and_logs()
+    test_ai_edit_multi_adset()
+    test_save_draft_endpoint()
     test_approve_endpoints()
     test_media_upload_and_preview()
     test_publish_blocked_then_success_and_activate()

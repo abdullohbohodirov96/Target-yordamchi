@@ -2129,6 +2129,8 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .ap-msg-ai.err { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-border); }
 .ap-msg-ai.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
 .ap-msg-meta { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+.ap-msg-links { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.ap-msg-links a { font-size: 12px; color: var(--blue-fill); text-decoration: underline; }
 .ap-msg-typing { align-self: flex-start; color: var(--text-faint); font-size: 12px; padding: 4px 12px; }
 .ap-chat-suggest { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 8px; }
 .ap-chat-form { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-light); align-items: flex-end; }

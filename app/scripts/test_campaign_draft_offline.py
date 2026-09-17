@@ -190,6 +190,18 @@ def test_validate_state():
     s["ad"]["lead_form"]["new_form"]["privacy_url"] = "https://example.uz/privacy"
     check("LEADS forma to'g'ri -> xatosiz", cd.validate_state(s) == [])
 
+    # 2026-09 bugfix ("Instant Form yaratib bo'lmadi -- ... maxfiylik
+    # havolasini tekshiring" Meta xatosi, holbuki lokal tekshiruv "Hammasi
+    # joyida" deb ko'rsatgan edi): oldin faqat `startswith("http")`
+    # tekshirilardi -- "http://" yoki domensiz qiymat ham O'TIB KETARDI.
+    # Endi sxema (http/https) VA domen (netloc) borligi tekshiriladi.
+    for bad in ("http://", "http:noturli", "httpfoo", "ftp://example.uz/p", "  ", "http:/example.uz"):
+        s["ad"]["lead_form"]["new_form"]["privacy_url"] = bad
+        errs = cd.validate_state(s)
+        check(f"LEADS yaroqsiz privacy_url rad etiladi: {bad!r}", any("privacy_url" in e["field"] for e in errs))
+    s["ad"]["lead_form"]["new_form"]["privacy_url"] = "https://replix.uz/maxfiylik-siyosati"
+    check("LEADS to'g'ri, to'liq domenli privacy_url -> xatosiz", cd.validate_state(s) == [])
+
     s = _filled_state("MESSAGES")
     s["adset"]["destination_type"] = "INSTAGRAM_DIRECT"
     errs = cd.validate_state(s, company=type("C", (), {"meta_pixel_id": None, "ig_business_id": None})())

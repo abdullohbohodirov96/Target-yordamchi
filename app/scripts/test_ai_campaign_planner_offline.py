@@ -120,8 +120,24 @@ def test_plan_campaign():
         res = planner.plan_campaign(CTX, {"objective": "LEADS", "budget": 100000}, meta_assets=None, resolve_geo=fake_geo, resolve_interests=fake_interests)
     qs = res["state"]["ad"]["lead_form"]["new_form"]["questions"]
     check("LEADS: PHONE va FULL_NAME avtomatik qo'shildi", [q["type"] for q in qs][:2] == ["FULL_NAME", "PHONE"] and qs[-1]["type"] == "CUSTOM")
-    check("LEADS: privacy ogohlantirish", any("privacy_url" in w for w in res["plan"]["warnings"]))
+    # 2026-09 bugfix ("Instant Form yaratib bo'lmadi" -- privacy_url bo'sh
+    # qolib, Meta publish bosqichida rad etardi): endi bo'sh qolmaydi --
+    # ilovaning o'z doim ochiq /maxfiylik-siyosati sahifasiga standart
+    # bo'ladi, va bu haqda tushuntiruvchi (endi "kiriting" emas, "avtomatik
+    # qo'yildi") ogohlantirish yoziladi.
+    privacy_url = res["state"]["ad"]["lead_form"]["new_form"]["privacy_url"]
+    check("LEADS: privacy_url BO'SH QOLMAYDI -- standart qo'yiladi", privacy_url == planner.DEFAULT_PRIVACY_POLICY_URL and privacy_url.startswith("https://"))
+    check("LEADS: privacy_url doim http(s) bilan boshlanadi (validate_state o'tadi)", cd.urlparse(privacy_url).scheme in ("http", "https") and cd.urlparse(privacy_url).netloc)
+    check("LEADS: ogohlantirish standart qo'llanganini tushuntiradi (endi 'kiriting' emas)",
+          any("avtomatik qo'yildi" in w and privacy_url in w for w in res["plan"]["warnings"]))
     check("LEADS: muddat standart 7", res["state"]["adset"]["duration_days"] == 7)
+
+    # LLM haqiqiy http(s) havola bergan bo'lsa -- O'SHA olinadi, standart QO'LLANMAYDI
+    leads_plan_with_privacy = dict(leads_plan, lead_form=dict(leads_plan["lead_form"], privacy_url="https://nurmebel.uz/maxfiylik"))
+    with mock.patch.object(orchestrator, "_call_agent", return_value=leads_plan_with_privacy):
+        res2 = planner.plan_campaign(CTX, {"objective": "LEADS", "budget": 100000}, meta_assets=None, resolve_geo=fake_geo, resolve_interests=fake_interests)
+    check("LEADS: LLM/kompaniya bergan haqiqiy privacy_url ustunlik qiladi", res2["state"]["ad"]["lead_form"]["new_form"]["privacy_url"] == "https://nurmebel.uz/maxfiylik")
+    check("LEADS: berilgan bo'lsa standart haqida ogohlantirish YO'Q", not any("avtomatik qo'yildi" in w for w in res2["plan"]["warnings"]))
 
     # Hech bir qiziqish topilmasa -> advantage_audience True
     with mock.patch.object(orchestrator, "_call_agent", return_value=dict(LLM_PLAN, interests=["Nothing"], advantage_audience=False)):
@@ -181,6 +197,51 @@ def test_chat_edit():
     check("noto'g'ri tip -> patch None", res["patch"] is None and "qo'llab bo'lmadi" in res["reply"])
 
 
+def test_chat_edit_multi_adset():
+    """2026-09 bugfix ("ikkita ad set qilib ber ..." -> AI oldin "alohida
+    so'rashni iltimos qiling" deb rad etardi): `extra_ad_sets` -- har biri
+    asosiy patch bilan bir xil quvurdan (allowlist -> nom->id -> tip)
+    o'tadi, FAQAT "adset.*" o'zgarishlarni oladi, va har biri O'ZINING
+    auditoriyasiga mos (nusxa emas)."""
+    llm_multi = {
+        "scope": "adset",
+        "changes": {"adset.name": "Tijorat quruvchilar", "adset.targeting.interests": [{"name": "Furniture"}]},
+        "reply": "2 ta ad set tuzildi.", "clarify": False,
+        "extra_ad_sets": [
+            {"label": "Uy egalari", "changes": {
+                "adset.name": "Uy egalari",
+                "adset.targeting.geo_locations.cities": [{"name": "Chirchiq"}],
+                "adset.targeting.age_min": 30, "adset.targeting.age_max": 55,
+                # ruxsat etilmagan/adsetga tegishli bo'lmagan yo'l -- e'tiborsiz qoldiriladi
+                "campaign.name": "Yangi kampaniya nomi",
+            }},
+        ],
+    }
+    with mock.patch.object(orchestrator, "_call_agent", return_value=llm_multi):
+        res = planner.chat_edit(CTX, _state(), "Ikkita ad set qil: biri tijorat quruvchilar, ikkinchisi uy egalari", resolve_geo=fake_geo, resolve_interests=fake_interests)
+    check("asosiy patch odatdagidek qaytadi", res["patch"]["changes"]["adset.name"] == "Tijorat quruvchilar")
+    check("extra_ad_sets -- 1 ta qo'shimcha ad set", len(res["extra_ad_sets"]) == 1)
+    extra = res["extra_ad_sets"][0]
+    check("qo'shimcha ad set label saqlanadi", extra["label"] == "Uy egalari")
+    check("qo'shimcha ad set FAQAT adset.* yo'llarni oladi ('campaign.name' tashlab yuborildi)", "campaign.name" not in extra["patch"]["changes"] and extra["patch"]["scope"] == "adset")
+    check("qo'shimcha ad set nomi FARQLI (o'zining auditoriyasi)", extra["patch"]["changes"]["adset.name"] == "Uy egalari")
+    check("qo'shimcha ad set hudud nomi Meta key'ga aylandi", extra["patch"]["changes"]["adset.targeting.geo_locations.cities"][0]["key"] == "2430600")
+    check("qo'shimcha ad set yosh o'zi bilan keladi", extra["patch"]["changes"]["adset.targeting.age_min"] == 30 and extra["patch"]["changes"]["adset.targeting.age_max"] == 55)
+
+    # Yaroqsiz/bo'sh qo'shimcha ad set -- asosiy patch'ni yiqitmaydi, shunchaki tashlab yuboriladi
+    llm_empty_extra = dict(llm_multi, extra_ad_sets=[{"label": "Bo'sh", "changes": {}}])
+    with mock.patch.object(orchestrator, "_call_agent", return_value=llm_empty_extra):
+        res = planner.chat_edit(CTX, _state(), "Ikkita ad set qil", resolve_geo=fake_geo, resolve_interests=fake_interests)
+    check("bo'sh qo'shimcha ad set -- asosiy patch baribir qaytadi", res["patch"] is not None)
+    check("bo'sh qo'shimcha ad set -- extra_ad_sets bo'sh", res["extra_ad_sets"] == [])
+    check("bo'sh qo'shimcha ad set -- ogohlantirish yozildi", any("Bo'sh" in w for w in res["warnings"]))
+
+    # extra_ad_sets umuman berilmasa -- bo'sh ro'yxat (orqaga moslik)
+    with mock.patch.object(orchestrator, "_call_agent", return_value={"scope": "adset", "changes": {"adset.daily_budget": 200000}, "reply": "x", "clarify": False}):
+        res = planner.chat_edit(CTX, _state(), "Budjetni 200 ming qil", resolve_geo=fake_geo, resolve_interests=fake_interests)
+    check("extra_ad_sets kalit bor va bo'sh (bitta ad set so'ralganda)", res["extra_ad_sets"] == [])
+
+
 def test_replan_preserving_overrides():
     old = _state()
     old["adset"]["targeting"]["age_min"] = 30
@@ -219,6 +280,7 @@ def test_llm_failure():
 test_plan_campaign()
 test_missing_questions()
 test_chat_edit()
+test_chat_edit_multi_adset()
 test_replan_preserving_overrides()
 test_llm_failure()
 
