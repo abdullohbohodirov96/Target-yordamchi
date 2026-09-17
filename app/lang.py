@@ -2290,6 +2290,51 @@ _APP_STRINGS = [
     ("signup.flash_welcome_trial", "Xush kelibsiz, {company}! {days} kunlik bepul sinov muddatingiz boshlandi.", "Добро пожаловать, {company}! Ваш {days}-дневный бесплатный пробный период начался.", "Welcome, {company}! Your {days}-day free trial has started."),
     ("signup.flash_welcome_paid", "Xush kelibsiz, {company}! \"{plan_name}\" tarifi tanlandi -- {grace_days} kun ichida to'lovni yakunlang (\"To'lov\" sahifasida).", "Добро пожаловать, {company}! Выбран тариф «{plan_name}» -- завершите оплату в течение {grace_days} дней (на странице «Оплата»).", "Welcome, {company}! The \"{plan_name}\" plan was selected -- complete payment within {grace_days} days (on the \"Payment\" page)."),
 
+    # ---- app.py: keng tarqalgan umumiy flash/xato xabarlari ----
+    ("common.company_not_found", "Kompaniya topilmadi.", "Компания не найдена.", "Company not found."),
+
+    # ---- app.py: brend kit flash xabarlari ----
+    ("brand_kit.saved_flash", "Brend kit saqlandi.", "Брендбук сохранён.", "Brand kit saved."),
+
+    # ---- app.py: doimiy vazifalar flash xabari ----
+    ("standing_tasks.deleted_flash", "Vazifa o'chirildi.", "Задача удалена.", "Task deleted."),
+
+    # ---- app.py: biznes profili flash xabari ----
+    ("business_profile.saved_flash", "Kompaniya biznes profili saqlandi -- Targetolog va AI-yordamchi endi shundan foydalanadi.", "Бизнес-профиль компании сохранён -- Targetolog и AI-ассистент теперь используют эти данные.", "Company business profile saved -- Targetolog and the AI assistant now use this data."),
+
+    # ---- app.py: umumiy CRM flash xabarlari (lead qo'shish/o'chirish/saqlash) ----
+    ("crm.err_name_or_phone_required", "Kamida ism yoki telefon kiriting.", "Укажите хотя бы имя или телефон.", "Enter at least a name or phone number."),
+    ("crm.lead_added_flash", "Lead qo'shildi.", "Лид добавлен.", "Lead added."),
+    ("crm.lead_deleted_flash", "Lead o'chirildi.", "Лид удалён.", "Lead deleted."),
+    ("crm.lead_not_found_flash", "Lead topilmadi.", "Лид не найден.", "Lead not found."),
+    ("common.saved_flash", "Saqlandi.", "Сохранено.", "Saved."),
+
+    # ---- app.py: kompaniya tahrirlash (superadmin) flash xabarlari ----
+    ("company_edit.unlimited_flash", "'{name}' uchun muddat cheklovi olib tashlandi (cheksiz).", "Ограничение по сроку для «{name}» снято (без ограничений).", "The term limit for '{name}' was removed (unlimited)."),
+    ("company_edit.bad_date_flash", "Sana formati noto'g'ri (YYYY-MM-DD kerak).", "Неверный формат даты (нужен YYYY-MM-DD).", "Invalid date format (YYYY-MM-DD required)."),
+    ("company_edit.updated_flash", "'{name}' yangilandi.", "«{name}» обновлена.", "'{name}' updated."),
+
+    # ---- app.py: module_required() -- eng ko'p ko'rinadigan ruxsat/tarif xabarlari ----
+    ("common.no_module_access_flash", "Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "У вас нет доступа к этому разделу. Обратитесь к администратору.", "You don't have access to this section. Contact your administrator."),
+    ("common.not_in_plan_flash", "Bu bo'lim \"{plan_name}\" tarifingizda mavjud emas. Ko'proq imkoniyat uchun tarifni yangilang.", "Этот раздел недоступен в вашем тарифе «{plan_name}». Обновите тариф для получения дополнительных возможностей.", "This section isn't available on your \"{plan_name}\" plan. Upgrade your plan for more features."),
+    ("common.not_in_plan_flash_short", "Bu bo'lim \"{plan_name}\" tarifingizda mavjud emas.", "Этот раздел недоступен в вашем тарифе «{plan_name}».", "This section isn't available on your \"{plan_name}\" plan."),
+
+    # ---- app.py: to'lov/Payme flash xabarlari ----
+    ("payment.mark_paid_flash", "Rahmat! Platforma egasiga xabar yuborildi -- to'lov tasdiqlangach, hisobingiz uzaytiriladi.", "Спасибо! Владельцу платформы отправлено уведомление -- после подтверждения оплаты ваш аккаунт будет продлён.", "Thank you! The platform owner has been notified -- once payment is confirmed, your account will be extended."),
+    ("payment.not_configured_flash", "Payme hali ulanmagan (platforma egasi ENV sozlamalarini kiritishi kerak).", "Payme ещё не подключен (владелец платформы должен настроить переменные окружения).", "Payme isn't connected yet (the platform owner needs to configure the ENV settings)."),
+    ("payment.bad_card_flash", "Karta raqami yoki amal qilish muddati noto'g'ri kiritildi.", "Номер карты или срок действия введены неверно.", "The card number or expiry date was entered incorrectly."),
+    ("payment.bind_error_flash", "Kartani bog'lashda xato: {error}", "Ошибка при привязке карты: {error}", "Error linking card: {error}"),
+    ("payment.sms_send_error_flash", "SMS kod yuborishda xato: {error}", "Ошибка при отправке SMS-кода: {error}", "Error sending SMS code: {error}"),
+    ("payment.sms_sent_flash", "Kartangizga SMS kod yuborildi -- pastdagi maydonga kiriting.", "На вашу карту отправлен SMS-код -- введите его в поле ниже.", "An SMS code has been sent to your card -- enter it in the field below."),
+    ("payment.card_bound_flash", "Karta muvaffaqiyatli bog'landi -- endi oylik to'lov avtomatik yechiladi.", "Карта успешно привязана -- теперь ежемесячная оплата будет списываться автоматически.", "Card linked successfully -- the monthly payment will now be charged automatically."),
+    ("payment.no_pending_card_flash", "Tasdiqlanishi kerak bo'lgan karta topilmadi -- avval kartani qayta bog'lang.", "Карта, ожидающая подтверждения, не найдена -- сначала привяжите карту заново.", "No card pending verification was found -- please link your card again first."),
+    ("payment.enter_sms_code_flash", "SMS kodni kiriting.", "Введите SMS-код.", "Enter the SMS code."),
+    ("payment.verify_error_flash", "Kodni tasdiqlashda xato: {error}", "Ошибка при подтверждении кода: {error}", "Error verifying the code: {error}"),
+    ("payment.card_verified_flash", "Karta tasdiqlandi -- endi oylik to'lov avtomatik yechiladi.", "Карта подтверждена -- теперь ежемесячная оплата будет списываться автоматически.", "Card verified -- the monthly payment will now be charged automatically."),
+    ("payment.card_removed_flash", "Karta bog'lanishi bekor qilindi -- avtomatik to'lov endi ishlamaydi.", "Привязка карты отменена -- автоматическая оплата больше не работает.", "Card unlinked -- automatic payment no longer works."),
+    ("payment.autopay_on_flash", "Avtomatik to'lov yoqildi.", "Автоплатёж включён.", "Autopay turned on."),
+    ("payment.autopay_off_flash", "Avtomatik to'lov o'chirildi -- endi qo'lda to'lashingiz kerak bo'ladi.", "Автоплатёж отключён -- теперь вам нужно будет платить вручную.", "Autopay turned off -- you'll now need to pay manually."),
+
     # ---- _pricing_matrix.html ----
     ("pricing_matrix.h3", "Barcha funksiyalarni solishtiring", "Сравните все функции", "Compare all features"),
     ("pricing_matrix.subtitle", "Har bir tarifda aynan nima bor -- bitta jadvalda.", "Что именно входит в каждый тариф -- в одной таблице.", "Exactly what's in each plan -- in one table."),

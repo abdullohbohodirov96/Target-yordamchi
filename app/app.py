@@ -546,13 +546,16 @@ def module_required(key: str):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             if not permissions.has_module(current_user, key):
-                flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
+                flash(lang_module.translate("common.no_module_access_flash", g.lang), "error")
                 return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
             company = _current_company()
             if company is not None and key not in plans.modules_for_plan(company.plan):
                 flash(
-                    f"Bu bo'lim \"{plans.get_plan(company.plan).name}\" tarifingizda mavjud emas. "
-                    f"Ko'proq imkoniyat uchun tarifni yangilang.", "error",
+                    lang_module.translate(
+                        "common.not_in_plan_flash", g.lang,
+                        plan_name=plans.localized_plan(plans.get_plan(company.plan), g.lang).name,
+                    ),
+                    "error",
                 )
                 return redirect(url_for("pricing"))
             return fn(*args, **kwargs)
@@ -2150,7 +2153,7 @@ def signup():
 def connect_accounts():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
     plan_def = plans.get_plan(company.plan)
 
@@ -2304,7 +2307,7 @@ def business_profile_view():
 def marketplace():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
@@ -2762,7 +2765,7 @@ def connect_facebook_choose():
 def connect_meta_test():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
 
     token, dataset_id = meta_events._resolve_capi_credentials(company)
@@ -2811,7 +2814,7 @@ def connect_meta_test():
 def connect_meta_disconnect():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
 
     session = get_session()
@@ -2837,7 +2840,7 @@ def connect_meta_disconnect():
 def connect_meta_manual():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
 
     dataset_id = request.form.get("dataset_id", "").strip()
@@ -2887,7 +2890,7 @@ def connect_telegram_test():
     ishlatiladi, Telegram'ning o'zi qaytargan `ok`/`description`ga qarab."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
 
     raw_group_id = (company.telegram_group_id or "").strip()
@@ -2932,7 +2935,7 @@ def connect_telegram_personal_link():
     osonroq yo'l."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
     bot_username = _get_bot_identity().get("username")
     if not bot_username:
@@ -2960,7 +2963,7 @@ def connect_telegram_group_link():
     orqali ID ko'chirib-joylashtirish o'rniga) avtomatik to'ldiriladi."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("connect_accounts"))
     bot_username = _get_bot_identity().get("username")
     if not bot_username:
@@ -2988,7 +2991,7 @@ def settings_connect_telegram_personal():
     `/connect-accounts` (admin-only) sahifasini ko'ra olmaydi."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("settings_general"))
     bot_username = _get_bot_identity().get("username")
     if not bot_username:
@@ -3016,7 +3019,7 @@ def settings_connect_telegram_tasks_group():
     qayta aloqa eslatmalari ham shu guruhga (agar ulangan bo'lsa) boradi."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("settings_general"))
     bot_username = _get_bot_identity().get("username")
     if not bot_username:
@@ -3159,7 +3162,7 @@ def pricing():
 def payment_page():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
@@ -3175,7 +3178,7 @@ def payment_page():
                 f"\"{plans.get_plan(company.plan).name}\" tarifi uchun to'ladim dedi. "
                 f"Tekshirib, /companies orqali faollashtiring."
             )
-            flash("Rahmat! Platforma egasiga xabar yuborildi -- to'lov tasdiqlangach, hisobingiz uzaytiriladi.", "success")
+            flash(lang_module.translate("payment.mark_paid_flash", g.lang), "success")
             return redirect(url_for("payment_page"))
 
         selected = request.form.get("plan", "").strip()
@@ -3223,23 +3226,23 @@ def payment_page():
 def payme_card_bind():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     if not payme_subscribe.is_configured():
-        flash("Payme hali ulanmagan (platforma egasi ENV sozlamalarini kiritishi kerak).", "error")
+        flash(lang_module.translate("payment.not_configured_flash", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     pan = re.sub(r"\D", "", request.form.get("card_number", ""))
     expire = re.sub(r"\D", "", request.form.get("card_expire", ""))
     if len(pan) < 16 or len(expire) != 4:
-        flash("Karta raqami yoki amal qilish muddati noto'g'ri kiritildi.", "error")
+        flash(lang_module.translate("payment.bad_card_flash", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     try:
         card = payme_subscribe.create_card(pan, expire)
     except payme_subscribe.PaymeSubscribeError as e:
-        flash(f"Kartani bog'lashda xato: {e}", "error")
+        flash(lang_module.translate("payment.bind_error_flash", g.lang, error=e), "error")
         return redirect(url_for("payment_page"))
 
     session = get_session()
@@ -3253,15 +3256,15 @@ def payme_card_bind():
             except payme_subscribe.PaymeSubscribeError as e:
                 c.set_payme_card_pending_token(None)
                 session.commit()
-                flash(f"SMS kod yuborishda xato: {e}", "error")
+                flash(lang_module.translate("payment.sms_send_error_flash", g.lang, error=e), "error")
                 return redirect(url_for("payment_page"))
-            flash("Kartangizga SMS kod yuborildi -- pastdagi maydonga kiriting.", "success")
+            flash(lang_module.translate("payment.sms_sent_flash", g.lang), "success")
         else:
             c.set_payme_card_token(card["token"])
             c.payme_card_masked = card["masked"]
             c.set_payme_card_pending_token(None)
             session.commit()
-            flash("Karta muvaffaqiyatli bog'landi -- endi oylik to'lov avtomatik yechiladi.", "success")
+            flash(lang_module.translate("payment.card_bound_flash", g.lang), "success")
     finally:
         session.close()
     return redirect(url_for("payment_page"))
@@ -3273,7 +3276,7 @@ def payme_card_bind():
 def payme_card_verify():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     code = request.form.get("code", "").strip()
@@ -3282,23 +3285,23 @@ def payme_card_verify():
         c = session.get(Company, company.id)
         pending_token = c.get_payme_card_pending_token()
         if not pending_token:
-            flash("Tasdiqlanishi kerak bo'lgan karta topilmadi -- avval kartani qayta bog'lang.", "error")
+            flash(lang_module.translate("payment.no_pending_card_flash", g.lang), "error")
             return redirect(url_for("payment_page"))
         if not code:
-            flash("SMS kodni kiriting.", "error")
+            flash(lang_module.translate("payment.enter_sms_code_flash", g.lang), "error")
             return redirect(url_for("payment_page"))
 
         try:
             verified = payme_subscribe.verify_card(pending_token, code)
         except payme_subscribe.PaymeSubscribeError as e:
-            flash(f"Kodni tasdiqlashda xato: {e}", "error")
+            flash(lang_module.translate("payment.verify_error_flash", g.lang, error=e), "error")
             return redirect(url_for("payment_page"))
 
         c.set_payme_card_token(verified["token"])
         c.payme_card_masked = verified["masked"]
         c.set_payme_card_pending_token(None)
         session.commit()
-        flash("Karta tasdiqlandi -- endi oylik to'lov avtomatik yechiladi.", "success")
+        flash(lang_module.translate("payment.card_verified_flash", g.lang), "success")
     finally:
         session.close()
     return redirect(url_for("payment_page"))
@@ -3310,7 +3313,7 @@ def payme_card_verify():
 def payme_card_remove():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     session = get_session()
@@ -3326,7 +3329,7 @@ def payme_card_remove():
         c.payme_card_masked = None
         c.set_payme_card_pending_token(None)
         session.commit()
-        flash("Karta bog'lanishi bekor qilindi -- avtomatik to'lov endi ishlamaydi.", "success")
+        flash(lang_module.translate("payment.card_removed_flash", g.lang), "success")
     finally:
         session.close()
     return redirect(url_for("payment_page"))
@@ -3338,7 +3341,7 @@ def payme_card_remove():
 def payme_autopay_toggle():
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("payment_page"))
 
     enabled = request.form.get("enabled") == "1"
@@ -3347,7 +3350,11 @@ def payme_autopay_toggle():
         c = session.get(Company, company.id)
         c.payme_autopay_enabled = enabled
         session.commit()
-        flash("Avtomatik to'lov yoqildi." if enabled else "Avtomatik to'lov o'chirildi -- endi qo'lda to'lashingiz kerak bo'ladi.", "success")
+        flash(
+            lang_module.translate("payment.autopay_on_flash", g.lang) if enabled
+            else lang_module.translate("payment.autopay_off_flash", g.lang),
+            "success",
+        )
     finally:
         session.close()
     return redirect(url_for("payment_page"))
@@ -3449,11 +3456,17 @@ def dashboard():
     if not current_user.is_authenticated:
         return render_template("landing.html", plans=plans.localized_plan_list(plans.PLAN_LIST, g.lang), feature_matrix=plans.feature_matrix_for_lang(g.lang))
     if not permissions.has_module(current_user, "dashboard"):
-        flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
+        flash(lang_module.translate("common.no_module_access_flash", g.lang), "error")
         return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
     company = _current_company()
     if company is not None and "dashboard" not in plans.modules_for_plan(company.plan):
-        flash(f"Bu bo'lim \"{plans.get_plan(company.plan).name}\" tarifingizda mavjud emas.", "error")
+        flash(
+            lang_module.translate(
+                "common.not_in_plan_flash_short", g.lang,
+                plan_name=plans.localized_plan(plans.get_plan(company.plan), g.lang).name,
+            ),
+            "error",
+        )
         return redirect(url_for("pricing"))
 
     period = request.args.get("period", "this_month")
@@ -4507,7 +4520,7 @@ def lead_new():
             adset_name = request.form.get("adset_name", "").strip()
             ad_name = request.form.get("ad_name", "").strip()
             if not full_name and not phone:
-                flash("Kamida ism yoki telefon kiriting.", "error")
+                flash(lang_module.translate("crm.err_name_or_phone_required", g.lang), "error")
             else:
                 lead = Lead(
                     company_id=current_user.company_id,
@@ -4517,7 +4530,7 @@ def lead_new():
                 )
                 session.add(lead)
                 session.commit()
-                flash("Lead qo'shildi.", "success")
+                flash(lang_module.translate("crm.lead_added_flash", g.lang), "success")
                 return redirect(url_for("lead_detail", lead_id=lead.id))
     finally:
         session.close()
@@ -4535,9 +4548,9 @@ def lead_delete(lead_id):
             session.query(LeadNote).filter_by(lead_id=lead.id).delete()
             session.delete(lead)
             session.commit()
-            flash("Lead o'chirildi.", "success")
+            flash(lang_module.translate("crm.lead_deleted_flash", g.lang), "success")
         else:
-            flash("Lead topilmadi.", "error")
+            flash(lang_module.translate("crm.lead_not_found_flash", g.lang), "error")
     finally:
         session.close()
     return redirect(url_for("leads_list"))
@@ -5019,7 +5032,7 @@ def lead_detail(lead_id):
     try:
         lead = session.get(Lead, lead_id)
         if not lead:
-            flash("Lead topilmadi.", "error")
+            flash(lang_module.translate("crm.lead_not_found_flash", g.lang), "error")
             return redirect(url_for("leads_list"))
 
         custom_fields = session.query(CustomField).filter_by(is_active=True).order_by(CustomField.sort_order).all()
@@ -5238,7 +5251,7 @@ def lead_detail(lead_id):
                 elif new_category == "sold":
                     meta_events.dispatch_purchase_event(session, lead, value=lead.sale_amount)
 
-            flash("Saqlandi.", "success")
+            flash(lang_module.translate("common.saved_flash", g.lang), "success")
             return redirect(url_for("leads_list"))
 
         sales = session.query(Sale).filter_by(lead_id=lead.id).order_by(Sale.sale_number.asc()).all()
@@ -5934,7 +5947,7 @@ def company_impersonate(company_id):
         with db.unscoped():
             company = session.get(Company, company_id)
         if company is None:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
             return redirect(url_for("companies"))
         company_name = company.name
 
@@ -6161,7 +6174,7 @@ def company_edit(company_id):
     try:
         c = session.get(Company, company_id)
         if not c:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
             return redirect(url_for("companies"))
 
         if request.method == "POST":
@@ -6185,7 +6198,7 @@ def company_edit(company_id):
                 c.paid_until = None
                 c.is_active = True
                 session.commit()
-                flash(f"'{c.name}' uchun muddat cheklovi olib tashlandi (cheksiz).", "success")
+                flash(lang_module.translate("company_edit.unlimited_flash", g.lang, name=c.name), "success")
             else:
                 c.name = request.form.get("name", c.name).strip() or c.name
                 c.email = request.form.get("email", "").strip() or None
@@ -6196,13 +6209,13 @@ def company_edit(company_id):
                     try:
                         c.paid_until = dt.datetime.strptime(paid_until_str, "%Y-%m-%d")
                     except ValueError:
-                        flash("Sana formati noto'g'ri (YYYY-MM-DD kerak).", "error")
+                        flash(lang_module.translate("company_edit.bad_date_flash", g.lang), "error")
                         session.rollback()
                         return redirect(url_for("company_edit", company_id=company_id))
                 else:
                     c.paid_until = None
                 session.commit()
-                flash(f"'{c.name}' yangilandi.", "success")
+                flash(lang_module.translate("company_edit.updated_flash", g.lang, name=c.name), "success")
             return redirect(url_for("companies"))
 
         c_view = {
@@ -6237,7 +6250,7 @@ def company_toggle_active(company_id):
     try:
         c = session.get(Company, company_id)
         if not c:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
             return redirect(url_for("companies"))
         c.is_active = not c.is_active
         session.commit()
@@ -6268,7 +6281,7 @@ def company_delete(company_id):
     try:
         c = session.get(Company, company_id)
         if not c:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
             return redirect(url_for("companies"))
         confirm_name = request.form.get("confirm_name", "").strip()
         if confirm_name != c.name:
@@ -6334,7 +6347,7 @@ def company_managers(company_id):
     finally:
         session.close()
     if not c:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("companies"))
     return _managers_view(
         company_id,
@@ -6747,7 +6760,7 @@ def _handle_settings_post(session, action):
             g.pop("_company_cache", None)
             flash("Bo'limlar sozlamasi saqlandi.", "success")
         else:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
     elif action == "set_cpl_rules":
         # 2026-09, foydalanuvchi so'rovi ("bulani webda nastruykidan
@@ -6803,9 +6816,9 @@ def _handle_settings_post(session, action):
             company_row.business_profile_answers = business_profile.serialize_business_profile_answers(answers)
             session.commit()
             g.pop("_company_cache", None)
-            flash("Kompaniya biznes profili saqlandi -- Targetolog va AI-yordamchi endi shundan foydalanadi.", "success")
+            flash(lang_module.translate("business_profile.saved_flash", g.lang), "success")
         else:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
     elif action == "toggle_ai_features":
         company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
@@ -6820,7 +6833,7 @@ def _handle_settings_post(session, action):
                 "success",
             )
         else:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
     elif action == "toggle_auto_watch":
         # 2026-09, foydalanuvchi so'rovi ("barchada bu narsa bo'lsin, lekin
@@ -6841,7 +6854,7 @@ def _handle_settings_post(session, action):
                 "success",
             )
         else:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
     elif action == "set_moizvonki":
         # 2026-09, Item J auditi (🔴 KRITIK, 7-band -- "Moy Zvonki call-sync
@@ -6852,7 +6865,7 @@ def _handle_settings_post(session, action):
         # O'Z hisobini ulaydi.
         company_row = session.get(Company, current_user.company_id) if current_user.company_id else None
         if company_row is None:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
         else:
             address = request.form.get("moizvonki_api_address", "").strip().rstrip("/")
             user_name = request.form.get("moizvonki_user_name", "").strip()
@@ -6892,7 +6905,7 @@ def _handle_settings_post(session, action):
             session.commit()
             flash("Moi Zvonki ulanishi uzildi.", "success")
         else:
-            flash("Kompaniya topilmadi.", "error")
+            flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
 
 @app.route("/sozlamalar")
@@ -7623,7 +7636,7 @@ def autopilot_new():
     ko'rib chiqish sahifasiga yo'naltirish."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
     session = get_session()
     try:
@@ -8806,7 +8819,7 @@ def creative_style_preference():
     noma'lum tag'lar e'tiborsiz qoldiriladi (`save_style_preference`)."""
     company = _current_company()
     if company is None:
-        return jsonify({"error": "Kompaniya topilmadi."}), 400
+        return jsonify({"error": lang_module.translate("common.company_not_found", g.lang)}), 400
     body = request.get_json(silent=True) or {}
     styles = body.get("styles") if isinstance(body.get("styles"), list) else []
     session = get_session()
@@ -8826,7 +8839,7 @@ def creative_style_reference_upload():
     (ANIQ nusxa EMAS, `creative_studio.save_style_reference_image`)."""
     company = _current_company()
     if company is None:
-        return jsonify({"error": "Kompaniya topilmadi."}), 400
+        return jsonify({"error": lang_module.translate("common.company_not_found", g.lang)}), 400
     f = request.files.get("reference")
     if f is None or not f.filename:
         return jsonify({"error": "Rasm tanlanmadi."}), 400
@@ -8849,7 +8862,7 @@ def creative_style_skip():
     emas, faqat oyna qayta avtomatik chiqmasligi uchun belgi qo'yiladi."""
     company = _current_company()
     if company is None:
-        return jsonify({"error": "Kompaniya topilmadi."}), 400
+        return jsonify({"error": lang_module.translate("common.company_not_found", g.lang)}), 400
     session = get_session()
     try:
         creative_studio.skip_style_onboarding(session, company.id)
@@ -8867,7 +8880,7 @@ def creative_new():
     ixtiyoriy mahsulot fotosi bilan). POST -> yangi asset -> /kreativ/<id>."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
     template_key = (request.values.get("template_key") or "").strip()
     template = creative_templates.get_template(template_key) if template_key else None
@@ -9218,20 +9231,20 @@ def settings_brand_kit():
     faqat admin (xuddi kompaniya ma'lumotlari kabi)."""
     company = _current_company()
     if company is None:
-        flash("Kompaniya topilmadi.", "error")
+        flash(lang_module.translate("common.company_not_found", g.lang), "error")
         return redirect(url_for("dashboard"))
     session = get_session()
     try:
         if request.method == "POST":
             if current_user.role != "admin":
-                flash("Brend kitni faqat admin o'zgartira oladi.", "error")
+                flash(lang_module.translate("brand_kit.admin_only", g.lang), "error")
                 return redirect(url_for("settings_brand_kit"))
             try:
                 f = request.files.get("logo")
                 if f is not None and f.filename:
                     creative_studio.save_brand_logo(session, company.id, f, f.filename, f.content_type)
                 creative_studio.save_brand_colors(session, company.id, request.form.get("primary_color"), request.form.get("secondary_color"))
-                flash("Brend kit saqlandi.", "success")
+                flash(lang_module.translate("brand_kit.saved_flash", g.lang), "success")
             except creative_studio.CreativeError as e:
                 flash(str(e), "error")
             return redirect(url_for("settings_brand_kit"))
@@ -9725,7 +9738,7 @@ def standing_tasks_settings():
                 elif action == "delete":
                     session.delete(obj)
                     session.commit()
-                    flash("Vazifa o'chirildi.", "success")
+                    flash(lang_module.translate("standing_tasks.deleted_flash", g.lang), "success")
             return redirect(url_for("standing_tasks_settings"))
 
         tasks = session.query(StandingTask).order_by(StandingTask.created_at.desc()).all()
