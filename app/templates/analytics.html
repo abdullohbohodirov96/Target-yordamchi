@@ -1,60 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Analitika — Replix{% endblock %}
+{% block title %}{{ t('analytics.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Analitika</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Barcha hisobotlar bir joyda: target/xarajat, menejerlar faolligi, lidlar oqimi{% if current_user.role == 'admin' %} va qo'ng'iroq statistikasi{% endif %}.</p>
+    <h1>{{ t('analytics.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('analytics.subtitle_base') }}{{ t('analytics.subtitle_admin_suffix') if current_user.role == 'admin' else t('analytics.subtitle_default_suffix') }}</p>
   </div>
   <div class="pill-group">
-    {% for p, label in [('today','Bugun'), ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"), ('this_month','Shu oy'), ('last_month',"O'tgan oy"), ('this_year',"Shu yil")] %}
+    {% for p, label in [('today', t('period.today')), ('this_week_mon_today', t('period.this_week')), ('last_week_mon_sun', t('period.last_week')), ('this_month', t('period.this_month')), ('last_month', t('period.last_month')), ('this_year', t('period.this_year'))] %}
     <a href="?period={{ p }}" class="{{ 'active' if period==p }}">{{ label }}</a>
     {% endfor %}
   </div>
 </div>
 
 {% if target_data and not target_data.error and not target_data.not_connected %}
-{% set t = target_data.totals %}
+{% set t2 = target_data.totals %}
 <div class="card" style="margin-bottom:20px">
-  <h2>Target hisoboti</h2>
+  <h2>{{ t('analytics.target_report_title') }}</h2>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">{{ (t.revenue or 0)|som }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_spend') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.spend or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_crm_leads') }}</div><div class="kpi-value">{{ t2.crm_leads_total or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_cpl') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.cpl or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_sales') }}</div><div class="kpi-value good">{{ t2.sold or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_revenue') }}</div><div class="kpi-value">{{ (t2.revenue or 0)|som }}</div></div>
     <div class="kpi-card">
-      <div class="kpi-label">ROI</div>
-      <div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div>
-      <div class="text-faint" style="font-size:11px; margin-top:2px">kurs: $1 = {{ (t.usd_to_uzs_rate or 0)|som }}</div>
+      <div class="kpi-label">{{ t('target.kpi_roi') }}</div>
+      <div class="kpi-value {{ 'good' if (t2.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t2.roi_percent or 0) }}%</div>
+      <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('target.rate_note', rate=(t2.usd_to_uzs_rate or 0)|som) }}</div>
     </div>
   </div>
-  <p class="page-subtitle" style="margin:12px 0 0"><a href="{{ url_for('target_page') }}" class="text-blue">To'liq Target sahifasini ko'rish &rarr;</a></p>
+  <p class="page-subtitle" style="margin:12px 0 0"><a href="{{ url_for('target_page') }}" class="text-blue">{{ t('analytics.view_target_link') }}</a></p>
 </div>
 {% elif target_data and target_data.not_connected %}
 <div class="card" style="max-width:520px; margin-bottom:20px">
-  <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Target xarajat/lead ma'lumotlarini ko'rish uchun avval reklama hisobingizni ulang.</p>
+  <h2>{{ t('target.not_connected_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('target.not_connected_text') }}</p>
   {# 2026-09, interfeys auditi: connect_accounts route'i admin_required --
      ilgari menejerga ham ko'rinib, bosganda dashboard'ga qaytarib
      yuborardi. #}
   {% if current_user.role == 'admin' %}
-  <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+  <a href="{{ url_for('connect_accounts') }}" class="btn block">{{ t('dashboard.connect_account') }}</a>
   {% else %}
-  <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+  <p class="page-subtitle" style="margin:0">{{ t('dashboard.ask_admin') }}</p>
   {% endif %}
 </div>
 {% elif target_data and target_data.error %}
-<div class="flash flash-error" style="margin-bottom:20px">Meta API'dan ma'lumot olishda xatolik: {{ target_data.error }}</div>
+<div class="flash flash-error" style="margin-bottom:20px">{{ t('target.api_error', error=target_data.error) }}</div>
 {% endif %}
 
 <div class="card" style="margin-bottom:20px">
-  <h2>Menejerlar hisoboti (so'nggi 30 kun)</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Har bir menejer lidlar bo'yicha nechta izoh/harakat qilganini ko'rsatadi (holat o'zgartirish, izoh yozish va h.k.).</p>
+  <h2>{{ t('analytics.manager_report_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('analytics.manager_report_subtitle') }}</p>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Menejer</th><th class="num">Jami harakat</th><th class="num">Faol kunlar</th><th class="num">O'rtacha/kun</th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_manager') }}</th><th class="num">{{ t('analytics.th_total_actions') }}</th><th class="num">{{ t('analytics.th_active_days') }}</th><th class="num">{{ t('analytics.th_avg_per_day') }}</th></tr></thead>
     <tbody>
       {% for m in manager_activity %}
       <tr>
@@ -64,7 +64,7 @@
         <td class="num">{{ m.avg_per_day }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="4">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="4">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -72,15 +72,15 @@
 </div>
 
 <div class="card" style="margin-bottom:20px">
-  <h2>Lidlar oqimi (so'nggi 30 kun, jami {{ total_leads_30d }})</h2>
+  <h2>{{ t('analytics.leads_flow_title', n=total_leads_30d) }}</h2>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Sana</th><th class="num">Kelgan lidlar</th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_date') }}</th><th class="num">{{ t('analytics.th_incoming_leads') }}</th></tr></thead>
     <tbody>
       {% for day, count in leads_daily %}
       <tr><td>{{ day }}</td><td class="num">{{ count }}</td></tr>
       {% else %}
-      <tr class="empty-row"><td colspan="2">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="2">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -88,9 +88,9 @@
 </div>
 
 <div class="card" style="margin-bottom:20px">
-  <h2>Lidlar holati taqsimoti</h2>
+  <h2>{{ t('analytics.status_dist_title') }}</h2>
   <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr)">
-    {% for status, label in [('new','Yangi'), ('contacted','Bog\'lanildi'), ('qualified','Sifatli'), ('unqualified','Sifatsiz'), ('sold','Sotildi')] %}
+    {% for status, label in [('new', t('analytics.status_new')), ('contacted', t('analytics.status_contacted')), ('qualified', t('analytics.status_qualified')), ('unqualified', t('analytics.status_unqualified')), ('sold', t('analytics.status_sold'))] %}
     <div class="kpi-card"><div class="kpi-label">{{ label }}</div><div class="kpi-value">{{ status_counts.get(status, 0) }}</div></div>
     {% endfor %}
   </div>
@@ -98,37 +98,37 @@
 
 {% if current_user.role == 'admin' %}
 <div class="card" style="margin-bottom:20px">
-  <h2>Qo'ng'iroq statistikasi (Moi Zvonki)</h2>
+  <h2>{{ t('analytics.call_stats_title') }}</h2>
   {% if not call_configured %}
-  <p class="page-subtitle" style="margin:0">Moi Zvonki hali ulanmagan. Batafsil: <code>MOIZVONKI_API_ADDRESS</code> / <code>MOIZVONKI_API_KEY</code> Render sozlamalarida o'rnatilishi kerak.</p>
+  <p class="page-subtitle" style="margin:0">{{ t('analytics.call_not_configured')|safe }}</p>
   {% elif call_summary and not call_summary.has_data %}
-  <p class="page-subtitle" style="margin:0">Moi Zvonki ulangan, lekin hali qo'ng'iroq yozuvlari yo'q.</p>
+  <p class="page-subtitle" style="margin:0">{{ t('analytics.call_no_data') }}</p>
   {% elif call_summary %}
   <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:16px">
-    <div class="kpi-card"><div class="kpi-label">Jami sessiyalar</div><div class="kpi-value">{{ call_summary.total_sessions }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Shubhali</div><div class="kpi-value {{ 'bad' if call_summary.suspicious_count }}">{{ call_summary.suspicious_count }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('analytics.call_total_sessions') }}</div><div class="kpi-value">{{ call_summary.total_sessions }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('analytics.call_suspicious') }}</div><div class="kpi-value {{ 'bad' if call_summary.suspicious_count }}">{{ call_summary.suspicious_count }}</div></div>
   </div>
-  <p class="page-subtitle" style="margin:0 0 12px">Batafsil tahlil: <a href="{{ url_for('individual_check') }}" class="text-blue">Audio &rarr;</a></p>
+  <p class="page-subtitle" style="margin:0 0 12px">{{ t('analytics.call_detail_prefix') }} <a href="{{ url_for('individual_check') }}" class="text-blue">{{ t('analytics.call_detail_link') }}</a></p>
   {% endif %}
 </div>
 
 <details class="card" style="margin-bottom:20px" {{ 'open' if lead_sync_status and lead_sync_status.errors }}>
   <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
     <span>
-      <strong>Lead-sync holati</strong> <span class="text-faint" style="font-weight:400">(Instant Form &rarr; CRM)</span>
-      {% if lead_sync_status and lead_sync_status.errors %}<span class="badge badge-color-bad" style="margin-left:8px">{{ lead_sync_status.errors|length }} xato</span>{% endif %}
+      <strong>{{ t('analytics.lead_sync_title') }}</strong> <span class="text-faint" style="font-weight:400">{{ t('analytics.lead_sync_paren') }}</span>
+      {% if lead_sync_status and lead_sync_status.errors %}<span class="badge badge-color-bad" style="margin-left:8px">{{ t('shared.errors_n', n=lead_sync_status.errors|length) }}</span>{% endif %}
     </span>
-    <span class="text-faint" style="font-size:12px; font-weight:400">bosib ochish/yopish</span>
+    <span class="text-faint" style="font-size:12px; font-weight:400">{{ t('shared.toggle_hint') }}</span>
   </summary>
   <div style="margin-top:12px">
-  <p class="page-subtitle" style="margin-top:-6px">Meta'dan lidlarni avtomatik tortib olish jarayonining oxirgi ishga tushishi -- "lead kelgan, lekin CRM'da yo'q" holatini shu yerdan tekshiring.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('analytics.lead_sync_desc') }}</p>
   {% if not lead_sync_status %}
-  <p class="text-faint" style="margin:0">Hali birorta sinxronizatsiya ishga tushmagan (server hozirgina qayta ishga tushgan bo'lishi mumkin -- 15 daqiqada avtomatik ishlaydi).</p>
+  <p class="text-faint" style="margin:0">{{ t('analytics.lead_sync_never') }}</p>
   {% else %}
   <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:14px">
-    <div class="kpi-card"><div class="kpi-label">Oxirgi tekshiruv</div><div class="kpi-value" style="font-size:14px">{{ lead_sync_status.last_run_at[:16].replace('T',' ') if lead_sync_status.last_run_at else '—' }} UTC</div></div>
-    <div class="kpi-card"><div class="kpi-label">Yangi lidlar (oxirgi safar)</div><div class="kpi-value {{ 'good' if lead_sync_status.new_leads }}">{{ lead_sync_status.new_leads }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Tekshirilgan formalar</div><div class="kpi-value">{{ lead_sync_status.forms_checked }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('analytics.last_check') }}</div><div class="kpi-value" style="font-size:14px">{{ lead_sync_status.last_run_at[:16].replace('T',' ') if lead_sync_status.last_run_at else '—' }} UTC</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('analytics.new_leads_last') }}</div><div class="kpi-value {{ 'good' if lead_sync_status.new_leads }}">{{ lead_sync_status.new_leads }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('analytics.forms_checked') }}</div><div class="kpi-value">{{ lead_sync_status.forms_checked }}</div></div>
   </div>
   {% if lead_sync_status.errors %}
   <div class="flash flash-error" style="margin-bottom:14px">
@@ -140,10 +140,10 @@
      kelib chiqadi -- qayta ulash orqali sahifa/ruxsat qayta tanlanadi. #}
   <div style="margin-bottom:14px">
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">Facebook bilan qayta ulash</a>
-    <span class="text-faint" style="font-size:12px; margin-left:8px">Ko'pincha bu xatolar eski ulanish ruxsati yoki noto'g'ri sahifadan kelib chiqadi -- qayta ulash odatda yetarli.</span>
+    <a href="{{ url_for('connect_facebook_start') }}" class="btn" style="background:#1877F2; border-color:#1877F2">{{ t('shared.reconnect_fb_btn') }}</a>
+    <span class="text-faint" style="font-size:12px; margin-left:8px">{{ t('analytics.reconnect_note') }}</span>
     {% else %}
-    <span class="text-faint" style="font-size:13px">Buni tuzatish uchun kompaniya administratoridan Facebook ulanishini qayta ulashni so'rang (Sozlamalar → Akkauntlarni ulash).</span>
+    <span class="text-faint" style="font-size:13px">{{ t('shared.reconnect_admin_only') }}</span>
     {% endif %}
   </div>
   {% endif %}
@@ -155,14 +155,14 @@
   {% if lead_sync_status.form_diagnostics %}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Forma</th><th class="num">Meta'da jami</th><th class="num">Bazada (shu forma)</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_form') }}</th><th class="num">{{ t('analytics.th_meta_total') }}</th><th class="num">{{ t('analytics.th_db_total') }}</th><th></th></tr></thead>
     <tbody>
       {% for f in lead_sync_status.form_diagnostics %}
       <tr>
         <td>{{ f.form_name or f.form_id }}</td>
         <td class="num">{{ f.meta_leads_count if f.meta_leads_count is not none else '—' }}</td>
         <td class="num">{{ f.db_leads_count if f.db_leads_count is not none else '—' }}</td>
-        <td>{% if f.warning %}<span class="badge badge-color-bad">{{ f.warning }}</span>{% elif f.error %}<span class="badge badge-color-bad">{{ f.error }}</span>{% else %}<span class="badge badge-color-good">OK</span>{% endif %}</td>
+        <td>{% if f.warning %}<span class="badge badge-color-bad">{{ f.warning }}</span>{% elif f.error %}<span class="badge badge-color-bad">{{ f.error }}</span>{% else %}<span class="badge badge-color-good">{{ t('analytics.badge_ok') }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -174,39 +174,39 @@
 </details>
 
 <div class="card">
-  <h2>Menejerlar oylik KPI / bonus hisoboti</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Fiks oylik + mijozni faollashtirish + progressiv sotuv + oborot bonuslari -- "KPI va bonus tizimi" qoidalari asosida. Faqat 500 000 so'mdan katta, qaytarilmagan sotuvlar hisoblanadi.</p>
+  <h2>{{ t('analytics.kpi_bonus_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('analytics.kpi_bonus_subtitle') }}</p>
   <form method="get" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px">
     <input type="hidden" name="period" value="{{ period }}">
     <div class="field" style="margin:0">
-      <label>Oy</label>
+      <label>{{ t('analytics.month_label') }}</label>
       <input type="month" name="kpi_month" value="{{ kpi_month }}">
     </div>
     <div class="field" style="margin:0; min-width:220px">
-      <label>Menejer</label>
+      <label>{{ t('analytics.manager_label') }}</label>
       <select name="kpi_manager">
-        <option value="all" {{ 'selected' if kpi_selected_manager=='all' }}>Barcha menejerlar</option>
+        <option value="all" {{ 'selected' if kpi_selected_manager=='all' }}>{{ t('analytics.all_managers') }}</option>
         {% for m in sales_managers %}
         <option value="{{ m.id }}" {{ 'selected' if kpi_selected_manager==m.id|string }}>{{ m.full_name or m.username }}</option>
         {% endfor %}
       </select>
     </div>
-    <button type="submit">Ko'rsatish</button>
+    <button type="submit">{{ t('analytics.show_btn') }}</button>
   </form>
 
   <div class="table-scroll">
   <table>
     <thead>
       <tr>
-        <th>Menejer</th>
-        <th class="num">Sotuvlar</th>
-        <th class="num">Oborot</th>
-        <th class="num">Oklad</th>
-        <th class="num">Faollashtirish bonusi</th>
-        <th class="num">Progressiv bonus</th>
-        <th class="num">Oborot bonusi</th>
-        <th class="num">Jami</th>
-        <th>75-sotuv chegarasi</th>
+        <th>{{ t('analytics.th_manager') }}</th>
+        <th class="num">{{ t('analytics.th_sales') }}</th>
+        <th class="num">{{ t('analytics.th_turnover') }}</th>
+        <th class="num">{{ t('analytics.th_salary') }}</th>
+        <th class="num">{{ t('analytics.th_activation_bonus') }}</th>
+        <th class="num">{{ t('analytics.th_progressive_bonus') }}</th>
+        <th class="num">{{ t('analytics.th_turnover_bonus') }}</th>
+        <th class="num">{{ t('analytics.th_total') }}</th>
+        <th>{{ t('analytics.th_survival_threshold') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -217,13 +217,13 @@
         <td class="num">{{ r.turnover|som }}</td>
         <td class="num">{{ r.oklad|som }}</td>
         <td class="num">{{ r.bonus_a|som }}</td>
-        <td class="num">{{ r.bonus_b|som }}{% if r.progressive_rate %} <span class="text-faint" style="font-size:11px">({{ r.progressive_rate|som }}/sotuv)</span>{% endif %}</td>
+        <td class="num">{{ r.bonus_b|som }}{% if r.progressive_rate %} <span class="text-faint" style="font-size:11px">({{ t('analytics.rate_per_sale', rate=r.progressive_rate|som) }})</span>{% endif %}</td>
         <td class="num">{{ r.bonus_c|som }}</td>
         <td class="num text-good-strong">{{ r.jami|som }}</td>
-        <td>{% if r.survival_ok %}<span class="badge badge-color-good">bajarildi ({{ r.sales_count }}/{{ r.survival_min }})</span>{% else %}<span class="badge badge-color-bad">{{ r.sales_count }}/{{ r.survival_min }}</span>{% endif %}</td>
+        <td>{% if r.survival_ok %}<span class="badge badge-color-good">{{ t('analytics.survival_done', n=r.sales_count, min=r.survival_min) }}</span>{% else %}<span class="badge badge-color-bad">{{ r.sales_count }}/{{ r.survival_min }}</span>{% endif %}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="9">Bu oy uchun ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="9">{{ t('analytics.no_data_month') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -231,26 +231,26 @@
 
   {% if kpi_selected_manager != 'all' and kpi_reports %}
   {% set r = kpi_reports[0] %}
-  <h2 style="margin-top:24px">{{ r.manager_name }} -- batafsil KPI dashboard</h2>
+  <h2 style="margin-top:24px">{{ t('analytics.manager_kpi_dashboard_title', name=r.manager_name) }}</h2>
   <div class="kpidash">
 
     <!-- 1) Kunlik gaplashuv KPI -->
     <div class="kpidash-card span-2">
       <div class="kpidash-card-head">
-        <div class="kpidash-card-title"><span class="kpidash-card-num">1</span> Kunlik gaplashuv KPI <span class="text-faint" style="font-weight:400; font-size:12px">(kuniga {{ r.daily_calls.norm }} kishi bilan gaplashish rejasi)</span></div>
+        <div class="kpidash-card-title"><span class="kpidash-card-num">1</span> {{ t('analytics.daily_calls_title') }} <span class="text-faint" style="font-weight:400; font-size:12px">{{ t('analytics.daily_calls_note', n=r.daily_calls.norm) }}</span></div>
         {% if r.daily_calls.configured %}
-        <span class="kpidash-badge {{ 'good' if r.daily_calls.days_met == r.daily_calls.days_total and r.daily_calls.days_total else '' }}">{{ r.daily_calls.days_met }}/{{ r.daily_calls.days_total }} KUN BAJARILGAN</span>
+        <span class="kpidash-badge {{ 'good' if r.daily_calls.days_met == r.daily_calls.days_total and r.daily_calls.days_total else '' }}">{{ t('analytics.daily_calls_badge', met=r.daily_calls.days_met, total=r.daily_calls.days_total) }}</span>
         {% endif %}
       </div>
       {% if not r.daily_calls.configured %}
-        <div class="kpidash-empty">Moi Zvonki hali ulanmagan -- kunlik qo'ng'iroq statistikasi ko'rinishi uchun API sozlanishi kerak (Render environment variables).</div>
+        <div class="kpidash-empty">{{ t('analytics.daily_calls_not_configured') }}</div>
       {% else %}
         <div class="daystrip">
           {% for d in r.daily_calls.days %}
           <div class="daystrip-cell {{ d.status }}">
             <div class="d-date">{{ d.date[8:10] }}.{{ d.date[5:7] }}</div>
             <div class="d-count">{{ d.count }}</div>
-            <div class="d-pct">{% if d.status != 'off' %}{{ d.pct }}%{% else %}dam{% endif %}</div>
+            <div class="d-pct">{% if d.status != 'off' %}{{ d.pct }}%{% else %}{{ t('analytics.day_off') }}{% endif %}</div>
           </div>
           {% endfor %}
         </div>
@@ -260,60 +260,60 @@
     <!-- 2) Sotuv soni KPI -->
     <div class="kpidash-card">
       <div class="kpidash-card-head">
-        <div class="kpidash-card-title"><span class="kpidash-card-num">2</span> Sotuv soni KPI</div>
+        <div class="kpidash-card-title"><span class="kpidash-card-num">2</span> {{ t('analytics.sales_count_title') }}</div>
       </div>
-      <div class="kpidash-bignum">{{ r.sales_count }} <span class="text-faint" style="font-size:14px; font-weight:500">ta sotuv</span></div>
+      <div class="kpidash-bignum">{{ r.sales_count }} <span class="text-faint" style="font-size:14px; font-weight:500">{{ t('analytics.sales_unit') }}</span></div>
       <div class="kpidash-subtext">
-        Prorata reja: <strong>{{ r.survival_min }} ta</strong>
-        {% if r.is_prorated %}<span class="text-faint">({{ r.work_days }}/{{ r.days_in_month }} kun ishlagan holda proratsiya qilingan)</span>{% endif %}
+        {{ t('analytics.prorata_plan') }} <strong>{{ t('analytics.n_pieces', n=r.survival_min) }}</strong>
+        {% if r.is_prorated %}<span class="text-faint">{{ t('analytics.prorata_note', work=r.work_days, total=r.days_in_month) }}</span>{% endif %}
       </div>
       <div class="kpi-progress-wrap">
         <div class="kpi-progress-track"><div class="kpi-progress-fill {{ 'full' if r.survival_ok }}" style="width: {{ [(r.sales_count / r.survival_min * 100) if r.survival_min else 100, 100]|min }}%"></div></div>
-        <div class="kpi-progress-label"><span>{{ r.sales_count }} / {{ r.survival_min }}</span><span>{{ 'bajarildi' if r.survival_ok else (r.sales_to_survival ~ ' ta qoldi') }}</span></div>
+        <div class="kpi-progress-label"><span>{{ r.sales_count }} / {{ r.survival_min }}</span><span>{{ t('analytics.progress_done') if r.survival_ok else t('analytics.sales_left', n=r.sales_to_survival) }}</span></div>
       </div>
       <div class="tier-grid">
         <div class="tier-box {{ 'current' if r.sales_count < r.progressive_tiers[0].min else 'achieved' }}">
-          <div class="t-label">0 - {{ r.progressive_tiers[0].min - 1 }} ta</div>
-          <div class="t-rate">bonus yo'q</div>
+          <div class="t-label">{{ t('analytics.tier_0_label', n=r.progressive_tiers[0].min - 1) }}</div>
+          <div class="t-rate">{{ t('analytics.tier_no_bonus') }}</div>
         </div>
-        {% for t in r.progressive_tiers %}
-        <div class="tier-box {{ 'current' if t.is_current else ('achieved' if r.sales_count > (t.max or 999999) else '') }}">
-          <div class="t-label">{{ t.label }}</div>
-          <div class="t-rate">{{ t.rate|som }}/sotuv</div>
+        {% for t3 in r.progressive_tiers %}
+        <div class="tier-box {{ 'current' if t3.is_current else ('achieved' if r.sales_count > (t3.max or 999999) else '') }}">
+          <div class="t-label">{{ t3.label }}</div>
+          <div class="t-rate">{{ t('analytics.rate_per_sale', rate=t3.rate|som) }}</div>
         </div>
         {% endfor %}
       </div>
       {% if r.next_progressive_tier %}
-      <div class="hint-box">Keyingi bosqichgacha ({{ r.next_progressive_tier.label }}, {{ r.next_progressive_tier.rate|som }}/sotuv) yetishi uchun <strong>{{ r.sales_to_next_tier }} ta</strong> sotuv qoldi.</div>
+      <div class="hint-box">{{ t('analytics.next_tier_hint', label=r.next_progressive_tier.label, rate=r.next_progressive_tier.rate|som, n=r.sales_to_next_tier)|safe }}</div>
       {% elif r.progressive_rate %}
-      <div class="hint-box good">Eng yuqori bosqichga yetdi -- har bir sotuv uchun {{ r.progressive_rate|som }} bonus.</div>
+      <div class="hint-box good">{{ t('analytics.top_tier_hint', rate=r.progressive_rate|som) }}</div>
       {% endif %}
     </div>
 
     <!-- 4) Savdo summasi KPI (batafsil) -- 3-chi ustunda joylashadi, lekin raqami hujjatdagi tartibga mos 4 -->
     <div class="kpidash-card">
       <div class="kpidash-card-head">
-        <div class="kpidash-card-title"><span class="kpidash-card-num">4</span> Savdo summasi KPI (batafsil)</div>
+        <div class="kpidash-card-title"><span class="kpidash-card-num">4</span> {{ t('analytics.turnover_title') }}</div>
       </div>
       <div class="kpidash-bignum som">{{ r.turnover|som }}</div>
       <div class="kpidash-subtext">
-        Prorata reja (400 mln bosqichi): <strong>{{ (400000000 * r.prorate_factor)|round|int|som }}</strong>
+        {{ t('analytics.turnover_prorata') }} <strong>{{ (400000000 * r.prorate_factor)|round|int|som }}</strong>
       </div>
       <div class="stat-box-row" style="margin-top:12px">
-        <div class="stat-box"><div class="s-label">Oborot</div><div class="s-val">{{ r.turnover|som }}</div></div>
-        <div class="stat-box"><div class="s-label">Kunlik reja</div><div class="s-val">{{ r.daily_turnover_target|som }}</div></div>
-        <div class="stat-box"><div class="s-label">Oborot bonusi</div><div class="s-val">{{ r.bonus_c|som }}</div></div>
+        <div class="stat-box"><div class="s-label">{{ t('analytics.stat_turnover') }}</div><div class="s-val">{{ r.turnover|som }}</div></div>
+        <div class="stat-box"><div class="s-label">{{ t('analytics.stat_daily_plan') }}</div><div class="s-val">{{ r.daily_turnover_target|som }}</div></div>
+        <div class="stat-box"><div class="s-label">{{ t('analytics.stat_turnover_bonus') }}</div><div class="s-val">{{ r.bonus_c|som }}</div></div>
       </div>
       <div class="table-scroll">
       <table class="tier-table" style="font-size:12.5px">
-        <thead><tr><th>Bosqich</th><th class="num">Bonus</th><th>Holat</th><th class="num">Yetishi uchun kerak</th></tr></thead>
+        <thead><tr><th>{{ t('analytics.th_tier') }}</th><th class="num">{{ t('analytics.th_bonus') }}</th><th>{{ t('analytics.th_status') }}</th><th class="num">{{ t('analytics.th_needed') }}</th></tr></thead>
         <tbody>
-          {% for t in r.turnover_tiers %}
+          {% for t4 in r.turnover_tiers %}
           <tr>
-            <td>{{ t.label }}</td>
-            <td class="num">{{ t.bonus|som }}</td>
-            <td class="{{ 'check-yes' if r.turnover >= t.min else 'check-no' }}">{{ '✓ erishildi' if r.turnover >= t.min else ('joriy' if t.is_current else '—') }}</td>
-            <td class="num">{{ (t.min - r.turnover)|round|int|som if r.turnover < t.min else '—' }}</td>
+            <td>{{ t4.label }}</td>
+            <td class="num">{{ t4.bonus|som }}</td>
+            <td class="{{ 'check-yes' if r.turnover >= t4.min else 'check-no' }}">{{ t('analytics.tier_achieved') if r.turnover >= t4.min else (t('analytics.tier_current') if t4.is_current else '—') }}</td>
+            <td class="num">{{ (t4.min - r.turnover)|round|int|som if r.turnover < t4.min else '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -324,15 +324,15 @@
     <!-- 3) Qayta sotuv KPI (batafsil) -->
     <div class="kpidash-card span-2">
       <div class="kpidash-card-head">
-        <div class="kpidash-card-title"><span class="kpidash-card-num">3</span> Qayta sotuv KPI (batafsil) <span class="text-faint" style="font-weight:400; font-size:12px">(15 kun ichida 2-marta xarid qilgan mijozlar)</span></div>
+        <div class="kpidash-card-title"><span class="kpidash-card-num">3</span> {{ t('analytics.repeat_kpi_title') }} <span class="text-faint" style="font-weight:400; font-size:12px">{{ t('analytics.repeat_kpi_note') }}</span></div>
       </div>
       {% if not r.repeat_customers.customers %}
-        <div class="kpidash-empty">Bu oyda 15 kun ichida qayta xarid qilgan mijoz topilmadi.</div>
+        <div class="kpidash-empty">{{ t('analytics.repeat_kpi_empty') }}</div>
       {% else %}
       <div class="table-scroll">
       <table style="font-size:12.5px">
         <thead>
-          <tr><th>Mijoz</th><th>Telefon</th><th>Buyurtma</th><th>Sana</th><th class="num">Summa</th><th>Turi</th><th class="num">Fixed</th><th class="num">0.5%</th><th class="num">Jami</th></tr>
+          <tr><th>{{ t('analytics.th_customer') }}</th><th>{{ t('analytics.th_phone') }}</th><th>{{ t('analytics.th_order') }}</th><th>{{ t('analytics.th_date') }}</th><th class="num">{{ t('analytics.th_amount') }}</th><th>{{ t('analytics.th_type') }}</th><th class="num">{{ t('analytics.th_fixed') }}</th><th class="num">{{ t('analytics.th_pct') }}</th><th class="num">{{ t('analytics.th_total') }}</th></tr>
         </thead>
         <tbody>
           {% for c in r.repeat_customers.customers %}
@@ -342,32 +342,32 @@
               <td class="num">#{{ s.sale_number }}</td>
               <td>{{ s.sold_at.strftime('%d.%m.%Y') if s.sold_at else '—' }}</td>
               <td class="num">{{ s.amount|som }}</td>
-              <td><span class="badge {{ 'badge-color-blue' if s.sale_number == 1 else 'badge-color-good' }}">{{ '1-chi' if s.sale_number == 1 else '2-chi' }}</span></td>
+              <td><span class="badge {{ 'badge-color-blue' if s.sale_number == 1 else 'badge-color-good' }}">{{ t('analytics.first_purchase') if s.sale_number == 1 else t('analytics.second_purchase') }}</span></td>
               <td class="num">{{ s.fixed|som }}</td>
               <td class="num">{{ s.pct|round|int|som }}</td>
               <td class="num">{{ s.total|round|int|som }}</td>
             </tr>
             {% endfor %}
-            <tr class="subtotal-row"><td colspan="6">Jami ({{ c.lead_name }})</td><td class="num">{{ c.customer_total|round|int|som }}</td></tr>
+            <tr class="subtotal-row"><td colspan="6">{{ t('analytics.subtotal_row', name=c.lead_name) }}</td><td class="num">{{ c.customer_total|round|int|som }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
       </div>
-      <div class="kpidash-subtext" style="margin-top:10px">Barcha qayta sotuvlar bo'yicha jami bonus: <strong>{{ r.repeat_customers.total|round|int|som }}</strong></div>
+      <div class="kpidash-subtext" style="margin-top:10px">{{ t('analytics.repeat_total_bonus') }} <strong>{{ r.repeat_customers.total|round|int|som }}</strong></div>
       {% endif %}
     </div>
 
     <!-- Kunlik savdo jadvali -->
     <div class="kpidash-card span-2">
       <div class="kpidash-card-head">
-        <div class="kpidash-card-title">Kunlik savdo -- reja vs bajarilish</div>
+        <div class="kpidash-card-title">{{ t('analytics.daily_sales_title') }}</div>
       </div>
       {% if not r.daily %}
-        <div class="kpidash-empty">Bu oyda hali sotuv qayd etilmagan.</div>
+        <div class="kpidash-empty">{{ t('analytics.daily_sales_empty') }}</div>
       {% else %}
       <div class="table-scroll">
       <table style="font-size:12.5px">
-        <thead><tr><th>Sana</th><th class="num">Zakaz</th><th class="num">Savdo</th><th class="num">Reja</th><th class="num">%</th><th>Holat</th></tr></thead>
+        <thead><tr><th>{{ t('analytics.th_date') }}</th><th class="num">{{ t('analytics.th_order_count') }}</th><th class="num">{{ t('analytics.th_sale') }}</th><th class="num">{{ t('analytics.th_plan') }}</th><th class="num">%</th><th>{{ t('analytics.th_status') }}</th></tr></thead>
         <tbody>
           {% for day, d in r.daily.items()|sort(reverse=true) %}
           {% set pct = ((d.turnover / r.daily_turnover_target * 100) if r.daily_turnover_target else 0) %}

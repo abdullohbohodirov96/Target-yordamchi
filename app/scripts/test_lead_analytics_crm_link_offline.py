@@ -83,7 +83,10 @@ check("Target sahifasi 200 qaytaradi", r.status_code == 200)
 check("Marketing subnav'ida 'Lead Analytics' YO'Q (endi alohida sidebar band)", "Lead Analytics" not in html.split('page-subnav')[1].split('</nav>')[0] if 'page-subnav' in html else True)
 
 r = client.get("/lead-analytics")
-html = r.get_data(as_text=True)
+# 3-bosqich, ko'p tillilik: matnlar endi t() orqali chiqadi, Jinja
+# autoescape ' belgisini &#39;ga aylantiradi -- literal solishtirish
+# uchun normalizatsiya (avvalgi bosqichlardagi bilan bir xil yondashuv).
+html = r.get_data(as_text=True).replace("&#39;", "'")
 check("/lead-analytics 200 qaytaradi", r.status_code == 200)
 check("Sidebar'da 'Lead Analytics' mustaqil nav-item sifatida bor", 'data-tooltip="Lead Analytics"' in html)
 

@@ -7,18 +7,18 @@
    Ota shablonda mavjud bo'lishi kerak: `period`, `date_from`, `date_to`,
    `level` (jadval darajasi -- URL'da saqlanib qolishi uchun). #}
 {% set LA_PRESETS = [
-  ('today', 'Bugun'), ('yesterday', 'Kecha'),
-  ('last_7d', 'Oxirgi 7 kun'), ('last_14d', 'Oxirgi 14 kun'),
-  ('last_28d', 'Oxirgi 28 kun'), ('last_30d', 'Oxirgi 30 kun'),
-  ('this_week_mon_today', 'Shu hafta'), ('this_month', 'Shu oy'),
-  ('last_month', "O'tgan oy"), ('maximum', 'Maksimal'),
+  ('today', t('period.today')), ('yesterday', t('period.yesterday')),
+  ('last_7d', t('lead_analytics_dp.last_7d')), ('last_14d', t('lead_analytics_dp.last_14d')),
+  ('last_28d', t('lead_analytics_dp.last_28d')), ('last_30d', t('lead_analytics_dp.last_30d')),
+  ('this_week_mon_today', t('period.this_week')), ('this_month', t('period.this_month')),
+  ('last_month', t('period.last_month')), ('maximum', t('period.maximum')),
 ] %}
 {% set LA_PRESET_LABELS = dict(LA_PRESETS) %}
 <div class="la-dp" id="laDatePicker">
   <button type="button" class="date-picker-trigger" id="laDatePickerTrigger">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
     <span id="laDatePickerLabel">
-      {% if period == 'custom' and date_from and date_to %}{{ date_from }} — {{ date_to }}{% else %}{{ LA_PRESET_LABELS.get(period, 'Oxirgi 30 kun') }}{% endif %}
+      {% if period == 'custom' and date_from and date_to %}{{ date_from }} — {{ date_to }}{% else %}{{ LA_PRESET_LABELS.get(period, t('lead_analytics_dp.last_30d')) }}{% endif %}
     </span>
   </button>
   <div class="la-dp-menu" id="laDatePickerMenu">
@@ -35,7 +35,7 @@
           <span>—</span>
           <input type="date" id="laDateToInput" value="{{ date_to }}">
         </div>
-        <button type="button" class="btn" id="laApplyBtn" style="padding:7px 16px; font-size:12.5px">Qo'llash</button>
+        <button type="button" class="btn" id="laApplyBtn" style="padding:7px 16px; font-size:12.5px">{{ t('lead_analytics_dp.apply') }}</button>
       </div>
     </div>
   </div>
@@ -77,8 +77,8 @@
 
   // ---- Ikki oylik taqvim (vanilla JS, kutubxonasiz -- kod bazasining
   // qolgan qismidagi sana-tanlagichlar bilan bir xil uslub) ----
-  var WD = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']; // Yak/Dush/Sesh/Chor/Pay/Jum/Shan -- hafta Yakshanbadan boshlanadi (referens skrinshotdagi kabi)
-  var MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+  var WD = {{ [t('lead_analytics_dp.wd_sun'), t('lead_analytics_dp.wd_mon'), t('lead_analytics_dp.wd_tue'), t('lead_analytics_dp.wd_wed'), t('lead_analytics_dp.wd_thu'), t('lead_analytics_dp.wd_fri'), t('lead_analytics_dp.wd_sat')]|tojson }}; // Yak/Dush/Sesh/Chor/Pay/Jum/Shan -- hafta Yakshanbadan boshlanadi (referens skrinshotdagi kabi)
+  var MONTHS = {{ [t('lead_analytics_dp.month_1'), t('lead_analytics_dp.month_2'), t('lead_analytics_dp.month_3'), t('lead_analytics_dp.month_4'), t('lead_analytics_dp.month_5'), t('lead_analytics_dp.month_6'), t('lead_analytics_dp.month_7'), t('lead_analytics_dp.month_8'), t('lead_analytics_dp.month_9'), t('lead_analytics_dp.month_10'), t('lead_analytics_dp.month_11'), t('lead_analytics_dp.month_12')]|tojson }};
 
   function parseISO(s) { if (!s) return null; var p = s.split('-'); return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)); }
   function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -94,9 +94,9 @@
     var startOffset = first.getDay(); // 0=Yakshanba
     var daysInMonth = new Date(year, month + 1, 0).getDate();
     var html = '<div class="la-dp-cal-nav">';
-    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="Oldingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="{{ t('lead_analytics_dp.prev_month') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
     html += '<span>' + MONTHS[month] + ' ' + year + '</span>';
-    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="Keyingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="{{ t('lead_analytics_dp.next_month') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
     html += '</div><div class="la-dp-cal-grid">';
     WD.forEach(function (w) { html += '<div class="la-dp-cal-wd">' + w + '</div>'; });
     for (var i = 0; i < startOffset; i++) html += '<div class="la-dp-cal-day la-dp-outside"></div>';

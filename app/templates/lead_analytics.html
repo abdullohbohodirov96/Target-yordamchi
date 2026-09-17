@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Lead Analytics — Replix{% endblock %}
+{% block title %}{{ t('lead_analytics.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Lead Analytics</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Har bir target bo'yicha: xarajat, lidlar, bog'lanish/sotuv statistikasi va o'rtacha yopilish vaqti &middot; Yangilangan {{ data.generated_at[:16].replace('T',' ') }} UTC</p>
+    <h1>{{ t('lead_analytics.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('lead_analytics.subtitle') }} &middot; {{ t('dashboard.updated_at', time=data.generated_at[:16].replace('T',' ')) }}</p>
   </div>
   {% include "_lead_analytics_date_picker.html" %}
 </div>
@@ -18,51 +18,51 @@
 <div class="page-head" style="margin-top:-14px; align-items:center">
   <p class="page-subtitle" style="margin:0">
     {% if show_all %}
-    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
+    {{ t('target.showing_all') }}
     {% else %}
-    Faqat tanlangan davrda yoqilgan (faol) bo'lgan target'lar ko'rsatilyapti.
+    {{ t('target.showing_active') }}
     {% endif %}
   </p>
   {% if show_all %}
   <a href="?period={{ period }}&level={{ level }}&show_all=0{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
-    Faqat yoqilganlarni ko'rsatish
+    {{ t('target.show_active_only') }}
   </a>
   {% else %}
   <a href="?period={{ period }}&level={{ level }}&show_all=1{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn toggle-all-btn-outline">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-    Hammasini ko'rsatish
+    {{ t('target.show_all') }}
   </a>
   {% endif %}
 </div>
 
 {% if data.not_connected %}
   <div class="card" style="max-width:520px; margin-bottom:20px">
-    <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
-    <p class="page-subtitle" style="margin-top:-6px">Lead Analytics uchun avval reklama hisobingizni ulang.</p>
+    <h2>{{ t('target.not_connected_title') }}</h2>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('lead_analytics.not_connected_text') }}</p>
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+    <a href="{{ url_for('connect_accounts') }}" class="btn block">{{ t('dashboard.connect_account') }}</a>
     {% else %}
-    <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+    <p class="page-subtitle" style="margin:0">{{ t('dashboard.ask_admin') }}</p>
     {% endif %}
   </div>
 {% elif data.error %}
-  <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
+  <div class="flash flash-error">{{ t('target.api_error', error=data.error) }}</div>
 {% endif %}
 
-{% set t = data.totals %}
+{% set t2 = data.totals %}
 <div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Bog'lanildi</div><div class="kpi-value text-blue">{{ t.act or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Yutildi</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Konversiya</div><div class="kpi-value">{{ "%.1f"|format(t.conv_rate or 0) }}%</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_spend') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.spend or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_leads') }}</div><div class="kpi-value">{{ t2.crm_leads_total or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_cpl') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.cpl or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_connected') }}</div><div class="kpi-value text-blue">{{ t2.act or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_won') }}</div><div class="kpi-value good">{{ t2.sold or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_conversion') }}</div><div class="kpi-value">{{ "%.1f"|format(t2.conv_rate or 0) }}%</div></div>
 </div>
 
 <div class="panel">
   <div class="tabs">
-    {% for lvl, label in [('campaign','Kampaniyalar'), ('adset','Reklama guruhlari'), ('ad','Reklamalar'), ('crm','CRM')] %}
+    {% for lvl, label in [('campaign', t('lead_analytics.tab_campaigns')), ('adset', t('lead_analytics.tab_adsets')), ('ad', t('lead_analytics.tab_ads')), ('crm', t('lead_analytics.tab_crm'))] %}
     <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}{% if date_from %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="{{ 'active' if level==lvl }}">
       {{ label }}{% if level==lvl %} <span class="badge badge-color-dim" style="margin-left:4px">{{ crm_leads|length if lvl=='crm' else (data.rows|length) }}</span>{% endif %}
     </a>
@@ -73,7 +73,7 @@
   {# ---- 4-tab: kampaniya bo'yicha JAMLANMAGAN, xom lead ro'yxati (shu davr uchun) ---- #}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Ism</th><th>Telefon</th><th>Kampaniya</th><th>Forma</th><th>Manba</th><th>Holat</th><th>Sana</th></tr></thead>
+    <thead><tr><th>{{ t('lead_analytics.th_name') }}</th><th>{{ t('analytics.th_phone') }}</th><th>{{ t('lead_analytics.th_campaign') }}</th><th>{{ t('lead_analytics.th_form') }}</th><th>{{ t('lead_analytics.th_source') }}</th><th>{{ t('analytics.th_status') }}</th><th>{{ t('analytics.th_date') }}</th></tr></thead>
     <tbody>
       {% for l in crm_leads %}
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
@@ -81,12 +81,12 @@
         <td class="text-dim">{{ l.phone or '—' }}</td>
         <td class="text-dim">{{ l.campaign_name or '—' }}</td>
         <td class="text-faint">{{ l.form_name or '—' }}</td>
-        <td class="text-faint">{{ {'meta':'Meta','manual':"Qo'lda",'import':'Import'}.get(l.source, l.source) }}</td>
+        <td class="text-faint">{{ {'meta': t('lead_analytics.source_meta'), 'manual': t('lead_analytics.source_manual'), 'import': t('lead_analytics.source_import')}.get(l.source, l.source) }}</td>
         <td><span class="badge badge-color-{{ stage_color_by_key.get(l.status, 'dim') }}">{{ stage_label_by_key.get(l.status, l.status) }}</span></td>
         <td class="text-faint">{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="7">Bu davrda lead yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="7">{{ t('lead_analytics.no_leads_period') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -102,7 +102,7 @@
   <div class="searchbar" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
     <div class="search-input-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
-      <input id="laSearch" type="text" placeholder="Qidirish...">
+      <input id="laSearch" type="text" placeholder="{{ t('target.search_placeholder') }}">
     </div>
     {# 2026-09, foydalanuvchi so'rovi ("+ROAS tugmasini qo'shish kerak,
        ko'rinmayapti, o'chirib-yoqish mumkin bo'lsin"): ROAS (reklama
@@ -111,10 +111,10 @@
        ko'rsatilmagan edi. Endi bu tugma bilan ustun yoqilib/o'chirilib
        turadi -- tanlov brauzerda (localStorage) saqlanadi. #}
     <button type="button" id="laToggleRoas" class="btn toggle-all-btn-outline" style="margin-left:auto; padding:8px 14px; font-size:12.5px">
-      <span id="laToggleRoasIcon">+</span> ROAS
+      <span id="laToggleRoasIcon">+</span> {{ t('lead_analytics.roas_label') }}
     </button>
     <button type="button" id="laGoCrm" class="btn" style="padding:8px 14px; font-size:12.5px" disabled>
-      CRM'ga o'tish <span id="laSelCount"></span>
+      {{ t('lead_analytics.go_to_crm') }} <span id="laSelCount"></span>
     </button>
   </div>
 
@@ -122,18 +122,18 @@
   <table id="la-table">
     <thead>
       <tr>
-        <th style="width:34px"><input type="checkbox" id="laSelectAll" aria-label="Hammasini tanlash"></th>
-        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Kampaniya','adset':'Reklama guruhi','ad':'Reklama'}[level] }}</th>
-        <th class="sortable num" data-key="spend" data-type="num">Xarajat</th>
-        <th class="sortable num" data-key="crm_leads_total" data-type="num">Lidlar</th>
-        <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
-        <th class="sortable num" data-key="act" data-type="num" style="color:var(--blue)">Bog'landi</th>
-        <th class="sortable num" data-key="sold" data-type="num" style="color:var(--good)">Yutildi</th>
-        <th class="sortable num" data-key="unqualified" data-type="num" style="color:var(--bad)">Yo'qotildi</th>
-        <th class="sortable num" data-key="cost_per_won" data-type="num">Yutuv narxi</th>
-        <th class="sortable num" data-key="conv_rate" data-type="num">Konversiya</th>
-        <th class="sortable num" data-key="deal_time_days" data-type="num">Yopilish vaqti</th>
-        <th class="sortable num la-roas-col" data-key="roas" data-type="num" hidden>ROAS</th>
+        <th style="width:34px"><input type="checkbox" id="laSelectAll" aria-label="{{ t('lead_analytics.select_all_aria') }}"></th>
+        <th class="sortable" data-key="name" data-type="text">{{ {'campaign': t('lead_analytics.level_campaign'), 'adset': t('lead_analytics.level_adset'), 'ad': t('lead_analytics.level_ad')}[level] }}</th>
+        <th class="sortable num" data-key="spend" data-type="num">{{ t('target.kpi_spend') }}</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">{{ t('lead_analytics.kpi_leads') }}</th>
+        <th class="sortable num" data-key="cpl" data-type="num">{{ t('target.kpi_cpl') }}</th>
+        <th class="sortable num" data-key="act" data-type="num" style="color:var(--blue)">{{ t('lead_analytics.th_connected') }}</th>
+        <th class="sortable num" data-key="sold" data-type="num" style="color:var(--good)">{{ t('lead_analytics.kpi_won') }}</th>
+        <th class="sortable num" data-key="unqualified" data-type="num" style="color:var(--bad)">{{ t('lead_analytics.th_lost') }}</th>
+        <th class="sortable num" data-key="cost_per_won" data-type="num">{{ t('lead_analytics.th_cost_per_won') }}</th>
+        <th class="sortable num" data-key="conv_rate" data-type="num">{{ t('lead_analytics.kpi_conversion') }}</th>
+        <th class="sortable num" data-key="deal_time_days" data-type="num">{{ t('lead_analytics.th_deal_time') }}</th>
+        <th class="sortable num la-roas-col" data-key="roas" data-type="num" hidden>{{ t('lead_analytics.roas_label') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -144,7 +144,7 @@
           data-cost_per_won="{{ r.cost_per_won }}" data-conv_rate="{{ r.conv_rate }}"
           data-deal_time_days="{{ r.deal_time_days if r.deal_time_days is not none else -1 }}"
           data-roas="{{ r.roas or 0 }}">
-        <td><input type="checkbox" class="laRowSel" value="{{ r.id }}" aria-label="{{ r.name }} tanlash"></td>
+        <td><input type="checkbox" class="laRowSel" value="{{ r.id }}" aria-label="{{ t('lead_analytics.select_row_aria', name=r.name) }}"></td>
         <td><span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}</td>
         <td class="num">${{ "%.2f"|format(r.spend or 0) }}</td>
         <td class="num">{{ r.crm_leads_total or 0 }}</td>
@@ -154,11 +154,11 @@
         <td class="num text-bad">{{ r.unqualified or 0 }}</td>
         <td class="num">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
         <td class="num">{{ "%.1f"|format(r.conv_rate or 0) }}%</td>
-        <td class="num">{{ "%.1f"|format(r.deal_time_days)+" kun" if r.deal_time_days is not none else '—' }}</td>
+        <td class="num">{{ t('lead_analytics.n_days', n="%.1f"|format(r.deal_time_days)) if r.deal_time_days is not none else '—' }}</td>
         <td class="num la-roas-col" hidden>{{ "%.2f"|format(r.roas or 0) }}x</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="12">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="12">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -168,19 +168,19 @@
 
 {% set pt = data.pipeline_totals %}
 <div class="card" style="margin-top:20px">
-  <h2>Yutuvlar dinamikasi — kunlar bo'yicha</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Tanlangan davrda kuniga nechta lead sotuvga (yutuqqa) aylanganini ko'rsatadi &middot; butun kompaniya bo'yicha.</p>
+  <h2>{{ t('lead_analytics.won_dynamics_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('lead_analytics.won_dynamics_subtitle') }}</p>
   <div class="kpi-grid" style="margin-bottom:18px">
-    <div class="kpi-card"><div class="kpi-label">Yutildi</div><div class="kpi-value good">{{ pt.won or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Yo'qotildi</div><div class="kpi-value bad">{{ pt.lost or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Jarayonda</div><div class="kpi-value">{{ pt.in_pipeline or 0 }}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Konversiya</div><div class="kpi-value">{{ "%.1f"|format(pt.conv_rate or 0) }}%</div></div>
-    <div class="kpi-card"><div class="kpi-label">Yutuv narxi</div><div class="kpi-value">${{ "%.2f"|format(pt.cost_per_won or 0) }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_won') }}</div><div class="kpi-value good">{{ pt.won or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.th_lost') }}</div><div class="kpi-value bad">{{ pt.lost or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.pt_in_pipeline') }}</div><div class="kpi-value">{{ pt.in_pipeline or 0 }}</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.kpi_conversion') }}</div><div class="kpi-value">{{ "%.1f"|format(pt.conv_rate or 0) }}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">{{ t('lead_analytics.th_cost_per_won') }}</div><div class="kpi-value">${{ "%.2f"|format(pt.cost_per_won or 0) }}</div></div>
   </div>
   {% if data.won_dynamics %}
   <div style="height:220px"><canvas id="chart-won-dynamics"></canvas></div>
   {% else %}
-  <p class="text-faint">Bu davrda hali sotuv yo'q.</p>
+  <p class="text-faint">{{ t('lead_analytics.no_sales_period') }}</p>
   {% endif %}
 </div>
 
@@ -317,7 +317,7 @@ try {
     type: 'bar',
     data: {
       labels: {{ data.won_dynamics|map(attribute='date')|list|tojson }},
-      datasets: [{ label: 'WON', data: {{ data.won_dynamics|map(attribute='won')|list|tojson }}, backgroundColor: '#0B63F5', borderRadius: 4 }]
+      datasets: [{ label: {{ t('lead_analytics.chart_won_label')|tojson }}, data: {{ data.won_dynamics|map(attribute='won')|list|tojson }}, backgroundColor: '#0B63F5', borderRadius: 4 }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -325,7 +325,7 @@ try {
       scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
     }
   });
-} catch (e) { console.error('Won dynamics grafigini chizib bo\'lmadi:', e); }
+} catch (e) { console.error({{ t('lead_analytics.chart_error_log')|tojson }}, e); }
 </script>
 {% endif %}
 {% endblock %}
