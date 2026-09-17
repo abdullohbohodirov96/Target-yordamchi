@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Target — Replix{% endblock %}
+{% block title %}{{ t('target.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Target</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Meta reklama target/xarajat statistikasi &middot; Yangilangan {{ data.generated_at[:16].replace('T',' ') }} UTC</p>
+    <h1>{{ t('target.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('target.subtitle') }} &middot; {{ t('dashboard.updated_at', time=data.generated_at[:16].replace('T',' ')) }}</p>
   </div>
   {% set cdp_id = 'target' %}
   {% set cdp_presets = [
-    ('today','Bugun'), ('yesterday','Kecha'),
-    ('last_7d',"So'nggi 7 kun"), ('last_30d',"So'nggi 30 kun"), ('last_90d',"So'nggi 90 kun"),
-    ('this_week_mon_today',"Shu hafta"), ('last_week_mon_sun',"O'tgan hafta"),
-    ('this_month',"Shu oy"), ('last_month',"O'tgan oy"), ('this_year',"Shu yil"),
-    ('maximum','Maksimal'),
+    ('today', t('period.today')), ('yesterday', t('period.yesterday')),
+    ('last_7d', t('period.last_7d')), ('last_30d', t('period.last_30d')), ('last_90d', t('period.last_90d')),
+    ('this_week_mon_today', t('period.this_week')), ('last_week_mon_sun', t('period.last_week')),
+    ('this_month', t('period.this_month')), ('last_month', t('period.last_month')), ('this_year', t('period.this_year')),
+    ('maximum', t('period.maximum')),
   ] %}
   {% set cdp_preset_param = 'period' %}
   {% set cdp_current_preset = period %}
@@ -29,68 +29,67 @@
 <div class="page-head" style="margin-top:-14px; align-items:center">
   <p class="page-subtitle" style="margin:0">
     {% if show_all %}
-    Barcha target'lar ko'rsatilyapti (pauzadagi/arxivlangan ham).
+    {{ t('target.showing_all') }}
     {% else %}
-    Faqat tanlangan davrda yoqilgan (faol) bo'lgan target'lar ko'rsatilyapti.
+    {{ t('target.showing_active') }}
     {% endif %}
   </p>
   {% if show_all %}
   <a href="?period={{ period }}&level={{ level }}&show_all=0{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
-    Faqat yoqilganlarni ko'rsatish
+    {{ t('target.show_active_only') }}
   </a>
   {% else %}
   <a href="?period={{ period }}&level={{ level }}&show_all=1{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="btn toggle-all-btn toggle-all-btn-outline">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-    Hammasini ko'rsatish
+    {{ t('target.show_all') }}
   </a>
   {% endif %}
 </div>
 
 {% if data.not_connected %}
   <div class="card" style="max-width:520px; margin-bottom:20px">
-    <h2>Meta (Facebook/Instagram) hisobingiz hali ulanmagan</h2>
-    <p class="page-subtitle" style="margin-top:-6px">Target xarajat/lead ma'lumotlarini ko'rish uchun avval reklama hisobingizni ulang.</p>
+    <h2>{{ t('target.not_connected_title') }}</h2>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('target.not_connected_text') }}</p>
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('connect_accounts') }}" class="btn block">Akkauntni ulash</a>
+    <a href="{{ url_for('connect_accounts') }}" class="btn block">{{ t('dashboard.connect_account') }}</a>
     {% else %}
-    <p class="page-subtitle" style="margin:0">Ulash uchun administratorga murojaat qiling.</p>
+    <p class="page-subtitle" style="margin:0">{{ t('dashboard.ask_admin') }}</p>
     {% endif %}
   </div>
 {% elif data.error %}
-  <div class="flash flash-error">Meta API'dan ma'lumot olishda xatolik: {{ data.error }}</div>
+  <div class="flash flash-error">{{ t('target.api_error', error=data.error) }}</div>
 {% endif %}
 
-{% set t = data.totals %}
+{% set t2 = data.totals %}
 <div class="kpi-grid">
-  <div class="kpi-card"><div class="kpi-label">Xarajat</div><div class="kpi-value">${{ "%.2f"|format(t.spend or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CRM Lidlar</div><div class="kpi-value">{{ t.crm_leads_total or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">CPL</div><div class="kpi-value">${{ "%.2f"|format(t.cpl or 0) }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Sotuvlar</div><div class="kpi-value good">{{ t.sold or 0 }}</div></div>
-  <div class="kpi-card"><div class="kpi-label">Daromad</div><div class="kpi-value">{{ (t.revenue or 0)|som }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_spend') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.spend or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_crm_leads') }}</div><div class="kpi-value">{{ t2.crm_leads_total or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_cpl') }}</div><div class="kpi-value">${{ "%.2f"|format(t2.cpl or 0) }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_sales') }}</div><div class="kpi-value good">{{ t2.sold or 0 }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">{{ t('target.kpi_revenue') }}</div><div class="kpi-value">{{ (t2.revenue or 0)|som }}</div></div>
   <div class="kpi-card">
-    <div class="kpi-label">ROI</div>
-    <div class="kpi-value {{ 'good' if (t.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t.roi_percent or 0) }}%</div>
-    <div class="text-faint" style="font-size:11px; margin-top:2px">kurs: $1 = {{ (t.usd_to_uzs_rate or 0)|som }}</div>
+    <div class="kpi-label">{{ t('target.kpi_roi') }}</div>
+    <div class="kpi-value {{ 'good' if (t2.roi_percent or 0) >= 0 else 'bad' }}">{{ "%.0f"|format(t2.roi_percent or 0) }}%</div>
+    <div class="text-faint" style="font-size:11px; margin-top:2px">{{ t('target.rate_note', rate=(t2.usd_to_uzs_rate or 0)|som) }}</div>
   </div>
 </div>
 
 {% if data.goal_breakdown %}
 <div class="card" style="margin-bottom:20px">
-  <h2>Natija turlari bo'yicha taqsimot</h2>
+  <h2>{{ t('target.goal_breakdown_title') }}</h2>
   <p class="page-subtitle" style="margin-top:-6px">
-    Har bir target Meta'da qanday natija uchun sozlangan bo'lsa (lid, qo'ng'iroq, xabar, havola bosish va h.k.),
-    shu turdagi haqiqiy natija soni bilan. Faqat "Lidlar (Instant Forma)" turi CRM'dagi Lidlar ustuniga ta'sir qiladi.
+    {{ t('target.goal_breakdown_text') }}
   </p>
   <div class="table-scroll">
   <table>
     <thead>
       <tr>
-        <th>Natija turi</th>
-        <th class="num">Target soni</th>
-        <th class="num">Xarajat</th>
-        <th class="num">Natija</th>
-        <th class="num">Narxi/natija</th>
+        <th>{{ t('target.th_goal_type') }}</th>
+        <th class="num">{{ t('target.th_goal_count') }}</th>
+        <th class="num">{{ t('target.kpi_spend') }}</th>
+        <th class="num">{{ t('target.th_result') }}</th>
+        <th class="num">{{ t('target.th_cost_per_result') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -111,17 +110,15 @@
 
 {% if level == 'campaign' %}
 <div class="flash flash-info" style="margin-bottom:14px">
-  Bu yerda har bir qator BITTA Meta kampaniyasi. Bitta kampaniya ichida bir nechta
-  reklama guruhi (ad set) bo'lishi mumkin -- masalan har xil mahsulot/sana uchun
-  alohida "target" sifatida ishlatilayotgan bo'lsa, ular shu yerda EMAS,
-  <a href="?period={{ period }}&level=adset&show_all={{ '1' if show_all else '0' }}{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}">"Ad sets"</a>
-  bo'limida alohida-alohida ko'rinadi.
+  {{ t('target.campaign_note_1') }}
+  <a href="?period={{ period }}&level=adset&show_all={{ '1' if show_all else '0' }}{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}">{{ t('target.campaign_note_link') }}</a>
+  {{ t('target.campaign_note_2') }}
 </div>
 {% endif %}
 
 <div class="panel">
   <div class="tabs">
-    {% for lvl, label in [('campaign','Campaigns'), ('adset','Ad sets'), ('ad','Ads')] %}
+    {% for lvl, label in [('campaign', t('target.tab_campaigns')), ('adset', t('target.tab_adsets')), ('ad', t('target.tab_ads'))] %}
     <a href="?period={{ period }}&level={{ lvl }}&show_all={{ '1' if show_all else '0' }}{% if date_from and date_to %}&date_from={{ date_from }}&date_to={{ date_to }}{% endif %}" class="{{ 'active' if level==lvl }}">{{ label }}</a>
     {% endfor %}
   </div>
@@ -129,7 +126,7 @@
   <div class="searchbar">
     <div class="search-input-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z"/></svg>
-      <input id="search" type="text" placeholder="Qidirish...">
+      <input id="search" type="text" placeholder="{{ t('target.search_placeholder') }}">
     </div>
   </div>
 
@@ -137,17 +134,17 @@
   <table id="kpi-table">
     <thead>
       <tr>
-        <th class="sortable" data-key="name" data-type="text">{{ {'campaign':'Campaign','adset':'Ad set','ad':'Ad'}[level] }}</th>
-        <th>Natija turi</th>
-        <th class="sortable num" data-key="spend" data-type="num">Spend</th>
-        <th class="sortable num" data-key="crm_leads_total" data-type="num">CRM Lead</th>
-        <th class="sortable num" data-key="meta_result" data-type="num">Meta natija</th>
-        <th class="sortable num" data-key="cpl" data-type="num">CPL</th>
-        <th class="sortable num" data-key="active" data-type="num">Active</th>
-        <th class="sortable num" data-key="sold" data-type="num">Won</th>
-        <th class="sortable num" data-key="unqualified" data-type="num">Lost</th>
-        <th class="sortable num" data-key="qualified" data-type="num">Qual</th>
-        <th class="sortable num" data-key="cost_per_won" data-type="num">Cost/Won</th>
+        <th class="sortable" data-key="name" data-type="text">{{ {'campaign': t('target.th_campaign'), 'adset': t('target.th_adset'), 'ad': t('target.th_ad')}[level] }}</th>
+        <th>{{ t('target.th_goal_type') }}</th>
+        <th class="sortable num" data-key="spend" data-type="num">{{ t('target.th_spend') }}</th>
+        <th class="sortable num" data-key="crm_leads_total" data-type="num">{{ t('target.th_crm_lead') }}</th>
+        <th class="sortable num" data-key="meta_result" data-type="num">{{ t('target.th_meta_result') }}</th>
+        <th class="sortable num" data-key="cpl" data-type="num">{{ t('target.th_cpl') }}</th>
+        <th class="sortable num" data-key="active" data-type="num">{{ t('target.th_active') }}</th>
+        <th class="sortable num" data-key="sold" data-type="num">{{ t('target.th_won') }}</th>
+        <th class="sortable num" data-key="unqualified" data-type="num">{{ t('target.th_lost') }}</th>
+        <th class="sortable num" data-key="qualified" data-type="num">{{ t('target.th_qual') }}</th>
+        <th class="sortable num" data-key="cost_per_won" data-type="num">{{ t('target.th_cost_per_won') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -161,7 +158,7 @@
         <td>
           <span class="status-dot {{ 'on' if r.status=='ACTIVE' }}"></span>{{ r.name or '—' }}
           {% if level == 'campaign' and r.child_adset_count and r.child_adset_count > 1 %}
-          <span class="text-faint" style="font-size:11px"> ({{ r.child_adset_count }} ta reklama guruhi)</span>
+          <span class="text-faint" style="font-size:11px"> {{ t('target.adset_count', n=r.child_adset_count) }}</span>
           {% endif %}
         </td>
         <td><span class="badge badge-color-{{ 'blue' if r.goal in ('LEAD_GENERATION','QUALITY_LEAD') else 'dim' }}">{{ r.goal_label }}</span></td>
@@ -176,7 +173,7 @@
         <td class="num text-good">${{ "%.2f"|format(r.cost_per_won or 0) }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="11">Ma'lumot yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="11">{{ t('target.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

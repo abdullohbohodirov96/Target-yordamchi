@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Yangi kampaniya — Avtopilot — Replix{% endblock %}
+{% block title %}{{ t('autopilot.new_campaign') }} — {{ t('autopilot.title') }} — Replix{% endblock %}
 {% block content %}
 
 {# 2026-09, Meta Ads Autopilot wizard: foydalanuvchi FAQAT bir nechta
@@ -10,25 +10,25 @@
 
 <div class="page-head">
   <div>
-    <h1>Yangi kampaniya</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Bir nechta savol -- AI Campaign &rarr; Ad Set &rarr; Ad rejasini {{ ctx.company_name or 'kompaniyangiz' }} profili asosida to'liq tuzadi. Keyin har bir darajani ko'rib chiqasiz.</p>
+    <h1>{{ t('autopilot.new_campaign') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('autopilot_new.subtitle', company=ctx.company_name or t('autopilot_new.your_company')) }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">Orqaga</a>
+    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">{{ t('autopilot_new.back') }}</a>
   </div>
 </div>
 
 {% if connection.problems %}
 <div class="card ap-connect-banner">
-  <h2 style="color:var(--warn)">Eslatma</h2>
+  <h2 style="color:var(--warn)">{{ t('autopilot_new.note_title') }}</h2>
   <ul class="ap-banner-list">{% for p in connection.problems %}<li>{{ p }}</li>{% endfor %}</ul>
-  <p class="page-subtitle" style="margin:8px 0 0">Reja tuzish ishlaydi; nashrdan oldin <a href="{{ url_for('connect_accounts') }}">Ulanishlar</a> bo'limini to'ldiring.</p>
+  <p class="page-subtitle" style="margin:8px 0 0">{{ t('autopilot_new.note_text_1') }} <a href="{{ url_for('connect_accounts') }}">{{ t('autopilot_new.note_link') }}</a> {{ t('autopilot_new.note_text_2') }}</p>
 </div>
 {% endif %}
 
 {% if ctx.missing_fields %}
 <div class="hint-box" style="margin:0 0 16px">
-  Biznes-profilda to'ldirilmagan maydonlar: {{ ctx.missing_fields|join(', ') }}. AI aniqroq reja tuzishi uchun <a href="{{ url_for('settings_business_profile') }}">profilni to'ldiring</a> (ixtiyoriy).
+  {{ t('autopilot_new.missing_fields_1', fields=ctx.missing_fields|join(', ')) }} <a href="{{ url_for('settings_business_profile') }}">{{ t('autopilot_new.missing_fields_link') }}</a> {{ t('autopilot_new.missing_fields_2') }}
 </div>
 {% endif %}
 
@@ -38,8 +38,8 @@
 <div class="card ap-creative-banner" id="ap-creative-banner">
   <a href="{{ creative.editor_url }}" class="ap-creative-banner-thumb"><img src="{{ creative.thumbnail_url }}" alt="{{ creative.title }}"></a>
   <div>
-    <h2 style="margin:0 0 4px">Reklama rasmi: Kreativ studiyadan</h2>
-    <p class="page-subtitle" style="margin:0">"{{ creative.title }}" (#{{ creative.id }}) qoralama yaratilgach avtomatik biriktiriladi va reklama mediasi sifatida tanlanadi. Qolgan savollarga javob bering -- AI rejani tuzadi.</p>
+    <h2 style="margin:0 0 4px">{{ t('autopilot_new.creative_title') }}</h2>
+    <p class="page-subtitle" style="margin:0">{{ t('autopilot_new.creative_text', title=creative.title, id=creative.id) }}</p>
   </div>
 </div>
 {% endif %}
@@ -49,41 +49,41 @@
   {% if creative %}<input type="hidden" name="creative_asset_id" value="{{ creative.id }}">{% endif %}
 
   <div class="ap-wizard-step">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">1</span><div><h2>Reklamadan asosiy maqsadingiz nima?</h2><p class="text-faint">Maqsad Meta'dagi kampaniya turini, optimallashtirishni va tugmani belgilaydi.</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">1</span><div><h2>{{ t('autopilot_new.step1_title') }}</h2><p class="text-faint">{{ t('autopilot_new.step1_text') }}</p></div></div>
     <div class="ap-objective-grid">
       {% set _desc = {
-        'MESSAGES': "Mijozlar Instagram Direct / Messenger'ga yozadi -- savdo suhbat orqali.",
-        'LEADS': "Instant Form: ism, telefon -- lidlar to'g'ridan-to'g'ri CRM'ga tushadi.",
-        'SALES': "Saytdagi xaridlar (Pixel kerak) -- onlayn-do'kon uchun.",
-        'TRAFFIC': "Saytga/sahifaga ko'proq odam kirishi.",
-        'CALLS': "Mijozlar bir bosishda qo'ng'iroq qiladi.",
-        'AWARENESS': "Brendni imkon qadar ko'p odam ko'rsin (reach).",
-        'ENGAGEMENT': "Post bilan aloqa: like, izoh, ulashish."
+        'MESSAGES': t('autopilot_new.obj_messages'),
+        'LEADS': t('autopilot_new.obj_leads'),
+        'SALES': t('autopilot_new.obj_sales'),
+        'TRAFFIC': t('autopilot_new.obj_traffic'),
+        'CALLS': t('autopilot_new.obj_calls'),
+        'AWARENESS': t('autopilot_new.obj_awareness'),
+        'ENGAGEMENT': t('autopilot_new.obj_engagement')
       } %}
       {% for o in objectives %}
       <label class="ap-objective-card {{ 'selected' if form.objective == o.value }}">
         <input type="radio" name="objective" value="{{ o.value }}" {{ 'checked' if form.objective == o.value }}>
         <span class="ap-objective-title">{{ o.label }}</span>
         <span class="ap-objective-desc">{{ _desc.get(o.value, '') }}</span>
-        {% if o.meta.requires_pixel and not connection.has_pixel %}<span class="ap-objective-note">Pixel kerak (hozir yo'q)</span>{% endif %}
+        {% if o.meta.requires_pixel and not connection.has_pixel %}<span class="ap-objective-note">{{ t('autopilot_new.pixel_required') }}</span>{% endif %}
       </label>
       {% endfor %}
     </div>
   </div>
 
   <div class="ap-wizard-step">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">2</span><div><h2>Kunlik byudjet</h2><p class="text-faint">Byudjetni AI taxmin qila olmaydi -- bu sizning qaroringiz. Valyuta reklama hisobidan: <strong>{{ connection.currency }}</strong>.</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">2</span><div><h2>{{ t('autopilot_new.step2_title') }}</h2><p class="text-faint">{{ t('autopilot_new.step2_text') }} <strong>{{ connection.currency }}</strong>.</p></div></div>
     <div class="field ap-budget-field">
-      <input type="number" name="budget" min="1" step="any" inputmode="decimal" required value="{{ form.budget }}" placeholder="masalan 200000">
+      <input type="number" name="budget" min="1" step="any" inputmode="decimal" required value="{{ form.budget }}" placeholder="{{ t('autopilot_new.budget_placeholder') }}">
       <span class="ap-budget-currency">{{ connection.currency }}</span>
     </div>
   </div>
 
   {% if 'locations' in question_keys %}
   <div class="ap-wizard-step">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">3</span><div><h2>Qaysi shahar/hududda ko'rsatilsin?</h2><p class="text-faint">Profilda hudud ko'rsatilmagan -- reklama qayerda chiqishini bilish shart. Yozing va ro'yxatdan tanlang (Meta geo qidiruvi).</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">3</span><div><h2>{{ t('autopilot_new.step3_title') }}</h2><p class="text-faint">{{ t('autopilot_new.step3_text') }}</p></div></div>
     <div class="field ap-typeahead" data-endpoint="{{ url_for('autopilot_search_geo') }}">
-      <input type="text" name="location" id="ap-location" autocomplete="off" required value="{{ form.location }}" placeholder="masalan Toshkent">
+      <input type="text" name="location" id="ap-location" autocomplete="off" required value="{{ form.location }}" placeholder="{{ t('autopilot_new.location_placeholder') }}">
       <input type="hidden" name="location_key" id="ap-location-key" value="{{ form.location_key }}">
       <input type="hidden" name="location_type" id="ap-location-type" value="{{ form.location_type }}">
       <div class="ap-typeahead-list" id="ap-location-list" hidden></div>
@@ -92,44 +92,44 @@
   {% else %}
   <input type="hidden" name="location" value="">
   <div class="ap-wizard-step ap-wizard-step-muted">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">3</span><div><h2>Hudud</h2><p class="text-faint">Profil bo'yicha standart hudud: <strong>{{ ctx.default_location }}</strong>. Keyin ko'rib chiqish sahifasida o'zgartirish mumkin ("Faqat Samarqand qil" deb ham yozsangiz bo'ladi).</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">3</span><div><h2>{{ t('autopilot_new.step3_region') }}</h2><p class="text-faint">{{ t('autopilot_new.step3_default_1') }} <strong>{{ ctx.default_location }}</strong>. {{ t('autopilot_new.step3_default_2') }}</p></div></div>
   </div>
   {% endif %}
 
   <div class="ap-wizard-step">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">4</span><div><h2>Necha kun davom etsin?</h2><p class="text-faint">Standart 7 kun. Keyin uzaytirish mumkin.</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">4</span><div><h2>{{ t('autopilot_new.step4_title') }}</h2><p class="text-faint">{{ t('autopilot_new.step4_text') }}</p></div></div>
     <div class="ap-duration-row">
       {% for d in ['7', '14', '30'] %}
-      <label class="ap-chip {{ 'selected' if form.duration_days == d }}"><input type="radio" name="duration_preset" value="{{ d }}" {{ 'checked' if form.duration_days == d }}>{{ d }} kun</label>
+      <label class="ap-chip {{ 'selected' if form.duration_days == d }}"><input type="radio" name="duration_preset" value="{{ d }}" {{ 'checked' if form.duration_days == d }}>{{ t('autopilot_new.n_days', n=d) }}</label>
       {% endfor %}
-      <label class="ap-chip ap-chip-custom {{ 'selected' if form.duration_days not in ['7','14','30'] }}"><input type="radio" name="duration_preset" value="custom" {{ 'checked' if form.duration_days not in ['7','14','30'] }}>Boshqa:</label>
+      <label class="ap-chip ap-chip-custom {{ 'selected' if form.duration_days not in ['7','14','30'] }}"><input type="radio" name="duration_preset" value="custom" {{ 'checked' if form.duration_days not in ['7','14','30'] }}>{{ t('autopilot_new.other') }}</label>
       <input type="number" name="duration_days" id="ap-duration" min="1" max="365" value="{{ form.duration_days }}" style="width:90px">
     </div>
   </div>
 
   <div class="ap-wizard-step">
-    <div class="ap-wizard-step-head"><span class="ap-step-num">5</span><div><h2>Aynan qaysi mahsulot/xizmat? <span class="text-faint" style="font-weight:400">(ixtiyoriy)</span></h2><p class="text-faint">Bo'sh qoldirsangiz AI profil bo'yicha eng ko'p sotiladiganini oladi.</p></div></div>
-    <div class="field"><textarea name="product_focus" rows="2" placeholder="masalan: Oshxona mebeli, buyurtma asosida, 3 kunda tayyor">{{ form.product_focus }}</textarea></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">5</span><div><h2>{{ t('autopilot_new.step5_title') }} <span class="text-faint" style="font-weight:400">{{ t('autopilot_new.optional') }}</span></h2><p class="text-faint">{{ t('autopilot_new.step5_text') }}</p></div></div>
+    <div class="field"><textarea name="product_focus" rows="2" placeholder="{{ t('autopilot_new.product_placeholder') }}">{{ form.product_focus }}</textarea></div>
   </div>
 
   <div class="ap-wizard-step" {% if creative %}hidden{% endif %}>
-    <div class="ap-wizard-step-head"><span class="ap-step-num">6</span><div><h2>Rasm yoki video <span class="text-faint" style="font-weight:400">(ixtiyoriy, keyin ham yuklash mumkin)</span></h2><p class="text-faint">AI rasm yaratmaydi -- reklama vizuali sizdan. JPG/PNG/WEBP (30 MB gacha) yoki MP4/MOV (50 MB gacha).</p></div></div>
+    <div class="ap-wizard-step-head"><span class="ap-step-num">6</span><div><h2>{{ t('autopilot_new.step6_title') }} <span class="text-faint" style="font-weight:400">{{ t('autopilot_new.step6_optional') }}</span></h2><p class="text-faint">{{ t('autopilot_new.step6_text') }}</p></div></div>
     <label class="ap-dropzone" id="ap-dropzone">
       <input type="file" name="media" id="ap-media" accept="image/*,video/mp4,video/quicktime,video/webm">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-      <span id="ap-dropzone-text">Faylni bu yerga tashlang yoki bosib tanlang</span>
+      <span id="ap-dropzone-text">{{ t('autopilot_new.dropzone') }}</span>
     </label>
   </div>
 
   <div class="ap-wizard-actions">
-    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">Bekor qilish</a>
+    <a href="{{ url_for('autopilot_list') }}" class="btn btn-outline">{{ t('autopilot_new.cancel') }}</a>
     <button type="submit" class="btn ap-btn-ai" id="ap-submit">
-      <span class="ap-sparkle">&#10024;</span> AI reja tuzsin
+      <span class="ap-sparkle">&#10024;</span> {{ t('autopilot_new.submit') }}
     </button>
   </div>
   <div class="ap-loading" id="ap-loading" hidden>
     <span class="btn-spinner" style="border-color:rgba(11,99,245,0.25);border-top-color:var(--blue)"></span>
-    AI {{ ctx.company_name or 'kompaniyangiz' }} uchun Campaign &rarr; Ad Set &rarr; Ad rejasini tuzmoqda (10-30 soniya)...
+    {{ t('autopilot_new.loading', company=ctx.company_name or t('autopilot_new.your_company')) }}
   </div>
 </form>
 
@@ -162,7 +162,7 @@
   var media = document.getElementById('ap-media');
   var dz = document.getElementById('ap-dropzone');
   var dzText = document.getElementById('ap-dropzone-text');
-  media.addEventListener('change', function () { dzText.textContent = media.files.length ? media.files[0].name : 'Faylni bu yerga tashlang yoki bosib tanlang'; });
+  media.addEventListener('change', function () { dzText.textContent = media.files.length ? media.files[0].name : {{ t('autopilot_new.dropzone')|tojson }}; });
   ['dragenter', 'dragover'].forEach(function (ev) { dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('over'); }); });
   ['dragleave', 'drop'].forEach(function (ev) { dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('over'); }); });
   dz.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files.length) { media.files = e.dataTransfer.files; media.dispatchEvent(new Event('change')); } });
@@ -185,7 +185,7 @@
           .then(function (data) {
             list.innerHTML = '';
             var results = data.results || [];
-            if (!results.length) { list.innerHTML = '<div class="ap-typeahead-empty">' + (data.error || 'Topilmadi') + '</div>'; list.hidden = false; return; }
+            if (!results.length) { list.innerHTML = '<div class="ap-typeahead-empty">' + (data.error || {{ t('autopilot_new.not_found')|tojson }}) + '</div>'; list.hidden = false; return; }
             results.forEach(function (h) {
               var el = document.createElement('div');
               el.className = 'ap-typeahead-item';
