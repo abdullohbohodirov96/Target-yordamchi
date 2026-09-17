@@ -1,41 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Bildirishnomalar (Telegram) — Replix{% endblock %}
+{% block title %}{{ t('settings.card_telegram_title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Bildirishnomalar (Telegram)</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Har bir menejer o'zining shaxsiy Telegram ID'sini bog'lasa, unga tegishli eslatmalar (masalan "qayta aloqa" muddati) shaxsiy xabar sifatida yuboriladi. ID'ni topish uchun menejer Telegramda <strong>@userinfobot</strong> ga yozib, o'zining raqamli ID'sini oladi va sizga aytadi.</p>
+    <h1>{{ t('settings.card_telegram_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings_telegram.subtitle')|safe }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">{{ t('settings.back_link') }}</a>
   </div>
 </div>
 
 <div class="card">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Menejer</th><th>Telegram ID</th><th>Holat</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('analytics.th_manager') }}</th><th>{{ t('settings_telegram.th_telegram_id') }}</th><th>{{ t('analytics.th_status') }}</th><th></th></tr></thead>
     <tbody>
       {% for m in managers %}
       <tr>
         <td>{{ m.name }}</td>
         <td class="text-dim">{{ m.telegram_user_id or '—' }}</td>
         <td>
-          {% if m.telegram_user_id %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+          {% if m.telegram_user_id %}<span class="badge badge-color-good">{{ t('marketplace.badge_connected') }}</span>{% else %}<span class="badge badge-color-bad">{{ t('marketplace.badge_not_connected') }}</span>{% endif %}
         </td>
         <td>
           <form method="post" style="display:flex; gap:6px; align-items:center; margin:0">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="set_telegram">
             <input type="hidden" name="manager_id" value="{{ m.id }}">
-            <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="masalan 123456789" style="width:150px; padding:6px 8px">
-            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Saqlash</button>
+            <input type="text" name="telegram_user_id" value="{{ m.telegram_user_id or '' }}" placeholder="{{ t('settings_telegram.id_placeholder') }}" style="width:150px; padding:6px 8px">
+            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">{{ t('common.save') }}</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="4">Faol menejer topilmadi.</td></tr>
+      <tr class="empty-row"><td colspan="4">{{ t('settings_telegram.no_managers') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

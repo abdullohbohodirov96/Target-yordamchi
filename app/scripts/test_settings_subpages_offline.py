@@ -84,7 +84,8 @@ manager_client = app_module.app.test_client()
 manager_client.post("/login", data={"username": "stg_manager", "password": "parol123"})
 
 # --- 1. Hub sahifasi -- kartochkalar, endi POST qabul qilmaydi ---
-hub_html = admin_client.get("/sozlamalar").get_data(as_text=True)
+# Jinja autoescape apostrofni &#39; ga aylantiradi -- literal solishtirish uchun qaytaramiz
+hub_html = admin_client.get("/sozlamalar").get_data(as_text=True).replace("&#39;", "'")
 check("hub sahifasida 'Umumiy' kartochkasi bor", "Umumiy" in hub_html)
 check("hub sahifasida CPL kartochkasi bor", "Target avtomatik o'chirish" in hub_html)
 check("hub sahifasida Telegram kartochkasi bor", "Bildirishnomalar (Telegram)" in hub_html)
@@ -122,7 +123,8 @@ check("settings_general POST muvaffaqiyat xabari", "Minimal sotuv summasi" in r.
 
 # --- Moi Zvonki ulanish bo'limi (2026-09, Item J auditi 🔴 7-band) ---
 r = admin_client.get("/sozlamalar/umumiy")
-check("settings_general (ulanmagan) 'Ulash' formasini ko'rsatadi", "Mening qo'ng'iroqlarim" in r.get_data(as_text=True) and "Ulanmagan" in r.get_data(as_text=True))
+gen_html = r.get_data(as_text=True).replace("&#39;", "'")
+check("settings_general (ulanmagan) 'Ulash' formasini ko'rsatadi", "Mening qo'ng'iroqlarim" in gen_html and "Ulanmagan" in gen_html)
 
 import call_sync as call_sync_module  # noqa: E402
 import unittest.mock as _mock

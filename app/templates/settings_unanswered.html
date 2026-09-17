@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}AI-yordamchi: javobsiz savollar — Replix{% endblock %}
+{% block title %}{{ t('settings.card_unanswered_title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>AI-yordamchi: javobsiz savollar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Web AI-yordamchisi bilim bazasidan aniq javob topa olmagan savollar shu yerga tushadi -- ko'rib chiqib, kerak bo'lsa bilim bazasiga (target_master_agent.md) qo'shimcha qiling.</p>
+    <h1>{{ t('settings.card_unanswered_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings_unanswered.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">{{ t('settings.back_link') }}</a>
   </div>
 </div>
 
 <div class="card">
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Savol</th><th>Kim so'radi</th><th>Qachon</th><th>Holat</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('settings_unanswered.th_question') }}</th><th>{{ t('settings_unanswered.th_asked_by') }}</th><th>{{ t('settings_unanswered.th_when') }}</th><th>{{ t('analytics.th_status') }}</th><th></th></tr></thead>
     <tbody>
       {% for q in unanswered %}
       <tr>
@@ -23,7 +23,7 @@
         <td class="text-dim">{{ q.manager_name }}</td>
         <td class="text-dim">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '—' }}</td>
         <td>
-          {% if q.is_resolved %}<span class="badge badge-color-good">hal qilindi</span>{% else %}<span class="badge badge-color-bad">javobsiz</span>{% endif %}
+          {% if q.is_resolved %}<span class="badge badge-color-good">{{ t('settings_unanswered.badge_resolved') }}</span>{% else %}<span class="badge badge-color-bad">{{ t('settings_unanswered.badge_unanswered') }}</span>{% endif %}
         </td>
         <td>
           {% if not q.is_resolved %}
@@ -31,13 +31,13 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="resolve_unanswered">
             <input type="hidden" name="question_id" value="{{ q.id }}">
-            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">Hal qilindi deb belgilash</button>
+            <button type="submit" class="btn" style="padding:6px 12px; font-size:12.5px">{{ t('settings_unanswered.mark_resolved_btn') }}</button>
           </form>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="5">Hozircha javobsiz savol yo'q.</td></tr>
+      <tr class="empty-row"><td colspan="5">{{ t('settings_unanswered.no_unanswered') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

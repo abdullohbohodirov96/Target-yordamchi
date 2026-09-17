@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Sozlamalar — Replix{% endblock %}
+{% block title %}{{ t('settings.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Sozlamalar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Har bir bo'lim endi o'zining alohida sahifasida -- kerakli kartochkaga bosing.</p>
+    <h1>{{ t('settings.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings.subtitle') }}</p>
   </div>
 </div>
 
@@ -15,8 +15,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </span>
     <span class="settings-section-body">
-      <span class="settings-section-title">Umumiy</span>
-      <span class="settings-section-desc">Minimal sotuv summasi, dollar/so'm kursi, qo'ng'iroq "shubhali" chegarasi.</span>
+      <span class="settings-section-title">{{ t('settings.card_general_title') }}</span>
+      <span class="settings-section-desc">{{ t('settings.card_general_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -28,10 +28,10 @@
     </span>
     <span class="settings-section-body">
       <span class="settings-section-title" style="justify-content:space-between; width:100%">
-        <span>Kompaniya ma'lumotlari
-        {% if summary and not summary.business_profile_filled %}<span class="badge badge-color-bad" style="margin-left:6px">to'ldirilmagan</span>{% endif %}</span>
+        <span>{{ t('settings.card_business_title') }}
+        {% if summary and not summary.business_profile_filled %}<span class="badge badge-color-bad" style="margin-left:6px">{{ t('settings.card_business_badge_unfilled') }}</span>{% endif %}</span>
       </span>
-      <span class="settings-section-desc">Biznesingiz haqida savollar -- AI-yordamchi va Targetolog agenti javoblarni shu brendga moslab beradi.</span>
+      <span class="settings-section-desc">{{ t('settings.card_business_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -47,8 +47,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18c1.2 0 2-.9 2-2 0-.6-.3-1-.6-1.4-.3-.4-.4-.8-.4-1.1 0-1 .8-1.8 1.8-1.8H17a4 4 0 004-4c0-4.4-4-7.7-9-7.7z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
     </span>
     <span class="settings-section-body">
-      <span class="settings-section-title">Brend kit (logotip, ranglar)</span>
-      <span class="settings-section-desc">Kreativ studiya AI yaratgan reklama rasmlariga logotipingizni qo'yadi va brend ranglaringizni hisobga oladi.</span>
+      <span class="settings-section-title">{{ t('settings.card_brandkit_title') }}</span>
+      <span class="settings-section-desc">{{ t('settings.card_brandkit_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -59,8 +59,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     </span>
     <span class="settings-section-body">
-      <span class="settings-section-title">Target avtomatik o'chirish (CPL)</span>
-      <span class="settings-section-desc">Targetolog agenti har 15 daqiqada shu chegaralar bo'yicha reklamalarni tekshirib, oshib ketganini avtomatik pauza qiladi.</span>
+      <span class="settings-section-title">{{ t('settings.card_cpl_title') }}</span>
+      <span class="settings-section-desc">{{ t('settings.card_cpl_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -70,8 +70,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
     </span>
     <span class="settings-section-body">
-      <span class="settings-section-title">Bildirishnomalar (Telegram)</span>
-      <span class="settings-section-desc">Menejerlarning shaxsiy Telegram ID'sini bog'lash -- ularga shaxsiy eslatmalar boradi.</span>
+      <span class="settings-section-title">{{ t('settings.card_telegram_title') }}</span>
+      <span class="settings-section-desc">{{ t('settings.card_telegram_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -82,8 +82,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
     </span>
     <span class="settings-section-body">
-      <span class="settings-section-title">Funksiyalarni yoqish/o'chirish</span>
-      <span class="settings-section-desc">Tarifingizga kirgan bo'limlardan kerak bo'lmaganlarini vaqtincha o'chirib qo'yish.</span>
+      <span class="settings-section-title">{{ t('settings.card_modules_title') }}</span>
+      <span class="settings-section-desc">{{ t('settings.card_modules_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -96,10 +96,10 @@
     </span>
     <span class="settings-section-body">
       <span class="settings-section-title" style="justify-content:space-between; width:100%">
-        <span>AI funksiyalari
-        {% if summary.ai_features_disabled %}<span class="badge badge-color-bad" style="margin-left:6px">o'chirilgan</span>{% else %}<span class="badge badge-color-good" style="margin-left:6px">yoqilgan</span>{% endif %}</span>
+        <span>{{ t('settings.card_ai_title') }}
+        {% if summary.ai_features_disabled %}<span class="badge badge-color-bad" style="margin-left:6px">{{ t('settings.card_ai_badge_disabled') }}</span>{% else %}<span class="badge badge-color-good" style="margin-left:6px">{{ t('settings.card_ai_badge_enabled') }}</span>{% endif %}</span>
       </span>
-      <span class="settings-section-desc">Ichki AI-yordamchi vidjetini yoqish/o'chirish (xarajatni nazorat qilish uchun).</span>
+      <span class="settings-section-desc">{{ t('settings.card_ai_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -111,10 +111,10 @@
     </span>
     <span class="settings-section-body">
       <span class="settings-section-title">
-        AI-yordamchi: javobsiz savollar
+        {{ t('settings.card_unanswered_title') }}
         {% if summary and summary.unresolved_count %}<span class="badge badge-color-bad" style="margin-left:6px">{{ summary.unresolved_count }}</span>{% endif %}
       </span>
-      <span class="settings-section-desc">Web AI-yordamchisi javob topa olmagan savollarni ko'rib chiqish.</span>
+      <span class="settings-section-desc">{{ t('settings.card_unanswered_desc') }}</span>
     </span>
     <span class="settings-section-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
   </a>
@@ -124,16 +124,16 @@
 {% if current_user.role == 'admin' %}
 <div class="card" style="margin-bottom:20px">
   <h2 style="display:flex; align-items:center; gap:10px">
-    Meta Conversions API (CAPI)
-    {% if capi_configured %}<span class="badge badge-color-good">ulangan</span>{% else %}<span class="badge badge-color-bad">ulanmagan</span>{% endif %}
+    {{ t('settings.capi_title') }}
+    {% if capi_configured %}<span class="badge badge-color-good">{{ t('marketplace.badge_connected') }}</span>{% else %}<span class="badge badge-color-bad">{{ t('marketplace.badge_not_connected') }}</span>{% endif %}
   </h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:0">
-    Lead "Sifatli" yoki "Sotildi" bosqichiga o'tganda, CRM bu haqidagi signalni avtomatik ravishda Meta'ga qaytarib yuboradi -- algoritm shunga o'xshagan odamlarni auksionda qidirishni o'rganadi.
+    {{ t('settings.capi_desc') }}
     {% if not capi_configured %}
       {% if capi_has_ad_account %}
-      Reklama hisobingiz ulangan, lekin unga biriktirilgan Meta Pixel topilmadi -- avval Meta Events Manager'da (Data Sources → Pixel) shu reklama hisobi uchun Pixel yarating, so'ng <a href="{{ url_for('connect_accounts') }}" class="text-blue">Akkauntlarni ulash</a> sahifasida "Boshqa sahifa/hisobga almashtirish" orqali qayta ulang -- Pixel avtomatik topib olinadi.
+      {{ t('settings.capi_missing_pixel', url=url_for('connect_accounts'))|safe }}
       {% else %}
-      Qo'lda hech narsa sozlash shart emas -- <a href="{{ url_for('connect_accounts') }}" class="text-blue">Akkauntlarni ulash</a> sahifasida Facebook orqali reklama hisobingizni ulang, Pixel avtomatik topilib saqlanadi.
+      {{ t('settings.capi_no_ad_account', url=url_for('connect_accounts'))|safe }}
       {% endif %}
     {% endif %}
   </p>
@@ -141,24 +141,24 @@
 {% endif %}
 
 <div class="card">
-  <h2>Boshqa sozlamalar</h2>
+  <h2>{{ t('settings.other_title') }}</h2>
   <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
     <a href="{{ url_for('funnel_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
-      <div class="kpi-label">Voronka</div>
-      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Lidlar bosqichlarini sozlash &rarr;</div>
+      <div class="kpi-label">{{ t('settings.funnel_label') }}</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">{{ t('settings.funnel_desc') }}</div>
     </a>
     <a href="{{ url_for('custom_fields_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
-      <div class="kpi-label">Kvalifikatsiya savollari</div>
-      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Anketa maydonlarini sozlash &rarr;</div>
+      <div class="kpi-label">{{ t('settings.qualification_label') }}</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">{{ t('settings.qualification_desc') }}</div>
     </a>
     <a href="{{ url_for('standing_tasks_settings') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
-      <div class="kpi-label">Doimiy vazifalar</div>
-      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">On/off jadval va qo'shimcha hisobotlar &rarr;</div>
+      <div class="kpi-label">{{ t('settings.standing_tasks_label') }}</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">{{ t('settings.standing_tasks_desc') }}</div>
     </a>
     {% if current_user.role == 'admin' %}
     <a href="{{ url_for('managers') }}" class="kpi-card" style="text-decoration:none; color:inherit; display:block">
-      <div class="kpi-label">Menejerlar</div>
-      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">Hisoblar, rol va dostuplar &rarr;</div>
+      <div class="kpi-label">{{ t('settings.managers_label') }}</div>
+      <div style="font-size:14px; margin-top:4px; color:var(--text-dim)">{{ t('settings.managers_desc') }}</div>
     </a>
     {% endif %}
   </div>

@@ -1,34 +1,34 @@
 {% extends "base.html" %}
-{% block title %}AI funksiyalari — Replix{% endblock %}
+{% block title %}{{ t('settings.card_ai_title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>AI funksiyalari</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Ichki AI-yordamchi vidjeti.</p>
+    <h1>{{ t('settings.card_ai_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings_ai.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">{{ t('settings.back_link') }}</a>
   </div>
 </div>
 
 <div class="card">
   {% if ai_plan_supports %}
   <h2 style="display:flex; align-items:center; gap:10px">
-    Holati
-    {% if ai_features_disabled %}<span class="badge badge-color-bad">o'chirilgan</span>{% else %}<span class="badge badge-color-good">yoqilgan</span>{% endif %}
+    {{ t('settings_ai.status_label') }}
+    {% if ai_features_disabled %}<span class="badge badge-color-bad">{{ t('settings.card_ai_badge_disabled') }}</span>{% else %}<span class="badge badge-color-good">{{ t('settings.card_ai_badge_enabled') }}</span>{% endif %}
   </h2>
   <p class="page-subtitle" style="margin-top:-6px; margin-bottom:12px">
-    Ichki AI-yordamchi vidjetini bitta tugma bilan to'liq o'chirib qo'yishingiz mumkin -- bu OpenAI xarajatini ham to'xtatadi, faqat sahifadan yashirmaydi.
+    {{ t('settings_ai.desc') }}
   </p>
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="toggle_ai_features">
     <input type="hidden" name="ai_features_disabled" value="{{ '0' if ai_features_disabled else '1' }}">
-    <button type="submit" class="btn">{{ "AI funksiyalarini yoqish" if ai_features_disabled else "AI funksiyalarini o'chirish" }}</button>
+    <button type="submit" class="btn">{{ t('settings_ai.enable_btn') if ai_features_disabled else t('settings_ai.disable_btn') }}</button>
   </form>
   {% else %}
-  <p class="text-faint" style="margin:0">Tarifingizda AI funksiyalari yo'q.</p>
+  <p class="text-faint" style="margin:0">{{ t('settings_ai.no_ai_plan') }}</p>
   {% endif %}
 </div>
 {% endblock %}

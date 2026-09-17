@@ -344,7 +344,8 @@ def test_settings_hub_shows_business_profile_card_with_badge():
     client = app_module.app.test_client()
     client.post("/login", data={"username": "hub_badge_admin", "password": "parol123"})
 
-    html = client.get("/sozlamalar").get_data(as_text=True)
+    # Jinja autoescape apostrofni &#39; ga aylantiradi -- literal solishtirish uchun qaytaramiz
+    html = client.get("/sozlamalar").get_data(as_text=True).replace("&#39;", "'")
     check("hub sahifasida 'Kompaniya ma'lumotlari' kartasi bor", "Kompaniya ma" in html)
     check("profil bo'sh bo'lganda 'to'ldirilmagan' belgisi ko'rinadi", "to'ldirilmagan" in html)
 
@@ -358,7 +359,7 @@ def test_settings_hub_shows_business_profile_card_with_badge():
     finally:
         session.close()
 
-    html2 = client.get("/sozlamalar").get_data(as_text=True)
+    html2 = client.get("/sozlamalar").get_data(as_text=True).replace("&#39;", "'")
     check("profil to'ldirilgach 'to'ldirilmagan' belgisi YO'QOLADI", "to'ldirilmagan" not in html2)
 
 

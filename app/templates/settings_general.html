@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Umumiy sozlamalar — Replix{% endblock %}
+{% block title %}{{ t('settings_general.title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Umumiy</h1>
-    <p class="page-subtitle" style="margin-bottom:0">KPI/bonus va sifat nazorati hisob-kitoblarida ishlatiladigan chegaralar.</p>
+    <h1>{{ t('settings.card_general_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings_general.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">{{ t('settings.back_link') }}</a>
   </div>
 </div>
 
@@ -23,78 +23,74 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_min_sale">
     <div class="field" style="margin:0; min-width:220px">
-      <label>Minimal sotuv summasi (so'm)</label>
+      <label>{{ t('settings_general.min_sale_label') }}</label>
       <input type="number" step="1" min="0" name="min_sale_amount" value="{{ min_sale_amount|int }}">
     </div>
-    <button type="submit" class="btn">Saqlash</button>
-    <span class="text-faint" style="font-size:12.5px">Bu summadan KICHIK "sotuv" KPI/bonus va rejaga umuman kirmaydi.</span>
+    <button type="submit" class="btn">{{ t('common.save') }}</button>
+    <span class="text-faint" style="font-size:12.5px">{{ t('settings_general.min_sale_note') }}</span>
   </form>
 
   <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:0; border-top:1px solid var(--border-light); padding-top:14px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_usd_rate">
     <div class="field" style="margin:0; min-width:220px">
-      <label>Dollar/so'm kursi (1$ = ? so'm)</label>
+      <label>{{ t('settings_general.usd_rate_label') }}</label>
       <input type="number" step="1" min="1" name="usd_to_uzs_rate" value="{{ usd_to_uzs_rate|int }}">
     </div>
-    <button type="submit" class="btn">Saqlash</button>
-    <span class="text-faint" style="font-size:12.5px">Target sahifasidagi ROI (%) shu kursga qarab hisoblanadi (sotuv summasi so'mda, reklama xarajati dollarda bo'lgani uchun) -- kurs o'zgarganda vaqti-vaqti bilan yangilab turing.</span>
+    <button type="submit" class="btn">{{ t('common.save') }}</button>
+    <span class="text-faint" style="font-size:12.5px">{{ t('settings_general.usd_rate_note') }}</span>
   </form>
 
   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--border-light); padding-top:14px; margin-top:18px">
     <div>
-      <strong>Qo'ng'iroq "shubhali" chegarasi</strong>
-      <div class="text-faint" style="font-size:12.5px">Hozirgi qiymat: {{ min_real_talk_seconds }} soniya</div>
+      <strong>{{ t('settings_general.suspicious_threshold_title') }}</strong>
+      <div class="text-faint" style="font-size:12.5px">{{ t('settings_general.current_value', n=min_real_talk_seconds) }}</div>
     </div>
-    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">Audio bo'limida sozlash &rarr;</a>
+    <a href="{{ url_for('individual_check') }}" class="btn toggle-all-btn-outline">{{ t('settings_general.set_in_audio') }}</a>
   </div>
 </div>
 
 <div class="card" style="margin-top:18px">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px">
-    <strong>Mening qo'ng'iroqlarim (Moi Zvonki)</strong>
+    <strong>{{ t('settings_general.moizvonki_title') }}</strong>
     {% if moizvonki_configured %}
-      <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">✅ Ulangan</span>
+      <span class="badge" style="background:var(--good-bg, #dcfce7); color:var(--good, #16A34A)">{{ t('settings_general.moizvonki_connected') }}</span>
     {% else %}
-      <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">Ulanmagan</span>
+      <span class="badge" style="background:var(--bad-bg, #fee2e2); color:var(--bad, #DC2626)">{{ t('settings_general.moizvonki_not_connected') }}</span>
     {% endif %}
   </div>
   <p class="text-faint" style="font-size:12.5px; margin-top:0">
-    Ulansa, xodimlaringizning haqiqiy telefon qo'ng'iroq yozuvlari (davomiylik, vaqt)
-    "Audio" bo'limi va Analitika/Dashboard'dagi kunlik gaplashuv KPI'ga avtomatik tortiladi.
+    {{ t('settings_general.moizvonki_desc') }}
   </p>
 
   {% if moizvonki_configured %}
     <div style="font-size:13px; margin-bottom:14px">
-      Manzil: <strong>{{ moizvonki_api_address }}</strong> &middot; Login: <strong>{{ moizvonki_user_name }}</strong>
+      {{ t('settings_general.address_label') }} <strong>{{ moizvonki_api_address }}</strong> &middot; {{ t('settings_general.login_label') }} <strong>{{ moizvonki_user_name }}</strong>
     </div>
-    <form method="post" onsubmit="return confirm('Moi Zvonki ulanishini uzasizmi? Qo\'ng\'iroqlar endi tortilmaydi.');">
+    <form method="post" onsubmit="return confirm({{ t('settings_general.disconnect_confirm')|tojson|forceescape }});">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="disconnect_moizvonki">
-      <button type="submit" class="btn toggle-all-btn-outline">Uzish</button>
+      <button type="submit" class="btn toggle-all-btn-outline">{{ t('settings_general.disconnect_btn') }}</button>
     </form>
   {% else %}
     <form method="post" style="display:flex; flex-direction:column; gap:10px; max-width:420px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="set_moizvonki">
       <div class="field" style="margin:0">
-        <label>API manzil</label>
+        <label>{{ t('settings_general.field_api_address') }}</label>
         <input type="text" name="moizvonki_api_address" placeholder="https://kompaniya.moizvonki.ru" required>
       </div>
       <div class="field" style="margin:0">
-        <label>ADMIN login (email)</label>
+        <label>{{ t('settings_general.field_admin_login') }}</label>
         <input type="text" name="moizvonki_user_name" placeholder="admin@kompaniya.uz" required>
       </div>
       <div class="field" style="margin:0">
-        <label>API kalit</label>
-        <input type="password" name="moizvonki_api_key" placeholder="Sozlamalar -> Integratsiya" required>
+        <label>{{ t('settings_general.field_api_key') }}</label>
+        <input type="password" name="moizvonki_api_key" placeholder="{{ t('settings_general.field_api_key_placeholder') }}" required>
       </div>
-      <button type="submit" class="btn" style="align-self:flex-start">Ulash</button>
+      <button type="submit" class="btn" style="align-self:flex-start">{{ t('settings_general.connect_btn') }}</button>
       <span class="text-faint" style="font-size:12.5px">
-        Manzil/kalitni Mening qo'ng'iroqlarim kabinetidagi Sozlamalar -> Integratsiya bo'limidan oling.
-        Login -- akkauntga ADMIN sifatida kiradigan email bo'lishi SHART (barcha xodimlarning
-        qo'ng'irog'ini ko'rish uchun). Xodimlaringiz uchun Menejerlar sahifasida telefon raqami
-        yoki Moi Zvonki login'ini kiritishni unutmang.
+        {{ t('settings_general.moizvonki_help') }}
       </span>
     </form>
   {% endif %}

@@ -1,29 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Target avtomatik o'chirish (CPL) — Replix{% endblock %}
+{% block title %}{{ t('settings.card_cpl_title') }} — Replix{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Target avtomatik o'chirish (CPL)</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Targetolog agenti har 15 daqiqada barcha faol reklamalarni shu chegaralar bo'yicha tekshiradi (LLM'siz, to'g'ridan-to'g'ri kod bilan -- tezkor va ishonchli) va chegaradan oshganini avtomatik pauza qiladi. Bugungi ko'rsatkich yaxshi bo'lsa ham, oxirgi 3 kunlik tendensiya yomon bo'lsa, baribir pauza qilinadi.</p>
+    <h1>{{ t('settings.card_cpl_title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('settings_cpl.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
-    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">&larr; Sozlamalar</a>
+    <a href="{{ url_for('settings_hub') }}" class="btn toggle-all-btn-outline">{{ t('settings.back_link') }}</a>
   </div>
 </div>
 
 <div class="card" style="margin-bottom:16px">
-  <h3 style="margin-top:0">Soatlik avtomatik AI audit (Targetolog)</h3>
-  <p class="text-faint" style="font-size:13px">Yoqilsa, Targetolog agenti HAR SOATDA butun hisobingizni AI bilan tahlil qiladi va zarur bo'lsa o'zi byudjet o'zgartiradi, reklamalarni pauza/qayta yoqadi -- natija Telegram guruhingizga yuboriladi (faqat diqqatga loyiq narsa bo'lsa). O'chirilgan bo'lsa -- bu tsikl kompaniyangiz uchun umuman ishlamaydi (yuqoridagi CPL chegaralari bundan mustaqil, alohida ishlaydi).</p>
+  <h3 style="margin-top:0">{{ t('settings_cpl.auto_audit_title') }}</h3>
+  <p class="text-faint" style="font-size:13px">{{ t('settings_cpl.auto_audit_desc') }}</p>
   {% if not has_telegram_group %}
-  <div class="text-faint" style="font-size:13px; color:var(--warn, #b45309)">⚠️ Hali Telegram guruhingiz sozlanmagan -- audit natijalari qayerga yuborilishini <a href="{{ url_for('settings_telegram') }}">shu yerdan</a> belgilang.</div>
+  <div class="text-faint" style="font-size:13px; color:var(--warn, #b45309)">{{ t('settings_cpl.no_telegram_warning', url=url_for('settings_telegram'))|safe }}</div>
   {% endif %}
   <form method="post" style="margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="toggle_auto_watch">
     <input type="hidden" name="auto_watch_enabled" value="{{ '0' if auto_watch_enabled else '1' }}">
     <button type="submit" class="btn{{ '' if auto_watch_enabled else ' toggle-all-btn-outline' }}">
-      {{ 'Yoqilgan -- o\'chirish' if auto_watch_enabled else "O'chirilgan -- yoqish" }}
+      {{ t('settings_cpl.enabled_off_btn') if auto_watch_enabled else t('settings_cpl.disabled_on_btn') }}
     </button>
   </form>
 </div>
@@ -33,26 +33,26 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_cpl_rules">
     <div class="field" style="margin:0; min-width:200px">
-      <label>Maqsad/ideal CPL ($)</label>
+      <label>{{ t('settings_cpl.field_target_cpa') }}</label>
       <input type="number" step="0.1" min="0" name="target_cpa_usd" value="{{ '%.2f'|format(cpl_rules.target_cpa_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Faqat ma'lumot/tahlil uchun -- o'zi hech narsani o'chirmaydi.</div>
+      <div class="text-faint" style="font-size:12px; margin-top:3px">{{ t('settings_cpl.target_cpa_note') }}</div>
     </div>
     <div class="field" style="margin:0; min-width:200px">
-      <label>Bitta lead qancha $dan qimmat bo'lsa -- o'chirilsin</label>
+      <label>{{ t('settings_cpl.field_hard_kill') }}</label>
       <input type="number" step="0.1" min="0" name="cpl_hard_kill_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Masalan lead $17 bo'lsa, buni $10 qilib qo'ysangiz -- avtomatik o'chiriladi.</div>
+      <div class="text-faint" style="font-size:12px; margin-top:3px">{{ t('settings_cpl.hard_kill_note') }}</div>
     </div>
     <div class="field" style="margin:0; min-width:200px">
-      <label>Minimal sinov xarajati ($)</label>
+      <label>{{ t('settings_cpl.field_min_spend') }}</label>
       <input type="number" step="0.1" min="0" name="cpl_hard_kill_min_spend_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_min_spend_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Shu summagacha reklama "hali sinov bosqichida" hisoblanadi -- bitta erta qimmat lead uchun asossiz o'chirilmaydi.</div>
+      <div class="text-faint" style="font-size:12px; margin-top:3px">{{ t('settings_cpl.min_spend_note') }}</div>
     </div>
     <div class="field" style="margin:0; min-width:200px">
-      <label>Lead yo'q holatda qancha $dan keyin o'chirilsin</label>
+      <label>{{ t('settings_cpl.field_zero_lead') }}</label>
       <input type="number" step="0.1" min="0" name="cpl_hard_kill_zero_lead_usd" value="{{ '%.2f'|format(cpl_rules.cpl_hard_kill_zero_lead_usd) }}">
-      <div class="text-faint" style="font-size:12px; margin-top:3px">Hali birorta lead kelmagan reklama shu summani sarflasa -- o'chiriladi.</div>
+      <div class="text-faint" style="font-size:12px; margin-top:3px">{{ t('settings_cpl.zero_lead_note') }}</div>
     </div>
-    <button type="submit" class="btn">Saqlash</button>
+    <button type="submit" class="btn">{{ t('common.save') }}</button>
   </form>
 </div>
 {% endblock %}
