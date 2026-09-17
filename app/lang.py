@@ -2274,6 +2274,155 @@ _APP_STRINGS = [
     ("pricing_matrix.subtitle", "Har bir tarifda aynan nima bor -- bitta jadvalda.", "Что именно входит в каждый тариф -- в одной таблице.", "Exactly what's in each plan -- in one table."),
     ("pricing_matrix.has", "Bor", "Есть", "Included"),
     ("pricing_matrix.none", "Yo'q", "Нет", "Not included"),
+
+    # ---- privacy_policy.html (yuridik matn -- to'liq va aniq tarjima) ----
+    ("privacy_policy.title", "Maxfiylik siyosati", "Политика конфиденциальности", "Privacy Policy"),
+    ("privacy_policy.last_updated", "Oxirgi yangilanish: 2026-yil sentyabr", "Последнее обновление: сентябрь 2026 г.", "Last updated: September 2026"),
+    ("privacy_policy.intro",
+     "Ushbu sahifa <strong>Replix</strong> (<a href=\"https://replix.uz\" target=\"_blank\" rel=\"noopener\">replix.uz</a>) -- O'zbekiston bizneslari uchun CRM, Meta (Instagram/Facebook) reklama monitoring va mijozlar bilan muloqot boshqaruvi platformasi -- foydalanuvchi ma'lumotlarini qanday yig'ishi, ishlatishi va saqlashini tushuntiradi.",
+     "Эта страница объясняет, как <strong>Replix</strong> (<a href=\"https://replix.uz\" target=\"_blank\" rel=\"noopener\">replix.uz</a>) -- платформа CRM, мониторинга рекламы Meta (Instagram/Facebook) и управления общением с клиентами для бизнеса в Узбекистане -- собирает, использует и хранит данные пользователей.",
+     "This page explains how <strong>Replix</strong> (<a href=\"https://replix.uz\" target=\"_blank\" rel=\"noopener\">replix.uz</a>) -- a CRM, Meta (Instagram/Facebook) ad monitoring, and customer communication management platform for Uzbekistan businesses -- collects, uses, and stores user data."),
+    ("privacy_policy.s1_title", "1. Qanday ma'lumotlar yig'iladi", "1. Какие данные собираются", "1. What data is collected"),
+    ("privacy_policy.s1_body",
+     "<p><strong>Ro'yxatdan o'tishda:</strong> ism, telefon raqami, email va kompaniya nomi.</p>\n"
+     "<p>\n      <strong>Meta (Facebook/Instagram) hisobingizni ulaganingizda</strong> -- faqat siz o'zingiz\n"
+     "      Facebook'ning rasmiy ruxsat berish oynasida \"Allow\"/\"Ruxsat berish\" tugmasini bosgandan keyin --\n"
+     "      quyidagilarga kirish huquqi so'raladi:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li><code>pages_show_list</code>, <code>pages_read_engagement</code> -- ulangan Facebook sahifangiz nomi va asosiy statistikasi</li>\n"
+     "      <li><code>instagram_basic</code> -- ulangan Instagram business akkauntingiz asosiy ma'lumotlari</li>\n"
+     "      <li><code>instagram_manage_messages</code> -- Instagram Direct va Facebook Messenger orqali kelgan mijoz xabarlarini o'qish va javob yozish (CRM'dagi \"Xabarlar\" bo'limi uchun)</li>\n"
+     "      <li><code>ads_management</code>, <code>ads_read</code>, <code>business_management</code> -- (faqat tarifingiz reklama monitoringni o'z ichiga olsa) reklama hisobingizning xarajat va natija statistikasi</li>\n"
+     "    </ul>\n"
+     "    <p>\n      Bundan tashqari, mijozlaringiz bilan Instagram/Facebook orqali yozishgan xabarlar matni CRM'da\n"
+     "      \"Xabarlar\" bo'limida ko'rsatish va menejerlarga vazifa sifatida biriktirish maqsadida saqlanadi.\n    </p>",
+     "<p><strong>При регистрации:</strong> имя, номер телефона, email и название компании.</p>\n"
+     "<p>\n      <strong>При подключении аккаунта Meta (Facebook/Instagram)</strong> -- только после того, как вы сами\n"
+     "      нажмёте кнопку «Allow»/«Разрешить» в официальном окне разрешений Facebook -- запрашивается доступ к следующему:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li><code>pages_show_list</code>, <code>pages_read_engagement</code> -- название и основная статистика вашей подключённой страницы Facebook</li>\n"
+     "      <li><code>instagram_basic</code> -- основные данные вашего подключённого бизнес-аккаунта Instagram</li>\n"
+     "      <li><code>instagram_manage_messages</code> -- чтение и ответ на сообщения клиентов через Instagram Direct и Facebook Messenger (для раздела «Сообщения» в CRM)</li>\n"
+     "      <li><code>ads_management</code>, <code>ads_read</code>, <code>business_management</code> -- (только если ваш тариф включает мониторинг рекламы) расход и статистика результатов вашего рекламного аккаунта</li>\n"
+     "    </ul>\n"
+     "    <p>\n      Кроме того, текст сообщений, которыми вы переписывались с клиентами через Instagram/Facebook, сохраняется\n"
+     "      для отображения в разделе «Сообщения» CRM и назначения менеджерам в качестве задач.\n    </p>",
+     "<p><strong>When signing up:</strong> name, phone number, email, and company name.</p>\n"
+     "<p>\n      <strong>When you connect your Meta (Facebook/Instagram) account</strong> -- only after you personally\n"
+     "      click \"Allow\" in Facebook's official permission dialog -- access is requested to the following:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li><code>pages_show_list</code>, <code>pages_read_engagement</code> -- your connected Facebook Page's name and basic statistics</li>\n"
+     "      <li><code>instagram_basic</code> -- basic information about your connected Instagram business account</li>\n"
+     "      <li><code>instagram_manage_messages</code> -- reading and replying to customer messages via Instagram Direct and Facebook Messenger (for the \"Messages\" section in the CRM)</li>\n"
+     "      <li><code>ads_management</code>, <code>ads_read</code>, <code>business_management</code> -- (only if your plan includes ad monitoring) your ad account's spend and results statistics</li>\n"
+     "    </ul>\n"
+     "    <p>\n      In addition, the text of messages you've exchanged with customers via Instagram/Facebook is stored\n"
+     "      in order to display it in the CRM's \"Messages\" section and to assign it to managers as tasks.\n    </p>"),
+    ("privacy_policy.s2_title", "2. Ma'lumotlar qanday ishlatiladi", "2. Как используются данные", "2. How data is used"),
+    ("privacy_policy.s2_body",
+     "<ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Mijozlar (lidlar) ro'yxati va suhbat tarixini CRM interfeysida ko'rsatish uchun</li>\n"
+     "      <li>Menejerlarga yangi mijoz/xabar haqida bildirishnoma (Telegram orqali) yuborish uchun</li>\n"
+     "      <li>Sun'iy intellekt yordamida lid sifatini baholash va tavsiyalar berish uchun</li>\n"
+     "      <li>Reklama xarajati va natijalari bo'yicha hisobot va tahlil ko'rsatish uchun</li>\n"
+     "    </ul>\n    <p>Ma'lumotlaringiz reklama maqsadida uchinchi tomonlarga sotilmaydi yoki ijaraga berilmaydi.</p>",
+     "<ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Для отображения списка клиентов (лидов) и истории переписки в интерфейсе CRM</li>\n"
+     "      <li>Для отправки менеджерам уведомлений (через Telegram) о новом клиенте/сообщении</li>\n"
+     "      <li>Для оценки качества лида и рекомендаций с помощью искусственного интеллекта</li>\n"
+     "      <li>Для отображения отчётов и анализа по расходам и результатам рекламы</li>\n"
+     "    </ul>\n    <p>Ваши данные не продаются и не сдаются в аренду третьим лицам в рекламных целях.</p>",
+     "<ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>To display the list of customers (leads) and conversation history in the CRM interface</li>\n"
+     "      <li>To send managers notifications (via Telegram) about a new customer/message</li>\n"
+     "      <li>To assess lead quality and provide recommendations using artificial intelligence</li>\n"
+     "      <li>To display reports and analysis of ad spend and results</li>\n"
+     "    </ul>\n    <p>Your data is not sold or rented to third parties for advertising purposes.</p>"),
+    ("privacy_policy.s3_title", "3. Saqlash va xavfsizlik", "3. Хранение и безопасность", "3. Storage and security"),
+    ("privacy_policy.s3_body",
+     "Meta orqali olingan kirish tokenlari shifrlangan holda saqlanadi. Har bir kompaniyaning ma'lumotlari boshqa kompaniyalarnikidan texnik jihatdan ajratilgan (multi-tenant arxitektura) -- bir kompaniya boshqasining ma'lumotlarini ko'ra olmaydi. Ma'lumotlar hisobingiz faol bo'lgan davrda serverlarimizda saqlanadi.",
+     "Токены доступа, полученные через Meta, хранятся в зашифрованном виде. Данные каждой компании технически изолированы от данных других компаний (multi-tenant архитектура) -- одна компания не может видеть данные другой. Данные хранятся на наших серверах в течение периода, пока ваш аккаунт активен.",
+     "Access tokens obtained via Meta are stored encrypted. Each company's data is technically isolated from other companies' data (multi-tenant architecture) -- one company cannot see another's data. Data is stored on our servers for as long as your account is active."),
+    ("privacy_policy.s4_title", "4. Sizning huquqlaringiz", "4. Ваши права", "4. Your rights"),
+    ("privacy_policy.s4_pre",
+     "Istalgan vaqtda Meta ulanishini \"Sozlamalar → Ulanishlar\" bo'limidan mustaqil ravishda uzishingiz mumkin -- bu bilan saqlangan token va ulanish ma'lumotlari darhol o'chiriladi. To'liq hisobingizni va unga tegishli barcha ma'lumotlarni o'chirishni so'rash uchun",
+     "Вы можете в любой момент самостоятельно отключить подключение Meta в разделе «Настройки → Подключения» -- при этом сохранённый токен и данные подключения удаляются немедленно. Чтобы запросить полное удаление вашего аккаунта и всех связанных с ним данных, см.",
+     "You can disconnect your Meta connection yourself at any time from \"Settings → Connections\" -- this immediately deletes the stored token and connection data. To request full deletion of your account and all related data, see"),
+    ("privacy_policy.s4_link_text", "ma'lumotlarni o'chirish sahifasiga", "страницу удаления данных", "the data deletion page"),
+    ("privacy_policy.s4_post", " qarang.", ".", "."),
+    ("privacy_policy.s5_title", "5. Aloqa", "5. Контакты", "5. Contact"),
+    ("privacy_policy.s5_pre", "Savollaringiz bo'lsa, biz bilan bog'laning:", "Если у вас есть вопросы, свяжитесь с нами:", "If you have any questions, contact us:"),
+    ("privacy_policy.s5_or", "yoki", "или", "or"),
+    ("privacy_policy.s5_telegram_text", "Telegram", "Telegram", "Telegram"),
+    ("privacy_policy.s5_post", " orqali.", ".", "."),
+
+    # ---- data_deletion.html (yuridik matn -- to'liq va aniq tarjima) ----
+    ("data_deletion.title", "Ma'lumotlarni o'chirish", "Удаление данных", "Data Deletion"),
+    ("data_deletion.last_updated", "Oxirgi yangilanish: 2026-yil sentyabr", "Последнее обновление: сентябрь 2026 г.", "Last updated: September 2026"),
+    ("data_deletion.intro",
+     "<strong>Replix</strong> hisobingiz va unga bog'liq Meta (Facebook/Instagram) ma'lumotlarini o'chirishning ikki yo'li bor:",
+     "Есть два способа удалить ваш аккаунт <strong>Replix</strong> и связанные с ним данные Meta (Facebook/Instagram):",
+     "There are two ways to delete your <strong>Replix</strong> account and its associated Meta (Facebook/Instagram) data:"),
+    ("data_deletion.s1_title", "1. Faqat Meta ulanishini uzish (mustaqil, darhol)", "1. Отключить только подключение Meta (самостоятельно, мгновенно)", "1. Disconnect only the Meta connection (self-service, instant)"),
+    ("data_deletion.s1_body",
+     "<p>\n      Agar faqat Facebook/Instagram bilan ulanishni uzmoqchi bo'lsangiz (CRM hisobingizning o'zi\n"
+     "      qolsin), buni istalgan payt o'zingiz mustaqil bajarishingiz mumkin:\n    </p>\n"
+     "    <ol style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Replix'ga kiring va <strong>Sozlamalar → Ulanishlar</strong> bo'limiga o'ting</li>\n"
+     "      <li><strong>\"Meta ulanishini uzish\"</strong> tugmasini bosing</li>\n    </ol>\n"
+     "    <p>\n      Shu zahoti saqlangan kirish tokeni, sahifa/Instagram akkaunt identifikatorlari va Pixel\n"
+     "      ma'lumotlari butunlay o'chiriladi. Mijozlar (lidlar) yozuvlari va suhbat tarixi CRM'da qoladi --\n"
+     "      chunki ular biznesingizning o'z ma'lumotlari hisoblanadi.\n    </p>",
+     "<p>\n      Если вы хотите отключить только подключение Facebook/Instagram (при этом сам аккаунт CRM\n"
+     "      останется), вы можете сделать это самостоятельно в любой момент:\n    </p>\n"
+     "    <ol style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Войдите в Replix и перейдите в раздел <strong>Настройки → Подключения</strong></li>\n"
+     "      <li>Нажмите кнопку <strong>«Отключить подключение Meta»</strong></li>\n    </ol>\n"
+     "    <p>\n      Сохранённый токен доступа, идентификаторы страницы/аккаунта Instagram и данные Pixel будут\n"
+     "      немедленно полностью удалены. Записи клиентов (лидов) и история переписки останутся в CRM --\n"
+     "      поскольку они считаются собственными данными вашего бизнеса.\n    </p>",
+     "<p>\n      If you only want to disconnect Facebook/Instagram (while keeping your CRM account itself),\n"
+     "      you can do this yourself at any time:\n    </p>\n"
+     "    <ol style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Log in to Replix and go to <strong>Settings → Connections</strong></li>\n"
+     "      <li>Click the <strong>\"Disconnect Meta\"</strong> button</li>\n    </ol>\n"
+     "    <p>\n      The stored access token, page/Instagram account identifiers, and Pixel data are immediately and\n"
+     "      permanently deleted. Customer (lead) records and conversation history remain in the CRM --\n"
+     "      since they're considered your business's own data.\n    </p>"),
+    ("data_deletion.s2_title", "2. Hisobni butunlay o'chirish", "2. Полное удаление аккаунта", "2. Deleting your account entirely"),
+    ("data_deletion.s2_body",
+     "<p>\n      Kompaniyangizning Replix'dagi butun hisobini (barcha mijozlar, menejerlar, suhbatlar, Meta\n"
+     "      ulanish ma'lumotlari va hisobotlar) to'liq o'chirishni so'ramoqchi bo'lsangiz, quyidagi\n"
+     "      kontaktlardan biri orqali murojaat qiling:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Telefon: <a href=\"tel:+998509999733\">+998 50 999 97 33</a></li>\n"
+     "      <li>Telegram: <a href=\"https://t.me/abdulloh_mrktlg\" target=\"_blank\" rel=\"noopener\">@abdulloh_mrktlg</a></li>\n    </ul>\n"
+     "    <p>\n      So'rovingizni tasdiqlash (haqiqatan hisob egasi ekanligingizni aniqlash) uchun ro'yxatdan\n"
+     "      o'tgan telefon raqamingiz yoki kompaniya nomingizni ko'rsating. Tasdiqlangandan so'ng barcha\n"
+     "      ma'lumotlar butunlay va qaytarib bo'lmaydigan tarzda o'chiriladi. Faqat qonun talab qiladigan\n"
+     "      hollarda (masalan, to'lov/buxgalteriya hujjatlari) ayrim yozuvlar qonunda belgilangan muddat\n"
+     "      davomida saqlanishi mumkin.\n    </p>",
+     "<p>\n      Если вы хотите запросить полное удаление аккаунта вашей компании в Replix (все клиенты,\n"
+     "      менеджеры, переписки, данные подключения Meta и отчёты), обратитесь по одному из\n"
+     "      следующих контактов:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Телефон: <a href=\"tel:+998509999733\">+998 50 999 97 33</a></li>\n"
+     "      <li>Telegram: <a href=\"https://t.me/abdulloh_mrktlg\" target=\"_blank\" rel=\"noopener\">@abdulloh_mrktlg</a></li>\n    </ul>\n"
+     "    <p>\n      Чтобы подтвердить ваш запрос (убедиться, что вы действительно владелец аккаунта), укажите\n"
+     "      зарегистрированный номер телефона или название компании. После подтверждения все данные\n"
+     "      будут удалены полностью и без возможности восстановления. Только в случаях, предусмотренных\n"
+     "      законом (например, платёжные/бухгалтерские документы), отдельные записи могут храниться в\n"
+     "      течение установленного законом срока.\n    </p>",
+     "<p>\n      If you'd like to request full deletion of your company's Replix account (all customers,\n"
+     "      managers, conversations, Meta connection data, and reports), contact us through one of the\n"
+     "      following:\n    </p>\n"
+     "    <ul style=\"margin:8px 0 12px; padding-left:20px\">\n"
+     "      <li>Phone: <a href=\"tel:+998509999733\">+998 50 999 97 33</a></li>\n"
+     "      <li>Telegram: <a href=\"https://t.me/abdulloh_mrktlg\" target=\"_blank\" rel=\"noopener\">@abdulloh_mrktlg</a></li>\n    </ul>\n"
+     "    <p>\n      To confirm your request (verify that you're actually the account owner), provide your\n"
+     "      registered phone number or company name. Once confirmed, all data is deleted completely and\n"
+     "      irreversibly. Only where required by law (e.g. payment/accounting records) may certain records\n"
+     "      be retained for the legally mandated period.\n    </p>"),
 ]
 
 for _key, _uz, _ru, _en in _APP_STRINGS:

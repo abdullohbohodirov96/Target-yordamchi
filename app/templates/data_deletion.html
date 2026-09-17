@@ -1,49 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Ma'lumotlarni o'chirish — Replix{% endblock %}
+{% block title %}{{ t('data_deletion.title') }} — Replix{% endblock %}
 {% block flash %}{% endblock %}
 {% block content %}
 <div style="max-width:760px; margin:0 auto; padding:8px 0 40px">
-  <h1 style="font-size:24px; margin:0 0 6px">Ma'lumotlarni o'chirish</h1>
-  <p class="page-subtitle" style="margin-bottom:24px">Oxirgi yangilanish: 2026-yil sentyabr</p>
+  <h1 style="font-size:24px; margin:0 0 6px">{{ t('data_deletion.title') }}</h1>
+  <p class="page-subtitle" style="margin-bottom:24px">{{ t('data_deletion.last_updated') }}</p>
 
   <div class="card" style="line-height:1.7; font-size:14px; color:var(--text)">
-    <p>
-      <strong>Replix</strong> hisobingiz va unga bog'liq Meta (Facebook/Instagram) ma'lumotlarini
-      o'chirishning ikki yo'li bor:
-    </p>
+    <p>{{ t('data_deletion.intro')|safe }}</p>
 
-    <h2 style="font-size:17px; margin:24px 0 8px">1. Faqat Meta ulanishini uzish (mustaqil, darhol)</h2>
-    <p>
-      Agar faqat Facebook/Instagram bilan ulanishni uzmoqchi bo'lsangiz (CRM hisobingizning o'zi
-      qolsin), buni istalgan payt o'zingiz mustaqil bajarishingiz mumkin:
-    </p>
-    <ol style="margin:8px 0 12px; padding-left:20px">
-      <li>Replix'ga kiring va <strong>Sozlamalar → Ulanishlar</strong> bo'limiga o'ting</li>
-      <li><strong>"Meta ulanishini uzish"</strong> tugmasini bosing</li>
-    </ol>
-    <p>
-      Shu zahoti saqlangan kirish tokeni, sahifa/Instagram akkaunt identifikatorlari va Pixel
-      ma'lumotlari butunlay o'chiriladi. Mijozlar (lidlar) yozuvlari va suhbat tarixi CRM'da qoladi --
-      chunki ular biznesingizning o'z ma'lumotlari hisoblanadi.
-    </p>
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('data_deletion.s1_title') }}</h2>
+    {{ t('data_deletion.s1_body')|safe }}
 
-    <h2 style="font-size:17px; margin:24px 0 8px">2. Hisobni butunlay o'chirish</h2>
-    <p>
-      Kompaniyangizning Replix'dagi butun hisobini (barcha mijozlar, menejerlar, suhbatlar, Meta
-      ulanish ma'lumotlari va hisobotlar) to'liq o'chirishni so'ramoqchi bo'lsangiz, quyidagi
-      kontaktlardan biri orqali murojaat qiling:
-    </p>
-    <ul style="margin:8px 0 12px; padding-left:20px">
-      <li>Telefon: <a href="tel:+998509999733">+998 50 999 97 33</a></li>
-      <li>Telegram: <a href="https://t.me/abdulloh_mrktlg" target="_blank" rel="noopener">@abdulloh_mrktlg</a></li>
-    </ul>
-    <p>
-      So'rovingizni tasdiqlash (haqiqatan hisob egasi ekanligingizni aniqlash) uchun ro'yxatdan
-      o'tgan telefon raqamingiz yoki kompaniya nomingizni ko'rsating. Tasdiqlangandan so'ng barcha
-      ma'lumotlar butunlay va qaytarib bo'lmaydigan tarzda o'chiriladi. Faqat qonun talab qiladigan
-      hollarda (masalan, to'lov/buxgalteriya hujjatlari) ayrim yozuvlar qonunda belgilangan muddat
-      davomida saqlanishi mumkin.
-    </p>
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('data_deletion.s2_title') }}</h2>
+    {{ t('data_deletion.s2_body')|safe }}
   </div>
 </div>
 {% endblock %}

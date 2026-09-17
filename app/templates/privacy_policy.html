@@ -1,67 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Maxfiylik siyosati — Replix{% endblock %}
+{% block title %}{{ t('privacy_policy.title') }} — Replix{% endblock %}
 {% block flash %}{% endblock %}
 {% block content %}
 <div style="max-width:760px; margin:0 auto; padding:8px 0 40px">
-  <h1 style="font-size:24px; margin:0 0 6px">Maxfiylik siyosati</h1>
-  <p class="page-subtitle" style="margin-bottom:24px">Oxirgi yangilanish: 2026-yil sentyabr</p>
+  <h1 style="font-size:24px; margin:0 0 6px">{{ t('privacy_policy.title') }}</h1>
+  <p class="page-subtitle" style="margin-bottom:24px">{{ t('privacy_policy.last_updated') }}</p>
 
   <div class="card" style="line-height:1.7; font-size:14px; color:var(--text)">
+    <p>{{ t('privacy_policy.intro')|safe }}</p>
+
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('privacy_policy.s1_title') }}</h2>
+    {{ t('privacy_policy.s1_body')|safe }}
+
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('privacy_policy.s2_title') }}</h2>
+    {{ t('privacy_policy.s2_body')|safe }}
+
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('privacy_policy.s3_title') }}</h2>
+    <p>{{ t('privacy_policy.s3_body')|safe }}</p>
+
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('privacy_policy.s4_title') }}</h2>
     <p>
-      Ushbu sahifa <strong>Replix</strong> (<a href="https://replix.uz" target="_blank" rel="noopener">replix.uz</a>) --
-      O'zbekiston bizneslari uchun CRM, Meta (Instagram/Facebook) reklama monitoring va mijozlar bilan
-      muloqot boshqaruvi platformasi -- foydalanuvchi ma'lumotlarini qanday yig'ishi, ishlatishi va
-      saqlashini tushuntiradi.
+      {{ t('privacy_policy.s4_pre') }}
+      <a href="{{ url_for('data_deletion') }}">{{ t('privacy_policy.s4_link_text') }}</a>{{ t('privacy_policy.s4_post') }}
     </p>
 
-    <h2 style="font-size:17px; margin:24px 0 8px">1. Qanday ma'lumotlar yig'iladi</h2>
-    <p><strong>Ro'yxatdan o'tishda:</strong> ism, telefon raqami, email va kompaniya nomi.</p>
+    <h2 style="font-size:17px; margin:24px 0 8px">{{ t('privacy_policy.s5_title') }}</h2>
     <p>
-      <strong>Meta (Facebook/Instagram) hisobingizni ulaganingizda</strong> -- faqat siz o'zingiz
-      Facebook'ning rasmiy ruxsat berish oynasida "Allow"/"Ruxsat berish" tugmasini bosgandan keyin --
-      quyidagilarga kirish huquqi so'raladi:
-    </p>
-    <ul style="margin:8px 0 12px; padding-left:20px">
-      <li><code>pages_show_list</code>, <code>pages_read_engagement</code> -- ulangan Facebook sahifangiz nomi va asosiy statistikasi</li>
-      <li><code>instagram_basic</code> -- ulangan Instagram business akkauntingiz asosiy ma'lumotlari</li>
-      <li><code>instagram_manage_messages</code> -- Instagram Direct va Facebook Messenger orqali kelgan mijoz xabarlarini o'qish va javob yozish (CRM'dagi "Xabarlar" bo'limi uchun)</li>
-      <li><code>ads_management</code>, <code>ads_read</code>, <code>business_management</code> -- (faqat tarifingiz reklama monitoringni o'z ichiga olsa) reklama hisobingizning xarajat va natija statistikasi</li>
-    </ul>
-    <p>
-      Bundan tashqari, mijozlaringiz bilan Instagram/Facebook orqali yozishgan xabarlar matni CRM'da
-      "Xabarlar" bo'limida ko'rsatish va menejerlarga vazifa sifatida biriktirish maqsadida saqlanadi.
-    </p>
-
-    <h2 style="font-size:17px; margin:24px 0 8px">2. Ma'lumotlar qanday ishlatiladi</h2>
-    <ul style="margin:8px 0 12px; padding-left:20px">
-      <li>Mijozlar (lidlar) ro'yxati va suhbat tarixini CRM interfeysida ko'rsatish uchun</li>
-      <li>Menejerlarga yangi mijoz/xabar haqida bildirishnoma (Telegram orqali) yuborish uchun</li>
-      <li>Sun'iy intellekt yordamida lid sifatini baholash va tavsiyalar berish uchun</li>
-      <li>Reklama xarajati va natijalari bo'yicha hisobot va tahlil ko'rsatish uchun</li>
-    </ul>
-    <p>Ma'lumotlaringiz reklama maqsadida uchinchi tomonlarga sotilmaydi yoki ijaraga berilmaydi.</p>
-
-    <h2 style="font-size:17px; margin:24px 0 8px">3. Saqlash va xavfsizlik</h2>
-    <p>
-      Meta orqali olingan kirish tokenlari shifrlangan holda saqlanadi. Har bir kompaniyaning
-      ma'lumotlari boshqa kompaniyalarnikidan texnik jihatdan ajratilgan (multi-tenant arxitektura) --
-      bir kompaniya boshqasining ma'lumotlarini ko'ra olmaydi. Ma'lumotlar hisobingiz faol bo'lgan
-      davrda serverlarimizda saqlanadi.
-    </p>
-
-    <h2 style="font-size:17px; margin:24px 0 8px">4. Sizning huquqlaringiz</h2>
-    <p>
-      Istalgan vaqtda Meta ulanishini "Sozlamalar → Ulanishlar" bo'limidan mustaqil ravishda uzishingiz
-      mumkin -- bu bilan saqlangan token va ulanish ma'lumotlari darhol o'chiriladi. To'liq hisobingizni
-      va unga tegishli barcha ma'lumotlarni o'chirishni so'rash uchun
-      <a href="{{ url_for('data_deletion') }}">ma'lumotlarni o'chirish sahifasiga</a> qarang.
-    </p>
-
-    <h2 style="font-size:17px; margin:24px 0 8px">5. Aloqa</h2>
-    <p>
-      Savollaringiz bo'lsa, biz bilan bog'laning:
-      <a href="tel:+998509999733">+998 50 999 97 33</a> yoki
-      <a href="https://t.me/abdulloh_mrktlg" target="_blank" rel="noopener">Telegram</a> orqali.
+      {{ t('privacy_policy.s5_pre') }}
+      <a href="tel:+998509999733">+998 50 999 97 33</a> {{ t('privacy_policy.s5_or') }}
+      <a href="https://t.me/abdulloh_mrktlg" target="_blank" rel="noopener">{{ t('privacy_policy.s5_telegram_text') }}</a>{{ t('privacy_policy.s5_post') }}
     </p>
   </div>
 </div>
