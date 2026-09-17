@@ -197,12 +197,31 @@ GOAL_LABELS = {
 }
 
 # Har bir goal uchun `actions` massividan qidiriladigan action_type'lar
-# ro'yxati (Meta'ning standart nomlari). Bir nechtasi berilgan -- birinchi
-# topilgani emas, HAMMASI qo'shiladi (ba'zan bir xil harakat 2 xil nom bilan
-# qaytishi mumkin, lekin amalda faqat bittasi bo'ladi).
+# ro'yxati (Meta'ning standart nomlari), ENG SPETSIFIK/USTUVORDAN eng umumiy
+# tomon tartiblangan.
+#
+# 2026-09 TUZATISH (foydalanuvchi xabar qildi -- skrinshot bilan: Target
+# jadvalida "Meta natija" = 2 ko'rsatilgan, lekin HAQIQIY Meta Ads
+# Manager'ning o'zida O'SHA campaign uchun "Results" = 1 edi). Sabab: bu
+# ro'yxatdagi bir nechta action_type BIR XIL haqiqiy voqeani (bitta lid)
+# tasvirlaydi -- Instant Form (on-Facebook) lead uchun Meta ODATDA
+# `actions` massivida HAM "lead", HAM "onsite_conversion.lead_grouped"ni
+# BIR XIL qiymat bilan qaytaradi (ikkinchisi -- Ads Manager "Results"
+# ustunida ko'rsatiladigan, YANGIROQ va ANIQROQ, guruhlangan/dedup
+# qilingan metrika). Eski kod PASTDAGI IZOHDA aytilganidek "amalda faqat
+# bittasi bo'ladi" deb FARAZ qilib HAMMASINI qo'shardi -- bu farz NOTO'G'RI
+# chiqdi, natijada bitta haqiqiy lid 2 marta hisoblanardi.
+#
+# Endi `_extract_action_count()` ro'yxatni USTUVORLIK tartibi sifatida
+# ishlatadi: BARCHASINI QO'SHISH o'rniga, ro'yxatda birinchi TOPILGAN
+# type'ning qiymatini qaytaradi (boshqalari e'tiborsiz qoldiriladi). Shu
+# sabab eng ANIQ/Ads-Manager'ga mos keladigan nom RO'YXATNING BOSHIDA
+# turishi kerak -- Lead uchun bu `onsite_conversion.lead_grouped`
+# (Meta buni aynan Instant Form "Results" uchun ishlatadi), "lead" va
+# "leadgen_grouped" esa faqat ESKI/kamdan-kam holatlar uchun zaxira.
 GOAL_RESULT_ACTION_TYPES = {
-    "LEAD_GENERATION": ["lead", "leadgen_grouped", "onsite_conversion.lead_grouped"],
-    "QUALITY_LEAD": ["lead", "leadgen_grouped", "onsite_conversion.lead_grouped"],
+    "LEAD_GENERATION": ["onsite_conversion.lead_grouped", "leadgen_grouped", "lead"],
+    "QUALITY_LEAD": ["onsite_conversion.lead_grouped", "leadgen_grouped", "lead"],
     "CONVERSATIONS": [
         "onsite_conversion.messaging_conversation_started_7d",
         "onsite_conversion.messaging_first_reply",
@@ -246,16 +265,24 @@ OBJECTIVE_TO_TYPICAL_GOAL = {
 
 
 def _extract_action_count(actions: list[dict] | None, action_types: list[str]) -> int:
-    total = 0
-    found = False
+    """`action_types` -- USTUVORLIK tartibida (eng aniq/ustuvor birinchi,
+    qarang yuqoridagi `GOAL_RESULT_ACTION_TYPES` izohi). Bir xil haqiqiy
+    voqea Meta'dan bir necha xil nom bilan HAM qaytishi mumkin bo'lgani
+    uchun (masalan "lead" va "onsite_conversion.lead_grouped" bitta lid
+    uchun ikkalasi ham keladi) -- BARCHASINI QO'SHISH emas, ro'yxatda
+    birinchi HAQIQATDA topilgan type'ning qiymati qaytariladi."""
+    by_type = {}
     for a in (actions or []):
-        if a.get("action_type") in action_types:
+        at = a.get("action_type")
+        if at in action_types and at not in by_type:
             try:
-                total += int(float(a.get("value", 0)))
-                found = True
+                by_type[at] = int(float(a.get("value", 0)))
             except (TypeError, ValueError):
                 continue
-    return total if found else 0
+    for action_type in action_types:
+        if action_type in by_type:
+            return by_type[action_type]
+    return 0
 
 
 def _extract_lead_count_from_actions(actions: list[dict] | None) -> int:
