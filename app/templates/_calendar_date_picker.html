@@ -35,7 +35,7 @@
           <span>—</span>
           <input type="date" id="cdp-{{ cdp_id }}-to" value="{{ cdp_date_to }}">
         </div>
-        <button type="button" class="btn" id="cdp-{{ cdp_id }}-apply" style="padding:7px 16px; font-size:12.5px">Qo'llash</button>
+        <button type="button" class="btn" id="cdp-{{ cdp_id }}-apply" style="padding:7px 16px; font-size:12.5px">{{ t('cdp.apply') }}</button>
       </div>
     </div>
   </div>
@@ -47,6 +47,8 @@
   if (!wrap || wrap.dataset.bound) return;
   wrap.dataset.bound = '1';
 
+  var PREV_MONTH_LABEL = {{ t('cdp.prev_month')|tojson }};
+  var NEXT_MONTH_LABEL = {{ t('cdp.next_month')|tojson }};
   var PRESET_PARAM = {{ cdp_preset_param|tojson }};
   var CUSTOM_VALUE = {{ (cdp_custom_value or 'custom')|tojson }};
   var FROM_PARAM = {{ cdp_date_from_param|tojson }};
@@ -91,8 +93,8 @@
   });
 
   // ---- Ikki oylik taqvim (Lead Analytics'dagi bilan bir xil vanilla JS) ----
-  var WD = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
-  var MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+  var WD = {{ t('cdp.weekdays')|tojson }}.split(',');
+  var MONTHS = {{ t('cdp.months')|tojson }}.split(',');
 
   function parseISO(s) { if (!s) return null; var p = s.split('-'); return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)); }
   function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -108,9 +110,9 @@
     var startOffset = first.getDay();
     var daysInMonth = new Date(year, month + 1, 0).getDate();
     var html = '<div class="la-dp-cal-nav">';
-    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="Oldingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += showPrevNav ? '<button type="button" class="la-cal-prev" aria-label="' + PREV_MONTH_LABEL + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
     html += '<span>' + MONTHS[month] + ' ' + year + '</span>';
-    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="Keyingi oy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
+    html += showNextNav ? '<button type="button" class="la-cal-next" aria-label="' + NEXT_MONTH_LABEL + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg></button>' : '<span class="la-dp-cal-nav-spacer"></span>';
     html += '</div><div class="la-dp-cal-grid">';
     WD.forEach(function (w) { html += '<div class="la-dp-cal-wd">' + w + '</div>'; });
     for (var i = 0; i < startOffset; i++) html += '<div class="la-dp-cal-day la-dp-outside"></div>';

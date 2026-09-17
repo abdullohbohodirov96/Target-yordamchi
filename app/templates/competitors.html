@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Raqobatchilar — Replix{% endblock %}
+{% block title %}{{ t('competitors.title') }} — Replix{% endblock %}
 {% block content %}
 {# 2026-09, foydalanuvchi so'rovi ("raqobatchilarni alohida bo'lim qil,
    interfeysni o'zing qur, targetolog yoki biznes egasi dasturdan
@@ -10,37 +10,37 @@
    asosiy e'tibor qidiruv+galereyaga qaratilgan. #}
 <div class="page-head">
   <div>
-    <h1>Raqobatchilar</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Kuzatuvga qo'shgan raqobatchilaringizning Facebook/Instagram'da HOZIR ishlab turgan reklamalari har <strong>{{ rotation_days }} kunda BITTA</strong> raqobatchi navbat bilan Meta Ad Library orqali avtomatik tekshiriladi va Telegram guruhiga qisqa amaliy tahlil (qanday taklif/aksiya berishyapti, bizga qanday tavsiya) yuboriladi.</p>
+    <h1>{{ t('competitors.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('competitors.subtitle', n=rotation_days)|safe }}</p>
   </div>
   <div class="page-head-actions">
     <button type="button" class="btn toggle-all-btn-outline" id="cpManualAddBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
-      Qo'lda qo'shish
+      {{ t('competitors.manual_add') }}
     </button>
   </div>
 </div>
 
-<div class="hint-box">⚠️ Meta Ad Library ommaviy qidiruvi haqiqiy auditoriya/target sozlamalarini (yosh, jins, joylashuv) bermaydi — faqat reklama matnini ko'rsatadi. Shuning uchun "kimga target qilyapti" degan bo'lim har doim reklama matnidan kelib chiqqan <strong>AI taxmini</strong>, Meta'ning haqiqiy sozlamasi emas.</div>
+<div class="hint-box">{{ t('competitors.disclaimer')|safe }}</div>
 
 <div class="card cp-search-card">
-  <h2>Ad Library'dan qidirish</h2>
-  <p class="page-subtitle" style="margin-top:-6px">Brend/kompaniya nomini yozing, natijalar orasidan ☆ bosib kuzatuvga qo'shing.</p>
+  <h2>{{ t('competitors.search_title') }}</h2>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('competitors.search_text') }}</p>
   <form method="get" class="cp-search-form" id="cpSearchForm" autocomplete="off">
     {# 2026-09, foydalanuvchi so'rovi ("qidirilish -- yozishga qarab
        brandlar chiqib kelsin, logo/obunachi soni ko'rinib tursin"): input
        ostida yozayotganda to'ldiriladigan taklif paneli -- Ad Library'ning
        o'zidagi kabi. #}
     <div class="field cp-search-field">
-      <label>Qidiruv</label>
-      <input type="text" name="q" id="cpSearchInput" value="{{ query_term }}" placeholder="Masalan: Arboss" role="combobox" aria-expanded="false" aria-controls="cpSuggest" aria-autocomplete="list">
+      <label>{{ t('competitors.search_label') }}</label>
+      <input type="text" name="q" id="cpSearchInput" value="{{ query_term }}" placeholder="{{ t('competitors.search_placeholder') }}" role="combobox" aria-expanded="false" aria-controls="cpSuggest" aria-autocomplete="list">
       <div class="cp-suggest" id="cpSuggest" role="listbox" hidden></div>
     </div>
-    <button type="submit">Qidirish</button>
+    <button type="submit">{{ t('competitors.search_btn') }}</button>
   </form>
 
   {% if search_error %}
-  <div class="hint-box" style="margin-top:16px">Qidiruvda xatolik: {{ search_error }}</div>
+  <div class="hint-box" style="margin-top:16px">{{ t('competitors.search_error', error=search_error) }}</div>
   {% elif search_results is not none %}
     {% if search_results %}
     {# 2026-09, foydalanuvchi so'rovi ("ad library'ga o'xshab variantlar
@@ -67,11 +67,11 @@
                brenddan ajratishga yordam beradigan ikkita signal. #}
             <div class="cp-result-meta">
               {% if r.fan_count_display %}<span class="text-faint">{{ r.fan_count_display }}</span>{% endif %}
-              {% if r.active_count %}<span class="badge badge-color-good">Hozir {{ r.active_count }} ta reklama yoqilgan</span>{% else %}<span class="badge badge-color-dim">Hozir reklamasi yo'q</span>{% endif %}
+              {% if r.active_count %}<span class="badge badge-color-good">{{ t('competitors.ads_active_n', n=r.active_count) }}</span>{% else %}<span class="badge badge-color-dim">{{ t('competitors.ads_none') }}</span>{% endif %}
             </div>
           </div>
           {% if r.already_tracked %}
-          <span class="badge badge-color-dim">★ Kuzatuvda</span>
+          <span class="badge badge-color-dim">{{ t('competitors.tracked') }}</span>
           {% else %}
           <form method="post" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -79,7 +79,7 @@
             <input type="hidden" name="q" value="{{ query_term }}">
             <input type="hidden" name="name" value="{{ r.page_name }}">
             <input type="hidden" name="search_term" value="{{ r.page_name }}">
-            <button type="submit" class="cp-star-btn">☆ Kuzatuvga qo'sh</button>
+            <button type="submit" class="cp-star-btn">{{ t('competitors.track_add') }}</button>
           </form>
           {% endif %}
         </div>
@@ -87,8 +87,8 @@
         <div class="cp-result-ads">
           {% for ad in r.ads %}
           <div class="cp-result-ad">
-            <div class="cp-result-snippet" style="white-space:normal">{{ ad.snippet or 'Reklama matni topilmadi' }}</div>
-            {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12px; flex-shrink:0">Ko'rish</a>{% endif %}
+            <div class="cp-result-snippet" style="white-space:normal">{{ ad.snippet or t('competitors.no_ad_text') }}</div>
+            {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12px; flex-shrink:0">{{ t('competitors.view') }}</a>{% endif %}
           </div>
           {% endfor %}
         </div>
@@ -97,7 +97,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="page-subtitle" style="margin-top:16px">"{{ query_term }}" bo'yicha hech narsa topilmadi.</p>
+    <p class="page-subtitle" style="margin-top:16px">{{ t('competitors.no_results', q=query_term) }}</p>
     {% endif %}
   {% endif %}
 </div>
@@ -105,11 +105,11 @@
 {# 2026-09, tariflar qayta ko'rib chiqilganda qo'shildi: tarifga qarab
    raqobatchi soni cheklangan (`competitor_limit`) -- foydalanuvchi
    qancha joy qolganini oldindan ko'rishi kerak. #}
-<h2 style="margin-bottom:4px">Kuzatuvdagi raqobatchilar{% if competitors %} <span class="text-faint" style="font-weight:500; font-size:14px">({{ competitors|length }}{% if competitor_limit is not none %} / {{ competitor_limit }}{% endif %})</span>{% endif %}</h2>
+<h2 style="margin-bottom:4px">{{ t('competitors.tracked_title') }}{% if competitors %} <span class="text-faint" style="font-weight:500; font-size:14px">({{ competitors|length }}{% if competitor_limit is not none %} / {{ competitor_limit }}{% endif %})</span>{% endif %}</h2>
 {% if competitor_limit is not none %}
 <p class="page-subtitle" style="margin-top:0; margin-bottom:14px">
-  Joriy tarifingizda {{ competitor_limit }} tagacha raqobatchi kuzatish mumkin.
-  {% if competitors|length >= competitor_limit %}Limitga yetdingiz -- ko'proq raqobatchi uchun <a href="{{ url_for('payment_page') }}">tarifni yangilang</a>.{% endif %}
+  {{ t('competitors.limit_text', n=competitor_limit) }}
+  {% if competitors|length >= competitor_limit %}{{ t('competitors.limit_reached_1') }} <a href="{{ url_for('payment_page') }}">{{ t('competitors.limit_reached_link') }}</a>.{% endif %}
 </p>
 {% endif %}
 {% if competitors %}
@@ -120,62 +120,62 @@
       <span class="cp-card-avatar">{{ (c.name[0] if c.name else '?')|upper }}</span>
       <div class="cp-card-title">
         <div class="cp-card-name"><a href="{{ url_for('competitor_detail', competitor_id=c.id) }}">{{ c.name }}</a></div>
-        <div class="cp-card-domain">{{ c.domain or 'sayt ko\'rsatilmagan' }}</div>
+        <div class="cp-card-domain">{{ c.domain or t('competitors.no_site') }}</div>
       </div>
-      {% if c.is_active %}<span class="badge badge-color-good">Faol</span>{% else %}<span class="badge badge-color-dim">O'chirilgan</span>{% endif %}
+      {% if c.is_active %}<span class="badge badge-color-good">{{ t('competitors.active') }}</span>{% else %}<span class="badge badge-color-dim">{{ t('competitors.disabled') }}</span>{% endif %}
     </div>
     <div class="cp-card-stats">
       <div>
         <div class="cp-card-stat-num">{{ c.active_ads_count }}</div>
-        <div class="cp-card-stat-label">Faol reklama</div>
+        <div class="cp-card-stat-label">{{ t('competitors.active_ads') }}</div>
       </div>
       <div>
-        <div class="cp-card-stat-num" style="font-size:12.5px; font-weight:600; margin-top:2px">{{ c.last_analyzed_at or "hali tahlil qilinmagan" }}</div>
-        <div class="cp-card-stat-label">Oxirgi tahlil</div>
+        <div class="cp-card-stat-num" style="font-size:12.5px; font-weight:600; margin-top:2px">{{ c.last_analyzed_at or t('competitors.not_analyzed') }}</div>
+        <div class="cp-card-stat-label">{{ t('competitors.last_analysis') }}</div>
       </div>
     </div>
     <div class="cp-card-actions">
-      <a href="{{ url_for('competitor_detail', competitor_id=c.id) }}" class="btn-outline" style="border-radius:var(--radius); text-decoration:none; display:inline-flex; align-items:center; justify-content:center">Tafsilot</a>
+      <a href="{{ url_for('competitor_detail', competitor_id=c.id) }}" class="btn-outline" style="border-radius:var(--radius); text-decoration:none; display:inline-flex; align-items:center; justify-content:center">{{ t('competitors.details') }}</a>
       <form method="post" style="display:contents">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="competitor_id" value="{{ c.id }}">
-        <button type="submit" class="btn-outline" style="border-radius:var(--radius)">{{ "To'xtatish" if c.is_active else "Yoqish" }}</button>
+        <button type="submit" class="btn-outline" style="border-radius:var(--radius)">{{ t('competitors.stop') if c.is_active else t('competitors.enable') }}</button>
       </form>
-      <form method="post" style="display:contents" onsubmit="return confirm('O\'chirishni tasdiqlaysizmi?');">
+      <form method="post" style="display:contents" onsubmit="return confirm({{ t('competitors.confirm_delete')|tojson }})">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="delete">
         <input type="hidden" name="competitor_id" value="{{ c.id }}">
-        <button type="submit" class="btn-outline" style="border-radius:var(--radius); color:var(--bad); border-color:var(--bad-bg)">O'chirish</button>
+        <button type="submit" class="btn-outline" style="border-radius:var(--radius); color:var(--bad); border-color:var(--bad-bg)">{{ t('common.delete') }}</button>
       </form>
     </div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<div class="cp-empty">Hali raqobatchi qo'shilmagan — yuqoridagi qidiruvdan ☆ bosib yoki "Qo'lda qo'shish" orqali birinchisini qo'shing.</div>
+<div class="cp-empty">{{ t('competitors.empty') }}</div>
 {% endif %}
 
 <div class="modal-overlay" id="cpManualAddModal">
   <div class="modal-dialog" style="max-width:440px">
     <div class="modal-header">
-      <h2>Qo'lda qo'shish</h2>
-      <button type="button" class="modal-close" id="cpManualAddClose" aria-label="Yopish">
+      <h2>{{ t('competitors.manual_add') }}</h2>
+      <button type="button" class="modal-close" id="cpManualAddClose" aria-label="{{ t('common.close') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="page-subtitle" style="margin-top:-6px">Ad Library qidiruvida topilmasa ham, raqobatchini qo'lda kuzatuvga qo'shishingiz mumkin.</p>
+      <p class="page-subtitle" style="margin-top:-6px">{{ t('competitors.manual_text') }}</p>
       <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
-        <div class="field"><label>Kompaniya nomi</label><input type="text" name="name" placeholder="Masalan: Arboss" required></div>
-        <div class="field"><label>Veb-sayt (ixtiyoriy)</label><input type="text" name="domain" placeholder="arboss.uz"></div>
+        <div class="field"><label>{{ t('competitors.company_name') }}</label><input type="text" name="name" placeholder="{{ t('competitors.search_placeholder') }}" required></div>
+        <div class="field"><label>{{ t('competitors.website') }}</label><input type="text" name="domain" placeholder="arboss.uz"></div>
         <div class="field">
-          <label>Ad Library qidiruv so'zi (ixtiyoriy)</label>
-          <input type="text" name="search_term" placeholder="Bo'sh qoldirsangiz kompaniya nomi ishlatiladi">
+          <label>{{ t('competitors.search_term') }}</label>
+          <input type="text" name="search_term" placeholder="{{ t('competitors.search_term_placeholder') }}">
         </div>
-        <button type="submit" class="block">Qo'shish</button>
+        <button type="submit" class="block">{{ t('common.add') }}</button>
       </form>
     </div>
   </div>
@@ -208,6 +208,9 @@
   if (!form || !input || !panel) return;
 
   var LIVE_SEARCH_URL = '{{ url_for("competitors_live_search") }}';
+  var ADS_ACTIVE_TPL = {{ t('competitors.ads_active_n', n='__N__')|tojson }};
+  var ADS_NONE_TXT = {{ t('competitors.ads_none')|tojson }};
+  var TRACKED_TXT = {{ t('competitors.tracked')|tojson }};
   var debounceTimer = null;
   var activeController = null;
   var lastQuery = '';
@@ -248,8 +251,8 @@
       metaEl.className = 'cp-suggest-meta';
       var metaBits = [];
       if (r.fan_count_display) metaBits.push(r.fan_count_display);
-      metaBits.push(r.active_count ? ('Hozir ' + r.active_count + ' ta reklama yoqilgan') : 'Hozir reklamasi yo\'q');
-      if (r.already_tracked) metaBits.push('★ Kuzatuvda');
+      metaBits.push(r.active_count ? ADS_ACTIVE_TPL.replace('__N__', r.active_count) : ADS_NONE_TXT);
+      if (r.already_tracked) metaBits.push(TRACKED_TXT);
       metaEl.textContent = metaBits.join(' · ');
       body.appendChild(nameEl);
       body.appendChild(metaEl);

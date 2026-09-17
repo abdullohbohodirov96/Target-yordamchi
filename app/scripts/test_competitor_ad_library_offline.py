@@ -106,10 +106,14 @@ FAKE_AD_LIBRARY_RESULTS = [
 with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_AD_LIBRARY_RESULTS):
     r = client_a.get("/settings/competitors?q=Arboss")
     html = r.get_data(as_text=True)
+    # 2026-09, ko'p tillilik: bu matn endi `t()` orqali chiqadi va Jinja
+    # autoescape apostrofni `&#39;` qilib yozadi (brauzerda bir xil
+    # ko'rinadi) -- solishtirishdan oldin qaytariladi.
+    html_norm = html.replace("&#39;", "'")
     check("qidiruv sahifasi 200 qaytaradi", r.status_code == 200)
     check("qidiruv natijasida sahifa nomi ko'rinadi", "Arboss" in html)
     check("qidiruv natijasida reklama matni ko'rinadi", "chegirma" in html)
-    check("duplikatsiz -- bitta page_name uchun bitta qator", html.count("☆ Kuzatuvga qo'sh") == 1)
+    check("duplikatsiz -- bitta page_name uchun bitta qator", html_norm.count("☆ Kuzatuvga qo'sh") == 1)
     check("Ad Library'ga o'xshab IKKALA namuna reklama ham ko'rinadi (2 variant)", "chegirma" in html and "Yangi kolleksiya" in html)
 
     r = client_a.post("/settings/competitors", data={
@@ -252,7 +256,7 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=FAKE_INACTIVE
      mock.patch.object(meta_api, "get_page_public_profile", side_effect=meta_api.MetaAPIError({"message": "vaqtinchalik xato"})):
     r = client_a.get("/settings/competitors?q=Nofaol")
     html = r.get_data(as_text=True)
-    check("barcha reklamalar tugagan bo'lsa 'hozir reklamasi yo'q'", "Hozir reklamasi yo'q" in html)
+    check("barcha reklamalar tugagan bo'lsa 'hozir reklamasi yo'q'", "Hozir reklamasi yo'q" in html.replace("&#39;", "'"))
     check("profil olishda xato bo'lsa ham sahifa 200 qaytaradi (butun qidiruv to'xtamaydi)", r.status_code == 200)
     check("profil olinmasa harf-avatar'ga qaytadi (rasm yo'q)", 'cp-result-avatar-img' not in html)
 
