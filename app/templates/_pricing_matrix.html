@@ -8,8 +8,8 @@
 #}
 <div class="lp-matrix-wrap" data-reveal>
   <div class="lp-matrix-head">
-    <h3>Barcha funksiyalarni solishtiring</h3>
-    <p>Har bir tarifda aynan nima bor -- bitta jadvalda.</p>
+    <h3>{{ t('pricing_matrix.h3') }}</h3>
+    <p>{{ t('pricing_matrix.subtitle') }}</p>
   </div>
   <div class="lp-matrix-scroll">
     <table class="lp-matrix">
@@ -33,11 +33,11 @@
           {% set val = row['values'].get(plan.key) %}
           <td class="{{ 'lp-matrix-win' if plan.highlight }}">
             {% if val is sameas true %}
-            <span class="lp-matrix-yes" title="Bor" aria-label="Bor">
+            <span class="lp-matrix-yes" title="{{ t('pricing_matrix.has') }}" aria-label="{{ t('pricing_matrix.has') }}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
             </span>
             {% elif val is sameas false %}
-            <span class="lp-matrix-no" title="Yo'q" aria-label="Yo'q">
+            <span class="lp-matrix-no" title="{{ t('pricing_matrix.none') }}" aria-label="{{ t('pricing_matrix.none') }}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>
             </span>
             {% else %}

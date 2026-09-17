@@ -53,7 +53,9 @@ placeholder, keyinchalik moslashtiriladi -- mexanizm (`creative_studio.
 check_quota`/`increment_usage`, `db.ImageGenerationUsage`) to'liq ishlaydi.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+import lang as lang_module
 
 
 @dataclass(frozen=True)
@@ -294,6 +296,85 @@ def image_generation_limit_for_plan(key: "str | None") -> "int | None":
     funksiya shu tarifda yopiq (`creative_studio.check_quota` shu qiymat
     bilan ishlaydi)."""
     return get_plan(key).image_generation_monthly_limit
+
+
+# ---------------------------------------------------------------------------
+# 2026-09 ko'p tillilik 4-bosqich: yuqoridagi `PLANS`/`FEATURE_MATRIX`
+# (uz manba) O'ZGARTIRILMAYDI -- test va boshqa ichki kod shu konstantalarga
+# tayanadi. Shablonlarga (pricing/signup/landing) chiqariladigan nom/tagline/
+# features/jadval endi shu funksiyalar orqali, so'rov paytidagi `g.lang`ga
+# mos tarjima qilingan holda beriladi (`lang.py`dagi `plans.*` kalitlari).
+# ---------------------------------------------------------------------------
+def localized_plan(plan: "Plan", lang_code: str) -> "Plan":
+    """Bitta `Plan`ning ko'rinadigan (name/tagline/features) maydonlarini
+    joriy tilga tarjima qilib qaytaradi -- boshqa maydonlar (narx, limit,
+    modules va h.k.) o'zgarmaydi."""
+    return replace(
+        plan,
+        name=lang_module.translate(f"plans.name_{plan.key}", lang_code),
+        tagline=lang_module.translate(f"plans.tagline_{plan.key}", lang_code),
+        features=tuple(
+            lang_module.translate(f"plans.feature_{plan.key}_{i}", lang_code)
+            for i in range(len(plan.features))
+        ),
+    )
+
+
+def localized_plan_list(plan_list, lang_code: str) -> list:
+    return [localized_plan(p, lang_code) for p in plan_list]
+
+
+def _count_or_unlimited_i18n(value, unit_key: str, lang_code: str) -> str:
+    if value is None:
+        return lang_module.translate("plans.unlimited", lang_code)
+    unit = lang_module.translate(unit_key, lang_code)
+    return lang_module.translate("plans.count_upto", lang_code, n=value, unit=unit)
+
+
+def _competitor_limit_display_i18n(p: "Plan", lang_code: str):
+    if "settings" not in p.modules:
+        return False
+    return _count_or_unlimited_i18n(p.competitor_limit, "plans.unit_competitors", lang_code)
+
+
+def feature_matrix_for_lang(lang_code: str) -> list:
+    """`FEATURE_MATRIX` bilan bir xil shakl (label/values), lekin
+    label va matn qiymatlar (True/False bo'lmagan qatorlar) joriy tilga
+    tarjima qilingan. Qiymatlarning O'ZI (kimga qaysi modul ochiq) hamon
+    yuqoridagi `PLANS`dan olinadi -- ikkalasi hech qachon uzilib qolmaydi."""
+
+    def has(module_key):
+        return {p.key: module_key in p.modules for p in PLAN_LIST}
+
+    support_values = {
+        "trial": "plans.support_none", "start": "plans.support_email",
+        "business": "plans.support_priority", "unlimited": "plans.support_247",
+    }
+    return [
+        {"label": lang_module.translate("plans.matrix_label_leads", lang_code),
+         "values": {p.key: _count_or_unlimited_i18n(p.leads_limit, "plans.unit_leads", lang_code) for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_instagram", lang_code),
+         "values": {p.key: True for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_meta_ads", lang_code),
+         "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_capi", lang_code),
+         "values": {p.key: p.can_connect_meta_ads for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_smm", lang_code), "values": has("target")},
+        {"label": lang_module.translate("plans.matrix_label_lead_analytics", lang_code), "values": has("lead_analytics")},
+        {"label": lang_module.translate("plans.matrix_label_competitors", lang_code),
+         "values": {p.key: _competitor_limit_display_i18n(p, lang_code) for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_analytics", lang_code), "values": has("analytics")},
+        {"label": lang_module.translate("plans.matrix_label_settings", lang_code), "values": has("settings")},
+        {"label": lang_module.translate("plans.matrix_label_individual_check", lang_code), "values": has("individual_check")},
+        {"label": lang_module.translate("plans.matrix_label_ai_assistant", lang_code),
+         "values": {p.key: p.ai_enabled for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_creative_studio", lang_code),
+         "values": {p.key: (_count_or_unlimited_i18n(p.image_generation_monthly_limit, "plans.unit_images", lang_code) if p.image_generation_monthly_limit != 0 else False) for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_manager_accounts", lang_code),
+         "values": {p.key: _count_or_unlimited_i18n(p.manager_limit, "plans.unit_accounts", lang_code) for p in PLAN_LIST}},
+        {"label": lang_module.translate("plans.matrix_label_support", lang_code),
+         "values": {k: lang_module.translate(v, lang_code) for k, v in support_values.items()}},
+    ]
 
 
 def next_plan_up(key: "str | None") -> "Plan | None":

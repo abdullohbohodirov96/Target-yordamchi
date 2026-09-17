@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}To'lov — Replix{% endblock %}
+{% block title %}{{ t('payment.page_title') }} — Replix{% endblock %}
 {% block content %}
 {#
   2026-09, foydalanuvchi so'rovi ("to'lov jarayonini yaxshilash" ->
@@ -21,24 +21,24 @@
 #}
 <div class="page-head">
   <div>
-    <h1>To'lov</h1>
-    <p class="page-subtitle" style="margin-bottom:0">Joriy tarifingiz: <b>{{ plan.name }}</b>{% if company.paid_until %} — muddati: {{ company.paid_until.strftime('%Y-%m-%d') }}{% endif %}</p>
+    <h1>{{ t('payment.h1') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('payment.current_plan') }}: <b>{{ plan.name }}</b>{% if company.paid_until %} — {{ t('payment.expires') }}: {{ company.paid_until.strftime('%Y-%m-%d') }}{% endif %}</p>
   </div>
 </div>
 
 <div class="card" style="max-width:480px; margin-bottom:20px">
-  <h2>Tarifni tanlang</h2>
+  <h2>{{ t('payment.choose_plan_title') }}</h2>
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="choose_plan">
     <div class="field">
       <select name="plan">
         {% for p in plans %}
-        <option value="{{ p.key }}" {{ 'selected' if plan.key == p.key }}>{{ p.name }} — ${{ p.price_usd }}/oy</option>
+        <option value="{{ p.key }}" {{ 'selected' if plan.key == p.key }}>{{ p.name }} — ${{ p.price_usd }}/{{ t('payment.per_month') }}</option>
         {% endfor %}
       </select>
     </div>
-    <button type="submit" class="block">Shu tarifni tanlash</button>
+    <button type="submit" class="block">{{ t('payment.choose_plan_btn') }}</button>
   </form>
 </div>
 
@@ -46,41 +46,41 @@
 {% if payme_subscribe_configured %}
 <div class="card" style="max-width:480px; margin-bottom:20px{% if not autopay_ready %}; border-color:var(--blue){% endif %}">
   <h2 style="display:flex; align-items:center; gap:8px">
-    Avtomatik to'lov (Payme)
-    {% if not autopay_ready %}<span class="badge badge-color-blue">Tavsiya etiladi</span>{% endif %}
+    {{ t('payment.autopay_title') }}
+    {% if not autopay_ready %}<span class="badge badge-color-blue">{{ t('payment.recommended_badge') }}</span>{% endif %}
   </h2>
   {% if payme_card_masked %}
-  <p class="page-subtitle" style="margin-top:-6px">Bog'langan karta: <b style="font-family:monospace">{{ payme_card_masked }}</b></p>
-  <p class="page-subtitle" style="margin-top:-6px">Har oy muddat tugashidan oldin <b>${{ plan.price_usd }}</b> shu kartadan avtomatik yechiladi{% if not payme_autopay_enabled %} — hozir <b>O'CHIRILGAN</b>{% endif %}.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.bound_card') }}: <b style="font-family:monospace">{{ payme_card_masked }}</b></p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.autopay_charge_note', price=plan.price_usd) }}{% if not payme_autopay_enabled %} — {{ t('payment.currently_disabled') }}{% endif %}.</p>
   <form method="post" action="{{ url_for('payme_autopay_toggle') }}" style="display:inline-block; margin-right:8px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="enabled" value="{{ '0' if payme_autopay_enabled else '1' }}">
-    <button type="submit" class="block">{{ "Avtomatik to'lovni o'chirish" if payme_autopay_enabled else "Avtomatik to'lovni yoqish" }}</button>
+    <button type="submit" class="block">{{ t('payment.autopay_disable_btn') if payme_autopay_enabled else t('payment.autopay_enable_btn') }}</button>
   </form>
   <form method="post" action="{{ url_for('payme_card_remove') }}" style="display:inline-block; margin-top:8px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="block" style="background:transparent; color:var(--bad)">Kartani o'chirish</button>
+    <button type="submit" class="block" style="background:transparent; color:var(--bad)">{{ t('payment.remove_card_btn') }}</button>
   </form>
   {% elif payme_card_pending %}
-  <p class="page-subtitle" style="margin-top:-6px">Kartangizga yuborilgan SMS kodni kiriting:</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.sms_code_prompt') }}</p>
   <form method="post" action="{{ url_for('payme_card_verify') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
-      <input type="text" name="code" placeholder="SMS kod" inputmode="numeric" required>
+      <input type="text" name="code" placeholder="{{ t('payment.sms_code_placeholder') }}" inputmode="numeric" required>
     </div>
-    <button type="submit" class="block">Tasdiqlash</button>
+    <button type="submit" class="block">{{ t('payment.confirm_btn') }}</button>
   </form>
   {% else %}
-  <p class="page-subtitle" style="margin-top:-6px">Kartangizni bir marta bog'lang — shundan keyin har oy qo'lda to'lashingiz shart emas.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.bind_card_note') }}</p>
   <form method="post" action="{{ url_for('payme_card_bind') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <input type="text" name="card_number" placeholder="8600 0000 0000 0000" inputmode="numeric" maxlength="19" required>
     </div>
     <div class="field">
-      <input type="text" name="card_expire" placeholder="OO/YY (masalan 1229)" inputmode="numeric" maxlength="5" required>
+      <input type="text" name="card_expire" placeholder="{{ t('payment.card_expire_placeholder') }}" inputmode="numeric" maxlength="5" required>
     </div>
-    <button type="submit" class="block">Kartani bog'lash</button>
+    <button type="submit" class="block">{{ t('payment.bind_card_btn') }}</button>
   </form>
   {% endif %}
 </div>
@@ -88,45 +88,45 @@
 
 {% if autopay_ready %}
 <details class="card" style="max-width:480px">
-  <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--ink)">Qo'lda to'lash kerakmi? (ixtiyoriy)</summary>
+  <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--ink)">{{ t('payment.manual_pay_toggle') }}</summary>
   <div style="margin-top:14px">
     {% if payme_card %}
-    <p class="page-subtitle" style="margin-top:-6px">PayMe orqali quyidagi kartaga <b>${{ plan.price_usd }}</b> (yoki so'mdagi ekvivalentini) o'tkazing:</p>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd) }}</p>
     <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
-      <div><b>Karta:</b> {{ payme_card }}</div>
-      {% if payme_card_holder %}<div><b>Egasi:</b> {{ payme_card_holder }}</div>{% endif %}
-      <div><b>Izohga yozing:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
+      <div><b>{{ t('payment.card_label') }}:</b> {{ payme_card }}</div>
+      {% if payme_card_holder %}<div><b>{{ t('payment.card_holder_label') }}:</b> {{ payme_card_holder }}</div>{% endif %}
+      <div><b>{{ t('payment.note_field_label') }}:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
     </div>
-    <p class="page-subtitle" style="margin-top:-6px">Izoh maydoniga aynan <span style="font-family:monospace">{{ payment_ref }}</span> kodini yozishni unutmang.</p>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.note_reminder_short') }}</p>
     {% else %}
-    <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.no_requisites', ref=payment_ref) }}</p>
     {% endif %}
     <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="mark_paid">
-      <button type="submit" class="block">To'lov qildim</button>
+      <button type="submit" class="block">{{ t('payment.mark_paid_btn') }}</button>
     </form>
   </div>
 </details>
 {% else %}
 <div class="card" style="max-width:480px">
-  <h2>Qo'lda to'lash</h2>
+  <h2>{{ t('payment.manual_pay_title') }}</h2>
   {% if payme_card %}
-  <p class="page-subtitle" style="margin-top:-6px">PayMe orqali quyidagi kartaga <b>${{ plan.price_usd }}</b> (yoki so'mdagi ekvivalentini) o'tkazing:</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd) }}</p>
   <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
-    <div><b>Karta:</b> {{ payme_card }}</div>
-    {% if payme_card_holder %}<div><b>Egasi:</b> {{ payme_card_holder }}</div>{% endif %}
-    <div><b>Izohga yozing:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
+    <div><b>{{ t('payment.card_label') }}:</b> {{ payme_card }}</div>
+    {% if payme_card_holder %}<div><b>{{ t('payment.card_holder_label') }}:</b> {{ payme_card_holder }}</div>{% endif %}
+    <div><b>{{ t('payment.note_field_label') }}:</b> <span style="font-family:monospace">{{ payment_ref }}</span></div>
   </div>
-  <p class="page-subtitle" style="margin-top:-6px">Izoh maydoniga aynan <span style="font-family:monospace">{{ payment_ref }}</span> kodini yozishni unutmang — shu kod orqali to'lovingiz tezroq aniqlanadi.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.note_reminder_long') }}</p>
   {% else %}
-  <p class="page-subtitle" style="margin-top:-6px">To'lov rekvizitlari hali sozlanmagan. Admin bilan bog'laning: to'lov identifikatoringiz — <span style="font-family:monospace">{{ payment_ref }}</span>.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.no_requisites', ref=payment_ref) }}</p>
   {% endif %}
-  <p class="page-subtitle" style="margin-top:8px">To'lovni amalga oshirgach, quyidagi tugmani bosing — biz darhol xabardor bo'lamiz va tekshirib, hisobingizni uzaytiramiz (odatda bir necha soat ichida).</p>
+  <p class="page-subtitle" style="margin-top:8px">{{ t('payment.after_pay_note') }}</p>
   <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="mark_paid">
-    <button type="submit" class="block">To'lov qildim</button>
+    <button type="submit" class="block">{{ t('payment.mark_paid_btn') }}</button>
   </form>
 </div>
 {% endif %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Tariflar — Replix{% endblock %}
+{% block title %}{{ t('pricing.page_title') }} — Replix{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}?v={{ asset_v('landing.css') }}">{% endblock %}
 {% block content %}
 
@@ -7,43 +7,43 @@
 <nav class="lp-nav">
   <div class="lp-nav-brand"><img src="{{ url_for('static', filename='brand/logo-full.png') }}" alt="Replix"></div>
   <div class="lp-nav-links">
-    <a href="{{ url_for('dashboard') }}">Bosh sahifa</a>
+    <a href="{{ url_for('dashboard') }}">{{ t('nav.home') }}</a>
   </div>
   <div class="lp-nav-cta">
-    <a href="{{ url_for('login') }}" class="btn btn-ghost">Kirish</a>
-    <a href="{{ url_for('signup') }}" class="btn">Bepul boshlash</a>
+    <a href="{{ url_for('login') }}" class="btn btn-ghost">{{ t('nav.login') }}</a>
+    <a href="{{ url_for('signup') }}" class="btn">{{ t('nav.signup') }}</a>
   </div>
 </nav>
 {% endif %}
 
 <section class="lp-section" style="padding-top:{{ '24px' if current_user.is_authenticated else '48px' }}">
   <div class="lp-section-head">
-    <h2>Tariflar</h2>
-    <p>Sinovdan boshlang, jamoangiz o'sgani sayin tarifni oshiring — yashirin to'lov yo'q, xohlagan vaqtda bekor qilish mumkin.</p>
+    <h2>{{ t('pricing.h2') }}</h2>
+    <p>{{ t('pricing.subtitle') }}</p>
   </div>
   <div class="lp-pricing">
     {% for plan in plans %}
     <div class="lp-plan{{ ' highlight' if plan.highlight }}">
-      {% if plan.highlight %}<div class="lp-plan-badge">Eng ommabop</div>{% endif %}
-      {% if current_plan_key == plan.key %}<div class="lp-plan-badge" style="left:auto; right:20px; background:var(--good)">Joriy tarifingiz</div>{% endif %}
+      {% if plan.highlight %}<div class="lp-plan-badge">{{ t('pricing.most_popular_badge') }}</div>{% endif %}
+      {% if current_plan_key == plan.key %}<div class="lp-plan-badge" style="left:auto; right:20px; background:var(--good)">{{ t('pricing.current_plan_badge') }}</div>{% endif %}
       <div class="lp-plan-name">{{ plan.name }}</div>
       <p class="lp-plan-tagline">{{ plan.tagline }}</p>
       <div class="lp-plan-price">
-        {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>/oy</span>
-        {% else %}<b>Bepul</b>{% endif %}
+        {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>/{{ t('payment.per_month') }}</span>
+        {% else %}<b>{{ t('pricing.free_label') }}</b>{% endif %}
       </div>
-      <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} kun{% else %}har oy yangilanadi{% endif %}</div>
+      <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} {{ t('pricing.days_label') }}{% else %}{{ t('pricing.renews_monthly') }}{% endif %}</div>
       <div class="lp-plan-cta">
         {% if current_user.is_authenticated %}
           {% if current_plan_key == plan.key %}
-            <span class="btn block btn-ghost" style="pointer-events:none; opacity:0.6">Joriy tarif</span>
+            <span class="btn block btn-ghost" style="pointer-events:none; opacity:0.6">{{ t('pricing.current_plan_label') }}</span>
           {% elif plan.key == 'trial' %}
-            <span class="btn block btn-ghost" style="pointer-events:none; opacity:0.6">Sinov tugadi</span>
+            <span class="btn block btn-ghost" style="pointer-events:none; opacity:0.6">{{ t('pricing.trial_ended_label') }}</span>
           {% else %}
-            <a href="{{ url_for('payment_page') }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">Shu tarifga o'tish</a>
+            <a href="{{ url_for('payment_page') }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ t('pricing.switch_to_plan_btn') }}</a>
           {% endif %}
         {% else %}
-          <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ 'Bepul boshlash' if plan.key == 'trial' else "Ro'yxatdan o'tish" }}</a>
+          <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ t('nav.signup') if plan.key == 'trial' else t('pricing.register_btn') }}</a>
         {% endif %}
       </div>
       <ul>
@@ -64,7 +64,7 @@
 
 {% if not current_user.is_authenticated %}
 <footer class="lp-footer">
-  © {{ current_year() }} Replix. Barcha huquqlar himoyalangan. &middot; <a href="{{ url_for('login') }}" class="text-blue">Kirish</a>
+  © {{ current_year() }} Replix. {{ t('footer.rights') }} &middot; <a href="{{ url_for('login') }}" class="text-blue">{{ t('footer.login') }}</a>
 </footer>
 {% endif %}
 

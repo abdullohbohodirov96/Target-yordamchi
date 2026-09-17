@@ -83,7 +83,7 @@ def test_payment_page_renders_when_payme_not_configured():
         _login(client, username)
         r = client.get("/tolov")
         assert r.status_code == 200
-        html = r.get_data(as_text=True)
+        html = r.get_data(as_text=True).replace("&#39;", "'")
         assert "Avtomatik to'lov (Payme)" not in html, "Payme sozlanmagan bo'lsa avtoto'lov bo'limi umuman ko'rinmasligi kerak"
         assert "Qo'lda to'lash" in html
         assert "To'lov qildim" in html
@@ -99,7 +99,7 @@ def test_payment_page_shows_recommended_badge_when_card_not_bound():
         _login(client, username)
         r = client.get("/tolov")
         assert r.status_code == 200
-        html = r.get_data(as_text=True)
+        html = r.get_data(as_text=True).replace("&#39;", "'")
         assert "Tavsiya etiladi" in html
         assert "Kartani bog'lash" in html
         assert "Qo'lda to'lash" in html, "karta hali bog'lanmagan bo'lsa qo'lda to'lash yo'li ham OCHIQ ko'rinishi kerak"
@@ -115,7 +115,7 @@ def test_payment_page_collapses_manual_section_when_autopay_ready():
         _login(client, username)
         r = client.get("/tolov")
         assert r.status_code == 200
-        html = r.get_data(as_text=True)
+        html = r.get_data(as_text=True).replace("&#39;", "'")
         assert "Tavsiya etiladi" not in html, "avtoto'lov ALLAQACHON tayyor bo'lsa, endi u o'zi tanlangan holat -- alohida belgi kerak emas"
         assert "Bog'langan karta" in html
         assert "<details" in html and "Qo'lda to'lash kerakmi?" in html, "avtoto'lov tayyor bo'lsa qo'lda to'lash IXTIYORIY (yig'ma) bo'lishi kerak"
@@ -131,7 +131,7 @@ def test_payment_page_renders_pending_card_verification_state():
         _login(client, username)
         r = client.get("/tolov")
         assert r.status_code == 200
-        html = r.get_data(as_text=True)
+        html = r.get_data(as_text=True).replace("&#39;", "'")
         assert "SMS kod" in html
         assert "Tasdiqlash" in html
     print("OK: /tolov -- SMS kod tasdiqlash kutilayotgan holat ham xatosiz render bo'ladi")

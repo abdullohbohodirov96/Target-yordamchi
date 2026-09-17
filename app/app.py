@@ -2112,7 +2112,7 @@ def signup():
         finally:
             session.close()
 
-    return render_template("signup.html", plans=plans.PLAN_LIST, form=form_values)
+    return render_template("signup.html", plans=plans.localized_plan_list(plans.PLAN_LIST, g.lang), form=form_values)
 
 
 # ---------------------------------------------------------------------------
@@ -3121,8 +3121,8 @@ def pricing():
         company = _current_company()
         current_plan_key = company.plan if company else None
     return render_template(
-        "pricing.html", plans=plans.PLAN_LIST, current_plan_key=current_plan_key,
-        feature_matrix=plans.FEATURE_MATRIX,
+        "pricing.html", plans=plans.localized_plan_list(plans.PLAN_LIST, g.lang), current_plan_key=current_plan_key,
+        feature_matrix=plans.feature_matrix_for_lang(g.lang),
     )
 
 
@@ -3176,9 +3176,11 @@ def payment_page():
                 c.plan = selected
                 session.commit()
                 flash(
-                    f"\"{plans.get_plan(selected).name}\" tarifi tanlandi. "
-                    f"Pastdagi ma'lumotlar bo'yicha to'lovni amalga oshiring -- "
-                    f"to'lov tushgach, hisobingiz tasdiqlanadi.", "success",
+                    lang_module.translate(
+                        "payment.plan_chosen_flash", g.lang,
+                        name=plans.localized_plan(plans.get_plan(selected), g.lang).name,
+                    ),
+                    "success",
                 )
             finally:
                 session.close()
@@ -3188,8 +3190,8 @@ def payment_page():
     payme_card_holder = os.environ.get("PAYME_CARD_HOLDER", "").strip()
     payment_ref = f"RPX-{company.id:04d}"
     return render_template(
-        "payment.html", company=company, plan=plans.get_plan(company.plan),
-        plans=plans.PAID_PLAN_LIST, payme_card=payme_card,
+        "payment.html", company=company, plan=plans.localized_plan(plans.get_plan(company.plan), g.lang),
+        plans=plans.localized_plan_list(plans.PAID_PLAN_LIST, g.lang), payme_card=payme_card,
         payme_card_holder=payme_card_holder, payment_ref=payment_ref,
         payme_subscribe_configured=payme_subscribe.is_configured(),
         payme_card_masked=company.payme_card_masked,
@@ -3435,7 +3437,7 @@ def dashboard():
     # OLDIN qaytarib yuborar edi) -- ularning mantiqi pastda QO'LDA
     # takrorlangan, faqat "aks holda" shoxobchasida landing ko'rsatiladi.
     if not current_user.is_authenticated:
-        return render_template("landing.html", plans=plans.PLAN_LIST, feature_matrix=plans.FEATURE_MATRIX)
+        return render_template("landing.html", plans=plans.localized_plan_list(plans.PLAN_LIST, g.lang), feature_matrix=plans.feature_matrix_for_lang(g.lang))
     if not permissions.has_module(current_user, "dashboard"):
         flash("Bu bo'limga kirish huquqingiz yo'q. Administratorga murojaat qiling.", "error")
         return redirect(url_for("leads_list") if "leads" in getattr(current_user, "allowed_modules", []) else url_for("logout"))
