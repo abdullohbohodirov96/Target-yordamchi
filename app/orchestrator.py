@@ -1395,6 +1395,29 @@ def _crm_leads_count_today(company_id: "int | None" = None) -> int:
 _CPL_TREND_WINDOW_DAYS = 3  # "bugun tinch" bahonasi bilan surunkali yomon reklama o'tkazib yuborilmasligi uchun qo'shimcha tekshiruv oynasi
 
 
+def _record_auto_pause(company_id, ad_id: str, ad_name: str, reason: str, cpl: float, spend: float) -> None:
+    """2026-09, foydalanuvchi shikoyati ("ochirsayam manga habar bersin"):
+    HAR bir avtomatik pauzani `db.AdAutoActionLog`ga yozadi -- Telegram
+    xabari (`scheduler.job_cpl_hard_kill`) BILAN BIRGA, o'rniga emas.
+    Telegram guruh sozlanmagan/xato bo'lsa ham bu yozuv DOIM qoladi,
+    Dashboard sahifasi shundan so'nggi pauzalarni ko'rsatadi. DB xatosi
+    (masalan vaqtincha ulanmasa) reklamaning O'ZI ALLAQACHON pauza
+    qilinganini bekor qilmasligi kerak -- shuning uchun xato faqat
+    logga yoziladi, ko'tarilmaydi."""
+    try:
+        session = db.get_session()
+        try:
+            session.add(db.AdAutoActionLog(
+                company_id=company_id, ad_id=ad_id, ad_name=ad_name,
+                action="paused", reason=reason, cpl=cpl, spend=spend,
+            ))
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        logger.exception("CPL hard-kill: AdAutoActionLog yozuvini saqlashda xato (ad_id=%s) -- pauzaning o'zi baribir bajarildi", ad_id)
+
+
 def enforce_cpl_hard_kill(company=None) -> dict:
     """Bugungi (server vaqti bo'yicha "today") faol reklamalarni CPL
     hard-kill chegarasi bo'yicha tekshiradi va chegaradan oshganlarini
@@ -1545,6 +1568,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                 "reason": reason, "cpl": cpl, "spend": spend,
             })
             logger.warning("CPL hard-kill: reklama pauza qilindi -- %s (%s): %s", row.get("name", ad_id), ad_id, reason)
+            _record_auto_pause(company_id, ad_id, row.get("name", ad_id), reason, cpl, spend)
         except meta_api.MetaAPIError as e:
             errors.append(f"{row.get('name', ad_id)} ({ad_id}): {e}")
             logger.error("CPL hard-kill: pauza qilishda xato -- %s: %s", ad_id, e)

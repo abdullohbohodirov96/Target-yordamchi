@@ -917,6 +917,36 @@ class MetaEventLog(Base):
     sent_at = Column(DateTime, nullable=True)
 
 
+class AdAutoActionLog(Base):
+    """2026-09, foydalanuvchi shikoyati ("targetni kerak kerakmas ochirib
+    qoyvoti ... ochirsayam manga habar bersin"): `orchestrator.
+    enforce_cpl_hard_kill()` avtomatik pauza qilgan HAR BIR reklamaning
+    DOIMIY (Postgres'dagi) yozuvi. ILGARI bu hodisaning YAGONA izi
+    `scheduler.job_cpl_hard_kill()`dagi Telegram xabari edi -- VA u xabar
+    FAQAT `Company.telegram_group_id` sozlangan bo'lsagina yuborilardi
+    (sozlanmagan/xato bo'lsa jim o'tkazib yuborilardi). Shuning uchun
+    Telegram sozlanmagan (yoki guruh boshqa bo'lgan) kompaniya uchun bu
+    avtomatik pauza HAQIQATDA KO'RINMAS edi. Endi Telegram xabari BILAN
+    BIRGA (o'rniga emas) shu jadvalga ham yoziladi, va Dashboard sahifasi
+    (`_build_dashboard_overview`) so'nggi yozuvlarni ko'rsatadi -- Telegram
+    sozlanган-sozlanmaganidan QAT'I NAZAR, admin buni ko'radi.
+
+    Qat'iy tenant-izolyatsiya: `company_id` -- FAQAT o'sha kompaniyaning
+    admin/menejerlari ko'rishi uchun `_COMPANY_SCOPED_MODELS`ga qo'shilgan
+    (pastga qarang)."""
+    __tablename__ = "ad_auto_action_logs"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    ad_id = Column(String(64), nullable=False, index=True)
+    ad_name = Column(String(255), nullable=True)
+    action = Column(String(16), nullable=False, default="paused")  # hozircha faqat "paused"
+    reason = Column(Text, nullable=True)
+    cpl = Column(Float, nullable=True)
+    spend = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow, index=True)
+
+
 class IgDmConversation(Base):
     """Instagram Direct (DM) suhbatlarining ENG OXIRGI holati -- 2026-08,
     foydalanuvchi so'rovi ("ig chatlarni tahlilini ham qoshish kerak, lekin
@@ -1747,6 +1777,10 @@ _COMPANY_SCOPED_MODELS = [
     # `lead_id` NOT NULL FK bo'lgani uchun Postgres'da kompaniyani
     # o'chirish FK xatosi bilan yiqilardi. Endi ikkalasi ham bitta manbada.
     LeadStatusEvent, BotPrompt,
+    # 2026-09 (foydalanuvchi shikoyati: "ochirsayam manga habar bersin"):
+    # CPL hard-kill avtomatik pauza jurnali -- boshqa kompaniyaning
+    # reklama xarajati/pauza sababi bu kompaniyaga HECH QACHON ko'rinmasin.
+    AdAutoActionLog,
 ]
 
 DEFAULT_COMPANY_NAME = "Asosiy kompaniya"

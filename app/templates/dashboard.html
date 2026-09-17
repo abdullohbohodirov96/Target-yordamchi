@@ -54,6 +54,34 @@
 </div>
 {% endif %}
 
+{% if o.auto_pause_events %}
+<div class="panel" style="margin-bottom:20px; border-left:3px solid var(--bad); padding:14px 16px">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+    <div>
+      <strong>{{ t('dashboard.auto_pause_title') }}</strong>
+      <span class="badge badge-color-bad">{{ t('dashboard.auto_pause_n', n=o.auto_pause_events|length) }}</span>
+    </div>
+    {% if has_module(current_user, 'target') %}<a href="{{ url_for('target_page') }}" class="btn toggle-all-btn-outline">{{ t('dashboard.view_all') }}</a>{% endif %}
+  </div>
+  <p class="text-faint" style="font-size:12px; margin:6px 0 10px">{{ t('dashboard.auto_pause_note') }}</p>
+  <div style="display:flex; flex-direction:column; gap:6px">
+    {% for e in o.auto_pause_events %}
+    <div style="font-size:13.5px; padding:8px 10px; border-radius:var(--radius); background:var(--bad-bg)">
+      <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap">
+        <strong class="text-bad">{{ e.ad_name }}</strong>
+        <span class="text-faint" style="font-size:11.5px">{{ e.created_at.strftime('%d.%m %H:%M') if e.created_at else '' }}</span>
+      </div>
+      <div class="text-dim" style="margin-top:2px">{{ e.reason }}</div>
+      <div class="text-faint" style="font-size:11.5px; margin-top:2px">
+        {{ t('dashboard.auto_pause_cpl', cpl='%.2f'|format(e.cpl or 0)) }} &middot;
+        {{ t('dashboard.auto_pause_spend', spend='%.2f'|format(e.spend or 0)) }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-label">{{ t('dashboard.kpi_total_leads') }}</div><div class="kpi-value">{{ o.total_leads }}</div></div>
   <div class="kpi-card"><div class="kpi-label">{{ t('dashboard.kpi_new_leads', period=o.period_label) }}</div><div class="kpi-value">{{ o.leads_in_period }}</div></div>

@@ -45,7 +45,7 @@ import manager_reporting
 import lang as lang_module
 import tz_utils
 import db
-from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, IgDmAdSource, CannedReply, ImpersonationLog, MetaEventLog, KVEntry
+from db import init_db, get_session, Manager, Lead, LeadNote, LeadStatusEvent, BotPrompt, CustomField, FunnelStage, CallRecord, Sale, AssistantUnanswered, Competitor, CompetitorAd, CompetitorAnalysis, Company, IgDmConversation, IgDmMessage, IgDmAdSource, CannedReply, ImpersonationLog, MetaEventLog, KVEntry, AdAutoActionLog
 from dashboard_data import get_kpis, _date_preset_bounds_utc, custom_range_bounds_utc
 import lead_analytics
 import lead_sync
@@ -3706,11 +3706,39 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
     # bo'limlar umuman ko'rsatilmaydi (na so'rov yuboriladi, na panel
     # chiqadi), xatoga chidamli: Meta API vaqtincha ishlamay qolsa ham
     # butun Dashboard "Internal Server Error" bo'lib qolmasligi kerak.
+    #
+    # 2026-09 QO'SHILDI (foydalanuvchi shikoyati: "targetni kerak kerakmas
+    # ochirib qoyvoti ... ochirsayam manga habar bersin"): CPL hard-kill
+    # avtomatik pauza jurnali (`AdAutoActionLog`) ham shu yerda -- ILGARI
+    # bu hodisaning YAGONA izi Telegram xabari edi (guruh sozlanmagan
+    # bo'lsa BUTUNLAY ko'rinmas edi). Endi Dashboard so'nggi 7 kunlik
+    # avtomatik pauzalarni Telegram sozlangan-sozlanmaganidan qat'i nazar
+    # HAR DOIM ko'rsatadi. `AdAutoActionLog` `_COMPANY_SCOPED_MODELS`da
+    # bo'lgani uchun so'rov AVTOMATIK faqat joriy kompaniyaning
+    # yozuvlarini qaytaradi (boshqa kompaniyaning pauza tarixi sizib
+    # chiqmaydi).
     target_summary = None
     target_not_connected = False
     smm_summary = None
     dm_summary = None
+    auto_pause_events = []
     if permissions.has_module(current_user, "target"):
+        try:
+            auto_pause_cutoff = now - dt.timedelta(days=7)
+            auto_pause_rows = (
+                session.query(AdAutoActionLog)
+                .filter(AdAutoActionLog.created_at >= auto_pause_cutoff)
+                .order_by(AdAutoActionLog.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            auto_pause_events = [{
+                "ad_name": r.ad_name or r.ad_id, "reason": r.reason,
+                "cpl": r.cpl, "spend": r.spend, "created_at": r.created_at,
+            } for r in auto_pause_rows]
+        except Exception:
+            logger.exception("Dashboard: CPL avtomatik pauza jurnalini olishda xato")
+
         meta_token, meta_account = _company_meta_creds(_current_company())
         if not (meta_token and meta_account):
             # 2026-09 -- "targeting ma'lumotlari boshqa loyihadan chiqib
@@ -3768,6 +3796,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
         "followups_overdue": followups_overdue,
         "followups_today": followups_today,
         "followups_preview": followups_preview,
+        "auto_pause_events": auto_pause_events,
         "target_summary": target_summary,
         "target_not_connected": target_not_connected,
         "smm_summary": smm_summary,
