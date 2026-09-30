@@ -438,6 +438,16 @@
   .plan-picker { grid-template-columns: 1fr 1fr; }
   .auth-form-grid { grid-template-columns: 1fr; }
   .auth-card { padding: 26px 20px; }
+  /* 2026-09-30: telefonda sarlavha sig'masdan "Bepul boshlash" tugmasi
+     o'ngdan kesilib qolardi -- ixchamroq o'lchamlar. */
+  .lp-nav { padding: 14px 4px; flex-wrap: wrap; row-gap: 10px; }
+  .lp-nav-brand img { height: 24px; }
+  .lp-nav-cta { gap: 5px; }
+  .lp-nav-cta .btn { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+  .lp-lang-switch { font-size: 12px; gap: 2px; margin-right: 2px; }
+  .lp-lang-switch a { padding: 2px 3px; }
+  .lp-lang-switch span { display: none; }
+  .lp-nav-cta .btn { padding: 8px 10px; }
 }
 
 /* Til almashtirgich -- lp-nav va auth-card (login/signup) sarlavhalarida
@@ -464,22 +474,4 @@
 }
 .lp-lang-switch span {
   color: var(--border);
-}
-.auth-lang-switch {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 14px;
-}
-.auth-lang-switch a {
-  color: var(--text-dim);
-  text-decoration: none;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.auth-lang-switch a.active {
-  color: var(--blue, #2563eb);
-  background: var(--blue-bg, #eef4ff);
 }

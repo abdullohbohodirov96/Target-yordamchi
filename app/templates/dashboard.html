@@ -306,6 +306,17 @@
   function fmtSom(v) {
     return Math.round(v).toLocaleString('ru-RU').replace(/,/g, ' ') + ' ' + {{ t('common.som')|tojson }};
   }
+  // 2026-09-30: pul o'qi -- noldan boshlanadi, ko'pi bilan 6 ta belgi, butun
+  // qiymatlar. ILGARI ma'lumot nol bo'lsa o'q "1 so'm, 1 so'm, ... 0 so'm"
+  // kabi takrorlangan kasr belgilarni ko'rsatardi.
+  function moneyAxis(values) {
+    const max = Math.max(0, ...(values || []).map(Number));
+    return {
+      beginAtZero: true,
+      suggestedMax: max > 0 ? undefined : 1000000,
+      ticks: { maxTicksLimit: 6, precision: 0, callback: (v) => fmtSom(v) },
+    };
+  }
 
   {% if o.total_leads %}
   new Chart(document.getElementById('chart-status'), {
@@ -342,7 +353,7 @@
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmtSom(ctx.parsed.x) } } },
-      scales: { x: { ticks: { callback: (v) => fmtSom(v) } } },
+      scales: { x: moneyAxis({{ o.leaderboard|map(attribute='turnover')|list|tojson }}) },
     }
   });
   {% endif %}
@@ -362,7 +373,7 @@
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmtSom(ctx.parsed.y) } } },
-      scales: { y: { ticks: { callback: (v) => fmtSom(v) } } },
+      scales: { y: moneyAxis({{ o.sales_trend|map(attribute='turnover')|list|tojson }}) },
     }
   });
   {% endif %}

@@ -498,16 +498,20 @@ a { color: inherit; text-decoration: none; }
 
 /* Qorong'i rejimda logotipning och varianti (base.html'dagi izohga
    qarang): asl "eplix" harflari to'q siyohrang -- to'q fonda yo'qoladi. */
-.brand-full-logo-dark, .login-logo-dark, .lp-logo-dark { display: none; }
+/* 2026-09-30: `img.` prefiksi bilan -- `.login-logo { display:block }` (Login
+   bo'limi, pastroqda) va landing.css'dagi `.lp-nav-brand img` qoidalari
+   ILGARI bu yashirishni bekor qilib, yorug' rejimda logotip IKKI MARTA
+   chiqardi. */
+img.brand-full-logo-dark, img.login-logo-dark, .lp-nav-brand img.lp-logo-dark { display: none; }
 /* `.sidebar.open .brand-full-logo` (yuqorida) qoidasidan ustun turishi uchun
    xuddi shu spesifiklik bilan. */
 .sidebar.open .brand-full-logo-dark { display: none; }
 :root[data-theme="dark"] .sidebar.open .brand-full-logo:not(.brand-full-logo-dark) { display: none; }
 :root[data-theme="dark"] .sidebar.open .brand-full-logo-dark { display: block; }
-:root[data-theme="dark"] .login-logo:not(.login-logo-dark) { display: none; }
-:root[data-theme="dark"] .login-logo-dark { display: block; }
-:root[data-theme="dark"] .lp-logo:not(.lp-logo-dark) { display: none; }
-:root[data-theme="dark"] .lp-logo-dark { display: block; }
+:root[data-theme="dark"] img.login-logo:not(.login-logo-dark) { display: none; }
+:root[data-theme="dark"] img.login-logo-dark { display: block; }
+:root[data-theme="dark"] .lp-nav-brand img.lp-logo:not(.lp-logo-dark) { display: none; }
+:root[data-theme="dark"] .lp-nav-brand img.lp-logo-dark { display: block; }
 /* Yorug' rejimda tashqi (oq fonli) rasm konteynerlari va Meta/Instagram
    rasmlari o'zgarmaydi; faqat ochiq oq gradient "shell" fonlari token
    orqali (yuqoridagi --shell-gradient). Sahifa/skrollbar/select
@@ -901,6 +905,9 @@ th.sortable[data-sorted="desc"]::after { border-top: 4px solid var(--ink); opaci
 .text-faint { color: var(--text-faint); }
 
 .empty-row td { padding: 40px 16px; text-align: center; color: var(--text-faint); }
+/* 2026-09-30: telefonda jadval gorizontal siljiydi -- markazdagi "bo'sh"
+   matni ekrandan tashqarida qolib ketardi ("Hali l..."). */
+@media (max-width: 760px) { .empty-row td { text-align: left; padding: 28px 16px; } }
 
 /* ---------- Badges ---------- */
 .badge {
@@ -1005,6 +1012,19 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 .login-brand { display: flex; align-items: center; margin-bottom: 6px; }
 .login-logo { height: 44px; width: auto; object-fit: contain; display: block; }
 .login-subtitle { color: var(--text-faint); font-size: 13px; margin: 0 0 22px; }
+/* Kirish/ro'yxatdan o'tish sahifalaridagi til tanlagich (ILGARI faqat
+   landing.css'da edi -- login/signup uni yuklamagani uchun oddiy matn
+   bo'lib yopishib chiqardi). */
+.auth-lang-switch {
+  display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 18px;
+  background: var(--border-light); border-radius: 999px; font-size: 12px; font-weight: 600;
+}
+.auth-lang-switch a {
+  color: var(--text-dim); text-decoration: none; padding: 5px 11px; border-radius: 999px;
+  transition: background .15s, color .15s;
+}
+.auth-lang-switch a:hover { color: var(--ink); }
+.auth-lang-switch a.active { color: var(--blue); background: var(--card); box-shadow: var(--shadow-sm); }
 
 .login-error {
   display: flex; align-items: flex-start; gap: 9px; background: var(--bad-bg); color: var(--bad);
@@ -1531,6 +1551,13 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
   padding: 9px 10px !important; height: auto !important;
 }
 .sidebar-upsell:hover { background: var(--brand-gradient); color: #fff; }
+/* 2026-09-30: yig'ilgan sidebar'da matn yashiriladi -- ILGARI o'rnida bo'sh
+   ko'k quti qolardi. Endi yig'ilganda faqat ikonka, ochilganda faqat matn. */
+.sidebar-upsell-icon { display: none; }
+.sidebar:not(.open) .sidebar-upsell { background: none; margin: 0; padding: 9px 10px !important; }
+.sidebar:not(.open) .sidebar-upsell .sidebar-upsell-text { display: none !important; }
+.sidebar:not(.open) .sidebar-upsell .sidebar-upsell-icon { display: flex; background: var(--blue-bg); color: var(--blue); }
+.sidebar:not(.open) .sidebar-upsell:hover .sidebar-upsell-icon { background: var(--brand-gradient); color: #fff; }
 
 /* ---------- Marketplace: "ilovalar do'koni" uslubidagi katalog ----------
    2026-09, foydalanuvchi so'rovi: "playmarket shunaqa qil" -- har bir

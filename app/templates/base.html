@@ -461,7 +461,8 @@
          "yig'ilgan" holatda ham matn CSS orqali yashiriladi (nav-text
          klassi bilan bir xil qoidaga bo'ysunadi). #}
       <a href="{{ url_for('pricing') }}" class="nav-item sidebar-upsell" title="{{ t('shell.upsell_title') }}">
-        <span class="nav-text" style="display:block; width:100%">
+        <span class="nav-icon sidebar-upsell-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/></svg></span>
+        <span class="nav-text sidebar-upsell-text" style="display:block; width:100%">
           <span style="display:block; font-weight:600; font-size:12.5px">{{ t('shell.plan_label', plan=sidebar_plan.name) }}{% if sidebar_plan_days_left is not none %} · {{ t('shell.days_left', n=sidebar_plan_days_left) }}{% endif %}</span>
           <span style="display:block; font-size:11.5px; opacity:0.85; margin-top:2px">{{ t('shell.upgrade_to', plan=sidebar_plan_next.name) }}</span>
         </span>
