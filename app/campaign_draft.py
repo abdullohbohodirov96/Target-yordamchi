@@ -24,7 +24,7 @@ ASOSIY PRINSIPLAR (bu modul shularni kafolatlaydi):
   5. `USER_OVERRIDDEN` manbali maydon keyingi AI qayta-rejasida JIMGINA
      qayta yozilmaydi (`ai_campaign_planner.replan_preserving_overrides`).
 
-Meta API tafsilotlari Meta v21 hujjati bo'yicha yozilgan; Meta rad etsa
+Meta API tafsilotlari Meta Marketing API hujjati bo'yicha yozilgan; Meta rad etsa
 `meta_publish.friendly_publish_error()` foydalanuvchiga tushunarli xato
 ko'rsatadi (xom API matni ekranga chiqmaydi).
 """
@@ -837,7 +837,7 @@ def validate_state(state: dict, *, company=None, meta_assets: "dict | None" = No
     if objective in ("SALES", "TRAFFIC") and not (ad.get("link_url") or "").strip():
         errors.append(_err("ad", "link_url", "Bu maqsad uchun sayt havolasi (link) kerak."))
     if objective == "CALLS" and not (ad.get("link_url") or "").strip().lower().startswith("tel:"):
-        # Meta v21: click-to-call reklamada CTA CALL_NOW qiymati `link` = "tel:+998..." bo'lishi kerak
+        # Meta Marketing API: click-to-call reklamada CTA CALL_NOW qiymati `link` = "tel:+998..." bo'lishi kerak
         errors.append(_err("ad", "link_url", "Qo'ng'iroq maqsadi uchun telefon raqami kerak (masalan tel:+998901234567)."))
 
     # --- Maqsadga xos talablar
@@ -976,7 +976,7 @@ def to_meta_targeting(state: dict) -> dict:
 
 def build_page_welcome_message(greeting: str, quick_replies: "list[str] | None") -> str:
     """Click-to-Message reklama uchun `page_welcome_message` JSON-string'i.
-    Meta v21 hujjati bo'yicha (VISUAL_EDITOR, ice_breakers, ko'pi bilan 4 ta
+    Meta Marketing API hujjati bo'yicha (VISUAL_EDITOR, ice_breakers, ko'pi bilan 4 ta
     tezkor javob); rad etilsa `meta_publish` friendly xato ko'rsatadi."""
     breakers = [{"title": str(q).strip()[:80], "response": ""} for q in (quick_replies or []) if str(q).strip()][:4]
     payload = {
@@ -1001,7 +1001,7 @@ def to_meta_creative_spec(
     (`CTA_API_MAP`) o'giriladi; qiymati maqsadga qarab: LEADS ->
     {"lead_gen_form_id"}, MESSAGES -> {"app_destination"}, boshqalar ->
     {"link"}. MESSAGES uchun `page_welcome_message` ham qo'shiladi.
-    Meta v21 hujjati bo'yicha; rad etilsa friendly xato ko'rsatiladi."""
+    Meta Marketing API hujjati bo'yicha; rad etilsa friendly xato ko'rsatiladi."""
     objective = (state.get("objective") or "").upper()
     ad = state.get("ad") or {}
     adset = state.get("adset") or {}
@@ -1035,7 +1035,7 @@ def to_meta_creative_spec(
             "call_to_action": call_to_action,
         }
         if image_hash:
-            data["image_hash"] = image_hash  # video uchun muqova (thumbnail) -- Meta v21 hujjati bo'yicha
+            data["image_hash"] = image_hash  # video uchun muqova (thumbnail) -- Meta Marketing API hujjati bo'yicha
         if objective == "MESSAGES":
             data["page_welcome_message"] = build_page_welcome_message(
                 (ad.get("messages") or {}).get("greeting") or "", (ad.get("messages") or {}).get("quick_replies") or [])
@@ -1060,7 +1060,7 @@ def to_meta_creative_spec(
 
 def lead_form_config_from_state(state: dict) -> dict:
     """`ad.lead_form.new_form`dan `meta_api.create_lead_form()` kutadigan
-    `form_config`ni quradi (Meta v21 `leadgen_forms` hujjati bo'yicha)."""
+    `form_config`ni quradi (Meta Marketing API `leadgen_forms` hujjati bo'yicha)."""
     form = ((state.get("ad") or {}).get("lead_form") or {}).get("new_form") or {}
     questions = []
     for q in form.get("questions") or []:
@@ -1069,7 +1069,7 @@ def lead_form_config_from_state(state: dict) -> dict:
             label = q.get("label") or ""
             entry = {"type": "CUSTOM", "key": q.get("key") or _slug(label or "savol"), "label": label}
             # 2026-09, foydalanuvchi so'rovi ("multiplay choice"): variantlar
-            # bo'lsa -- Meta v21 `leadgen_forms` hujjati bo'yicha CUSTOM
+            # bo'lsa -- Meta Marketing API `leadgen_forms` hujjati bo'yicha CUSTOM
             # savolga "options": [{"key","value"}, ...] qo'shiladi (bir nechta
             # tanlovli savol). Rad etilsa friendly xato ko'rsatiladi (boshqa
             # noaniq Meta shakllari kabi).

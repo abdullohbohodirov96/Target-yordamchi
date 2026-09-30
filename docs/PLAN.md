@@ -34,8 +34,11 @@
 
 ## 2-bosqich. Meta, Avtopilot, CAPI
 - [ ] Meta'ning har bir javobi va xatosini log qilish, foydalanuvchiga tushunarli ko'rsatish
-- [ ] Graph API versiyasini v21.0 dan yangilash
-- [ ] Kampaniya yaratishda `is_adset_budget_sharing_enabled` maydonini qo'shish (reklama Ads Manager'ga qoralama sifatida ham tushmayapti)
+- [x] Graph API versiyasini v21.0 dan yangilash
+  - Standart `v25.0` (muddati 2028-07); Render'da `META_GRAPH_API_VERSION` bilan almashtiriladi.
+- [x] Kampaniya yaratishda `is_adset_budget_sharing_enabled` maydonini qo'shish (reklama Ads Manager'ga qoralama sifatida ham tushmayapti)
+  - Har doim yuboriladi (standart `False`). Dalil: `scripts/test_meta_campaign_payload_offline.py`.
+  - ⚠️ Real akkauntda tekshirish egasi bilan birga (PAUSED holatda) qilinadi.
 - [ ] Avtopilot zanjirini (savol-javob, reja, tasdiq, PAUSED holatda chiqarish) tekshirish
 - [ ] CAPI signallari (yangi lid, sifatli lid, sotuv) ishlashini tekshirish
 

@@ -267,7 +267,7 @@ def _diff_snapshots(expected: dict, actual: dict) -> list[str]:
 
 
 def _promoted_object(objective: str, *, page_id: "str | None", pixel_id: "str | None") -> "dict | None":
-    """Maqsadga qarab `promoted_object` (Meta v21 hujjati bo'yicha):
+    """Maqsadga qarab `promoted_object` (Meta Marketing API hujjati bo'yicha):
     MESSAGES/LEADS/CALLS -> {page_id}; SALES -> {pixel_id, custom_event_type:
     PURCHASE}; TRAFFIC/AWARENESS/ENGAGEMENT -> yo'q."""
     if objective in ("MESSAGES", "LEADS", "CALLS"):

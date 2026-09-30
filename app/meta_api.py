@@ -38,7 +38,10 @@ import requests
 
 logger = logging.getLogger("meta_api")
 
-GRAPH_API_VERSION = "v21.0"
+# 2026-09-30: v21.0 (2024-10) muddati tugayapti -> v25.0 (2026-02, amal
+# qilish muddati 2028-07). Kerak bo'lsa Render'da META_GRAPH_API_VERSION
+# bilan kodni o'zgartirmasdan almashtiriladi (masalan "v26.0").
+GRAPH_API_VERSION = (os.environ.get("META_GRAPH_API_VERSION") or "v25.0").strip()
 GRAPH_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
 ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
@@ -1132,12 +1135,19 @@ def create_campaign(
     *,
     access_token: str | None = None,
     ad_account_id: str | None = None,
+    adset_budget_sharing: bool = False,
 ) -> dict:
+    # MUHIM (2026-09-30, "reklama Ads Manager'ga qoralama sifatida ham
+    # tushmayapti"): byudjet Ad Set darajasida (kampaniya byudjeti -- CBO
+    # yo'q) bo'lsa, Meta endi `is_adset_budget_sharing_enabled`ni MAJBURIY
+    # talab qiladi -- yuborilmasa kampaniya UMUMAN yaratilmaydi. `False` --
+    # har bir Ad Set o'z byudjetini to'liq ishlatadi (eski xatti-harakat).
     return _post(f"{ad_account_id or AD_ACCOUNT_ID}/campaigns", {
         "name": name,
         "objective": objective,
         "status": status,
         "special_ad_categories": special_ad_categories or [],
+        "is_adset_budget_sharing_enabled": bool(adset_budget_sharing),
     }, access_token)
 
 
@@ -1172,7 +1182,7 @@ def create_adset(
     chaqiruvlar o'zgarmaydi): `lifetime_budget_cents` berilsa `daily_budget`
     O'RNIGA umumiy byudjet yuboriladi (Meta ikkalasini birga qabul
     qilmaydi); `start_time`/`end_time` (ISO); `destination_type` (MESSENGER/
-    INSTAGRAM_DIRECT/WHATSAPP/WEBSITE/ON_AD/PHONE_CALL) -- Meta v21 hujjati
+    INSTAGRAM_DIRECT/WHATSAPP/WEBSITE/ON_AD/PHONE_CALL) -- Meta Marketing API hujjati
     bo'yicha; rad etilsa friendly xato ko'rsatiladi.
     """
     payload = {
@@ -1897,7 +1907,7 @@ def verify_webhook_signature(payload_body: bytes, signature_header: "str | None"
 # Kampaniya qoralamasini (`campaign_draft.py`) Meta'ga chiqarish
 # (`meta_publish.py`) uchun kerak bo'lgan QO'SHIMCHA endpoint'lar. Hammasi
 # `access_token` (kompaniyaning O'Z tokeni) bilan ishlaydi -- global ENV
-# tokeniga tayanmaydi. Meta v21 hujjati bo'yicha yozilgan; rad etilsa
+# tokeniga tayanmaydi. Meta Marketing API hujjati bo'yicha yozilgan; rad etilsa
 # `meta_publish.friendly_publish_error()` foydalanuvchiga tushunarli xato
 # ko'rsatadi (xom API matni ekranga chiqmaydi).
 # ---------------------------------------------------------------------------
@@ -1986,7 +1996,7 @@ def search_targeting_interests(query: str, *, access_token: str, limit: int = 10
 def generate_ad_preview(ad_account_id: str, object_story_spec: dict, ad_format: str, *, access_token: str) -> str:
     """Kreativ hali yaratilmagan bo'lsa ham reklama ko'rinishini (iframe
     HTML) qaytaradi -- `act_x/generatepreviews`. `ad_format` --
-    `AD_PREVIEW_FORMATS` qiymatlaridan. Meta v21 hujjati bo'yicha; rad
+    `AD_PREVIEW_FORMATS` qiymatlaridan. Meta Marketing API hujjati bo'yicha; rad
     etilsa friendly xato ko'rsatiladi."""
     data = _get(f"{ad_account_id}/generatepreviews", {
         "creative": {"object_story_spec": object_story_spec},

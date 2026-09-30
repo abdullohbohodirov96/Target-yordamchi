@@ -139,7 +139,7 @@ qiymatlarni Render Dashboard orqali qo'lda kiritish kerak):
 | `META_APP_SECRET` | App Dashboard → Settings → Basic → App Secret ("Show" tugmasi) | Ha — **HECH QACHON brauzerga/frontend kodga chiqarilmaydi**, faqat serverda (`meta_api.py`) ishlatiladi |
 | `TOKEN_ENCRYPTION_KEY` | `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` buyrug'i bilan BIR MARTA generatsiya qilinadi | Tavsiya etiladi (sozlanmasa, `FLASK_SECRET_KEY`dan zaxira kalit avtomatik hosil bo'ladi — ishlaydi, lekin alohida kalit xavfsizroq) |
 | `META_ACCESS_TOKEN` / `META_AD_ACCOUNT_ID` / `META_PAGE_ID` | ESKI, global (bitta akkaunt) integratsiya qoldig'i — YANGI mijozlar uchun endi SHART EMAS (har bir kompaniya o'z hisobini OAuth/Advanced orqali ulaydi) | Yo'q |
-| `META_GRAPH_API_VERSION` | Hozircha `meta_api.py`da `v21.0` deb qattiq yozilgan (kodda `GRAPH_API_VERSION` o'zgaruvchisi) — alohida env o'zgaruvchi sifatida chiqarish past-ustuvorlik, kelajakda kerak bo'lsa qo'shish oson | Yo'q |
+| `META_GRAPH_API_VERSION` | Graph API versiyasi. Standart: `v25.0` (amal qilish muddati 2028-07). Meta yangi versiya chiqarganda shu yerda almashtiriladi (masalan `v26.0`) | Yo'q |
 
 **MUHIM (xavfsizlik):** `META_APP_SECRET`ni HECH QACHON frontend/shablon
 (HTML/JS) kodiga qo'ymang — u faqat `meta_api.py`ning server tomonidagi
