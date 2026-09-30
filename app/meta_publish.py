@@ -154,34 +154,15 @@ def _raw_error_text(e: Exception) -> str:
 
 def friendly_publish_error(e: Exception, step: str) -> str:
     """Meta xatosini foydalanuvchi tushunadigan o'zbekcha xabarga
-    aylantiradi. Kod/matn bo'yicha eng ko'p uchraydigan holatlar alohida,
-    qolgani umumiy xabar (xom API matni ekranga chiqmaydi)."""
+    aylantiradi (`meta_api.friendly_meta_error` -- yagona manba, Target
+    sahifasi/Telegram/hisobotlar bilan bir xil). Tanilmagan xato --
+    bosqich nomi bilan Meta xabari (xom JSON ekranga chiqmaydi)."""
     err = e.args[0] if isinstance(e, meta_api.MetaAPIError) and e.args and isinstance(e.args[0], dict) else {}
-    code = err.get("code")
-    subcode = err.get("error_subcode")
-    text = " ".join(str(err.get(k) or "") for k in ("message", "error_user_msg", "error_user_title")).lower()
-    if code == 190 or "access token" in text and ("expired" in text or "invalid" in text or "session" in text):
-        return "Meta ulanishi muddati tugagan -- Sozlamalar'dan Facebook'ni qayta ulang."
-    if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
-        return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering."
-    if "instagram" in text and ("not connected" in text or "connect" in text or "actor" in text or "linked" in text):
-        return "Instagram akkaunt reklama akkauntiga ulanmagan. Meta Business Suite'da Instagram'ni sahifaga ulang."
-    if "pixel" in text or (step == "adset" and "promoted_object" in text):
-        return "Bu maqsad uchun Pixel tanlash kerak (Meta Events Manager)."
-    if "page" in text and ("not" in text and ("own" in text or "admin" in text or "access" in text)):
-        return "Bu sahifa kompaniyaga ulanmagan yoki unga ruxsat yo'q."
-    if "targeting" in text or "audience" in text or "geo" in text or "location" in text or subcode in (1487079, 1487760):
-        return "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring."
-    if "budget" in text or "minimum" in text and "amount" in text:
-        return "Byudjet Meta'ning minimal chegarasidan kam -- kunlik byudjetni oshiring."
-    if "image" in text or "video" in text or "creative" in text or step == "creative":
-        return "Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi. Rasm hajmi va matnni tekshiring."
-    if "lead" in text and "form" in text or step == "lead_form":
-        return "Instant Form yaratib bo'lmadi -- savollar va maxfiylik havolasini tekshiring."
-    if code in (4, 17, 32, 613) or "rate" in text and "limit" in text:
-        return "Meta so'rovlar chegarasi -- bir necha daqiqadan keyin qayta urinib ko'ring."
+    friendly = meta_api.friendly_meta_error(err, step)
+    if friendly:
+        return friendly
     if err.get("message"):
-        return f"Meta xatosi ({step} bosqichi): {err['message']}"
+        return f"Meta xatosi ({step} bosqichi): {err.get('error_user_msg') or err['message']}{meta_api._error_code_suffix(err)}"
     return "Meta bilan bog'lanishda xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring."
 
 

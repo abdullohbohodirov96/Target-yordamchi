@@ -296,7 +296,7 @@ def test_resume_after_failure_idempotent():
                 check("adset xatosi PublishError", False)
             except meta_publish.PublishError as e:
                 check("adset xatosi PublishError", e.step == "adset")
-                check("friendly targeting xabari", e.friendly == "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring.")
+                check("friendly targeting xabari", e.friendly.startswith("Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring."))
             check("status failed, step adset", d.status == "failed" and d.publish_step == "adset")
             check("meta_campaign_id saqlangan", d.meta_campaign_id == "C1" and d.meta_adset_id is None)
             check("publish_error friendly, raw saqlangan", "targeting" in d.publish_error and "1487079" in d.last_meta_error_raw)

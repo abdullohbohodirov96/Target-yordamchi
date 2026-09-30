@@ -362,7 +362,7 @@ def test_capi_event_log_visible_on_connect_accounts_page():
         check("'Yangi lead' o'zbekcha nom bilan ko'rinadi (xom 'Lead' emas)", "Yangi lead" in html)
         check("muvaffaqiyatli hodisa uchun lead'ga havola bor", f"/leads/{lead_sent_id}" in html)
         check("muvaffaqiyatsiz hodisa uchun ham lead'ga havola bor", f"/leads/{lead_failed_id}" in html)
-        check("xavfsiz xato matni ko'rinadi", "Vaqtinchalik server xatosi" in html)
+        check("xavfsiz, tushunarli xato matni ko'rinadi", "Meta serverida vaqtinchalik nosozlik" in html)
         check("token hech qachon sahifada ko'rinmaydi", "TOKEN_EL" not in html)
 
         # 8c. Cross-tenant: boshqa kompaniya bu hodisalarni ko'rmaydi.

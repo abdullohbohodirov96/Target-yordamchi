@@ -33,7 +33,10 @@
   - Dalil: `scripts/test_telegram_webhook_secret_offline.py`.
 
 ## 2-bosqich. Meta, Avtopilot, CAPI
-- [ ] Meta'ning har bir javobi va xatosini log qilish, foydalanuvchiga tushunarli ko'rsatish
+- [x] Meta'ning har bir javobi va xatosini log qilish, foydalanuvchiga tushunarli ko'rsatish
+  - Har chaqiruv bitta qator log (`META POST act_.../campaigns -> HTTP 400 ... code= subcode= fbtrace_id=`), token hech qachon logda yo'q.
+  - `meta_api.friendly_meta_error` — yagona o'zbekcha tarjima (+ "kod 100/4834011"), Target/Telegram/avtopilot bir xil.
+  - Dalil: `scripts/test_meta_error_logging_offline.py`.
 - [x] Graph API versiyasini v21.0 dan yangilash
   - Standart `v25.0` (muddati 2028-07); Render'da `META_GRAPH_API_VERSION` bilan almashtiriladi.
 - [x] Kampaniya yaratishda `is_adset_budget_sharing_enabled` maydonini qo'shish (reklama Ads Manager'ga qoralama sifatida ham tushmayapti)

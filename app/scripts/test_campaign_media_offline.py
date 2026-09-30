@@ -132,7 +132,7 @@ def test_ensure_uploaded_idempotent_and_failure():
                 check("xato qayta ko'tariladi", False)
             except meta_api.MetaAPIError:
                 check("xato qayta ko'tariladi", True)
-        check("failed + upload_error", row2.upload_status == "failed" and row2.upload_error == "Invalid image")
+        check("failed + upload_error (tushunarli matn)", row2.upload_status == "failed" and (row2.upload_error or "").startswith("Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi") and "kod 100" in row2.upload_error)
         with db_module.scoped_as(c.id):
             ev = session.query(db_module.CampaignDraftEvent).filter_by(draft_id=d.id, action="meta_error").all()
         check("meta_error event", len(ev) == 1 and ev[0].get_details()["step"] == "upload_media")

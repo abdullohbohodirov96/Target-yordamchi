@@ -99,10 +99,87 @@ def safe_error_message(e: Exception) -> str:
     joyga) yoziladi -- diagnostika uchun yo'qolmaydi, faqat ekranga
     chiqmaydi."""
     if isinstance(e, MetaAPIError) and e.args and isinstance(e.args[0], dict):
-        msg = e.args[0].get("message")
+        err = e.args[0]
+        friendly = friendly_meta_error(err)
+        if friendly:
+            return friendly
+        msg = err.get("error_user_msg") or err.get("message")
         if msg:
-            return str(msg)
+            return f"{msg}{_error_code_suffix(err)}"
     return "Meta bilan bog'lanishda vaqtinchalik xatolik yuz berdi (tarmoq muammosi bo'lishi mumkin). Birozdan keyin sahifani yangilab ko'ring."
+
+
+def _error_code_suffix(err: dict) -> str:
+    """Qo'llab-quvvatlash uchun qisqa kod: " (kod 100/4834011)"."""
+    code, sub = err.get("code"), err.get("error_subcode")
+    if code is None:
+        return ""
+    return f" (kod {code}/{sub})" if sub else f" (kod {code})"
+
+
+def friendly_meta_error(err: dict, step: "str | None" = None) -> "str | None":
+    """2026-09-30 (docs/PLAN.md, 2-bosqich): Meta xatosini foydalanuvchi
+    tushunadigan o'zbekcha matnga aylantiradi (+ qisqa kod). Tanilmagan
+    xato uchun `None` -- chaqiruvchi o'zi qaror qiladi. Matnda token/URL
+    bo'lmaydi (faqat Meta JSON xatosi maydonlari ishlatiladi)."""
+    if not isinstance(err, dict):
+        return None
+    code = err.get("code")
+    subcode = err.get("error_subcode")
+    text = " ".join(str(err.get(k) or "") for k in ("message", "error_user_msg", "error_user_title")).lower()
+    suffix = _error_code_suffix(err)
+    if code == 190 or ("access token" in text and ("expired" in text or "invalid" in text or "session" in text)):
+        return "Meta ulanishi muddati tugagan -- \"Hisoblarni ulash\" sahifasidan Facebook'ni qayta ulang." + suffix
+    if subcode == 4834011 or "is_adset_budget_sharing_enabled" in text:
+        return "Meta kampaniya byudjeti sozlamasini (Ad Set byudjetini bo'lishish) talab qildi -- yangilangan tizim buni avtomatik yuboradi, qayta urinib ko'ring." + suffix
+    if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
+        return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering." + suffix
+    if code in (4, 17, 32, 613, 80000, 80004) or ("rate" in text and "limit" in text) or "too many calls" in text:
+        return "Meta so'rovlar chegarasiga yetildi -- bir necha daqiqadan keyin qayta urinib ko'ring." + suffix
+    if code == 2 or code == 1 or err.get("is_transient"):
+        return "Meta serverida vaqtinchalik nosozlik -- birozdan keyin qayta urinib ko'ring." + suffix
+    if "payment" in text or "billing" in text or "funding" in text or subcode in (1359188,):
+        return "Reklama akkauntida to'lov usuli muammosi bor -- Ads Manager'da to'lov sozlamalarini tekshiring." + suffix
+    if "disabled" in text and "account" in text or code == 1487390:
+        return "Reklama akkaunti Meta tomonidan cheklangan yoki o'chirilgan -- Ads Manager'da akkaunt holatini tekshiring." + suffix
+    if "instagram" in text and ("not connected" in text or "connect" in text or "actor" in text or "linked" in text):
+        return "Instagram akkaunt reklama akkauntiga ulanmagan. Meta Business Suite'da Instagram'ni sahifaga ulang." + suffix
+    if "pixel" in text or (step == "adset" and "promoted_object" in text):
+        return "Bu maqsad uchun Pixel tanlash kerak (Meta Events Manager)." + suffix
+    if "page" in text and ("not" in text and ("own" in text or "admin" in text or "access" in text)):
+        return "Bu sahifa kompaniyaga ulanmagan yoki unga ruxsat yo'q." + suffix
+    if "targeting" in text or "audience" in text or "geo" in text or "location" in text or subcode in (1487079, 1487760):
+        return "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring." + suffix
+    if "budget" in text or ("minimum" in text and "amount" in text):
+        return "Byudjet Meta'ning minimal chegarasidan kam -- kunlik byudjetni oshiring." + suffix
+    if "image" in text or "video" in text or "creative" in text or step == "creative":
+        return "Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi. Rasm hajmi va matnni tekshiring." + suffix
+    if ("lead" in text and "form" in text) or step == "lead_form":
+        return "Instant Form yaratib bo'lmadi -- savollar va maxfiylik havolasini tekshiring." + suffix
+    return None
+
+
+def _redact_path(path: str) -> str:
+    """Log uchun yo'l -- hech qachon token/query'siz."""
+    return (path or "").split("?", 1)[0]
+
+
+def _log_meta_call(method: str, path: str, started: float, http_status, result) -> None:
+    """Har bir Meta chaqiruvi -- bitta qator (token YO'Q). Xato -> WARNING
+    (kod, subkod, turi, fbtrace_id, xabar); yozuv (POST) -> INFO; o'qish -> DEBUG."""
+    ms = int((time.monotonic() - started) * 1000)
+    err = result.get("error") if isinstance(result, dict) else None
+    if isinstance(err, dict):
+        logger.warning(
+            "META %s %s -> HTTP %s %sms XATO code=%s subcode=%s type=%s fbtrace_id=%s msg=%r user_title=%r",
+            method, _redact_path(path), http_status, ms, err.get("code"), err.get("error_subcode"),
+            err.get("type"), err.get("fbtrace_id"), (err.get("message") or "")[:300], err.get("error_user_title"),
+        )
+        return
+    level = logging.INFO if method != "GET" else logging.DEBUG
+    obj_id = result.get("id") if isinstance(result, dict) else None
+    logger.log(level, "META %s %s -> HTTP %s %sms ok%s", method, _redact_path(path), http_status, ms,
+               f" id={obj_id}" if obj_id else "")
 
 
 # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 8-band): "Meta API va Claude
@@ -156,14 +233,17 @@ def _get(path: str, params: dict | None = None, token: str | None = None) -> dic
     params["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.get(url, params=params, timeout=30)
             data = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META GET %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             if attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("GET", path, started, getattr(r, "status_code", None), data)
         if "error" in data:
             if _is_transient_meta_error(data) and attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
@@ -185,10 +265,12 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
     payload["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.post(url, data=payload, timeout=30)
             result = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META POST %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             # Faqat SOF tarmoq xatosida qayta urinamiz (izohga qarang, yuqorida)
             # -- Meta javob qaytargan har qanday holatda (hatto xato bilan ham)
             # darhol to'xtaymiz, IKKILANTIRIB YUBORISH xavfini olmaslik uchun.
@@ -196,6 +278,7 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("POST", path, started, getattr(r, "status_code", None), result)
         if isinstance(result, dict) and "error" in result:
             raise MetaAPIError(result["error"])
         return result
@@ -216,14 +299,17 @@ def _post_multipart(path: str, data: dict, files: dict, token: str | None = None
     payload["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.post(url, data=payload, files=files, timeout=120)
             result = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META UPLOAD %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             if attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("UPLOAD", path, started, getattr(r, "status_code", None), result)
         if isinstance(result, dict) and "error" in result:
             raise MetaAPIError(result["error"])
         return result
