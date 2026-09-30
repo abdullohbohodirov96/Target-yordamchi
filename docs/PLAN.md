@@ -27,7 +27,10 @@
   - MultiFernet: `TOKEN_ENCRYPTION_KEY` keyin qo'shilsa ham eski shifrlar o'qiladi.
 - [x] A kompaniya B'ning lidlari, kampaniyalari, menejerlari va tokenlarini ko'rmasligini tekshiruvchi testlar
   - `scripts/test_tenant_isolation_a_vs_b_offline.py` (production rejimida, admin + menejer, 59 sahifa, ijobiy nazorat bilan).
-- [ ] Telegram webhook secret va bot kirish huquqlarini tekshir
+- [x] Telegram webhook secret va bot kirish huquqlarini tekshir
+  - `TELEGRAM_WEBHOOK_SECRET` yo'q bo'lsa ham ilova barqaror secret hosil qilib, mavjud webhook URL'iga avtomatik qo'shadi; so'ng secret'siz so'rov → 403.
+  - Egasi buyruqlari (/pause, /resume, /analyze, /status) faqat egasi chatida; yot chat hech bir kompaniya ma'lumotini ko'rmaydi.
+  - Dalil: `scripts/test_telegram_webhook_secret_offline.py`.
 
 ## 2-bosqich. Meta, Avtopilot, CAPI
 - [ ] Meta'ning har bir javobi va xatosini log qilish, foydalanuvchiga tushunarli ko'rsatish

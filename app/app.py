@@ -31,6 +31,7 @@ from flask_login import (
 )
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from sqlalchemy import func
+import requests
 import meta_api
 import meta_events
 import payme_subscribe
@@ -180,24 +181,76 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 #
 # `TELEGRAM_WEBHOOK_SECRET` ENV o'rnatilgan bo'lsa -- sarlavha MOS
 # KELMAGAN har bir so'rov 403 bilan RAD ETILADI (vaqt-hujumidan himoya
-# uchun `hmac.compare_digest`). O'rnatilMAGAN bo'lsa -- eski (ochiq)
-# xatti-harakat saqlanadi (deploy'ni sindirmaslik uchun), lekin har ishga
-# tushishda ogohlantirish log qilinadi. Yoqish: Render'da
-# `TELEGRAM_WEBHOOK_SECRET` qo'shing, so'ng webhook'ni QAYTA ro'yxatdan
-# o'tkazing (README, 5-qadam): `.../setWebhook?url=...&secret_token=<o'sha>`.
+# uchun `hmac.compare_digest`). O'rnatilMAGAN bo'lsa -- ilova secret'ni
+# O'ZI hosil qilib, Telegram'ga avtomatik ulaydi (pastga qarang).
 TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
-if not TELEGRAM_WEBHOOK_SECRET:
-    logger.warning(
-        "TELEGRAM_WEBHOOK_SECRET sozlanmagan -- /api/webhook soxta so'rovlardan HIMOYALANMAGAN. "
-        "Render'da TELEGRAM_WEBHOOK_SECRET qo'shib, webhook'ni secret_token bilan qayta ro'yxatdan o'tkazing."
-    )
+
+# 2026-09-30 (docs/PLAN.md, 1-bosqich): ENV sozlanmagan bo'lsa ham webhook
+# OCHIQ qolmasin. Ilova `FLASK_SECRET_KEY` + bot tokenidan BARQAROR (har
+# restartda bir xil) secret hosil qiladi va ishga tushganda Telegram'dagi
+# MAVJUD webhook URL'ini o'zgartirmasdan unga shu secret'ni qo'shadi
+# (`_ensure_telegram_webhook_secret`). Telegram tasdiqlagach -- secret'siz
+# har bir so'rov 403. Tasdiq olinmaguncha (masalan tarmoq xatosi) eski
+# xatti-harakat saqlanadi, bot ishlashdan to'xtamaydi.
+_TG_AUTO_SECRET = {"value": None, "active": False}
+
+
+def _derived_telegram_webhook_secret() -> "str | None":
+    flask_secret = os.environ.get("FLASK_SECRET_KEY", "")
+    if not (TELEGRAM_TOKEN and flask_secret):
+        return None
+    return hmac.new(flask_secret.encode(), f"tg-webhook:{TELEGRAM_TOKEN}".encode(), "sha256").hexdigest()
+
+
+def _ensure_telegram_webhook_secret() -> bool:
+    """Telegram'dagi mavjud webhook'ga hosil qilingan secret'ni qo'shadi.
+    URL va `allowed_updates` o'zgarmaydi. Muvaffaqiyatli bo'lsa `True`."""
+    if TELEGRAM_WEBHOOK_SECRET:
+        return True
+    secret = _derived_telegram_webhook_secret()
+    if not secret:
+        logger.warning("Telegram webhook secret: bot tokeni yoki FLASK_SECRET_KEY yo'q -- himoya yoqilmadi.")
+        return False
+    _TG_AUTO_SECRET["value"] = secret
+    try:
+        info = requests.get(f"{TELEGRAM_API}/getWebhookInfo", timeout=15).json().get("result") or {}
+        url = info.get("url")
+        if not url:
+            logger.warning("Telegram webhook o'rnatilmagan (getWebhookInfo: url bo'sh) -- secret qo'shilmadi.")
+            return False
+        payload = {"url": url, "secret_token": secret}
+        if info.get("allowed_updates"):
+            payload["allowed_updates"] = info["allowed_updates"]
+        body = requests.post(f"{TELEGRAM_API}/setWebhook", json=payload, timeout=15).json()
+        if body.get("ok"):
+            _TG_AUTO_SECRET["active"] = True
+            logger.info("Telegram webhook secret avtomatik yoqildi -- /api/webhook endi himoyalangan.")
+            return True
+        logger.error("Telegram setWebhook secret'ni rad etdi: %s", body.get("description"))
+    except Exception as e:
+        logger.error("Telegram webhook secret'ni yoqib bo'lmadi (%s).", type(e).__name__)
+    return False
+
+
+def _ensure_telegram_webhook_secret_with_retry(attempts: int = 5) -> None:
+    """Fon oqimi: tarmoq xatosida 30s, 60s, 120s, ... kutib qayta urinadi."""
+    for i in range(attempts):
+        if _ensure_telegram_webhook_secret():
+            return
+        time.sleep(30 * (2 ** i))
 
 
 def _telegram_webhook_authorized() -> bool:
-    if not TELEGRAM_WEBHOOK_SECRET:
-        return True  # ataylab: sozlanmaguncha eski xatti-harakat (yuqoridagi izoh)
     provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    return bool(provided) and hmac.compare_digest(provided, TELEGRAM_WEBHOOK_SECRET)
+    if TELEGRAM_WEBHOOK_SECRET:
+        return bool(provided) and hmac.compare_digest(provided, TELEGRAM_WEBHOOK_SECRET)
+    auto = _TG_AUTO_SECRET["value"]
+    if auto and provided and hmac.compare_digest(provided, auto):
+        return True
+    if _TG_AUTO_SECRET["active"]:
+        return False  # secret Telegram'da yoqilgan -- secret'siz so'rov soxta
+    logger.warning("TELEGRAM webhook hali secret'siz -- so'rov vaqtincha qabul qilindi.")
+    return True
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
 
 # 2026-09, XATO TUZATISHI ("hammayoqda ulash ishlamayapti" -- Facebook
@@ -9885,6 +9938,8 @@ def manual_trigger(job_name):
 def create_app():
     init_db()
     call_analysis.log_model_config()
+    if TELEGRAM_TOKEN and not TELEGRAM_WEBHOOK_SECRET:
+        threading.Thread(target=_ensure_telegram_webhook_secret_with_retry, daemon=True).start()
     from scheduler import start_scheduler
     start_scheduler(app)
     return app
