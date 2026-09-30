@@ -73,3 +73,14 @@
 - [ ] `plans.py`: Sinov 7 kun bepul; Start $29 (1 akkaunt, 2 menejer); Biznes $69 (1–2 akkaunt, 10 menejer); Agentlik $99 (5 mijoz akkaunti, har qo'shimchasi +$15); yillik to'lovda 2 oy bepul. **O'zgartirishdan oldin egasiga ko'rsatish shart**
 - [ ] Bosh sahifada ikki yo'l: "Men biznes egasiman" va "Men targetologman"
 - [ ] Qo'llanma bo'limi
+
+## Qo'shimcha bajarilganlar (rejadan tashqari)
+- [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).
+- [x] Sinov muddati "N kun qoldi" yaxlitlash xatosi tuzatildi.
+
+## ⏳ Egasining qarori kutilmoqda
+1. Avtopilot nashr standart holati: hozir **ACTIVE** (darhol pul sarflanadi). Rejada **PAUSED**. Qaysi biri?
+2. Bosh sahifa FAQ'da "Narxlar oyiga $50 dan boshlanadi" deyilgan, lekin eng arzon tarif $20 (7-bosqichda yangi narxlar bilan birga tuzatish taklif qilinadi).
+3. Sinov muddati: kodda **5 kun**, rejada **7 kun** (7-bosqich — narx/matn o'zgarishi, tasdiq kerak).
+4. "Sinov" tarifida Meta reklama hisobini ulab bo'lmaydi — sinovchi Avtopilotni to'liq sinab ko'ra olmaydi. Ruxsat beraymi?
+5. Avtopilot sahifasi matnida "hammasi avval PAUSED holatda" deyilgan — 1-savol javobiga qarab matnni moslashtiraman.
