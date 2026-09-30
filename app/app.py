@@ -16,6 +16,7 @@ import json
 import time
 import secrets
 import logging
+import math
 import threading
 import contextvars
 import html as html_stdlib
@@ -5549,7 +5550,10 @@ def _inject_plan_upsell():
     if current_user.role == "admin":
         days_left = None
         if company.paid_until:
-            days_left = max(0, (company.paid_until - dt.datetime.utcnow()).days)
+            # Yuqoriga yaxlitlanadi: 5 kunlik sinovda ro'yxatdan o'tgan zahoti
+            # ILGARI "4 kun qoldi" chiqardi (.days pastga yaxlitlaydi).
+            remaining_s = (company.paid_until - dt.datetime.utcnow()).total_seconds()
+            days_left = max(0, math.ceil(remaining_s / 86400))
         result.update({
             "sidebar_plan": plan_def,
             "sidebar_plan_days_left": days_left,
