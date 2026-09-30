@@ -456,6 +456,7 @@ def resolve_ad_sources(session, *, company_id, access_token) -> int:
     return resolved_count
 
 
+@db.company_scoped
 def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa
     (`db.Company` qatori) -- O'SHA kompaniyaning O'Z `meta_page_id`/
@@ -763,10 +764,11 @@ def mark_alert_sent(conversation_id: int) -> None:
     javobsiz qolmaguncha)."""
     session = get_session()
     try:
-        row = session.get(IgDmConversation, conversation_id)
-        if row is not None:
-            row.unanswered_alert_sent_at = dt.datetime.utcnow()
-            session.commit()
+        with db.unscoped():  # id bo'yicha -- chaqiruvchi (scheduler) o'z kompaniyasidan olgan
+            row = session.get(IgDmConversation, conversation_id)
+            if row is not None:
+                row.unanswered_alert_sent_at = dt.datetime.utcnow()
+                session.commit()
     finally:
         session.close()
 

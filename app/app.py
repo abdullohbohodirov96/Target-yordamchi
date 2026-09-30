@@ -17,6 +17,7 @@ import time
 import secrets
 import logging
 import threading
+import contextvars
 import html as html_stdlib
 import datetime as dt
 from collections import defaultdict
@@ -382,8 +383,11 @@ class ManagerUser(UserMixin):
 def load_user(user_id):
     session = get_session()
     try:
-        m = session.get(Manager, int(user_id))
-        return ManagerUser(m) if m and m.is_active else None
+        # Foydalanuvchi hali aniqlanmagan -- kompaniya konteksti yo'q, shuning
+        # uchun ATAYLAB filtrsiz (fail-closed rejim: `db._apply_tenant_scope`).
+        with db.unscoped():
+            m = session.get(Manager, int(user_id))
+            return ManagerUser(m) if m and m.is_active else None
     finally:
         session.close()
 
@@ -409,7 +413,10 @@ def load_user(user_id):
 # qilib, keyin aniqlash bu xavfni bartaraf etadi.
 @app.before_request
 def _set_tenant_scope():
-    db.set_current_company_id(None)
+    # Fail-closed: avval yopiq holat (load_user o'zi `unscoped()` ishlatadi),
+    # keyin foydalanuvchining kompaniyasi. Token teardown'da AYNAN oldingi
+    # holatni qaytarish uchun saqlanadi.
+    g._tenant_token = db.push_company_context(None)
     if current_user.is_authenticated:
         db.set_current_company_id(getattr(current_user, "company_id", None))
 
@@ -454,7 +461,11 @@ app.jinja_env.globals["lang_url"] = _lang_url
 
 @app.teardown_request
 def _clear_tenant_scope(exception=None):
-    db.set_current_company_id(None)
+    token = g.pop("_tenant_token", None)
+    if token is not None:
+        db.pop_company_context(token)
+    else:
+        db.set_current_company_id(None)
 
 
 def admin_required(fn):
@@ -952,6 +963,22 @@ _REGISTERED_MEMBER_WELCOME_TEXT = (
 )
 
 
+def _telegram_chat_scoped(fn):
+    """Telegram ishlovchilarini (buyruq/erkin matn) chat egasi kompaniyasi
+    kontekstida bajaradi -- agar chaqiruvchi (webhook) kontekstni hali
+    o'rnatmagan bo'lsa. Fail-closed tenant rejimi uchun himoya qatlami."""
+    from functools import wraps
+
+    @wraps(fn)
+    def wrapper(chat_id, *args, **kwargs):
+        if db.get_current_company_id() is not None or db.is_unscoped():
+            return fn(chat_id, *args, **kwargs)
+        with db.scoped_as(_telegram_chat_company_id(chat_id)):
+            return fn(chat_id, *args, **kwargs)
+
+    return wrapper
+
+
 def _resolve_telegram_company(chat_id: int) -> "tuple[Company | None, Manager | None]":
     """2026-09, foydalanuvchi so'rovi ("har company ownerga openai
     tirkab qoyamiz keyin ... shunda ozini kompaniyasidan royhatdan otgan
@@ -1143,6 +1170,7 @@ def _is_registered_chat(chat_id: int) -> bool:
         session.close()
 
 
+@_telegram_chat_scoped
 def handle_free_text(chat_id: int, user_text: str) -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: bu yerdagi butun mantiq (classify_intent,
     # execute_intent, oylik hisobot, /pause va /resume'ga olib boradigan
@@ -1170,7 +1198,8 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         # (yuqoridagi XAVFSIZLIK TUZATISHI izohi).
         company, _manager = _resolve_telegram_company(chat_id)
         if company is not None:
-            _handle_company_free_text(chat_id, company, user_text)
+            with db.scoped_as(company.id):
+                _handle_company_free_text(chat_id, company, user_text)
         else:
             tg_send(chat_id, _REGISTER_HELP_TEXT)
         return
@@ -1207,8 +1236,8 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
     if orchestrator.is_heavy_intent(verdict):
         tg_send(chat_id, "⏳ Qabul qildim, ishlab chiqyapman...")
         thread = threading.Thread(
-            target=_run_heavy_in_background,
-            args=(chat_id, user_text, history_text, verdict),
+            target=contextvars.copy_context().run,  # tenant kontekstini fon oqimiga ham o'tkazish
+            args=(_run_heavy_in_background, chat_id, user_text, history_text, verdict),
             daemon=True,
         )
         thread.start()
@@ -1329,6 +1358,7 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
         session.close()
 
 
+@_telegram_chat_scoped
 def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "private") -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: /status, /analyze, /pause, /resume
     # to'g'ridan-to'g'ri platforma egasining GLOBAL Meta hisobiga ta'sir
@@ -1378,8 +1408,9 @@ def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "pr
         return
     if cmd == "/analyze":
         tg_send(chat_id, "⏳ Hisobni tahlil qilyapman...")
+        ctx = contextvars.copy_context()  # tenant kontekstini fon oqimiga ham o'tkazish
         thread = threading.Thread(
-            target=lambda: tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False)),
+            target=lambda: ctx.run(lambda: tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False))),
             daemon=True,
         )
         thread.start()
@@ -1457,6 +1488,7 @@ def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "pr
     tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish), /groupid (shu guruhning ID'sini ko'rsatish).")
 
 
+@_telegram_chat_scoped
 def _format_standing_tasks_text(chat_id: int) -> str:
     """`/vazifalar` buyrug'iga javob -- shu CHATNING kompaniyasiga tegishli
     FAOL doimiy (schedule_on_off/schedule_report) vazifalarni ro'yxat
@@ -1779,6 +1811,30 @@ def webhook():
     chat_type = message.get("chat", {}).get("type", "private")
     text = message["text"].strip()
 
+    # Fail-closed tenant rejimi: chat qaysi kompaniyaga tegishli bo'lsa,
+    # butun ishlov berish FAQAT o'sha kompaniya doirasida bajariladi.
+    # Ro'yxatdan o'tmagan chat uchun kontekst bo'sh qoladi -- u hech bir
+    # kompaniyaning ma'lumotini o'qiy olmaydi.
+    with db.scoped_as(_telegram_chat_company_id(chat_id)):
+        return _handle_telegram_message(chat_id, chat_type, text, message)
+
+
+def _telegram_chat_company_id(chat_id: int) -> "int | None":
+    """Telegram chat -> kompaniya id: platforma egasining chati -> standart
+    kompaniya, aks holda `_resolve_telegram_company()`. Topilmasa `None`
+    (yot chat -- hech bir kompaniyaning ma'lumotiga kira olmaydi)."""
+    try:
+        if _is_owner_telegram_chat(chat_id):
+            return db.get_default_company_id()
+        company, _manager = _resolve_telegram_company(chat_id)
+        return company.id if company is not None else None
+    except Exception:
+        logger.exception("Telegram chat -> kompaniya aniqlashda xato (chat_id=%s)", chat_id)
+        return None
+
+
+def _handle_telegram_message(chat_id: int, chat_type: str, text: str, message: dict):
+
     try:
         if _try_handle_assistant_reply(chat_id, message):
             return jsonify({"ok": True})
@@ -1914,17 +1970,18 @@ def instagram_webhook_receive():
                         # ikkalasi ham tekshiriladi.
                         referral = m.get("referral") or message.get("referral") or {}
                         source_ad_id = referral.get("ad_id")
-                        ig_dm_sync.ingest_webhook_message(
-                            company,
-                            sender_id=(m.get("sender") or {}).get("id"),
-                            recipient_id=(m.get("recipient") or {}).get("id"),
-                            message_id=message.get("mid"),
-                            text=message.get("text"),
-                            timestamp_ms=m.get("timestamp"),
-                            is_echo=bool(message.get("is_echo")),
-                            channel=channel,
-                            source_ad_id=source_ad_id,
-                        )
+                        with db.scoped_as(company.id):
+                            ig_dm_sync.ingest_webhook_message(
+                                company,
+                                sender_id=(m.get("sender") or {}).get("id"),
+                                recipient_id=(m.get("recipient") or {}).get("id"),
+                                message_id=message.get("mid"),
+                                text=message.get("text"),
+                                timestamp_ms=m.get("timestamp"),
+                                is_echo=bool(message.get("is_echo")),
+                                channel=channel,
+                                source_ad_id=source_ad_id,
+                            )
                     except Exception:
                         logger.exception(
                             "Instagram/Facebook webhook: bitta xabarni yozishda xato (page_id=%s, channel=%s)",
@@ -1949,10 +2006,12 @@ def login():
         password = request.form.get("password", "")
         session = get_session()
         try:
-            m = session.query(Manager).filter_by(username=username, is_active=True).first()
-            if m and m.check_password(password):
-                login_user(ManagerUser(m))
-                return redirect(url_for("dashboard"))
+            # Login -- kompaniya hali noma'lum, username GLOBAL noyob.
+            with db.unscoped():
+                m = session.query(Manager).filter_by(username=username, is_active=True).first()
+                if m and m.check_password(password):
+                    login_user(ManagerUser(m))
+                    return redirect(url_for("dashboard"))
         finally:
             session.close()
         flash(lang_module.translate("login.flash_bad_credentials", g.lang), "error")
@@ -2082,20 +2141,22 @@ def signup():
                 session.add(c)
                 session.commit()
 
-                admin = Manager(
-                    username=admin_username, role="admin", company_id=c.id,
-                    full_name=admin_full_name or company_name,
-                )
-                admin.set_password(password)
-                session.add(admin)
-                session.commit()
-                db.seed_default_funnel_stages_for_company(c.id)
+                with db.scoped_as(c.id):  # yangi kompaniya doirasida
+                    admin = Manager(
+                        username=admin_username, role="admin", company_id=c.id,
+                        full_name=admin_full_name or company_name,
+                    )
+                    admin.set_password(password)
+                    session.add(admin)
+                    session.commit()
+                    db.seed_default_funnel_stages_for_company(c.id)
+                    admin_user = ManagerUser(admin)
 
                 _notify_platform_owner(
                     f"🆕 Yangi kompaniya ro'yxatdan o'tdi: \"{company_name}\" "
                     f"(tarif: {plan_def.name}, admin login: {admin_username})."
                 )
-                login_user(ManagerUser(admin))
+                login_user(admin_user)
                 if requested_plan == "trial":
                     flash(
                         lang_module.translate(
@@ -2422,6 +2483,8 @@ def webhook_leads_intake(token):
             company = session.query(Company).filter_by(inbound_lead_token=token).first()
         if company is None or not company.is_active:
             return jsonify({"ok": False, "error": "noto'g'ri yoki eskirgan token"}), 404
+        # Qolgan ish FAQAT shu token egasi kompaniya doirasida (fail-closed).
+        db.set_current_company_id(company.id)
 
         data = request.get_json(silent=True) or {}
         parsed = integrations.parse_inbound_payload(data)
@@ -2466,10 +2529,12 @@ def _run_initial_lead_sync(company_id: int) -> None:
     oqimida chaqiriladi -- to'liq izoh chaqiruv joyida."""
     session = get_session()
     try:
-        company = session.get(Company, company_id)
+        with db.unscoped():
+            company = session.get(Company, company_id)
         if not company:
             return
-        lead_sync.sync_once(company=company)
+        with db.scoped_as(company_id):
+            lead_sync.sync_once(company=company)
     except Exception:
         logger.exception("Ulanishdan keyingi darhol lead-sinxronizatsiyasida xato (company_id=%s)", company_id)
     finally:

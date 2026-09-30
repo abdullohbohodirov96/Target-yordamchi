@@ -23,6 +23,7 @@ import datetime as dt
 import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("FLASK_SECRET_KEY", "test-secret")
@@ -451,16 +452,18 @@ def _openai_text_response(payload: dict) -> _FakeResp:
 
 def _seed_conversation(db_module, external_id, messages_texts, ai_analyzed_message_count=0):
     session = db_module.get_session()
+    # Production'da har bir qator kompaniyaga tegishli (fail-closed tenant rejimi).
+    company_id = db_module.get_default_company_id()
     conv = db_module.IgDmConversation(
         external_id=external_id, message_count=len(messages_texts),
-        ai_analyzed_message_count=ai_analyzed_message_count,
+        ai_analyzed_message_count=ai_analyzed_message_count, company_id=company_id,
     )
     session.add(conv)
     session.commit()
     now = dt.datetime.utcnow()
     for i, (sender, text) in enumerate(messages_texts):
         session.add(db_module.IgDmMessage(
-            conversation_id=conv.id, external_id=f"{external_id}-m{i}", sender=sender, text=text,
+            conversation_id=conv.id, company_id=company_id, external_id=f"{external_id}-m{i}", sender=sender, text=text,
             sent_at=now - dt.timedelta(minutes=(len(messages_texts) - i)),
         ))
     session.commit()

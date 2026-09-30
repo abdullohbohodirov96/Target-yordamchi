@@ -1418,6 +1418,7 @@ def _record_auto_pause(company_id, ad_id: str, ad_name: str, reason: str, cpl: f
         logger.exception("CPL hard-kill: AdAutoActionLog yozuvini saqlashda xato (ad_id=%s) -- pauzaning o'zi baribir bajarildi", ad_id)
 
 
+@db.company_scoped
 def enforce_cpl_hard_kill(company=None) -> dict:
     """Bugungi (server vaqti bo'yicha "today") faol reklamalarni CPL
     hard-kill chegarasi bo'yicha tekshiradi va chegaradan oshganlarini
@@ -1630,6 +1631,7 @@ def enforce_cpl_hard_kill_all_companies() -> dict:
     return {"companies_checked": len(companies), "per_company": per_company}
 
 
+@db.company_scoped
 def gather_data(company=None) -> dict:
     """Meta API'dan tahlil uchun kerakli barcha ma'lumotni yig'adi.
 
@@ -2077,6 +2079,7 @@ def run_analysis_cycle(dry_run: bool = False, chat_id: int | None = None, compan
     return text
 
 
+@db.company_scoped
 def run_daily_cron_report(dry_run: bool = False, company=None) -> str | None:
     """VERCEL CRON UCHUN: `run_analysis_cycle()` bilan bir xil to'liq tahlilni
     ishga tushiradi, lekin foydalanuvchiga faqat DIQQATGA LOYIQ narsa bo'lsa
@@ -2438,6 +2441,7 @@ def _admin_report_header(period_label: str, hisobot_vaqti: str, subtitle: str) -
     )
 
 
+@db.company_scoped
 def build_admin_report(
     period_label: str,
     hisobot_vaqti: str,

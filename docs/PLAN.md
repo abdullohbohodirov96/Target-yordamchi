@@ -12,9 +12,15 @@
 - Sessiya oxirida push + hisobot (nima qilindi, deploy, tekshiruv qadamlari, xato/rollback).
 
 ## 1-bosqich. Xavfsizlik va izolyatsiya
-- [ ] app/db.py dagi `_apply_tenant_scope` ni "yopiq holatda yiqiladigan" qil: company_id bo'lmasa so'rov rad etilsin
-- [ ] Filtrni update/delete so'rovlariga ham qo'lla
-- [ ] Barcha scheduler/cron ishlari aniq company_id bilan ishlashini tekshir va tuzat
+- [x] app/db.py dagi `_apply_tenant_scope` ni "yopiq holatda yiqiladigan" qil: company_id bo'lmasa so'rov rad etilsin
+  - Kontekst yo'q → `TenantScopeError`. Filtrsiz o'qish faqat `db.unscoped()` orqali (login, cron ro'yxatlari, migratsiya).
+  - Favqulodda zaxira: Render'da `TENANT_SCOPE_MODE=warn` → rad etish o'rniga ERROR log (kodni qaytarmasdan).
+- [x] Filtrni update/delete so'rovlariga ham qo'lla
+- [x] Barcha scheduler/cron ishlari aniq company_id bilan ishlashini tekshir va tuzat
+  - `@db.company_scoped` dekoratori: sync_once (lead/call/ig/smm), CPL hard-kill, audit, admin hisobot.
+  - Doimiy vazifalar/hisobotlar, CRM webhook, IG DM tahlil — har bir yozuv o'z kompaniyasi kontekstida.
+  - Telegram webhook va fon oqimlari (thread) chat egasi kompaniyasi kontekstida.
+  - Dalil: `scripts/test_fail_closed_production_paths_offline.py` (barcha 19 fon vazifasi + 59 sahifa qat'iy rejimda).
 - [ ] Har bir kompaniyaning Meta tokeni shifrlanganini tekshir
 - [ ] A kompaniya B'ning lidlari, kampaniyalari, menejerlari va tokenlarini ko'rmasligini tekshiruvchi testlar
 - [ ] Telegram webhook secret va bot kirish huquqlarini tekshir

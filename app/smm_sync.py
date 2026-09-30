@@ -324,6 +324,7 @@ def _sync_instagram(session, result: dict, *, page_id: str | None, access_token:
         )
 
 
+@db.company_scoped
 def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi (Facebook + Instagram).
     `company` berilsa (`db.Company` qatori) -- O'SHA kompaniyaning O'Z

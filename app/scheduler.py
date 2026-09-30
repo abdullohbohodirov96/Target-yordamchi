@@ -1376,41 +1376,44 @@ def job_standing_tasks() -> str:
     changes_by_chat: dict = {}
     errors_by_chat: dict = {}
     try:
-        tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
-        # 2026-09, xavfsizlik/ishonchlilik tuzatishi ("bir ikkita xatolar
-        # chiqyapti, o'chirmayapti vaqtida"): ILGARI bu yer HAR BIR vazifani
-        # (qaysi kompaniyaga tegishli bo'lishidan qat'iy nazar) doim GLOBAL
-        # (ENV) token bilan bajarardi -- ya'ni boshqa kompaniyaning
-        # `schedule_on_off` vazifasi ATAYLAB ulangan O'Z Meta hisobi emas,
-        # PLATFORMA EGASINING hisobiga (yoki, ehtimolroq, mavjud bo'lmagan
-        # `object_id`ga -- shu sabab "xato chiqib, o'chirmayapti" belgisi)
-        # yuborilardi. Endi har bir vazifaning O'Z kompaniyasining Meta
-        # token'i bilan bajariladi (bitta so'rovda oldindan xaritaga
-        # yig'ilgan -- har bir vazifa uchun alohida DB so'rov shart emas).
-        company_ids = {t.company_id for t in tasks if t.company_id is not None}
-        creds_by_company: dict = {}
-        if company_ids:
-            with db.unscoped():
-                for c in session.query(db.Company).filter(db.Company.id.in_(company_ids)).all():
-                    creds_by_company[c.id] = c.get_meta_access_token()
+        # Barcha kompaniyalarning vazifalari -- ATAYLAB filtrsiz; har bir vazifa
+        # FAQAT o'z `company_id`sining Meta tokeni bilan bajariladi (pastda).
+        with db.unscoped():
+            tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
+            # 2026-09, xavfsizlik/ishonchlilik tuzatishi ("bir ikkita xatolar
+            # chiqyapti, o'chirmayapti vaqtida"): ILGARI bu yer HAR BIR vazifani
+            # (qaysi kompaniyaga tegishli bo'lishidan qat'iy nazar) doim GLOBAL
+            # (ENV) token bilan bajarardi -- ya'ni boshqa kompaniyaning
+            # `schedule_on_off` vazifasi ATAYLAB ulangan O'Z Meta hisobi emas,
+            # PLATFORMA EGASINING hisobiga (yoki, ehtimolroq, mavjud bo'lmagan
+            # `object_id`ga -- shu sabab "xato chiqib, o'chirmayapti" belgisi)
+            # yuborilardi. Endi har bir vazifaning O'Z kompaniyasining Meta
+            # token'i bilan bajariladi (bitta so'rovda oldindan xaritaga
+            # yig'ilgan -- har bir vazifa uchun alohida DB so'rov shart emas).
+            company_ids = {t.company_id for t in tasks if t.company_id is not None}
+            creds_by_company: dict = {}
+            if company_ids:
+                with db.unscoped():
+                    for c in session.query(db.Company).filter(db.Company.id.in_(company_ids)).all():
+                        creds_by_company[c.id] = c.get_meta_access_token()
 
-        for t in tasks:
-            desired = _desired_state(now_hhmm, t.on_time, t.off_time)
-            if desired == t.last_desired_state:
-                continue
-            access_token = creds_by_company.get(t.company_id)
-            try:
-                (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
-                t.last_desired_state = desired
-                t.last_checked_at = now
-                t.last_error = None
-                changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
-            except Exception as e:
-                safe_msg = meta_api.safe_error_message(e)
-                t.last_error = safe_msg
-                logger.exception("Standing task xatosi (object_id=%s, company_id=%s)", t.object_id, t.company_id)
-                errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
-        session.commit()
+            for t in tasks:
+                desired = _desired_state(now_hhmm, t.on_time, t.off_time)
+                if desired == t.last_desired_state:
+                    continue
+                access_token = creds_by_company.get(t.company_id)
+                try:
+                    (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
+                    t.last_desired_state = desired
+                    t.last_checked_at = now
+                    t.last_error = None
+                    changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
+                except Exception as e:
+                    safe_msg = meta_api.safe_error_message(e)
+                    t.last_error = safe_msg
+                    logger.exception("Standing task xatosi (object_id=%s, company_id=%s)", t.object_id, t.company_id)
+                    errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
+            session.commit()
     finally:
         session.close()
 
@@ -1460,15 +1463,16 @@ def job_standing_reports() -> str:
     today_str = now.strftime("%Y-%m-%d")
     session = db.get_session()
     try:
-        reports = session.query(db.StandingReport).filter_by(is_active=True).all()
-        # MUHIM: aniq tenglik emas ( >= ) -- job har 5 daqiqada ishlaydi, aniq
-        # HH:MM daqiqasiga to'g'ri kelib qolmasligi mumkin. `last_sent_date`
-        # bir kunda faqat BIR MARTA yuborilishini kafolatlaydi.
-        due = [r for r in reports if now_hhmm >= r.time_hhmm and r.last_sent_date != today_str]
-        for r in due:
-            r.last_sent_date = today_str
-        session.commit()
-        due_chat_ids = [r.chat_id for r in due]
+        with db.unscoped():  # barcha kompaniyalarning hisobot vaqtlari
+            reports = session.query(db.StandingReport).filter_by(is_active=True).all()
+            # MUHIM: aniq tenglik emas ( >= ) -- job har 5 daqiqada ishlaydi, aniq
+            # HH:MM daqiqasiga to'g'ri kelib qolmasligi mumkin. `last_sent_date`
+            # bir kunda faqat BIR MARTA yuborilishini kafolatlaydi.
+            due = [r for r in reports if now_hhmm >= r.time_hhmm and r.last_sent_date != today_str]
+            for r in due:
+                r.last_sent_date = today_str
+            session.commit()
+            due_chat_ids = [r.chat_id for r in due]
     finally:
         session.close()
 

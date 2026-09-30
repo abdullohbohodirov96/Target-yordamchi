@@ -33,6 +33,7 @@ from call_analysis import (
     OpenAICreditExhaustedError,
     OPENAI_ANALYSIS_MODEL,
 )
+import db
 from db import get_session, IgDmConversation, IgDmMessage
 
 logger = logging.getLogger("ig_dm_analysis")
@@ -163,16 +164,21 @@ def analyze_pending_conversations(limit: int = 20) -> dict:
 
     session = get_session()
     try:
-        pending = (
-            session.query(IgDmConversation)
-            .filter(IgDmConversation.message_count > IgDmConversation.ai_analyzed_message_count)
-            .order_by(IgDmConversation.last_message_at.desc())
-            .limit(limit)
-            .all()
-        )
+        # Navbat -- barcha kompaniyalar bo'yicha (ATAYLAB filtrsiz), lekin har
+        # bir suhbat FAQAT o'z kompaniyasi kontekstida tahlil qilinadi.
+        with db.unscoped():
+            pending = (
+                session.query(IgDmConversation)
+                .filter(IgDmConversation.message_count > IgDmConversation.ai_analyzed_message_count)
+                .order_by(IgDmConversation.last_message_at.desc())
+                .limit(limit)
+                .all()
+            )
         for conv in pending:
             try:
-                analyze_conversation(session, conv)
+                # company_id'siz eski qatorlar -- standart kompaniyaniki (ensure_default_company bilan bir xil qoida)
+                with db.scoped_as(conv.company_id or db.get_default_company_id()):
+                    analyze_conversation(session, conv)
                 result["analyzed"] += 1
             except OpenAICreditExhaustedError as e:
                 logger.error("IG DM tahlili: OpenAI krediti tugagan -- navbat to'xtatildi.")

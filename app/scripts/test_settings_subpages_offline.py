@@ -26,6 +26,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("META_ACCESS_TOKEN", "test-dummy-token")
