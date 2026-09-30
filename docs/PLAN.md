@@ -43,7 +43,12 @@
   - Har doim yuboriladi (standart `False`). Dalil: `scripts/test_meta_campaign_payload_offline.py`.
   - ⚠️ Real akkauntda tekshirish egasi bilan birga (PAUSED holatda) qilinadi.
 - [ ] Avtopilot zanjirini (savol-javob, reja, tasdiq, PAUSED holatda chiqarish) tekshirish
-- [ ] CAPI signallari (yangi lid, sifatli lid, sotuv) ishlashini tekshirish
+  - Tekshirildi: savol-javob → AI reja → 3 ta tasdiq (kampaniya/adset/reklama) → faqat admin nashr qiladi; tahrir tegishli tasdiqni bekor qiladi; A kompaniya B qoralamasiga kira olmaydi (mavjud testlar).
+  - ⏳ EGASI QARORI KERAK: hozir nashr standart holatda **ACTIVE** (ilgari egasi so'ragan). Rejada "PAUSED holatda chiqarish". Standartni PAUSED ga o'zgartiraymi?
+- [x] CAPI signallari (yangi lid, sifatli lid, sotuv) ishlashini tekshirish
+  - Lead / QualifiedLead / Purchase to'g'ri joylarda, event_id bilan (dublikatsiz), telefon/email SHA-256.
+  - Qo'shildi: Lead Ads lidlari uchun `custom_data.event_source="crm"` + `lead_event_source` (Meta Conversion Leads optimizatsiyasi uchun).
+  - Dalil: `scripts/test_capi_signals_offline.py`.
 
 ## 3-bosqich. Kreativ studiya
 - [ ] AI faqat fon yoki obyektni chizsin, matn, logo va narxni shablon ustiga kod qo'ysin

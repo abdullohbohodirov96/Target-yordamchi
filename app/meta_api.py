@@ -380,6 +380,9 @@ def _hash_sha256(value: str) -> str:
     return hashlib.sha256(value.strip().lower().encode("utf-8")).hexdigest()
 
 
+CAPI_LEAD_EVENT_SOURCE = os.environ.get("CAPI_LEAD_EVENT_SOURCE", "Replix CRM").strip() or "Replix CRM"
+
+
 def send_conversion_event(
     event_name: str,
     *,
@@ -484,8 +487,18 @@ def send_conversion_event(
         event["event_source_url"] = event_source_url
     if event_id:
         event["event_id"] = event_id
+    custom_data: dict = {}
     if value is not None:
-        event["custom_data"] = {"value": round(float(value), 2), "currency": currency}
+        custom_data.update({"value": round(float(value), 2), "currency": currency})
+    if lead_id:
+        # 2026-09-30 (docs/PLAN.md, 2-bosqich): Meta "Conversion Leads" (CRM
+        # integratsiyasi) Lead Ads lidining keyingi bosqichlarini (sifatli
+        # lid, sotuv) reklama optimizatsiyasiga bog'lashi uchun shu ikki
+        # maydonni kutadi.
+        custom_data["event_source"] = "crm"
+        custom_data["lead_event_source"] = CAPI_LEAD_EVENT_SOURCE
+    if custom_data:
+        event["custom_data"] = custom_data
 
     payload: dict = {"data": [event]}
     if test_event_code:
