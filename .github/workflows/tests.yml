@@ -33,7 +33,11 @@ jobs:
           cache-dependency-path: app/requirements.txt
 
       - name: Kutubxonalarni o'rnatish
-        run: pip install --no-cache-dir -r app/requirements.txt
+        # `--no-cache-dir` YO'Q: setup-python'ning `cache: pip` qadami keyin
+        # ~/.cache/pip papkasini saqlaydi -- papka bo'lmasa post-qadam
+        # "Cache folder path ... doesn't exist" xatosi bilan butun job'ni
+        # (hamma testlar o'tgan bo'lsa ham) qizil qilardi.
+        run: pip install -r app/requirements.txt
 
       - name: Har bir offline test faylini ishga tushirish
         working-directory: app
