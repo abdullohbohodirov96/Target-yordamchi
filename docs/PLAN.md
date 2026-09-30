@@ -21,8 +21,12 @@
   - Doimiy vazifalar/hisobotlar, CRM webhook, IG DM tahlil — har bir yozuv o'z kompaniyasi kontekstida.
   - Telegram webhook va fon oqimlari (thread) chat egasi kompaniyasi kontekstida.
   - Dalil: `scripts/test_fail_closed_production_paths_offline.py` (barcha 19 fon vazifasi + 59 sahifa qat'iy rejimda).
-- [ ] Har bir kompaniyaning Meta tokeni shifrlanganini tekshir
-- [ ] A kompaniya B'ning lidlari, kampaniyalari, menejerlari va tokenlarini ko'rmasligini tekshiruvchi testlar
+- [x] Har bir kompaniyaning Meta tokeni shifrlanganini tekshir
+  - Barcha maxfiy ustunlar (Meta/CAPI token, Moi Zvonki, Payme) Fernet bilan shifrlangan, sahifalarda faqat •••.
+  - Eski ochiq matnli qiymatlar ishga tushishda bir marta shifrlanadi (`db.encrypt_legacy_plaintext_secrets`, idempotent).
+  - MultiFernet: `TOKEN_ENCRYPTION_KEY` keyin qo'shilsa ham eski shifrlar o'qiladi.
+- [x] A kompaniya B'ning lidlari, kampaniyalari, menejerlari va tokenlarini ko'rmasligini tekshiruvchi testlar
+  - `scripts/test_tenant_isolation_a_vs_b_offline.py` (production rejimida, admin + menejer, 59 sahifa, ijobiy nazorat bilan).
 - [ ] Telegram webhook secret va bot kirish huquqlarini tekshir
 
 ## 2-bosqich. Meta, Avtopilot, CAPI

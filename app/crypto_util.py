@@ -35,11 +35,11 @@ import hashlib
 import logging
 import os
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 logger = logging.getLogger("crypto_util")
 
-_fernet_instance: Fernet | None = None
+_fernet_instance: "MultiFernet | None" = None
 
 
 def _derive_key_from_secret(secret: str) -> bytes:
@@ -47,16 +47,20 @@ def _derive_key_from_secret(secret: str) -> bytes:
     return base64.urlsafe_b64encode(digest)
 
 
-def _get_fernet() -> Fernet:
+def _get_fernet() -> MultiFernet:
+    """Birinchi kalit -- shifrlash uchun; qolganlari -- faqat o'qish uchun.
+    2026-09-30: `TOKEN_ENCRYPTION_KEY` keyinroq qo'shilsa ham, ungacha
+    `FLASK_SECRET_KEY`dan hosil qilingan kalit bilan shifrlangan tokenlar
+    o'qilaveradi (MultiFernet) -- Meta ulanishlari "yo'qolib" qolmaydi."""
     global _fernet_instance
     if _fernet_instance is not None:
         return _fernet_instance
 
+    keys: list[Fernet] = []
     explicit_key = os.environ.get("TOKEN_ENCRYPTION_KEY", "").strip()
     if explicit_key:
         try:
-            _fernet_instance = Fernet(explicit_key.encode("utf-8"))
-            return _fernet_instance
+            keys.append(Fernet(explicit_key.encode("utf-8")))
         except Exception:
             logger.error(
                 "TOKEN_ENCRYPTION_KEY noto'g'ri formatda (Fernet.generate_key() "
@@ -65,36 +69,40 @@ def _get_fernet() -> Fernet:
             )
 
     fallback_secret = os.environ.get("FLASK_SECRET_KEY", "") or "replix-dev-fallback-key"
-    if fallback_secret == "replix-dev-fallback-key":
-        # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 15-band): na
-        # TOKEN_ENCRYPTION_KEY, na FLASK_SECRET_KEY sozlangan -- BUTUNLAY
-        # qattiq yozilgan (kodda ochiq) zaxira kalitdan foydalanilmoqda.
-        # Bu lokal/test muhitida zararsiz, lekin PRODUCTION'da bo'lsa,
-        # bazadagi shifrlangan Meta tokenlar HAQIQIY himoyasiz qoladi --
-        # operatorga darhol ko'rinishi uchun ERROR darajasida.
-        logger.error(
-            "TOKEN_ENCRYPTION_KEY HAM, FLASK_SECRET_KEY HAM sozlanmagan -- "
-            "tokenlar kodga QATTIQ YOZILGAN, HIMOYASIZ kalit bilan "
-            "shifrlanmoqda. PRODUCTION muhitida bu DARHOL tuzatilishi kerak."
-        )
-    else:
-        # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 15-band: "Token
-        # shifrlash kaliti alohida sozlanmasa FLASK_SECRET_KEY'dan hosil
-        # qilinadi"): bu ATAYLAB tanlangan, hujjatlashtirilgan zaxira yo'li
-        # (yuqoridagi modul docstring'ga qarang) -- lekin ILGARI operator
-        # buni PRODUCTION loglarida UMUMAN ko'rmasdi. Endi bir marta (process
-        # boshida, keshlanganidan keyin qayta chiqmaydi) ogohlantiriladi --
-        # alohida `TOKEN_ENCRYPTION_KEY` sozlash tavsiya etiladi, chunki
-        # `FLASK_SECRET_KEY` almashtirilsa ESKI shifrlangan tokenlar o'qib
-        # bo'lmay qoladi (ikkala maxfiylik bitta kalitga bog'liq bo'lib qoladi).
-        logger.warning(
-            "TOKEN_ENCRYPTION_KEY sozlanmagan -- shifrlash kaliti "
-            "FLASK_SECRET_KEY'dan hosil qilinmoqda (zaxira yo'l). "
-            "PRODUCTION uchun alohida TOKEN_ENCRYPTION_KEY sozlash tavsiya "
-            "etiladi (docs/META_INTEGRATION_SETUP.md)."
-        )
-    _fernet_instance = Fernet(_derive_key_from_secret(fallback_secret))
+    if not keys:
+        if fallback_secret == "replix-dev-fallback-key":
+            logger.error(
+                "TOKEN_ENCRYPTION_KEY HAM, FLASK_SECRET_KEY HAM sozlanmagan -- "
+                "tokenlar kodga QATTIQ YOZILGAN, HIMOYASIZ kalit bilan "
+                "shifrlanmoqda. PRODUCTION muhitida bu DARHOL tuzatilishi kerak."
+            )
+        else:
+            logger.warning(
+                "TOKEN_ENCRYPTION_KEY sozlanmagan -- shifrlash kaliti "
+                "FLASK_SECRET_KEY'dan hosil qilinmoqda (zaxira yo'l). "
+                "PRODUCTION uchun alohida TOKEN_ENCRYPTION_KEY sozlash tavsiya "
+                "etiladi (docs/META_INTEGRATION_SETUP.md)."
+            )
+    keys.append(Fernet(_derive_key_from_secret(fallback_secret)))
+    _fernet_instance = MultiFernet(keys)
     return _fernet_instance
+
+
+def is_encrypted(value: "str | None") -> bool:
+    """Qiymat joriy kalit(lar) bilan ochiladigan Fernet shifrmi."""
+    if not value:
+        return False
+    try:
+        _get_fernet().decrypt(value.encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+
+def looks_like_fernet(value: "str | None") -> bool:
+    """Fernet tokenlari doim "gAAAAA" bilan boshlanadi (versiya bayti 0x80).
+    Meta/Payme/Moi Zvonki kalitlari hech qachon shunday boshlanmaydi."""
+    return bool(value) and value.startswith("gAAAAA")
 
 
 def encrypt_token(raw: "str | None") -> "str | None":

@@ -2123,6 +2123,40 @@ def _migrate_key_uniqueness_to_per_company() -> None:
             logger.info("Migratsiya: %s uchun composite unique constraint allaqachon bor (yoki qo'shib bo'lmadi): %s", table, e)
 
 
+_SECRET_COLUMNS = (
+    "meta_access_token", "meta_capi_access_token", "moizvonki_api_key",
+    "payme_card_token", "payme_card_pending_token",
+)
+
+
+def encrypt_legacy_plaintext_secrets() -> dict:
+    """2026-09-30 (docs/PLAN.md, 1-bosqich): shifrlash qo'shilishidan OLDIN
+    ochiq matnda saqlangan maxfiy qiymatlarni (Meta/CAPI token, Moi Zvonki
+    kaliti, Payme karta tokeni) BIR MARTA shifrlaydi. Idempotent: Fernet
+    shifriga o'xshagan qiymatga ("gAAAAA...") tegilmaydi -- kalit
+    almashgan holatda ham ikki marta shifrlanib qolmaydi. Baza TUZILISHI
+    o'zgarmaydi, faqat qiymatlar. Qaytaradi: {ustun: shifrlangan soni}.
+    Qiymatlarning o'zi HECH QACHON logga yozilmaydi."""
+    counts = {col: 0 for col in _SECRET_COLUMNS}
+    session = get_session()
+    try:
+        for company in session.query(Company).all():
+            for col in _SECRET_COLUMNS:
+                value = getattr(company, col, None)
+                if value and not crypto_util.looks_like_fernet(value):
+                    setattr(company, col, crypto_util.encrypt_token(value))
+                    counts[col] += 1
+        if any(counts.values()):
+            session.commit()
+            logger.warning("Eski ochiq matnli maxfiy qiymatlar shifrlandi: %s", counts)
+    except Exception:
+        session.rollback()
+        logger.exception("Eski maxfiy qiymatlarni shifrlashda xato (ilova ishlashda davom etadi)")
+    finally:
+        session.close()
+    return counts
+
+
 def init_db() -> None:
     """Jadvallarni yaratadi (agar hali yo'q bo'lsa) va mavjud jadvallarga
     yetishmayotgan ustunlarni qo'shadi (`_migrate_add_missing_columns`).
@@ -2139,6 +2173,7 @@ def init_db() -> None:
     with unscoped():  # migratsiya/urug'lantirish -- ataylab barcha kompaniyalar bo'yicha
         default_company_id = ensure_default_company()
         seed_default_funnel_stages_for_company(default_company_id)
+    encrypt_legacy_plaintext_secrets()
 
 
 def get_session():
