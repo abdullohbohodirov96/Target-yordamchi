@@ -435,10 +435,20 @@ def _get_kpis_uncached(
             # ko'rsatish uchun har bir kampaniyaning nechta ad set'i borligini
             # hisoblab, qatorga qo'shamiz (shablon shuni yozadi).
             adsets_per_campaign = defaultdict(int)
+            goals_per_campaign = defaultdict(lambda: defaultdict(int))
             for a in structure.get("adsets", []):
                 if a.get("campaign_id"):
                     adsets_per_campaign[a["campaign_id"]] += 1
+                    if a.get("optimization_goal"):
+                        goals_per_campaign[a["campaign_id"]][a["optimization_goal"]] += 1
             child_count_by_id = dict(adsets_per_campaign)
+            # 2026-10-01: kampaniya natijasi uning ad set'larining HAQIQIY
+            # optimization_goal'idan (eng ko'p uchraganidan) olinadi --
+            # objective'dan taxmin emas (masalan ENGAGEMENT kampaniyasi aslida
+            # xabarlar uchun bo'lsa, dashboard "post engagement" emas,
+            # Telegram hisobotidagi kabi "xabar" ko'rsatadi).
+            for cid, counts in goals_per_campaign.items():
+                goal_by_id[cid] = max(counts.items(), key=lambda kv: kv[1])[0]
         elif level == "adset":
             for a in structure.get("adsets", []):
                 goal_by_id[a["id"]] = a.get("optimization_goal", "") or ""
