@@ -1675,6 +1675,42 @@ def api_assistant():
     history = kv_store.get_json(history_key, default=[])
     is_admin = current_user.role == "admin"
 
+    # 2026-10-01 XAVFSIZLIK TUZATISHI (audit): `orchestrator.execute_intent`
+    # (target pauza/resume, byudjet, to'liq tahlil, metrika) kompaniya
+    # tokenisiz ishlaydi -- ya'ni PLATFORMA EGASINING global Meta hisobiga
+    # tegadi. ILGARI istalgan kompaniya admini shu yerdan egasining
+    # reklamasini to'xtatishi, menejer esa egasining xarajat/CPL'ini ko'rishi
+    # mumkin edi. Endi boshqa kompaniyalar Telegram'dagi kabi FAQAT o'z
+    # ma'lumotlari asosidagi savol-javob oladi (reklama boshqaruvi yo'q).
+    if company is not None and company.id != db.get_default_company_id():
+        history.append({"role": "user", "content": user_text})
+        try:
+            snapshot = _company_ai_snapshot(company.id)
+            prompt = (
+                f"{_web_assistant_system_prompt(company)}\n\n---\n\n"
+                f"# \"{company.name}\" kompaniyasining bugungi qisqacha holati\n\n{snapshot}\n"
+                "Faqat shu kompaniyaga oid savollarga javob ber. Reklama hisobini "
+                "boshqarish (target yoqish/o'chirish/pauza, byudjet) bu chatdan mumkin "
+                "emas -- bunday so'rov kelsa, buni \"Target\" yoki \"Avtopilot\" "
+                "bo'limidan qilish kerakligini ayt."
+            )
+            result = orchestrator.call_light_chat(prompt, history, max_tokens=800)
+        except Exception as e:
+            logger.exception("Web yordamchi (kompaniya) xatosi (company_id=%s)", company.id)
+            result = orchestrator.friendly_error_message(e)
+        unanswered = bool(result and "[[UNANSWERED]]" in result)
+        if unanswered:
+            result = result.replace("[[UNANSWERED]]", "").strip()
+        history.append({"role": "assistant", "content": result})
+        kv_store.set_json(history_key, history[-12:])
+        if unanswered:
+            session = get_session()
+            try:
+                _log_unanswered_question(session, current_user.full_name or current_user.username, user_text)
+            finally:
+                session.close()
+        return jsonify({"reply": result, "is_admin": is_admin})
+
     try:
         verdict, history_text = orchestrator.classify_intent(user_text, history)
     except Exception as e:
