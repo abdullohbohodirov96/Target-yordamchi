@@ -79,8 +79,8 @@
 
 ## 7-bosqich. Tariflar va sayt
 - [ ] `plans.py`: Sinov 7 kun bepul; Start $29 (1 akkaunt, 2 menejer); Biznes $69 (1–2 akkaunt, 10 menejer); Agentlik $99 (5 mijoz akkaunti, har qo'shimchasi +$15); yillik to'lovda 2 oy bepul. **O'zgartirishdan oldin egasiga ko'rsatish shart**
-- [ ] Bosh sahifada ikki yo'l: "Men biznes egasiman" va "Men targetologman"
-- [ ] Qo'llanma bo'limi
+- [x] Bosh sahifada ikki yo'l: "Men biznes egasiman" va "Men targetologman"
+- [x] Qo'llanma bo'limi
 
 ## Qo'shimcha bajarilganlar (rejadan tashqari)
 - [x] (2026-10-01) 4-bosqich: CPL rejimi (faqat ogohlantirish / avtomatik pauza) Sozlamalar → CPL'da; kuniga ko'pi bilan 10 ta avto-pauza; Dashboard'da "Qayta yoqish" (jurnalda resumed); harakat darajasi = "AI avtomatik kuzatuv" (egasi yoqsa), AI byudjetni sutkada 1 marta oshiradi, oylik shift, yangi kampaniya doim PAUSED.

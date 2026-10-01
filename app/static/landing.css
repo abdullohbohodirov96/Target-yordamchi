@@ -479,3 +479,15 @@
 .lp-lang-switch span {
   color: var(--border);
 }
+
+/* 2026-10-01, PLAN 7-bosqich: "Kim uchun" -- ikki yo'l (biznes egasi / targetolog) */
+.lp-paths { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; max-width: 960px; margin: 0 auto; }
+.lp-path { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; }
+.lp-path-tag { align-self: flex-start; font-size: 12px; font-weight: 600; color: var(--blue, #2563eb); background: var(--blue-bg, rgba(37,99,235,.08)); border-radius: 999px; padding: 4px 10px; margin-bottom: 12px; }
+.lp-path h3 { font-size: 19px; margin: 0 0 14px; color: var(--ink); letter-spacing: -.01em; }
+.lp-path ul { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.lp-path li { display: flex; gap: 10px; font-size: 14.2px; color: var(--text-dim); line-height: 1.5; }
+.lp-path li svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--good, #16a34a); margin-top: 2px; }
+.lp-path-cta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.lp-path-link { font-size: 14px; font-weight: 600; color: var(--blue, #2563eb); text-decoration: none; }
+@media (max-width: 760px) { .lp-paths { grid-template-columns: 1fr; } .lp-path { padding: 20px; } }

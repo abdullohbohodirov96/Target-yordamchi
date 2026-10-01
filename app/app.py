@@ -42,6 +42,7 @@ import budget_tracker
 import kv_store
 import monthly_report
 import ig_benchmark
+import guide_content
 import permissions
 import plans
 import business_profile
@@ -3458,6 +3459,19 @@ def data_deletion():
     return render_template("data_deletion.html")
 
 
+@app.route("/qollanma")
+def guide_page():
+    """PLAN 7-bosqich: ochiq (mehmon ham ko'radi) qadamma-qadam qo'llanma.
+    Kirgan foydalanuvchiga har bo'limda ilovadagi tegishli sahifaga tugma."""
+    texts, sections = guide_content.sections_for(g.lang, plans.PLANS["trial"].period_days or 7)
+    for sec in sections:
+        try:
+            sec["url"] = url_for(sec["endpoint"]) if current_user.is_authenticated else None
+        except Exception:  # noqa: BLE001 -- endpoint bo'lmasa tugma ko'rsatilmaydi
+            sec["url"] = None
+    return render_template("guide.html", texts=texts, sections=sections)
+
+
 # ---------------------------------------------------------------------------
 # Tariflar (narxlar) -- ochiq (mehmon ham ko'ra oladi) taqqoslash sahifasi.
 # ---------------------------------------------------------------------------
@@ -3713,7 +3727,7 @@ _SUBSCRIPTION_EXEMPT_ENDPOINTS = {
     # to'lanmagan) kompaniya admin'i uchun ham OCHIQ turishi kerak --
     # aks holda "sinov tugadi" holatiga tushgan mijoz hatto TO'LASH
     # sahifasiga ham kira olmay qolardi.
-    "signup", "pricing", "payment_page", "connect_accounts",
+    "signup", "pricing", "payment_page", "connect_accounts", "guide_page",
     # 2026-09, Payme Subscribe (avtomatik oylik to'lov): karta bog'lash/
     # tasdiqlash/o'chirish -- xuddi `payment_page` kabi, muddati tugagan
     # kompaniya ham AYNAN shu orqali to'lovni tiklashi kerak, shuning uchun

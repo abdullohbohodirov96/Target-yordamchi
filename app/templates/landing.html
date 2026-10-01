@@ -78,6 +78,7 @@
     <a href="#imkoniyatlar">{{ t('nav.features') }}</a>
     <a href="#qanday-ishlaydi">{{ t('nav.how') }}</a>
     <a href="{{ url_for('pricing') }}">{{ t('nav.pricing') }}</a>
+    <a href="{{ url_for('guide_page') }}">{{ t('guide.card_title') }}</a>
   </div>
   <div class="lp-nav-cta">
     <div class="lp-lang-switch">
@@ -155,6 +156,30 @@
     </div>
   </div>
 </header>
+
+<section class="lp-section" id="kim-uchun" data-reveal>
+  <div class="lp-section-head">
+    <h2>{{ t('paths.h2') }}</h2>
+    <p>{{ t('paths.sub') }}</p>
+  </div>
+  <div class="lp-paths">
+    {% for key in ('owner', 'targetolog') %}
+    <div class="lp-path">
+      <div class="lp-path-tag">{{ t('paths.' ~ key ~ '_tag') }}</div>
+      <h3>{{ t('paths.' ~ key ~ '_title') }}</h3>
+      <ul>
+        {% for i in range(1, 5) %}
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ t('paths.' ~ key ~ '_b' ~ i) }}</li>
+        {% endfor %}
+      </ul>
+      <div class="lp-path-cta">
+        <a href="{{ url_for('signup', plan='trial') }}" class="btn{{ '' if key == 'owner' else ' btn-ghost' }}">{{ t('paths.cta_trial') }}</a>
+        <a href="{{ url_for('guide_page') }}#{{ 'lidlar' if key == 'owner' else 'avtopilot' }}" class="lp-path-link">{{ t('paths.cta_guide') }} →</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
 
 <section class="lp-section lp-section-alt" id="imkoniyatlar" data-reveal>
   <div class="lp-section-head">
@@ -361,6 +386,7 @@
 
 <footer class="lp-footer">
   © {{ current_year() }} Replix. {{ t('footer.rights') }} &middot; <a href="{{ url_for('login') }}" class="text-blue">{{ t('footer.login') }}</a>
+  &middot; <a href="{{ url_for('guide_page') }}" class="text-blue">{{ t('guide.card_title') }}</a>
   &middot; <a href="{{ url_for('privacy_policy') }}" class="text-blue">{{ t('privacy_policy.title') }}</a>
   &middot; <a href="{{ url_for('data_deletion') }}" class="text-blue">{{ t('data_deletion.title') }}</a>
 </footer>
