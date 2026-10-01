@@ -54,8 +54,12 @@ class _Resp:
         return self._data
 
 
+_UPD = [0]
+
+
 def _update(chat_id, text):
-    return {"update_id": 1, "message": {"message_id": 1, "chat": {"id": chat_id, "type": "group"}, "text": text}}
+    _UPD[0] += 1
+    return {"update_id": _UPD[0], "message": {"message_id": 1, "chat": {"id": chat_id, "type": "group"}, "text": text}}
 
 
 def run_all():

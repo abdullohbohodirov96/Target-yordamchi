@@ -9,6 +9,7 @@ gunicorn orqali). Uch narsani birlashtiradi:
      cron-job.org shart emas, chunki bu yerda jarayon DOIMIY ishlaydi.
 """
 
+import collections
 import os
 import re
 import hmac
@@ -898,8 +899,10 @@ def _is_owner_telegram_chat(chat_id: int) -> bool:
     session = get_session()
     try:
         with db.unscoped():
-            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
-        return bool(manager and manager.company_id == db.get_default_company_id())
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first()
+        # Faqat egasi kompaniyasining FAOL ADMINI -- oddiy menejer yoki
+        # o'chirilgan xodim reklamani pauza/yoqish huquqini olmasin.
+        return bool(manager and manager.role == "admin" and manager.company_id == db.get_default_company_id())
     finally:
         session.close()
 
@@ -1053,7 +1056,7 @@ def _resolve_telegram_company(chat_id: int) -> "tuple[Company | None, Manager | 
             company = session.query(Company).filter_by(telegram_group_id=str(chat_id)).first()
             if company is not None:
                 return company, None
-            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first()
             if manager is not None:
                 company = session.query(Company).filter_by(id=manager.company_id).first()
                 return company, manager
@@ -1345,12 +1348,25 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
     kind = data.get("kind")
     company_id = data.get("company_id")
     created_at = data.get("created_at")
+    # Sanasi yo'q yoki buzilgan token -- muddati o'tgan deb hisoblanadi.
     try:
-        if created_at and (dt.datetime.utcnow() - dt.datetime.fromisoformat(created_at)).total_seconds() > 86400:
-            kv_store.set_json(key, None)
-            return None
+        expired = (not created_at) or (
+            (dt.datetime.utcnow() - dt.datetime.fromisoformat(created_at)).total_seconds() > 86400
+        )
     except Exception:
-        pass
+        expired = True
+    if expired:
+        kv_store.set_json(key, None)
+        return None
+    # Noto'g'ri chat turida bosilsa -- token YONIB KETMASIN (foydalanuvchi
+    # to'g'ri joyda qayta bosa olsin).
+    if kind == "personal" and chat_type != "private":
+        return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
+    if kind in ("group", "tasks_group") and chat_type not in ("group", "supergroup"):
+        return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+    if kind not in ("personal", "group", "tasks_group"):
+        kv_store.set_json(key, None)
+        return None
     kv_store.set_json(key, None)  # bir martalik -- darhol "iste'mol qilinadi" (muvaffaqiyatsiz bo'lsa ham qayta ishlatilmaydi)
 
     session = get_session()
@@ -1362,12 +1378,17 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
             if kind == "personal":
                 manager_id = data.get("manager_id")
                 manager = session.get(Manager, manager_id) if manager_id else None
-                if manager is None or manager.company_id != company_id:
+                if manager is None or manager.company_id != company_id or not manager.is_active:
                     return None
-                if chat_type != "private":
-                    return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
+                # Shu Telegram hisobi ilgari BOSHQA xodimga (boshqa kompaniyada
+                # ham bo'lishi mumkin) bog'langan bo'lsa -- o'sha bog'lanish
+                # uziladi: bitta chat faqat BITTA hisobga tegishli.
+                session.query(Manager).filter(
+                    Manager.telegram_user_id == str(chat_id), Manager.id != manager.id,
+                ).update({Manager.telegram_user_id: None}, synchronize_session=False)
                 manager.telegram_user_id = str(chat_id)
                 session.commit()
+                save_history(chat_id, [])  # oldingi (boshqa hisob) suhbat konteksti AI'ga o'tmasin
                 # 2026-09, foydalanuvchi so'rovi ("menejer topilganda siz
                 # mana bu akkauntga ulandingiz, muvaffaqiyatli ulandingiz
                 # degan xabar kelsin"): qaysi menejer sifatida (ism/rol)
@@ -1384,13 +1405,12 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                     "hisobotlari bu yerga kelmaydi -- ular admin/guruh uchun."
                 )
             if kind == "group":
-                if chat_type not in ("group", "supergroup"):
-                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
                 if _identifier_conflict(company_id, telegram_group_id=chat_id):
                     return "⚠️ Bu guruh boshqa kompaniyaga ulangan. Har bir kompaniya uchun alohida guruh oching."
                 c = session.get(Company, company_id)
                 c.telegram_group_id = str(chat_id)
                 session.commit()
+                save_history(chat_id, [])
                 return (
                     f"✅ Ushbu guruh \"{company.name}\" kompaniyasiga ulandi. Targeting/xarajat va CPL "
                     "avtomatik pauza ogohlantirishlari, shuningdek lidlar haqidagi xabarlar endi shu guruhga keladi."
@@ -1401,8 +1421,6 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                 # kunlik lead-vazifalari (qayta aloqa eslatmalari) uchun.
                 # HAR QANDAY menejer (nafaqat admin) ulay oladi -- pastdagi
                 # `/sozlamalar/umumiy` sahifasidagi tugma orqali.
-                if chat_type not in ("group", "supergroup"):
-                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
                 c = session.get(Company, company_id)
                 c.tasks_group_id = str(chat_id)
                 session.commit()
@@ -1887,6 +1905,24 @@ def _try_handle_assistant_reply(chat_id: int, message: dict) -> bool:
         session.close()
 
 
+_TG_SEEN_UPDATES: "collections.OrderedDict[int, bool]" = collections.OrderedDict()
+_TG_SEEN_LOCK = threading.Lock()
+
+
+def _telegram_update_seen(update_id) -> bool:
+    """`update_id` avval ko'rilgan bo'lsa True; aks holda belgilab False.
+    Jarayon xotirasida oxirgi 5000 ta saqlanadi."""
+    if update_id is None:
+        return False
+    with _TG_SEEN_LOCK:
+        if update_id in _TG_SEEN_UPDATES:
+            return True
+        _TG_SEEN_UPDATES[update_id] = True
+        while len(_TG_SEEN_UPDATES) > 5000:
+            _TG_SEEN_UPDATES.popitem(last=False)
+    return False
+
+
 @app.route("/api/webhook", methods=["POST"])
 @csrf.exempt  # Telegram server-serverga chaqiradi -- brauzer sessiyasi/CSRF tokeni yo'q
 def webhook():
@@ -1896,8 +1932,14 @@ def webhook():
     if not _telegram_webhook_authorized():
         return jsonify({"ok": False, "error": "unauthorized"}), 403
     update = request.get_json(silent=True) or {}
-    message = update.get("message") or update.get("edited_message")
+    # Tahrirlangan xabar (`edited_message`) QAYTA ishlanmaydi -- aks holda
+    # "/pause" yoki AI so'rovi tahrirdan keyin ikkinchi marta bajarilardi.
+    message = update.get("message")
     if not message or "text" not in message:
+        return jsonify({"ok": True})
+    # Telegram javobni kutmay qolsa bir xil update'ni QAYTA yuboradi --
+    # bir update faqat bir marta ishlanadi.
+    if _telegram_update_seen(update.get("update_id")):
         return jsonify({"ok": True})
 
     chat_id = message["chat"]["id"]
