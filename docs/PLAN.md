@@ -42,9 +42,9 @@
 - [x] Kampaniya yaratishda `is_adset_budget_sharing_enabled` maydonini qo'shish (reklama Ads Manager'ga qoralama sifatida ham tushmayapti)
   - Har doim yuboriladi (standart `False`). Dalil: `scripts/test_meta_campaign_payload_offline.py`.
   - ⚠️ Real akkauntda tekshirish egasi bilan birga (PAUSED holatda) qilinadi.
-- [ ] Avtopilot zanjirini (savol-javob, reja, tasdiq, PAUSED holatda chiqarish) tekshirish
+- [x] Avtopilot zanjirini (savol-javob, reja, tasdiq, PAUSED holatda chiqarish) tekshirish
   - Tekshirildi: savol-javob → AI reja → 3 ta tasdiq (kampaniya/adset/reklama) → faqat admin nashr qiladi; tahrir tegishli tasdiqni bekor qiladi; A kompaniya B qoralamasiga kira olmaydi (mavjud testlar).
-  - ⏳ EGASI QARORI KERAK: hozir nashr standart holatda **ACTIVE** (ilgari egasi so'ragan). Rejada "PAUSED holatda chiqarish". Standartni PAUSED ga o'zgartiraymi?
+  - Qaror: standart PAUSED (2026-10-01) — bajarildi.
 - [x] CAPI signallari (yangi lid, sifatli lid, sotuv) ishlashini tekshirish
   - Lead / QualifiedLead / Purchase to'g'ri joylarda, event_id bilan (dublikatsiz), telefon/email SHA-256.
   - Qo'shildi: Lead Ads lidlari uchun `custom_data.event_source="crm"` + `lead_event_source` (Meta Conversion Leads optimizatsiyasi uchun).
@@ -66,6 +66,7 @@
 - [ ] 3 daraja: ogohlantirish, pauza, harakat (byudjet ±10–20%, auditoriya kengaytirish, zaif reklamani o'chirish). Biznes egalari uchun sukut bo'yicha pauza, targetologlar uchun harakat faqat o'zi yoqsa
 - [ ] Minimal ma'lumot chegarasi, kuniga maksimal o'zgarishlar soni, har harakat logda va orqaga qaytariladigan
 - [ ] Har kompaniyaga alohida kunlik Telegram hisobot
+- [ ] (4-bosqichdan keyin) Karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish — faqat PAUSED, birinchi sinov egasi bilan
 
 ## 5-bosqich. KPI va agentlik
 - [ ] `kpi_bonus.py` dagi Dunyabunya qoidalarini (oklad 4 000 000 so'm va bonuslar) har kompaniya o'zi sozlaydigan qilish
@@ -85,9 +86,9 @@
 - [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).
 - [x] Sinov muddati "N kun qoldi" yaxlitlash xatosi tuzatildi.
 
-## ⏳ Egasining qarori kutilmoqda
-1. Avtopilot nashr standart holati: hozir **ACTIVE** (darhol pul sarflanadi). Rejada **PAUSED**. Qaysi biri?
-2. Bosh sahifa FAQ'da "Narxlar oyiga $50 dan boshlanadi" deyilgan, lekin eng arzon tarif $20 (7-bosqichda yangi narxlar bilan birga tuzatish taklif qilinadi).
-3. Sinov muddati: kodda **5 kun**, rejada **7 kun** (7-bosqich — narx/matn o'zgarishi, tasdiq kerak).
-4. "Sinov" tarifida Meta reklama hisobini ulab bo'lmaydi — sinovchi Avtopilotni to'liq sinab ko'ra olmaydi. Ruxsat beraymi?
-5. Avtopilot sahifasi matnida "hammasi avval PAUSED holatda" deyilgan — 1-savol javobiga qarab matnni moslashtiraman.
+## ✅ Qarorlar (2026-10-01, egasi qarorni hamkorga topshirdi)
+1. **Avtopilot nashri standart PAUSED** — pul sarfi faqat egasi "Faollashtirish" bosganda. Review oynasida "Darhol yoqilsin" tanlash mumkin. (Bajarildi.)
+2. **FAQ/landing narxi** — endi `plans.py`dan avtomatik (`{min_price}`): hozir "$20 dan". 7-bosqichda narx o'zgarsa o'zi yangilanadi. (Bajarildi.)
+3. **Sinov 7 kun** (avval 5) — Meta "o'rganish davri" 3–5 kun, mijoz natijani ko'rib ulgursin. Barcha matnlar `{trial_days}`dan. (Bajarildi.)
+4. **Sinovda Meta reklama hisobini ulash ochiq** — asosiy qiymat (o'z natijalari + lidlar) sinovda ko'rinsin; AI kvotalari o'zgarmadi. (Bajarildi.)
+5. **Karusel → Avtopilot (Meta karusel reklamasi)** — HA, lekin 4-bosqich (CPL himoyasi) tugagach; faqat PAUSED, birinchi sinov egasi bilan real akkauntda. (Rejada: 4-bosqichdan keyin.)

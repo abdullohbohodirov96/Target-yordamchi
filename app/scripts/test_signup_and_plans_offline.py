@@ -179,19 +179,21 @@ def test_business_plan_unlocks_individual_check_and_ai():
     print("OK: 'biznes' tarifida Individual tekshirish va AI-yordamchi ochiq")
 
 
-def test_connect_accounts_hides_meta_ads_fields_on_trial():
+def test_connect_accounts_shows_meta_ads_fields_on_trial():
+    # 2026-09-30: sinovda ham Meta reklama hisobini ulash OCHIQ (egasi
+    # qarori, docs/PLAN.md) -- sinovchi o'z reklama natijalarini ko'rsin.
     with app_module.app.test_client() as client:
         _signup(client, company_name="Ulash Trial MChJ", admin_username="ulash_trial_admin", plan="trial")
         html = client.get("/connect-accounts").get_data(as_text=True)
         assert "Instagram Business ID" in html
-        assert "Meta reklama hisobi" not in html
+        assert "Meta reklama hisobi" in html
 
     with app_module.app.test_client() as client2:
         _signup(client2, company_name="Ulash Biznes MChJ", admin_username="ulash_biznes_admin", plan="business")
         html2 = client2.get("/connect-accounts").get_data(as_text=True)
         assert "Instagram Business ID" in html2
         assert "Meta reklama hisobi" in html2
-    print("OK: /connect-accounts tarifga qarab faqat tegishli maydonlarni ko'rsatadi (Instagram-only vs to'liq Meta Ads)")
+    print("OK: /connect-accounts sinovda ham, pullik tarifda ham Meta Ads maydonlarini ko'rsatadi")
 
 
 def test_payment_page_mark_paid_notifies_and_flashes():

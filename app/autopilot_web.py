@@ -334,7 +334,7 @@ def serialize_draft(draft, assets: "dict | None", ctx: "dict | None", *, session
         "status": draft.status, "status_label": STATUS_LABELS.get(draft.status, draft.status),
         # 2026-09: standart -- ACTIVE (darhol ishga tushadi); foydalanuvchi
         # review oynasida PAUSED'ga o'tkazishi mumkin ("launch-status").
-        "launch_active": bool(getattr(draft, "launch_active", True)),
+        "launch_active": bool(getattr(draft, "launch_active", False)),
         "sync_status": draft.sync_status or "local", "sync_label": SYNC_LABELS.get(draft.sync_status or "local", draft.sync_status),
         "approvals": {"campaign": bool(draft.campaign_approved), "adset": bool(draft.adset_approved), "ad": bool(draft.ad_approved)},
         "all_approved": bool(draft.all_approved),
@@ -482,7 +482,7 @@ def duplicate_draft_for_new_adset(session, draft, *, label: "str | None", manage
         company_id=draft.company_id, created_by_manager_id=manager_id,
         title=title, source="AI", status="draft",
         objective=state.get("objective"), sync_status="local",
-        launch_active=getattr(draft, "launch_active", True),
+        launch_active=getattr(draft, "launch_active", False),
     )
     new_draft.set_state(state)
     new_draft.set_field_sources(sources)

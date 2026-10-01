@@ -1102,7 +1102,10 @@ class CampaignDraft(Base):
     # xalaqit berdi. Endi tanlov bor -- standart holat ACTIVE (darhol
     # ishga tushadi), review modalida foydalanuvchi xohlasa PAUSED'ga
     # o'tkazishi mumkin (`meta_publish.publish_draft`).
-    launch_active = Column(Boolean, nullable=False, default=True)
+    # 2026-09-30 (docs/PLAN.md, egasi qarorni hamkorga topshirdi): standart
+    # endi PAUSED -- biznes egasi pulni nazorat qilsin, "Faollashtirish" --
+    # bitta tugma (tasdiq bilan). Faqat YANGI qoralamalar; ustun o'zgarmadi.
+    launch_active = Column(Boolean, nullable=False, default=False)
     publish_step = Column(String(32), nullable=True)
     publish_error = Column(Text, nullable=True)
     last_meta_error_raw = Column(Text, nullable=True)

@@ -51,7 +51,7 @@ TRANSLATIONS = {
         "hero.eyebrow": "O'zbekiston bizneslari uchun CRM",
         "hero.h1": "5-6 ta xizmat o'rniga — <span>bitta</span> Replix",
         "hero.sub": "CRM, reklama monitoring, SMM hisobot, qo'ng'iroq nazorati va AI tahlil uchun alohida-alohida xizmatlarga to'lash shart emas. Replix hammasini BITTA obunada, ancha arzon narxda birlashtiradi — Instagram va Facebook reklamalaringizni, sotuv jamoangizni va mijozlar bazangizni bitta joyda kuzating.",
-        "hero.cta_trial": "5 kun bepul sinash",
+        "hero.cta_trial": "{trial_days} kun bepul sinash",
         "hero.cta_pricing": "Tariflarni ko'rish",
         "hero.note1": "✓ Karta shart emas",
         "hero.note2": "✓ 5 daqiqada ishga tushiriladi",
@@ -62,7 +62,7 @@ TRANSLATIONS = {
         "compare.separate_head": "Alohida-alohida sotib olsangiz",
         "compare.replix_head": "Replix bilan",
         "compare.total_separate": "Taxminan $140–270/oy + har biriga alohida sozlash va login",
-        "compare.total_replix": "$50/oy dan boshlanadi — bitta login, bitta hisobot",
+        "compare.total_replix": "{min_price}/oy dan boshlanadi — bitta login, bitta hisobot",
         "compare.item1": "CRM / lidlar tizimi",
         "compare.item1_price": "~$30–50/oy",
         "compare.item2": "Reklama (target) monitoring",
@@ -110,7 +110,7 @@ TRANSLATIONS = {
 
         "cta_band.h2": "Reklama byudjetingiz oqilona ishlayaptimi?",
         "cta_band.sub": "Bugun ro'yxatdan o'ting, Instagram akkauntingizni ulang va birinchi natijalarni bugunoq ko'ring.",
-        "cta_band.button": "5 kun bepul boshlash",
+        "cta_band.button": "{trial_days} kun bepul boshlash",
 
         "footer.rights": "Barcha huquqlar himoyalangan.",
         "footer.login": "Kirish",
@@ -158,7 +158,7 @@ TRANSLATIONS = {
         "faq.q2": "Replix kimlar uchun mo'ljallangan?",
         "faq.a2": "Instagram va Facebook orqali reklama beradigan O'zbekiston kichik va o'rta bizneslari uchun — sotuv jamoasi, reklama xarajati va mijozlar bazasini bitta joyda ko'rishni istaydiganlar uchun.",
         "faq.q3": "Replix qancha turadi?",
-        "faq.a3": "Narxlar oyiga $50 dan boshlanadi. 5 kunlik bepul sinov mavjud, karta ma'lumoti talab qilinmaydi.",
+        "faq.a3": "Narxlar oyiga {min_price} dan boshlanadi. {trial_days} kunlik bepul sinov mavjud, karta ma'lumoti talab qilinmaydi.",
         "faq.q4": "Replix.uz \"Replix.ai\" yoki boshqa \"Replix\" nomli xizmatlar bilan bog'liqmi?",
         "faq.a4": "Yo'q. Replix (replix.uz) — O'zbekistonda ishlab chiqilgan, CRM va Meta reklama monitoringga ixtisoslashgan alohida platforma. U matn/kontent yozuvchi AI-yordamchilar yoki boshqa davlatlardagi kurs platformalari bilan hech qanday aloqasi yo'q — bu butunlay boshqa kompaniya va mahsulot.",
         "faq.q5": "Instagram yoki Facebook akkauntimni qanday ulayman?",
@@ -186,7 +186,7 @@ TRANSLATIONS = {
         "hero.eyebrow": "CRM для бизнеса в Узбекистане",
         "hero.h1": "5-6 сервисов — теперь <span>один</span> Replix",
         "hero.sub": "Не нужно платить отдельно за CRM, мониторинг рекламы, SMM-отчёты, контроль звонков и AI-анализ. Replix объединяет всё это в ОДНОЙ подписке по значительно более низкой цене — отслеживайте рекламу в Instagram и Facebook, отдел продаж и базу клиентов в одном месте.",
-        "hero.cta_trial": "5 дней бесплатно",
+        "hero.cta_trial": "{trial_days} дней бесплатно",
         "hero.cta_pricing": "Смотреть тарифы",
         "hero.note1": "✓ Карта не нужна",
         "hero.note2": "✓ Запуск за 5 минут",
@@ -197,7 +197,7 @@ TRANSLATIONS = {
         "compare.separate_head": "Если покупать по отдельности",
         "compare.replix_head": "С Replix",
         "compare.total_separate": "Примерно $140–270/мес + отдельная настройка и вход для каждого",
-        "compare.total_replix": "От $50/мес — один вход, один отчёт",
+        "compare.total_replix": "От {min_price}/мес — один вход, один отчёт",
         "compare.item1": "CRM / система лидов",
         "compare.item1_price": "~$30–50/мес",
         "compare.item2": "Мониторинг рекламы (target)",
@@ -245,7 +245,7 @@ TRANSLATIONS = {
 
         "cta_band.h2": "Ваш рекламный бюджет работает разумно?",
         "cta_band.sub": "Зарегистрируйтесь сегодня, подключите Instagram и увидите первые результаты уже сегодня.",
-        "cta_band.button": "Начать бесплатно на 5 дней",
+        "cta_band.button": "Начать бесплатно на {trial_days} дней",
 
         "footer.rights": "Все права защищены.",
         "footer.login": "Войти",
@@ -283,7 +283,7 @@ TRANSLATIONS = {
         "faq.q2": "Для кого предназначен Replix?",
         "faq.a2": "Для малого и среднего бизнеса в Узбекистане, который даёт рекламу в Instagram и Facebook — для тех, кто хочет видеть отдел продаж, расходы на рекламу и базу клиентов в одном месте.",
         "faq.q3": "Сколько стоит Replix?",
-        "faq.a3": "Тарифы начинаются от $50 в месяц. Доступен 5-дневный бесплатный пробный период, банковская карта не требуется.",
+        "faq.a3": "Тарифы начинаются от {min_price} в месяц. Доступен {trial_days}-дневный бесплатный пробный период, банковская карта не требуется.",
         "faq.q4": "Связан ли Replix.uz с «Replix.ai» или другими сервисами с названием «Replix»?",
         "faq.a4": "Нет. Replix (replix.uz) — отдельная платформа, разработанная в Узбекистане и специализирующаяся на CRM и мониторинге рекламы Meta. Она никак не связана с AI-помощниками для написания текстов или курс-платформами с похожим названием в других странах — это совершенно другая компания и продукт.",
         "faq.q5": "Как подключить аккаунт Instagram или Facebook?",
@@ -309,7 +309,7 @@ TRANSLATIONS = {
         "hero.eyebrow": "CRM for businesses in Uzbekistan",
         "hero.h1": "Instead of 5-6 tools — <span>one</span> Replix",
         "hero.sub": "Stop paying separately for a CRM, ad monitoring, SMM reports, call control and AI analysis. Replix brings all of it into ONE subscription at a far lower price — track your Instagram and Facebook ads, your sales team and your customer base in one place.",
-        "hero.cta_trial": "Try free for 5 days",
+        "hero.cta_trial": "Try free for {trial_days} days",
         "hero.cta_pricing": "See pricing",
         "hero.note1": "✓ No card required",
         "hero.note2": "✓ Up and running in 5 minutes",
@@ -320,7 +320,7 @@ TRANSLATIONS = {
         "compare.separate_head": "Bought separately",
         "compare.replix_head": "With Replix",
         "compare.total_separate": "Roughly $140–270/mo + separate setup and login for each",
-        "compare.total_replix": "From $50/mo — one login, one report",
+        "compare.total_replix": "From {min_price}/mo — one login, one report",
         "compare.item1": "CRM / lead system",
         "compare.item1_price": "~$30–50/mo",
         "compare.item2": "Ad (targeting) monitoring",
@@ -368,7 +368,7 @@ TRANSLATIONS = {
 
         "cta_band.h2": "Is your ad budget working smart?",
         "cta_band.sub": "Sign up today, connect your Instagram account and see your first results the same day.",
-        "cta_band.button": "Start 5 days free",
+        "cta_band.button": "Start {trial_days} days free",
 
         "footer.rights": "All rights reserved.",
         "footer.login": "Log in",
@@ -406,7 +406,7 @@ TRANSLATIONS = {
         "faq.q2": "Who is Replix for?",
         "faq.a2": "Small and medium businesses in Uzbekistan that advertise on Instagram and Facebook — anyone who wants to see their sales team, ad spend and customer base in one place.",
         "faq.q3": "How much does Replix cost?",
-        "faq.a3": "Plans start at $50 per month. A 5-day free trial is available, no card details required.",
+        "faq.a3": "Plans start at {min_price} per month. A {trial_days}-day free trial is available, no card details required.",
         "faq.q4": "Is Replix.uz related to \"Replix.ai\" or other services named \"Replix\"?",
         "faq.a4": "No. Replix (replix.uz) is a standalone platform built in Uzbekistan, specialising in CRM and Meta ad monitoring. It has no connection to AI writing assistants or course platforms with a similar name in other countries — it is an entirely different company and product.",
         "faq.q5": "How do I connect my Instagram or Facebook account?",
@@ -456,9 +456,9 @@ _APP_STRINGS = [
 
     # ---- base.html: umumiy qobiq (meta, sidebar, subnav, AI-yordamchi) ----
     ("shell.meta_description",
-     "Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. 5 kun bepul sinov.",
-     "Replix — платформа, объединяющая рекламу в Instagram и Facebook, CRM, SMM-отчёты и AI-анализ звонков в одной системе. 5 дней бесплатно.",
-     "Replix — one platform for your Instagram and Facebook ads, CRM, SMM reports and AI call analysis. 5-day free trial."),
+     "Replix — Instagram va Facebook reklamangizni, CRM'ingizni, SMM hisobotingizni va AI qo'ng'iroq tahlilingizni bitta tizimda birlashtiruvchi platforma. {trial_days} kun bepul sinov.",
+     "Replix — платформа, объединяющая рекламу в Instagram и Facebook, CRM, SMM-отчёты и AI-анализ звонков в одной системе. {trial_days} дней бесплатно.",
+     "Replix — one platform for your Instagram and Facebook ads, CRM, SMM reports and AI call analysis. {trial_days}-day free trial."),
     ("shell.og_title",
      "Replix — reklama, CRM va AI tahlil bitta tizimda",
      "Replix — реклама, CRM и AI-анализ в одной системе",
@@ -762,9 +762,9 @@ _APP_STRINGS = [
     ("companies.new_company_title", "Yangi kompaniya qo'shish", "Добавить новую компанию", "Add a new company"),
     ("companies.new_note_prefix", "Mijozlar endi", "Клиенты теперь могут зарегистрироваться сами через", "Customers can now sign up themselves via"),
     ("companies.new_note_suffix",
-     "orqali o'zlari ham ro'yxatdan o'ta oladi -- bu forma faqat SIZ qo'lda (masalan telefon/uchrashuvda kelishilgan mijoz uchun) kompaniya ochib berish uchun. Yangi kompaniya 5 kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi.",
-     "— эта форма нужна только когда ВЫ вручную открываете компанию (например, для клиента, с которым договорились по телефону/на встрече). Новая компания начинает с 5-дневного пробного периода и СРАЗУ получает собственный аккаунт администратора.",
-     "— this form is only for when YOU open a company manually (e.g. for a customer agreed by phone/in a meeting). A new company starts with a 5-day trial and IMMEDIATELY gets its own admin account."),
+     "orqali o'zlari ham ro'yxatdan o'ta oladi -- bu forma faqat SIZ qo'lda (masalan telefon/uchrashuvda kelishilgan mijoz uchun) kompaniya ochib berish uchun. Yangi kompaniya {trial_days} kunlik sinov muddati bilan, va DARHOL o'ziga tegishli admin hisobi bilan boshlanadi.",
+     "— эта форма нужна только когда ВЫ вручную открываете компанию (например, для клиента, с которым договорились по телефону/на встрече). Новая компания начинает с {trial_days}-дневного пробного периода и СРАЗУ получает собственный аккаунт администратора.",
+     "— this form is only for when YOU open a company manually (e.g. for a customer agreed by phone/in a meeting). A new company starts with a {trial_days}-day trial and IMMEDIATELY gets its own admin account."),
     ("companies.name", "Kompaniya nomi", "Название компании", "Company name"),
     ("companies.email_optional", "Email (ixtiyoriy)", "Email (необязательно)", "Email (optional)"),
     ("companies.email_placeholder", "mijoz@misol.uz", "client@example.uz", "client@example.uz"),
@@ -948,10 +948,10 @@ _APP_STRINGS = [
     ("trial_nudge.dialog_aria", "Bepul sinov taklifi", "Предложение бесплатного пробного периода", "Free trial offer"),
     ("trial_nudge.assistant", "AI yordamchi", "AI-помощник", "AI assistant"),
     ("trial_nudge.text",
-     "👋 Hali sinab ko'rmadingizmi? Instagram/Facebook natijalaringizni <strong>5 kun bepul</strong> ko'ring — karta ma'lumoti shart emas.",
-     "👋 Ещё не пробовали? Посмотрите результаты вашей рекламы в Instagram/Facebook <strong>5 дней бесплатно</strong> — карта не нужна.",
-     "👋 Haven't tried it yet? See your Instagram/Facebook results <strong>free for 5 days</strong> — no card details required."),
-    ("trial_nudge.cta", "5 kun bepul boshlash", "Начать бесплатно на 5 дней", "Start 5 days free"),
+     "👋 Hali sinab ko'rmadingizmi? Instagram/Facebook natijalaringizni <strong>{trial_days} kun bepul</strong> ko'ring — karta ma'lumoti shart emas.",
+     "👋 Ещё не пробовали? Посмотрите результаты вашей рекламы в Instagram/Facebook <strong>{trial_days} дней бесплатно</strong> — карта не нужна.",
+     "👋 Haven't tried it yet? See your Instagram/Facebook results <strong>free for {trial_days} days</strong> — no card details required."),
+    ("trial_nudge.cta", "{trial_days} kun bepul boshlash", "Начать бесплатно на {trial_days} дней", "Start {trial_days} days free"),
 
     # =======================================================================
     # 2026-09, 3-bosqich (butun ilova tarjimasi, 2-qism): target, avtopilot,
@@ -2202,13 +2202,13 @@ _APP_STRINGS = [
     ("plans.name_business", "Biznes", "Бизнес", "Business"),
     ("plans.name_unlimited", "Ekspert", "Эксперт", "Expert"),
 
-    ("plans.tagline_trial", "5 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring", "5 дней бесплатно — подключите Instagram и смотрите необработанные результаты", "5 days free — connect Instagram and see raw results"),
+    ("plans.tagline_trial", "{trial_days} kun bepul — Meta reklamangizni ulab, natijalarni ko'ring", "{trial_days} дней бесплатно — подключите рекламу Meta и смотрите результаты", "{trial_days} days free — connect your Meta ads and see results"),
     ("plans.tagline_start", "Kichik jamoalar uchun to'liq CRM + target monitoring", "Полноценная CRM + мониторинг таргета для небольших команд", "Full CRM + ad monitoring for small teams"),
     ("plans.tagline_business", "O'sayotgan sotuv jamoalari uchun — AI bilan kuchaytirilgan", "Для растущих отделов продаж — усилено с помощью AI", "For growing sales teams — supercharged with AI"),
     ("plans.tagline_unlimited", "Yirik jamoalar va ko'p filiallar uchun — cheksiz", "Для крупных команд и множества филиалов — без ограничений", "For large teams and multiple branches — unlimited"),
 
-    ("plans.feature_trial_0", "5 kun bepul, karta shart emas", "5 дней бесплатно, карта не нужна", "5 days free, no card required"),
-    ("plans.feature_trial_1", "Faqat Instagram akkauntini ulash", "Подключение только Instagram-аккаунта", "Connect only an Instagram account"),
+    ("plans.feature_trial_0", "{trial_days} kun bepul, karta shart emas", "{trial_days} дней бесплатно, карта не нужна", "{trial_days} days free, no card required"),
+    ("plans.feature_trial_1", "Meta reklama hisobi va Instagram'ni ulash", "Подключение рекламного аккаунта Meta и Instagram", "Connect your Meta ad account and Instagram"),
     ("plans.feature_trial_2", "Target (Meta Ads) bo'yicha XOM natijalar: xarajat, lead, CPL", "НЕОБРАБОТАННЫЕ результаты по Target (Meta Ads): расход, лиды, CPL", "RAW Target (Meta Ads) results: spend, leads, CPL"),
     ("plans.feature_trial_3", "Lidlar bazasi va asosiy CRM voronkasi (100 tagacha lid)", "База лидов и базовая воронка CRM (до 100 лидов)", "Leads database and basic CRM funnel (up to 100 leads)"),
     ("plans.feature_trial_4", "1 ta admin hisob", "1 аккаунт администратора", "1 admin account"),
@@ -2511,6 +2511,16 @@ for _key, _uz, _ru, _en in _APP_STRINGS:
 del _key, _uz, _ru, _en
 
 
+def _plan_facts() -> dict:
+    """2026-09-30: sinov muddati va eng arzon narx matnlarda QATTIQ
+    yozilmaydi -- `plans.py`dan olinadi (tarif o'zgarsa FAQ/landing o'zi
+    yangilanadi). Kech import -- `plans` `lang`ni import qiladi (aylana)."""
+    import plans
+    paid = [p.price_usd for p in plans.PAID_PLAN_LIST if p.price_usd]
+    return {"{trial_days}": str(plans.PLANS["trial"].period_days or ""),
+            "{min_price}": f"${min(paid)}" if paid else ""}
+
+
 def translate(key: str, lang: str, **kwargs) -> str:
     table = TRANSLATIONS.get(lang) or TRANSLATIONS[DEFAULT_LANG]
     val = table.get(key)
@@ -2518,6 +2528,9 @@ def translate(key: str, lang: str, **kwargs) -> str:
         # Yetishmagan kalit -- avtomatik standart tilga (o'zbekcha) qaytadi,
         # HECH QACHON xato bermaydi yoki kalitning o'zini ko'rsatmaydi.
         val = TRANSLATIONS[DEFAULT_LANG].get(key, key)
+    if "{trial_days}" in val or "{min_price}" in val:
+        for token, value in _plan_facts().items():
+            val = val.replace(token, value)
     if kwargs:
         # Dinamik qism ("{n} ta lid"). Placeholder yetishmasa/noto'g'ri
         # bo'lsa ham sahifa buzilmaydi -- xom matn qaytadi.

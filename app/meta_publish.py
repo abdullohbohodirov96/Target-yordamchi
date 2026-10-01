@@ -11,12 +11,11 @@ ASOSIY KAFOLATLAR:
     qadam oldidan yangilanadi -- jarayon o'rtada uzilsa (crash/tarmoq),
     qayta urinish ALLAQACHON yaratilgan qadamlarni o'tkazib yuboradi,
     dublikat kampaniya/adset/reklama HECH QACHON yaratilmaydi.
-  - Standart holat ACTIVE (2026-09'dan): `draft.launch_active` (standart
-    True) ACTIVE bo'lsa, kampaniya/adset/reklama Meta'ga chiqarilishi bilan
-    DARHOL ishga tushadi. Foydalanuvchi review oynasida "Paused (qo'lda
-    yoqaman)"ni tanlasa (`launch_active=False`), avvalgidek PAUSED
-    yaratiladi va alohida, ANIQ `activate_draft()` qadami bilan keyinroq
-    yoqiladi.
+  - Standart holat PAUSED (2026-09-30'dan; avval ACTIVE edi):
+    `draft.launch_active` False bo'lsa kampaniya/adset/reklama PAUSED
+    yaratiladi va alohida, ANIQ `activate_draft()` qadami bilan yoqiladi
+    (pul sarfi faqat egasi qarori bilan). Review oynasida "Darhol yoqilsin"
+    tanlansa (`launch_active=True`) -- nashr bilan DARHOL ishga tushadi.
   - Meta xatosi foydalanuvchiga XOM API matni bilan EMAS, tushunarli
     o'zbekcha xabar bilan ko'rsatiladi (`friendly_publish_error`); xom matn
     `last_meta_error_raw`da diagnostika uchun saqlanadi.
@@ -335,12 +334,9 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     warnings: list[str] = []
     token = company.get_meta_access_token()
     ad_account_id = company.meta_ad_account_id
-    # 2026-09, foydalanuvchi so'rovi: standart holat endi ACTIVE -- kampaniya
-    # Meta'ga chiqarilishi bilan darhol ishga tushadi (avval doim PAUSED
-    # bo'lib, alohida "Faollashtirish" bosish kerak edi). Xohlasa, review
-    # oynasida PAUSED'ga o'tkazishi mumkin (`draft.launch_active=False`,
-    # `/avtopilot/<id>/launch-status`).
-    launch_status = "ACTIVE" if getattr(draft, "launch_active", True) else "PAUSED"
+    # 2026-09-30: standart PAUSED (avval ACTIVE edi) -- egasi review oynasida
+    # "Darhol yoqilsin"ni tanlasa ACTIVE (`/avtopilot/<id>/launch-status`).
+    launch_status = "ACTIVE" if getattr(draft, "launch_active", False) else "PAUSED"
 
     # --- validate
     previous_step = draft.publish_step

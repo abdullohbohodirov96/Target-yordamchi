@@ -620,7 +620,7 @@ def test_multitenant_and_roles():
 # 13b) Nashrdan keyingi holat (ACTIVE / PAUSED) -- 2026-09
 # ---------------------------------------------------------------------------
 def test_launch_status_toggle():
-    """`launch_active` serialize'da bor (standart True), `/launch-status`
+    """`launch_active` serialize'da bor (standart False -- PAUSED, 2026-09-30), `/launch-status`
     uni o'zgartiradi va audit-jurnalga yozadi; `last_meta_error_raw` ham
     JSON'da (nashr xatosi diagnostikasi uchun)."""
     with _assets_mock(ASSETS):
@@ -628,7 +628,7 @@ def test_launch_status_toggle():
         data = r.get_json()
         r2 = admin.post(f"/avtopilot/{DRAFT_ID}/patch", json={"scope": "campaign", "changes": {"campaign.name": "Launch test"}})
         dr = r2.get_json()["draft"]
-        check("serialize: launch_active kaliti bor va standart True", dr.get("launch_active") is True)
+        check("serialize: launch_active kaliti bor va standart False (PAUSED)", dr.get("launch_active") is False)
         check("serialize: last_meta_error_raw kaliti bor", "last_meta_error_raw" in dr)
         r = admin.post(f"/avtopilot/{DRAFT_ID}/launch-status", json={})
         check("launch-status 'active'siz 400", r.status_code == 400 and "active" in r.get_json()["error"])
@@ -651,7 +651,8 @@ def test_trial_company():
     with _assets_mock(EMPTY_ASSETS):
         r = t.get("/avtopilot")
         html = r.get_data(as_text=True).replace("&#39;", "'")
-        check("trial: ro'yxat ochiladi + ulanish banneri", r.status_code == 200 and "yetishmayapti" in html and "/connect-accounts" in html and "tarif" in html.lower())
+        # 2026-09-30: sinovda Meta ulash OCHIQ -- banner faqat "hisob ulanmagan" haqida.
+        check("trial: ro'yxat ochiladi + ulanish banneri (tarif to'sig'i yo'q)", r.status_code == 200 and "yetishmayapti" in html and "/connect-accounts" in html and "ulash imkoni yo'q" not in html)
         with mock.patch.object(orchestrator, "_call_agent", return_value=dict(LLM_PLAN)), \
                 mock.patch.object(meta_api, "search_geo_location", fake_geo), mock.patch.object(meta_api, "search_targeting_interests", fake_interests):
             r = t.post("/avtopilot/yangi", data={"objective": "MESSAGES", "budget": "50000", "location": "Toshkent"})
@@ -659,7 +660,7 @@ def test_trial_company():
         tid = int(r.headers["Location"].rstrip("/").split("/")[-1])
         page = t.get(f"/avtopilot/{tid}")
         data = _draft_json(page.get_data(as_text=True))
-        check("trial: review 200 + connection.problems (tarif + hisob)", page.status_code == 200 and data["connection"]["plan_allows_meta"] is False and len(data["connection"]["problems"]) >= 2)
+        check("trial: review 200 + tarif Meta'ga ruxsat beradi, faqat hisob ulanmagan", page.status_code == 200 and data["connection"]["plan_allows_meta"] is True and len(data["connection"]["problems"]) >= 1)
         check("trial: hudud tokensiz topilmadi -> AI ogohlantirishi", any("topilmadi" in w or "aniqlanmadi" in w for w in data["ai_plan"]["warnings"]))
         s = db_module.get_session()
         try:
@@ -670,7 +671,8 @@ def test_trial_company():
         finally:
             s.close()
         r = t.post(f"/avtopilot/{tid}/publish", json={})
-        check("trial: publish 400 + tarif xabari", r.status_code == 400 and any("tarif" in e.lower() for e in r.get_json()["errors"]))
+        errs = r.get_json()["errors"]
+        check("trial: publish 400 -- faqat 'hisob ulanmagan' (tarif to'sig'i yo'q)", r.status_code == 400 and any("ulanmagan" in e for e in errs) and not any("tarif" in e.lower() for e in errs))
         r = t.get("/avtopilot/api/search-geo?q=Toshkent")
         check("trial: geo qidiruv tokensiz bo'sh + izoh", r.status_code == 200 and r.get_json()["results"] == [] and "ulanmagan" in r.get_json()["error"])
 
