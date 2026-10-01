@@ -81,6 +81,10 @@ def _scoped_key(base_key: str, company_id: "int | None") -> str:
     o'ziga alohida (`base_key:company_id`) kalit -- birining sozlamasi
     ikkinchisiga sira ta'sir qilmaydi."""
     if company_id is None:
+        # Aniq berilmasa -- joriy so'rov/fon vazifasining kompaniyasi (audit B13:
+        # ilgari jimgina egasining kursi/sozlamasi olinardi).
+        company_id = db.get_current_company_id()
+    if company_id is None:
         return base_key
     try:
         if company_id == db.get_default_company_id():

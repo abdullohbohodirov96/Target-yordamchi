@@ -679,8 +679,9 @@ def get_insights(
         params["breakdowns"] = ",".join(breakdowns)
     if time_increment:
         params["time_increment"] = time_increment
-    data = _get(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
-    return data.get("data", [])
+    # 200 qatordan ko'p (ko'p reklamali hisob / kunlik jadval) bo'lsa ham
+    # natija kesilmasligi uchun barcha sahifalar o'qiladi (audit B10).
+    return _get_all_pages(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
 
 
 def get_campaign_insights(

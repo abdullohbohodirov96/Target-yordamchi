@@ -118,6 +118,8 @@ def _scoped_kv_key(base_key: str, company_id: "int | None") -> str:
     (`base_key:company_id`) kalitni -- `kpi_bonus._scoped_key()` bilan
     bir xil naqsh."""
     if company_id is None:
+        company_id = db.get_current_company_id()  # joriy kompaniya (audit B12/B13)
+    if company_id is None:
         return base_key
     try:
         if company_id == db.get_default_company_id():
@@ -125,6 +127,18 @@ def _scoped_kv_key(base_key: str, company_id: "int | None") -> str:
     except Exception:
         pass
     return f"{base_key}:{company_id}"
+
+
+def _effective_business_rules(company_id: "int | None" = None) -> dict:
+    """LLM'ga beriladigan qoidalar -- JORIY kompaniya Sozlamalarda o'zgartirgan
+    CPL chegaralari bilan (audit B12: ilgari har doim faylning standart
+    qiymatlari ketardi, deterministik hard-kill esa boshqa raqam ishlatardi)."""
+    rules = dict(BUSINESS_RULES)
+    for key in _CPL_RULE_KV_KEYS:
+        override = _business_rule_override(key, company_id)
+        if override is not None:
+            rules[key] = override
+    return rules
 
 
 def get_business_rule(key: str, company_id: "int | None" = None) -> float:
@@ -1857,7 +1871,7 @@ def gather_data(company=None) -> dict:
         "account_structure": account_structure,
         "ad_insights": ad_insights,
         "region_breakdown": region_breakdown,
-        "business_rules": BUSINESS_RULES,
+        "business_rules": _effective_business_rules(),
         "generated_at": datetime.utcnow().isoformat(),
         "today_insights": {
             "meta_campaign_data_today": today_campaign_insights,

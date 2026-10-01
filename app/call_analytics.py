@@ -36,6 +36,8 @@ def _scoped_key(base_key: str, company_id: "int | None") -> str:
     kompaniyalilik tuzatishi) -- standart kompaniya ESKI suffikssiz kalitni
     ishlatadi, boshqa har bir kompaniya o'ziga alohida kalitni."""
     if company_id is None:
+        company_id = db.get_current_company_id()  # joriy kompaniya (audit B12/B13)
+    if company_id is None:
         return base_key
     try:
         if company_id == db.get_default_company_id():
@@ -46,8 +48,6 @@ def _scoped_key(base_key: str, company_id: "int | None") -> str:
 
 
 def get_min_real_talk_seconds(company_id: "int | None" = None) -> int:
-    if company_id is None:
-        company_id = db.get_current_company_id()  # joriy so'rov kompaniyasi
     value = kv_store.get_json(_scoped_key(_MIN_REAL_TALK_KEY, company_id), default=None)
     try:
         return int(value) if value is not None else MIN_REAL_TALK_SECONDS
