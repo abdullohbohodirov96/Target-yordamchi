@@ -60,16 +60,37 @@ def _reconcile(state: dict) -> dict:
     """Oxirgi tekshiruvdan beri REAL sarflangan pulni (Meta API orqali)
     balansdan ayiradi. Har doim `get_status`/`record_deposit`/`check_and_alert`
     ichida chaqiriladi — foydalanuvchi hech qachon balansni qo'lda
-    "sinxronlashtirish" haqida o'ylashi shart emas."""
+    "sinxronlashtirish" haqida o'ylashi shart emas.
+
+    2026-10-01 tuzatish (audit B4): Meta xarajatni KUN aniqligida beradi.
+    Ilgari har tekshiruvda "oxirgi tekshiruv kuni..bugun" xarajati TO'LIQ
+    ayirilardi -- bir kunda 10 marta tekshirilsa, bugungi xarajat 10 marta
+    ayirilib, balans soxta tez tugardi. Endi oxirgi kunda allaqachon
+    ayirilgan summa (`counted_spend_on_last_day`) eslab qolinadi va faqat
+    FARQ (delta) ayiriladi."""
     now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
     if state["last_reconciled_at"]:
         since_date = datetime.fromisoformat(state["last_reconciled_at"]).date().isoformat()
-        until_date = now.date().isoformat()
         try:
-            spent = meta_api.get_account_spend(since=since_date, until=until_date)
-            state["balance_usd"] = max(0.0, state["balance_usd"] - spent)
+            total = meta_api.get_account_spend(since=since_date, until=today)
+            already = float(state.get("counted_spend_on_last_day") or 0.0) if state.get("counted_day") == since_date else 0.0
+            delta = max(0.0, total - already)
+            today_spend = total if since_date == today else meta_api.get_account_spend(since=today, until=today)
         except meta_api.MetaAPIError:
-            pass  # API xato bo'lsa balansni buzmaymiz, keyingi safar qayta urinamiz
+            return state  # API xato bo'lsa balansni buzmaymiz, keyingi safar qayta urinamiz
+        state["balance_usd"] = max(0.0, state["balance_usd"] - delta)
+        state["counted_day"] = today
+        state["counted_spend_on_last_day"] = today_spend
+    else:
+        # Birinchi marta: bugungi (deposit'dan oldingi) xarajat balansdan
+        # ayirilmaydi -- uni "allaqachon hisoblangan" deb belgilaymiz.
+        try:
+            state["counted_spend_on_last_day"] = meta_api.get_account_spend(since=today, until=today)
+            state["counted_day"] = today
+        except meta_api.MetaAPIError:
+            state["counted_spend_on_last_day"] = 0.0
+            state["counted_day"] = today
     state["last_reconciled_at"] = _now_iso()
     return state
 
