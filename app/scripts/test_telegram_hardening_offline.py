@@ -121,6 +121,51 @@ def run_all():
         s.close()
     check("ulanganda suhbat tarixi tozalandi", app_module.get_history(777) == [])
 
+    # tg_send: guruh supergroup'ga ko'chsa -- ID yangilanadi va qayta yuboriladi.
+    s = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            c = s.get(db_module.Company, other_id)
+            c.telegram_group_id = "-1001"
+            s.commit()
+    finally:
+        s.close()
+
+    class _R:
+        def __init__(self, body):
+            self._b = body
+
+        def json(self):
+            return self._b
+
+    posted = []
+
+    def fake_post(url, json=None, timeout=None):
+        posted.append(json)
+        if json["chat_id"] == -1001:
+            return _R({"ok": False, "error_code": 400, "parameters": {"migrate_to_chat_id": -100777}})
+        return _R({"ok": True})
+
+    with mock.patch("requests.post", side_effect=fake_post):
+        app_module.tg_send(-1001, "salom")
+        app_module.tg_send(5, "")
+    s = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            check("migrate_to_chat_id: guruh ID yangilandi", s.get(db_module.Company, other_id).telegram_group_id == "-100777")
+    finally:
+        s.close()
+    check("migrate: yangi ID'ga qayta yuborildi", any(p["chat_id"] == -100777 for p in posted), str(posted))
+    check("bo'sh matn ham jim qolmaydi", any(p["chat_id"] == 5 and p["text"] for p in posted))
+
+    with mock.patch.object(app_module, "tg_send") as sent:
+        client.post("/api/webhook", json=_upd(501, "/pause"))
+        check("/pause ID'siz -- yo'riqnoma", sent.call_args and "Foydalanish" in sent.call_args[0][1])
+
+    with mock.patch.object(app_module, "TG_AI_DAILY_LIMIT_PER_CHAT", 2):
+        res = [app_module._tg_ai_quota_ok(4242) for _ in range(3)]
+    check("kunlik AI limiti: 2 ta ruxsat, 3-si rad", res == [True, True, False], str(res))
+
     if failures:
         print(f"\n{len(failures)} ta XATO")
         sys.exit(1)

@@ -749,14 +749,45 @@ app.jinja_env.filters["cp_summary"] = _format_competitor_summary
 # Telegram yordamchi funksiyalar
 # ---------------------------------------------------------------------------
 
+def _migrate_telegram_chat_id(old_chat_id, new_chat_id) -> None:
+    """Guruh supergroup'ga aylanganda Telegram yangi chat ID beradi --
+    kompaniyaning guruh/vazifalar guruhi ID'si avtomatik yangilanadi."""
+    session = get_session()
+    try:
+        with db.unscoped():
+            for column in (Company.telegram_group_id, Company.tasks_group_id):
+                session.query(Company).filter(column == str(old_chat_id)).update(
+                    {column: str(new_chat_id)}, synchronize_session=False,
+                )
+            session.commit()
+        logger.warning("Telegram guruh ID ko'chirildi: %s -> %s", old_chat_id, new_chat_id)
+    except Exception:
+        logger.exception("Telegram guruh ID'ni ko'chirib bo'lmadi (%s -> %s)", old_chat_id, new_chat_id)
+    finally:
+        session.close()
+
+
 def tg_send(chat_id: int, text: str) -> None:
     import requests
+    text = text if isinstance(text, str) else str(text or "")
+    if not text.strip():
+        text = "(bo'sh javob)"  # Telegram bo'sh matnni rad etadi -- foydalanuvchi jim qolmasin
     for i in range(0, len(text), 4000):
         chunk = text[i:i + 4000]
         try:
-            requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
-        except Exception:
-            logger.exception("Telegramga xabar yuborishda xatolik")
+            r = requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
+            body = r.json() if r is not None else {}
+            if isinstance(body, dict) and not body.get("ok", True):
+                new_id = (body.get("parameters") or {}).get("migrate_to_chat_id")
+                if new_id:
+                    _migrate_telegram_chat_id(chat_id, new_id)
+                    chat_id = new_id
+                    requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
+                else:
+                    logger.warning("Telegram xabarni qabul qilmadi (chat_id=%s): %s", chat_id, body.get("description"))
+        except Exception as e:
+            # `logger.exception` ishlatilmaydi -- xato matnida bot TOKENli URL bo'lishi mumkin.
+            logger.error("Telegramga xabar yuborishda xatolik (chat_id=%s): %s", chat_id, type(e).__name__)
 
 
 def tg_send_document(chat_id: int, filename: str, file_bytes: bytes, caption: str = "") -> bool:
@@ -1221,11 +1252,28 @@ def _is_registered_chat(chat_id: int) -> bool:
         with db.unscoped():
             if session.query(Company).filter_by(telegram_group_id=str(chat_id)).first():
                 return True
-            if session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first():
+            if session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first():
                 return True
         return False
     finally:
         session.close()
+
+
+TG_AI_DAILY_LIMIT_PER_CHAT = int(os.environ.get("TG_AI_DAILY_LIMIT_PER_CHAT", "150"))
+
+
+def _tg_ai_quota_ok(chat_id: int) -> bool:
+    """Mijoz-kompaniya chati uchun kunlik AI so'rov limiti (spam/ortiqcha
+    xarajatdan himoya). Hisoblagich kv'da, kun bo'yicha."""
+    key = f"tg_ai_quota:{chat_id}:{dt.datetime.utcnow().date().isoformat()}"
+    try:
+        used = int(kv_store.get_json(key, default=0) or 0)
+        if used >= TG_AI_DAILY_LIMIT_PER_CHAT:
+            return False
+        kv_store.set_json(key, used + 1)
+    except Exception:
+        logger.exception("AI kvota hisoblagichi xatosi (chat_id=%s)", chat_id)
+    return True
 
 
 @_telegram_chat_scoped
@@ -1256,6 +1304,10 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         # (yuqoridagi XAVFSIZLIK TUZATISHI izohi).
         company, _manager = _resolve_telegram_company(chat_id)
         if company is not None:
+            if not _tg_ai_quota_ok(chat_id):
+                tg_send(chat_id, "⏳ Bugungi AI savollar limiti tugadi. Ertaga davom ettiramiz -- "
+                                 "batafsil ma'lumot replix.uz kabinetida doim mavjud.")
+                return
             with db.scoped_as(company.id):
                 _handle_company_free_text(chat_id, company, user_text)
         else:
@@ -1484,25 +1536,38 @@ def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "pr
     if cmd == "/analyze":
         tg_send(chat_id, "⏳ Hisobni tahlil qilyapman...")
         ctx = contextvars.copy_context()  # tenant kontekstini fon oqimiga ham o'tkazish
-        thread = threading.Thread(
-            target=lambda: ctx.run(lambda: tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False))),
-            daemon=True,
-        )
+
+        def _run_analyze():
+            # Fon oqimidagi xato ilgari JIM yo'qolardi -- foydalanuvchi
+            # "⏳"dan keyin hech narsa olmasdi.
+            try:
+                tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False) or "Diqqatga loyiq narsa topilmadi.")
+            except Exception as e:
+                logger.exception("/analyze xatosi (chat_id=%s)", chat_id)
+                tg_send(chat_id, f"⚠️ Tahlil bajarilmadi: {meta_api.safe_error_message(e)}")
+
+        thread = threading.Thread(target=lambda: ctx.run(_run_analyze), daemon=True)
         thread.start()
         return
-    if cmd == "/pause" and args:
+    if cmd == "/pause":
+        if not args:
+            tg_send(chat_id, "Foydalanish: /pause <reklama/adset/kampaniya ID>")
+            return
         try:
             meta_api.pause_object(args[0])
             tg_send(chat_id, f"⏸ {args[0]} to'xtatildi.")
         except meta_api.MetaAPIError as e:
-            tg_send(chat_id, f"⚠️ Xatolik: {e}")
+            tg_send(chat_id, f"⚠️ Xatolik: {meta_api.safe_error_message(e)}")
         return
-    if cmd == "/resume" and args:
+    if cmd == "/resume":
+        if not args:
+            tg_send(chat_id, "Foydalanish: /resume <reklama/adset/kampaniya ID>")
+            return
         try:
             meta_api.activate_object(args[0])
             tg_send(chat_id, f"▶️ {args[0]} ishga tushirildi.")
         except meta_api.MetaAPIError as e:
-            tg_send(chat_id, f"⚠️ Xatolik: {e}")
+            tg_send(chat_id, f"⚠️ Xatolik: {meta_api.safe_error_message(e)}")
         return
     if cmd == "/vazifalar":
         # 2026-09, JONLI BUG TUZATISHI (foydalanuvchi so'rovi bilan
