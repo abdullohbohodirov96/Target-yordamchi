@@ -374,7 +374,7 @@
          ishlatish") -- Avtopilot kabi 'target' moduliga bog'liq. #}
       {% if has_module(current_user, 'target') %}
       <a href="{{ url_for('creative_list') }}" class="nav-item {{ 'active' if request.endpoint in _creative_eps }}" data-tooltip="{{ t('shell.nav_creative_tip') }}" aria-label="{{ t('shell.nav_creative') }}">
-        <span class="nav-icon">{{ navicon('creative') }}</span><span class="nav-text">{{ t('shell.nav_creative') }}</span>
+        <span class="nav-icon">{{ navicon('creative') }}</span><span class="nav-text">{{ t('shell.nav_creative') }} <span class="badge-beta badge-beta-sm">{{ t('creative.beta') }}</span></span>
       </a>
       {% endif %}
       {# 2026-09, foydalanuvchi so'rovi ("lead analyticsni alohida bo'lim

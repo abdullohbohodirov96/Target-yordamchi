@@ -78,6 +78,7 @@ import autopilot_web
 import target_analysis
 # 2026-09, Kreativ studiya (AI rasm-generatsiya): OpenAI fon + Pillow
 # matn/logo qatlamlari, 20 ta shablon, PNG/PDF eksport, Autopilot mediasi.
+import creative_carousel
 import creative_studio
 import creative_templates
 import creative_web
@@ -8851,7 +8852,11 @@ def _creative_urls(asset, from_autopilot: "str | None") -> dict:
         "list": url_for("creative_list"), "templates": url_for("creative_templates_gallery"), "new": url_for("creative_new"),
         "brand_settings": url_for("settings_brand_kit"), "brand_logo": url_for("brand_logo_file"), "pricing": url_for("pricing"),
         "target_create": url_for("creative_target_create", asset_id=asset.id), "autopilot_new": url_for("autopilot_new"),
+        "carousel_create": url_for("creative_carousel_create"),
     }
+    carousel = creative_carousel.info(asset)
+    if carousel:
+        urls["carousel_view"] = url_for("creative_carousel_view", group=carousel["group"])
     if from_autopilot and str(from_autopilot).isdigit():
         urls["from_autopilot_draft_id"] = int(from_autopilot)
         urls["autopilot"] = url_for("autopilot_review", draft_id=int(from_autopilot))
@@ -8908,10 +8913,91 @@ def creative_list():
         }) if company else None
         if style_onboarding is not None:
             style_onboarding["force_show"] = bool(request.args.get("open_style"))
+        carousel_styles = creative_web.carousel_style_cards(_carousel_preview_url)
         return render_template("creative_list.html", assets=assets, quota=quota, from_autopilot=draft_id,
+                               carousel_styles=carousel_styles,
                                aspect=request.args.get("aspect") or "", templates=templates,
                                templates_initial=creative_web.INLINE_TEMPLATES_INITIAL,
                                style_onboarding=style_onboarding)
+    finally:
+        session.close()
+
+
+def _carousel_preview_url(style_key: str) -> str:
+    return url_for("static", filename=f"creative_templates/carousel_{style_key}.png")
+
+
+@app.route("/kreativ/karusel/yangi", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_carousel_create():
+    """Karusel yaratish (OpenAI'siz, kvota sarflanmaydi). Forma: style,
+    cards (3-6), aspect; ixtiyoriy source_asset_id -- tayyor kreativ foni bilan."""
+    company = _current_company()
+    if company is None:
+        abort(404)
+    session = get_session()
+    try:
+        source = None
+        source_id = (request.form.get("source_asset_id") or "").strip()
+        if source_id.isdigit():
+            source = _creative_load_asset(session, int(source_id), company)
+        try:
+            cards_n = int(request.form.get("cards") or creative_carousel.DEFAULT_CARDS)
+        except ValueError:
+            cards_n = creative_carousel.DEFAULT_CARDS
+        try:
+            cards = creative_carousel.create_carousel(
+                session, company, _autopilot_manager_id(), style_key=request.form.get("style") or "",
+                n_cards=cards_n, source_asset=source, aspect=(request.form.get("aspect") or "1:1").strip(),
+            )
+        except creative_studio.CreativeError as e:
+            flash(str(e), "error")
+            return redirect(url_for("creative_editor", asset_id=source.id) if source else url_for("creative_list") + "#cs-carousel")
+        flash(lang_module.translate("carousel.created", g.lang, n=len(cards)), "success")
+        return redirect(url_for("creative_carousel_view", group=creative_carousel.info(cards[0])["group"]))
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/karusel/<group>")
+@login_required
+@module_required("target")
+def creative_carousel_view(group: str):
+    company = _current_company()
+    session = get_session()
+    try:
+        rows = creative_carousel.group_assets(session, company.id, group) if company else []
+        if not rows:
+            abort(404)
+        cards = []
+        for a in rows:
+            ready = a.status == "ready" and bool(a.final_storage_path)
+            cards.append({"id": a.id, "title": a.title, "aspect": a.aspect,
+                          "thumbnail_url": (url_for("creative_image_file", asset_id=a.id) + "?v=" + creative_web._version(a)) if ready else None})
+        style = creative_carousel.get_style((creative_carousel.info(rows[0]) or {}).get("style"))
+        return render_template("creative_carousel.html", cards=cards, group=group, style_name=style["name"])
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/karusel/<group>.zip")
+@login_required
+@module_required("target")
+def creative_carousel_zip(group: str):
+    company = _current_company()
+    session = get_session()
+    try:
+        rows = creative_carousel.group_assets(session, company.id, group) if company else []
+        if not rows:
+            abort(404)
+        try:
+            data = creative_carousel.zip_bytes(rows)
+        except creative_studio.CreativeError as e:
+            flash(str(e), "error")
+            return redirect(url_for("creative_carousel_view", group=group))
+        return Response(data, mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="replix_karusel_{group}.zip"'})
     finally:
         session.close()
 
@@ -8927,6 +9013,7 @@ def creative_templates_gallery():
         preferred_styles = brand_kit.get_preferred_styles() if brand_kit is not None else None
         cards = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"), preferred_styles=preferred_styles)
         return render_template("creative_templates_gallery.html", templates=cards, categories=creative_templates.TEMPLATE_CATEGORIES,
+                               carousel_styles=creative_web.carousel_style_cards(_carousel_preview_url),
                                from_autopilot=request.args.get("from_autopilot") or "")
     finally:
         session.close()

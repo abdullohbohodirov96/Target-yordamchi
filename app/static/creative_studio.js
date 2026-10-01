@@ -681,6 +681,9 @@
       // qil" kabi buyruq bilan tuzatish -- kvota sarflanmaydi).
       side.appendChild(renderChangeChatSection());
 
+      // ---- Karusel (2026-09-30): shu rasm fonidan 3-6 kartali karusel
+      if (a.urls.carousel_create) { side.appendChild(renderCarouselSection()); }
+
       // ---- Targetga ochish (2026-09): tayyor kreativdan Avtopilot qoralamasi
       if (!a.from_autopilot && a.urls.target_create) { side.appendChild(renderTargetSection()); }
 
@@ -841,6 +844,29 @@
     // -> POST /kreativ/<id>/target-yarat (oddiy forma, sahifa almashadi).
     // Server yetishmagan ma'lumot bo'lsa Avtopilot wizard'iga (kreativ
     // biriktirilgan holda) yo'naltiradi, aks holda darhol /avtopilot/<id>.
+    function renderCarouselSection() {
+      var a = store.asset;
+      var sec = h('div', { class: 'cs-side-section' }, [h('h3', { class: 'ap-section-title', text: 'Karusel' })]);
+      if (a.carousel) {
+        sec.appendChild(h('div', { class: 'ap-field-hint', text: 'Bu karuselning ' + a.carousel.index + '/' + a.carousel.total + '-kartasi.' }));
+        sec.appendChild(h('a', { href: a.urls.carousel_view, class: 'ap-mini-btn', text: 'Butun karuselni ko\'rish', style: 'text-decoration:none' }));
+        return sec;
+      }
+      sec.appendChild(h('div', { class: 'ap-field-hint', style: 'margin-bottom:8px', text: 'Shu fon va matnlardan 3-6 kartali karusel tayyorlanadi (AI kvotasi sarflanmaydi).' }));
+      var form = h('form', { method: 'post', action: a.urls.carousel_create });
+      form.appendChild(h('input', { type: 'hidden', name: 'csrf_token', value: CSRF }));
+      form.appendChild(h('input', { type: 'hidden', name: 'source_asset_id', value: String(a.id) }));
+      var style = h('select', { name: 'style' }, (a.carousel_styles || []).map(function (s) { return h('option', { value: s.key, text: s.name }); }));
+      form.appendChild(propField('Uslub', style));
+      var cards = h('select', { name: 'cards' }, [3, 4, 5, 6].map(function (n) { return h('option', { value: String(n), text: n + ' ta karta', selected: n === 4 }); }));
+      form.appendChild(propField('Kartalar soni', cards));
+      var btn = h('button', { type: 'submit', class: 'btn ap-btn-sm', text: 'Karusel yaratish' });
+      form.addEventListener('submit', function () { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Tayyorlanmoqda…'; });
+      form.appendChild(btn);
+      sec.appendChild(form);
+      return sec;
+    }
+
     function renderTargetSection() {
       var a = store.asset;
       var t = a.target || {};

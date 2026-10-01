@@ -1993,11 +1993,52 @@ def _render_asset(session, asset) -> None:
     asset.width, asset.height = size
 
 
+# 2026-09-30 (docs/PLAN.md, 3-bosqich): Instagram/Facebook Stories va Reels
+# (9:16) ekranining yuqori ~12% (profil nomi, yopish tugmasi) va pastki ~18%
+# (javob maydoni / "Batafsil" tugmasi) qismi platforma interfeysi bilan
+# yopiladi. Shablonlar 1:1 uchun chizilgan -- 9:16 da logotip/CTA shu
+# zonalarga tushib, ko'rinmay qolardi.
+STORY_SAFE_TOP = 0.12
+STORY_SAFE_BOTTOM = 0.82
+
+
+def adapt_layers_for_aspect(layers: list[dict], aspect: str) -> list[dict]:
+    """Shablon qatlamlarini formatga moslaydi (sof funksiya, kirishni
+    o'zgartirmaydi). 9:16 -- matn/logo/badge vertikal "xavfsiz zona"ga
+    siqiladi; chekkaga yopishgan fon panellari chekkada qoladi (dizayn
+    buzilmaydi), to'liq balandlikdagi panellarga tegilmaydi. Shrift o'lchami
+    ham siqilish nisbatida kichrayadi (balandlik 1:1 dagidan 1.78 baravar
+    katta). Boshqa formatlar -- o'zgarishsiz."""
+    if aspect != "9:16":
+        return [dict(l) for l in (layers or [])]
+    top, span = STORY_SAFE_TOP, STORY_SAFE_BOTTOM - STORY_SAFE_TOP
+    out = []
+    for layer in layers or []:
+        l = dict(layer)
+        y, h = float(l.get("y") or 0), float(l.get("h") or 0)
+        if l.get("type") == "panel":
+            if h >= 0.95:
+                out.append(l)
+                continue
+            new_y, new_bottom = top + y * span, top + (y + h) * span
+            if y <= 0.02:
+                new_y = 0.0
+            if y + h >= 0.98:
+                new_bottom = 1.0
+            l["y"], l["h"] = round(new_y, 4), round(max(0.01, new_bottom - new_y), 4)
+        else:
+            l["y"], l["h"] = round(top + y * span, 4), round(max(0.01, h * span), 4)
+            if l.get("size_ratio") is not None:
+                l["size_ratio"] = round(float(l["size_ratio"]) * span, 4)
+        out.append(l)
+    return out
+
+
 def _initial_layers_for(asset, ctx: dict, template: "dict | None", values: "dict | None" = None) -> list[dict]:
     if values is None:
         values = placeholder_values(ctx, asset.get_brief_answers(), template, use_ai=False)
     source = template["layers"] if template else select_default_layout(values, asset.id)
-    return resolve_layers(source, values)
+    return adapt_layers_for_aspect(resolve_layers(source, values), asset.aspect)
 
 
 def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> "db.CreativeAsset":

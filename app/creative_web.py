@@ -24,6 +24,7 @@ import logging
 import datetime as dt
 
 import plans
+import creative_carousel
 import creative_studio
 import creative_templates
 
@@ -206,7 +207,9 @@ def serialize_asset(asset, brand_kit, quota: "dict | None", *, ctx: "dict | None
         "quota": quota or {},
         "brand": brand_info(brand_kit, urls.get("brand_logo")),
         "base_url": urls.get("base") or f"/kreativ/{asset.id}",
-        "urls": {k: urls.get(k) for k in ("export_png", "export_pdf", "list", "templates", "brand_settings", "pricing", "autopilot", "new", "target_create", "autopilot_new")},
+        "urls": {k: urls.get(k) for k in ("export_png", "export_pdf", "list", "templates", "brand_settings", "pricing", "autopilot", "new", "target_create", "autopilot_new", "carousel_create", "carousel_view")},
+        "carousel": creative_carousel.info(asset),
+        "carousel_styles": [{"key": s["key"], "name": s["name"]} for s in creative_carousel.CAROUSEL_STYLES],
         "from_autopilot": urls.get("from_autopilot_draft_id"),
         # 2026-09: "Targetga ochish" -- tayyor kreativdan Avtopilot qoralamasi
         "target": target or {"can_create": False, "objectives": [], "needs_location": False, "default_location": "", "default_objective": "MESSAGES"},
@@ -233,8 +236,18 @@ def list_assets_for_company(session, company_id: int, image_url_builder=None, *,
             "thumbnail_url": (image_url_builder(a.id) + "?v=" + _version(a)) if (ready and image_url_builder) else None,
             "error_message": a.error_message,
             "created_at": a.created_at, "updated_at": a.updated_at,
+            "carousel": creative_carousel.info(a),
         })
     return out
+
+
+def carousel_style_cards(preview_url_builder=None) -> list[dict]:
+    """6 ta karusel uslubi: nom, tavsif, real namuna lenta rasmi."""
+    return [
+        {"key": s["key"], "name": s["name"], "description": s["description"],
+         "preview_url": preview_url_builder(s["key"]) if preview_url_builder else None}
+        for s in creative_carousel.CAROUSEL_STYLES
+    ]
 
 
 # Asosiy /kreativ sahifasida dastlab ko'rsatiladigan shablonlar soni

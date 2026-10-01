@@ -1,0 +1,35 @@
+{# 2026-09-30: Karusel shablonlari (6 xil uslub) -- har biri REAL namuna
+   lenta rasmi bilan (`scripts/render_carousel_thumbnails.py`). Tanlanganda
+   kompaniya profili/brifidan matnlar bilan, OpenAI'siz (kvota sarflamay)
+   karusel yaratiladi; tayyor kreativ bo'lsa -- muharrirdan uning foni
+   bilan ham yaratish mumkin. #}
+<section class="cs-carousel-section" id="cs-carousel" aria-label="{{ t('carousel.title') }}">
+  <div class="cs-inline-tpl-head">
+    <div>
+      <h2>{{ t('carousel.title') }} <span class="badge-beta" title="{{ t('creative.beta_tip') }}">{{ t('creative.beta') }}</span></h2>
+      <p class="text-faint">{{ t('carousel.subtitle') }}</p>
+    </div>
+  </div>
+  <div class="cs-carousel-grid">
+    {% for st in carousel_styles %}
+    <form method="post" action="{{ url_for('creative_carousel_create') }}" class="cs-carousel-card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="style" value="{{ st.key }}">
+      <div class="cs-carousel-strip"><img src="{{ st.preview_url }}" alt="{{ st.name }}" loading="lazy"></div>
+      <div class="cs-carousel-body">
+        <div class="cs-tpl-name">{{ st.name }}</div>
+        <div class="cs-tpl-desc">{{ st.description }}</div>
+        <div class="cs-carousel-controls">
+          <label>{{ t('carousel.cards') }}
+            <select name="cards">{% for n in range(3, 7) %}<option value="{{ n }}" {% if n == 4 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+          </label>
+          <label>{{ t('carousel.format') }}
+            <select name="aspect"><option value="1:1">1:1</option><option value="4:5">4:5</option><option value="9:16">9:16</option></select>
+          </label>
+          <button type="submit" class="btn ap-btn-sm">{{ t('carousel.create') }}</button>
+        </div>
+      </div>
+    </form>
+    {% endfor %}
+  </div>
+</section>

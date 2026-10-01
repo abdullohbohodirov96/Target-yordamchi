@@ -51,9 +51,16 @@
   - Dalil: `scripts/test_capi_signals_offline.py`.
 
 ## 3-bosqich. Kreativ studiya
-- [ ] AI faqat fon yoki obyektni chizsin, matn, logo va narxni shablon ustiga kod qo'ysin
-- [ ] Brend kit asosida 5–8 shablon (1:1, 4:5, 9:16), karusel
-- [ ] Sifat tayyor bo'lguncha "beta" deb belgilash
+- [x] AI faqat fon yoki obyektni chizsin, matn, logo va narxni shablon ustiga kod qo'ysin
+  - Allaqachon shunday edi: AI'ga "no text/logo/numbers" qat'iy ko'rsatma, matn/logo/narx Pillow qatlamlari (20 shablonning hammasi testlangan).
+- [x] Brend kit asosida 5–8 shablon (1:1, 4:5, 9:16), karusel
+  - 20 ta mavjud shablon + **6 ta karusel uslubi** (Yorqin gradient, Minimal oq, Qora hashamat, Ikki rangli, Qadamlar, Stiker pop) — brend ranglari bilan, real namuna lentalari galereyada.
+  - Karusel: 3–6 karta (ilgak → afzalliklar → CTA), OpenAI rasm kvotasi sarflanmaydi, ZIP yuklab olish, har karta alohida tahrirlanadi.
+  - 9:16 (Stories/Reels) xavfsiz zonasi: matn/logo/CTA platforma interfeysi ostiga tushmaydi.
+  - Dalil: `scripts/test_creative_carousel_offline.py`.
+  - Keyingi qadam (kelajak): karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish.
+- [x] Sifat tayyor bo'lguncha "beta" deb belgilash
+  - Kreativ studiya sahifalari, karusel va chap menyuda "BETA" belgisi.
 
 ## 4-bosqich. CPL avtopilot va hisobotlar
 - [ ] 3 daraja: ogohlantirish, pauza, harakat (byudjet ±10–20%, auditoriya kengaytirish, zaif reklamani o'chirish). Biznes egalari uchun sukut bo'yicha pauza, targetologlar uchun harakat faqat o'zi yoqsa

@@ -12,7 +12,7 @@
 
 <div class="page-head">
   <div>
-    <h1>{{ t('creative.new') }}</h1>
+    <h1>{{ t('creative.new') }} <span class="badge-beta" title="{{ t('creative.beta_tip') }}">{{ t('creative.beta') }}</span></h1>
     <p class="page-subtitle" style="margin-bottom:0">{% if template %}{{ t('creative_new.selected_template') }} <strong>{{ template.name }}</strong> -- {{ template.description }}{% else %}{{ t('creative_new.which_way') }}{% endif %}</p>
   </div>
   <div class="page-head-actions">

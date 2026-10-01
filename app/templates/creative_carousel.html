@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ t('carousel.title') }} — {{ t('creative.title') }} — Replix{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('carousel.title') }} <span class="badge-beta" title="{{ t('creative.beta_tip') }}">{{ t('creative.beta') }}</span></h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ style_name }} · {{ t('carousel.n_cards', n=cards|length) }}</p>
+  </div>
+  <div class="page-head-actions">
+    <a href="{{ url_for('creative_list') }}" class="btn btn-outline">{{ t('creative_new.back') }}</a>
+    <a href="{{ url_for('creative_carousel_zip', group=group) }}" class="btn">{{ t('carousel.download_zip') }}</a>
+  </div>
+</div>
+<p class="text-faint" style="margin:0 0 14px">{{ t('carousel.edit_hint') }}</p>
+<div class="cs-carousel-view">
+  {% for c in cards %}
+  <div class="cs-card">
+    <a href="{{ url_for('creative_editor', asset_id=c.id) }}" class="cs-card-thumb cs-aspect-{{ c.aspect|replace(':', '-') }}">
+      {% if c.thumbnail_url %}<img src="{{ c.thumbnail_url }}" alt="{{ c.title }}">{% endif %}
+    </a>
+    <div class="cs-card-body">
+      <div class="cs-card-title">{{ loop.index }}/{{ cards|length }}</div>
+      <div class="cs-card-actions">
+        <a href="{{ url_for('creative_editor', asset_id=c.id) }}" class="ap-mini-btn" style="text-decoration:none">{{ t('creative.edit') }}</a>
+        <a href="{{ url_for('creative_export_png', asset_id=c.id) }}" class="ap-mini-btn" style="text-decoration:none">PNG</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

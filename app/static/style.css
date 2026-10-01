@@ -924,6 +924,13 @@ th.sortable[data-sorted="desc"]::after { border-top: 4px solid var(--ink); opaci
    ranglar sonini kengaytirmasdan, standart 5 tadan tashqari nom bergan
    bosqichlar ham to'g'ri rangda ko'rinishi uchun. */
 .badge-color-blue { background: var(--blue-bg); color: var(--blue); }
+/* 2026-09-30: "Beta" belgisi (Kreativ studiya -- sifat tayyor bo'lguncha). */
+.badge-beta {
+  display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #fff; background: var(--brand-gradient); line-height: 1.5;
+}
+.badge-beta-sm { margin-left: 4px; padding: 0 6px; font-size: 9.5px; }
 .badge-color-good { background: var(--good-bg); color: var(--good); }
 .badge-color-bad { background: var(--bad-bg); color: var(--bad); }
 .badge-color-warn { background: var(--warn-bg); color: var(--warn); }
@@ -2366,6 +2373,20 @@ button:disabled, .btn:disabled { opacity: 0.7; cursor: default; transform: none;
 
 /* ---- Shablonlar galereyasi ---- */
 .cs-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+/* 2026-09-30: Karusel shablonlari (6 uslub, real namuna lentalari). */
+.cs-carousel-section { margin: 8px 0 28px; }
+.cs-carousel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+.cs-carousel-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; margin: 0; transition: box-shadow .12s, transform .12s; }
+.cs-carousel-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.cs-carousel-strip { background: var(--border-light); padding: 10px; overflow-x: auto; }
+.cs-carousel-strip img { display: block; height: 150px; width: auto; max-width: none; border-radius: 6px; }
+.cs-carousel-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.cs-carousel-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.cs-carousel-controls label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--text-dim); font-weight: 600; }
+.cs-carousel-controls select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--ink); font-size: 13px; }
+.cs-carousel-controls .btn { margin-left: auto; }
+.cs-carousel-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .cs-carousel-grid { grid-template-columns: 1fr; } .cs-carousel-strip img { height: 120px; } }
 .cs-tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; padding-bottom: 72px; }
 .cs-tpl-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; transition: box-shadow 0.12s, transform 0.12s; }
 .cs-tpl-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
