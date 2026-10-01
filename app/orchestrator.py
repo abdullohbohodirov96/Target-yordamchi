@@ -21,7 +21,9 @@ ISHGA TUSHIRISH:
 import os
 import re
 import json
+import time
 import logging
+import datetime as dt
 import concurrent.futures
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -31,6 +33,7 @@ import requests
 
 import meta_api
 import budget_tracker
+import kpi_bonus
 import kv_store
 import monthly_report
 import db
@@ -161,11 +164,28 @@ def set_business_rule(key: str, value: float, company_id: "int | None" = None) -
     kv_store.set_json(_scoped_kv_key(kv_key, company_id), max(0.0, float(value)))
 
 
+def _business_rule_override(key: str, company_id: "int | None" = None) -> "float | None":
+    """Admin Sozlamalar sahifasida ANIQ saqlagan qiymat (0 ham!) yoki `None`
+    (sozlanmagan) -- "0 = o'chirish" va "sozlanmagan = standart"ni ajratish uchun."""
+    kv_key = _CPL_RULE_KV_KEYS.get(key)
+    if not kv_key:
+        return None
+    try:
+        value = kv_store.get_json(_scoped_kv_key(kv_key, company_id), default=None)
+        return float(value) if value is not None else None
+    except Exception:
+        return None
+
+
 def get_zero_lead_kill_usd(cpl_hard_kill: float, company_id: "int | None" = None) -> float:
     """Lead hali kelmagan reklama uchun "juda ko'p xarajat" chegarasi
     (dollarda). Admin `cpl_hard_kill_zero_lead_usd`ni sozlamagan bo'lsa,
     eski `cpl_hard_kill_zero_lead_multiplier` asosida hisoblanadi (orqaga
-    moslik uchun)."""
+    moslik uchun). 2026-10-01: admin ANIQ 0 saqlagan bo'lsa -- 0 (qoida
+    o'chiq); ilgari 0 jimgina multiplikatorga almashardi."""
+    override = _business_rule_override("cpl_hard_kill_zero_lead_usd", company_id)
+    if override is not None and override <= 0:
+        return 0.0
     direct = get_business_rule("cpl_hard_kill_zero_lead_usd", company_id=company_id)
     if direct > 0:
         return direct
@@ -1453,7 +1473,8 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     # Juda kichik hajmdagi "shovqin"dan (masalan bitta erta/tasodifiy qimmat
     # lead) asossiz pauza qilib yubormaslik uchun minimal xarajat bo'sag'asi
     # -- shu summagacha reklama hali "sinov" bosqichida deb hisoblanadi.
-    min_spend = get_business_rule("cpl_hard_kill_min_spend_usd", company_id=company_id) or 3.0
+    min_spend_override = _business_rule_override("cpl_hard_kill_min_spend_usd", company_id)
+    min_spend = min_spend_override if min_spend_override is not None else (get_business_rule("cpl_hard_kill_min_spend_usd", company_id=company_id) or 3.0)
     # Hali BIRORTA HAM lead kelmagan, lekin xarajat allaqachon baland bo'lgan
     # reklama uchun alohida qoida (CPL bu holda 0'ga bo'linish tufayli
     # hisoblanmaydi -- dashboard_data shunday qaytaradi). To'g'ridan-to'g'ri
@@ -1462,10 +1483,25 @@ def enforce_cpl_hard_kill(company=None) -> dict:
     zero_lead_kill_usd = get_zero_lead_kill_usd(cpl_hard_kill, company_id=company_id)
     protected_campaign_ids = set(BUSINESS_RULES.get("protected_campaign_ids") or [])
 
+    # 2026-10-01 (audit): chegaralar DOLLARDA, Meta esa xarajatni reklama
+    # hisobining O'Z valyutasida qaytaradi. UZS hisobida 120 000 so'm "120 000
+    # dollar" deb o'qilib, BIRINCHI tekshiruvdayoq hamma reklama pauza
+    # qilinardi. Endi xarajat dollarga o'tkaziladi; valyuta aniqlanmasa yoki
+    # qo'llab-quvvatlanmasa -- XAVFSIZ tomonga: hech narsa pauza qilinmaydi.
+    usd_factor, currency_note = _spend_to_usd_factor(company_id, access_token, ad_account_id)
+    if usd_factor is None:
+        logger.warning("CPL hard-kill o'tkazib yuborildi (company_id=%s): %s", company_id, currency_note)
+        return {"checked": 0, "paused": [], "errors": [], "note": currency_note}
+
     result = dashboard_data.get_kpis(level="ad", date_preset="today", active_only=True, access_token=access_token, ad_account_id=ad_account_id)
     if result.get("error"):
         logger.error("CPL hard-kill: bugungi ad ma'lumotini olishda xato: %s", result["error"])
         return {"checked": 0, "paused": [], "errors": [result["error"]]}
+    rows_today = result.get("rows", [])
+    if rows_today and not any(r.get("status") for r in rows_today):
+        # Hisob tuzilmasi olinmadi -- holat noma'lum, jimgina "0 ta tekshirildi" emas.
+        return {"checked": 0, "paused": [], "errors": ["Reklama holatlarini Meta'dan olib bo'lmadi -- CPL tekshiruvi shu safar o'tkazib yuborildi."]}
+    recently_auto_paused = _recently_auto_paused_ad_ids(company_id)
 
     # 2026-09 TUZATISH (foydalanuvchi qaytadan xabar qildi -- ilgari ham
     # aynan shu shikoyat bo'lgan, 1136-qatordagi izohga qarang: "CPL
@@ -1513,14 +1549,28 @@ def enforce_cpl_hard_kill(company=None) -> dict:
         if campaign_id and campaign_id in protected_campaign_ids:
             continue
 
-        spend = row.get("spend", 0.0)
-        cpl = row.get("cpl", 0.0)
-        # `dashboard_data._get_kpis_uncached()` bilan BIR XIL mantiq --
-        # effektiv lead soni CRM'dagi haqiqiy yozuvlar, yoki (CRM hali
-        # ulgurmagan bo'lsa) Lead-turi target uchun Meta'ning o'z natijasi.
-        effective_leads = row.get("crm_leads_total", 0)
-        if not effective_leads and row.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
-            effective_leads = max(row.get("meta_result") or 0, row.get("meta_leads") or 0)
+        # 2026-10-01 (audit): foydalanuvchi bizning avtomatik pauzamizdan keyin
+        # reklamani QO'LDA qayta yoqqan bo'lsa (u hozir ACTIVE) -- uning
+        # qaroriga hurmat: har 15 daqiqada qayta o'chirilmaydi.
+        if ad_id in recently_auto_paused:
+            continue
+        # 2026-10-01 (audit, KRITIK): CPL/lead qoidalari FAQAT lid yig'uvchi
+        # reklamalarga. ILGARI "Xabarlar" (Direct), trafik, qamrov reklamalarida
+        # CRM'da `Lead` bo'lmagani uchun "0 lid" deb, $8 sarflanishi bilan
+        # PAUZA qilinardi -- 40 ta suhbat olgan reklama ham.
+        goal = row.get("goal") or ""
+        is_lead_goal = goal in _LEAD_GOALS
+        if not is_lead_goal and not (goal == "" and row.get("crm_leads_total")):
+            continue
+
+        spend = (row.get("spend") or 0.0) * usd_factor
+        # CRM sinxronizatsiyasi orqada qolishi mumkin (har 15 daqiqa) --
+        # Meta'ning o'z sanog'i bilan kattasi olinadi (aks holda CPL sun'iy
+        # oshib, asossiz pauza bo'lardi).
+        effective_leads = row.get("crm_leads_total", 0) or 0
+        if is_lead_goal:
+            effective_leads = max(effective_leads, row.get("meta_result") or 0, row.get("meta_leads") or 0)
+        cpl = (spend / effective_leads) if effective_leads else 0.0
 
         reason = None
         if effective_leads > 0 and spend >= min_spend and cpl > cpl_hard_kill:
@@ -1528,7 +1578,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                 f"CPL ${cpl:.2f} (chegara: ${cpl_hard_kill:.2f}dan yuqori), "
                 f"bugun sarflandi ${spend:.2f}, {effective_leads} ta lead."
             )
-        elif effective_leads == 0 and spend >= zero_lead_kill_usd:
+        elif is_lead_goal and effective_leads == 0 and zero_lead_kill_usd > 0 and spend >= zero_lead_kill_usd:
             reason = (
                 f"Bugun ${spend:.2f} sarflandi, lekin HALI BIRORTA lead "
                 f"kelmadi (chegara: ${zero_lead_kill_usd:.2f})."
@@ -1540,11 +1590,11 @@ def enforce_cpl_hard_kill(company=None) -> dict:
         if not reason:
             w = window_by_ad.get(ad_id)
             if w:
-                w_spend = w.get("spend", 0.0)
-                w_cpl = w.get("cpl", 0.0)
-                w_leads = w.get("crm_leads_total", 0)
-                if not w_leads and w.get("goal") in ("LEAD_GENERATION", "QUALITY_LEAD"):
-                    w_leads = max(w.get("meta_result") or 0, w.get("meta_leads") or 0)
+                w_spend = (w.get("spend") or 0.0) * usd_factor
+                w_leads = w.get("crm_leads_total", 0) or 0
+                if is_lead_goal:
+                    w_leads = max(w_leads, w.get("meta_result") or 0, w.get("meta_leads") or 0)
+                w_cpl = (w_spend / w_leads) if w_leads else 0.0
                 w_zero_lead_limit = zero_lead_kill_usd * _CPL_TREND_WINDOW_DAYS
                 if w_leads > 0 and w_spend >= min_spend and w_cpl > cpl_hard_kill:
                     reason = (
@@ -1553,7 +1603,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
                         f"{w_leads} ta lead -- bugungi ko'rsatkich tinch ko'ringan bo'lsa ham, "
                         f"umumiy tendensiya yomon."
                     )
-                elif w_leads == 0 and w_spend >= w_zero_lead_limit:
+                elif is_lead_goal and w_leads == 0 and w_zero_lead_limit > 0 and w_spend >= w_zero_lead_limit:
                     reason = (
                         f"Oxirgi {_CPL_TREND_WINDOW_DAYS} kunda ${w_spend:.2f} sarflandi, lekin "
                         f"HALI BIRORTA lead kelmadi (chegara: ${w_zero_lead_limit:.2f})."
@@ -1561,6 +1611,8 @@ def enforce_cpl_hard_kill(company=None) -> dict:
 
         if not reason:
             continue
+        if currency_note:
+            reason += f" ({currency_note})"
 
         try:
             _execute_and_verify_status(ad_id, "PAUSED", access_token=access_token)
@@ -1575,6 +1627,60 @@ def enforce_cpl_hard_kill(company=None) -> dict:
             logger.error("CPL hard-kill: pauza qilishda xato -- %s: %s", ad_id, e)
 
     return {"checked": checked, "paused": paused, "errors": errors}
+
+
+_LEAD_GOALS = ("LEAD_GENERATION", "QUALITY_LEAD")
+_ACCOUNT_CURRENCY_TTL_S = 24 * 3600
+
+
+def _spend_to_usd_factor(company_id, access_token, ad_account_id) -> "tuple[float | None, str | None]":
+    """Reklama hisobi valyutasi -> dollarga o'tkazish koeffitsienti.
+    Qaytaradi: (koeffitsient, izoh) yoki (None, sabab) -- tekshiruvni
+    o'tkazib yuborish kerak. Valyuta 24 soat kv'da keshlanadi."""
+    acct = ad_account_id or meta_api.AD_ACCOUNT_ID
+    if not acct:
+        return None, "Reklama hisobi ulanmagan"
+    cache_key = f"ad_account_currency:{acct}"
+    try:
+        cached = kv_store.get_json(cache_key, default=None)
+    except Exception:  # noqa: BLE001 -- kesh ixtiyoriy
+        cached = None
+    currency = None
+    if isinstance(cached, dict) and (time.time() - float(cached.get("at") or 0)) < _ACCOUNT_CURRENCY_TTL_S:
+        currency = cached.get("currency")
+    if not currency:
+        try:
+            currency = (meta_api.get_ad_account_info(acct, access_token=access_token or meta_api.ACCESS_TOKEN) or {}).get("currency")
+        except Exception as e:  # noqa: BLE001
+            return None, f"Reklama hisobi valyutasini aniqlab bo'lmadi: {meta_api.safe_error_message(e)}"
+        if currency:
+            try:
+                kv_store.set_json(cache_key, {"currency": currency, "at": time.time()})
+            except Exception:  # noqa: BLE001
+                pass
+    currency = (currency or "").upper()
+    if currency == "USD":
+        return 1.0, None
+    if currency == "UZS":
+        rate = kpi_bonus.get_usd_to_uzs_rate(company_id)
+        return 1.0 / rate, f"xarajat so'mdan dollarga 1$ = {rate:,.0f} so'm kursida o'tkazildi".replace(",", " ")
+    return None, f"Reklama hisobi valyutasi ({currency or 'noma`lum'}) uchun CPL chegarasi qo'llab-quvvatlanmaydi -- faqat USD va UZS"
+
+
+def _recently_auto_paused_ad_ids(company_id, days: int = 7) -> set:
+    """Oxirgi `days` kunda BIZ avtomatik pauza qilgan reklamalar. Ular hozir
+    ACTIVE bo'lsa -- demak egasi qo'lda qayta yoqgan, qayta o'chirilmaydi."""
+    session = db.get_session()
+    try:
+        since = dt.datetime.utcnow() - dt.timedelta(days=days)
+        with db.scoped_as(company_id or db.get_default_company_id()):
+            rows = session.query(db.AdAutoActionLog.ad_id).filter(db.AdAutoActionLog.created_at >= since).all()
+        return {r[0] for r in rows if r[0]}
+    except Exception:
+        logger.exception("CPL hard-kill: avtomatik pauza tarixini o'qib bo'lmadi")
+        return set()
+    finally:
+        session.close()
 
 
 class _CplCompanyCreds:

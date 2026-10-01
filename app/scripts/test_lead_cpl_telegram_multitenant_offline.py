@@ -198,6 +198,7 @@ def test_cpl_hard_kill_all_companies_uses_own_token_and_account():
         with mock.patch.object(orch, "BUSINESS_RULES", rules), \
              mock.patch.object(orch.dashboard_data, "get_kpis", side_effect=fake_get_kpis), \
              mock.patch.object(orch.meta_api, "get_account_structure", return_value={"ads": []}), \
+             mock.patch.object(orch.meta_api, "get_ad_account_info", return_value={"currency": "USD"}), \
              mock.patch.object(orch, "_execute_and_verify_status", side_effect=fake_execute_and_verify):
             overall = orch.enforce_cpl_hard_kill_all_companies()
 

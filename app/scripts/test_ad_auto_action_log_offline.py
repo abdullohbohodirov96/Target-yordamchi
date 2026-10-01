@@ -82,6 +82,7 @@ def _run_enforce(company_id, rows, rules=None):
     with mock.patch.object(orch, "BUSINESS_RULES", rules), \
          mock.patch.object(orch.dashboard_data, "get_kpis", return_value={"rows": rows}), \
          mock.patch.object(orch.meta_api, "get_account_structure", return_value={"ads": []}), \
+         mock.patch.object(orch.meta_api, "get_ad_account_info", return_value={"currency": "USD"}), \
          mock.patch.object(orch, "_execute_and_verify_status"):
         return orch.enforce_cpl_hard_kill(company=company)
 

@@ -811,6 +811,15 @@ def job_cpl_hard_kill() -> dict:
     for company_id, result in (overall.get("per_company") or {}).items():
         paused = result.get("paused") or []
         errors = result.get("errors") or []
+        # 2026-10-01 (audit): token eskirsa xato har 15 daqiqada (kuniga 96
+        # marta) guruhga ketardi. Endi bir xil xato 6 soatda BIR marta.
+        if errors and not paused:
+            err_key = f"cpl_hard_kill_error_notified:{company_id}"
+            last = kv_store.get_json(err_key, default=None)
+            if isinstance(last, dict) and last.get("text") == errors[0] and (dt.datetime.utcnow().timestamp() - float(last.get("at") or 0)) < 6 * 3600:
+                errors = []
+            else:
+                kv_store.set_json(err_key, {"text": errors[0], "at": dt.datetime.utcnow().timestamp()})
         if not paused and not errors:
             continue
 

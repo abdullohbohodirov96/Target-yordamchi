@@ -148,7 +148,8 @@ def test_enforce_cpl_hard_kill_uses_each_companys_own_threshold():
         with mock.patch.object(dashboard_data, "get_kpis", side_effect=fake_get_kpis), \
              mock.patch("meta_api.set_status", side_effect=fake_set_status), \
              mock.patch("meta_api.get_object_status", side_effect=fake_get_object_status), \
-             mock.patch("meta_api.get_account_structure", return_value={"campaigns": [], "adsets": [], "ads": []}):
+             mock.patch("meta_api.get_account_structure", return_value={"campaigns": [], "adsets": [], "ads": []}), \
+             mock.patch("meta_api.get_ad_account_info", return_value={"currency": "USD"}):
             result_owner = orchestrator.enforce_cpl_hard_kill(company=owner_creds)
             result_a = orchestrator.enforce_cpl_hard_kill(company=company_a_creds)
 
