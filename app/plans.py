@@ -131,14 +131,15 @@ PLANS = {
         features=(
             "Sinovdagi hammasi",
             "To'liq Meta Ads hisoblar (bir nechta kampaniya) ulash",
-            "Meta Conversions API (CAPI) -- konversiya signalini qaytarish",
+            "Meta Conversions API (CAPI) — konversiya signalini qaytarish",
             "SMM hisobot va Instagram xabarlar",
             "Lid tahlili (CRM/voronka bo'yicha chuqur tahlil)",
-            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 3 tagacha",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) — 3 tagacha",
             "Voronka, majburiy vazifalar, qo'shimcha maydonlar sozlamalari",
-            "500 tagacha lid (CRM) -- limitga yaqinlashganda ogohlantirish, yangi lidlar hech qachon bloklanmaydi",
+            "500 tagacha lid (CRM) — limitga yaqinlashganda ogohlantirish, yangi lidlar hech qachon bloklanmaydi",
             "2 tagacha menejer/admin hisob",
             "Email orqali qo'llab-quvvatlash",
+            "Instagram raqobatchilar tahlili — o'rtacha like, komment, ko'rishlar",
         ),
     ),
     "business": Plan(
@@ -150,7 +151,7 @@ PLANS = {
         image_generation_monthly_limit=30,
         features=(
             "Boshlang'ichdagi hammasi",
-            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 10 tagacha",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) — 10 tagacha",
             "Qo'ng'iroq audio nazorati (Individual tekshirish)",
             "Ichki AI-yordamchi (real vaqtda savol-javob va hisobot)",
             "5 000 tagacha lid (CRM)",

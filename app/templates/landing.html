@@ -116,7 +116,7 @@
       <div class="lp-mock-bar"><span></span><span></span><span></span></div>
       <div class="lp-mock-kpis">
         <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.new_leads') }}</div><div class="lp-mock-kpi-value">128</div></div>
-        <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.cpl') }}</div><div class="lp-mock-kpi-value good">0.01$ <span class="lp-mock-kpi-arrow" aria-hidden="true">&darr;</span></div></div>
+        <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.cpl') }}</div><div class="lp-mock-kpi-value good">$4.80 <span class="lp-mock-kpi-arrow" aria-hidden="true">&darr;</span></div></div>
         <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.sales') }}</div><div class="lp-mock-kpi-value good">34</div></div>
       </div>
       <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--good)"></span>Kamola A.</span><span class="lp-mock-tag" style="background:var(--good-bg);color:var(--good)">{{ t('mock.status_sold') }}</span></div>
@@ -267,13 +267,18 @@
         {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>{{ t('pricing.per_month') }}</span>
         {% else %}<b>{{ t('pricing.free') }}</b>{% endif %}
       </div>
+      {% if plan.price_usd %}<div class="lp-plan-uzs">≈ {{ price_uzs(plan.price_usd) }}{{ t('pricing.per_month') }}</div>{% endif %}
       <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} {{ t('pricing.days') }}{% else %}{{ t('pricing.monthly_renew') }}{% endif %}</div>
       <div class="lp-plan-cta">
         <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ t('pricing.cta_trial') if plan.key == 'trial' else t('pricing.cta_signup') }}</a>
       </div>
       <ul>
         {% for f in plan.features %}
+        {% if f.endswith(('kiritilmagan', 'не включён', 'не включены', 'not included')) %}
+        <li class="lp-feat-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>{{ f }}</li>
+        {% else %}
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ f }}</li>
+        {% endif %}
         {% endfor %}
       </ul>
     </div>

@@ -5671,6 +5671,19 @@ _followups_badge_cache: dict[str, tuple[float, int]] = {}
 _followups_badge_cache_lock = threading.Lock()
 
 
+def _price_uzs(price_usd) -> str:
+    """Tarif narxining Payme AYNAN yechadigan so'm summasi ("254 000 so'm") --
+    mijoz dollarda ko'rib, kartadan qancha so'm yechilishini bilmay qolmasin."""
+    if not price_usd:
+        return ""
+    uzs = payme_subscribe.usd_to_tiyin(price_usd) // 100
+    unit = {"ru": "сум", "en": "UZS"}.get(getattr(g, "lang", "uz"), "so'm")
+    return f"{uzs:,}".replace(",", " ") + " " + unit
+
+
+app.jinja_env.globals["price_uzs"] = _price_uzs
+
+
 @app.context_processor
 def _inject_followups_badge():
     """Har bir sahifada navbar'dagi "Qayta aloqa" havolasiga qizil raqamli

@@ -32,6 +32,7 @@
         {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>/{{ t('payment.per_month') }}</span>
         {% else %}<b>{{ t('pricing.free_label') }}</b>{% endif %}
       </div>
+      {% if plan.price_usd %}<div class="lp-plan-uzs">≈ {{ price_uzs(plan.price_usd) }}/{{ t('payment.per_month') }}</div>{% endif %}
       <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} {{ t('pricing.days_label') }}{% else %}{{ t('pricing.renews_monthly') }}{% endif %}</div>
       <div class="lp-plan-cta">
         {% if current_user.is_authenticated %}
@@ -48,7 +49,11 @@
       </div>
       <ul>
         {% for f in plan.features %}
+        {% if f.endswith(('kiritilmagan', 'не включён', 'не включены', 'not included')) %}
+        <li class="lp-feat-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>{{ f }}</li>
+        {% else %}
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ f }}</li>
+        {% endif %}
         {% endfor %}
       </ul>
     </div>

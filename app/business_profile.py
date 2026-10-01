@@ -82,13 +82,13 @@ BUSINESS_CATEGORIES = [
 BUSINESS_PROFILE_QUESTIONS = [
     ("product_or_service", "Nima soting yoki qanday xizmat ko'rsatasiz?",
      "Masalan: erkaklar oyoq kiyimi, 30 dan ortiq model, o'rtacha narxda",
-     "AI reklama matni va javoblarni shu mahsulot/xizmatga moslab yozadi -- qancha aniqroq yozsangiz, shuncha aniqroq javob beradi."),
+     "AI reklama matni va javoblarni shu mahsulot/xizmatga moslab yozadi — qancha aniqroq yozsangiz, shuncha aniqroq javob beradi."),
     ("target_audience", "Mijozlaringiz odatda kimlar (yosh, jins, hudud)?",
      "Masalan: 20-40 yosh, ko'proq ayollar, Toshkent shahri",
      "Reklama auditoriyasini va murojaat ohangini shu mijoz portretiga qarab tanlashga yordam beradi."),
     ("sku_count", "Nechta xil mahsulot turi (SKU/model)ingiz bor?",
      "Masalan: 45 ta model, yoki \"1 ta xizmat turi\"",
-     "Assortiment kattaligi -- keng assortimentda AI umumiy reklama g'oyalarini, tor assortimentda esa aniq mahsulot bo'yicha chuqur tahlilni taklif qiladi."),
+     "Assortiment kattaligi — keng assortimentda AI umumiy reklama g'oyalarini, tor assortimentda esa aniq mahsulot bo'yicha chuqur tahlilni taklif qiladi."),
     ("price_range", "O'rtacha chek/narx oralig'ingiz qancha?",
      "Masalan: 150 000 - 500 000 so'm",
      "Narx segmentini bilish AI'ga byudjet/ROI tahlilida va reklama uslubini (ekonom yoki premium) tanlashda yordam beradi."),
@@ -100,7 +100,7 @@ BUSINESS_PROFILE_QUESTIONS = [
      "AI sizni raqobatchilardan ajratib turadigan afzalliklarni topib, reklama matnida shu farqni ta'kidlashga harakat qiladi."),
     ("extra_notes", "AI yana nimani bilishi kerak (aksiya, afzallik, o'ziga xos jihat)?",
      "Masalan: bepul yetkazib berish, 1 yillik kafolat",
-     "Yuqoridagi savollarga sig'magan, lekin mijozga muhim bo'lgan har qanday qo'shimcha ma'lumot -- shu yerga yozing."),
+     "Yuqoridagi savollarga sig'magan, lekin mijozga muhim bo'lgan har qanday qo'shimcha ma'lumot — shu yerga yozing."),
 ]
 
 _QUESTION_KEYS = {key for key, *_ in BUSINESS_PROFILE_QUESTIONS}
