@@ -63,9 +63,9 @@
   - Kreativ studiya sahifalari, karusel va chap menyuda "BETA" belgisi.
 
 ## 4-bosqich. CPL avtopilot va hisobotlar
-- [ ] 3 daraja: ogohlantirish, pauza, harakat (byudjet ±10–20%, auditoriya kengaytirish, zaif reklamani o'chirish). Biznes egalari uchun sukut bo'yicha pauza, targetologlar uchun harakat faqat o'zi yoqsa
-- [ ] Minimal ma'lumot chegarasi, kuniga maksimal o'zgarishlar soni, har harakat logda va orqaga qaytariladigan
-- [ ] Har kompaniyaga alohida kunlik Telegram hisobot
+- [x] 3 daraja: ogohlantirish, pauza, harakat (byudjet ±10–20%, auditoriya kengaytirish, zaif reklamani o'chirish). Biznes egalari uchun sukut bo'yicha pauza, targetologlar uchun harakat faqat o'zi yoqsa
+- [x] Minimal ma'lumot chegarasi, kuniga maksimal o'zgarishlar soni, har harakat logda va orqaga qaytariladigan
+- [x] Har kompaniyaga alohida kunlik Telegram hisobot
 - [ ] (4-bosqichdan keyin) Karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish — faqat PAUSED, birinchi sinov egasi bilan
 
 ## 5-bosqich. KPI va agentlik
@@ -83,6 +83,9 @@
 - [ ] Qo'llanma bo'limi
 
 ## Qo'shimcha bajarilganlar (rejadan tashqari)
+- [x] (2026-10-01) 4-bosqich: CPL rejimi (faqat ogohlantirish / avtomatik pauza) Sozlamalar → CPL'da; kuniga ko'pi bilan 10 ta avto-pauza; Dashboard'da "Qayta yoqish" (jurnalda resumed); harakat darajasi = "AI avtomatik kuzatuv" (egasi yoqsa), AI byudjetni sutkada 1 marta oshiradi, oylik shift, yangi kampaniya doim PAUSED.
+- [x] (2026-10-01) Instagram raqobatchi tahlili (Business Discovery API) + Ad Library havolalari.
+- [x] (2026-10-01) Narxlar: har tarif yonida Payme yechadigan so'm summasi; "--" → "—".
 - [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).
 - [x] Sinov muddati "N kun qoldi" yaxlitlash xatosi tuzatildi.
 

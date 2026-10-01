@@ -4104,10 +4104,20 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
                 .limit(20)
                 .all()
             )
-            auto_pause_events = [{
-                "ad_name": r.ad_name or r.ad_id, "reason": r.reason,
-                "cpl": r.cpl, "spend": r.spend, "created_at": r.created_at,
-            } for r in auto_pause_rows]
+            # Eng yangisi birinchi -- shu reklama keyin qayta yoqilgan bo'lsa
+            # ("resumed"), eski "paused" yozuvida tugma ko'rsatilmaydi.
+            resumed_after = set()
+            auto_pause_events = []
+            for r in auto_pause_rows:
+                if r.action == "resumed":
+                    resumed_after.add(r.ad_id)
+                auto_pause_events.append({
+                    "ad_id": r.ad_id, "action": r.action or "paused",
+                    "ad_name": r.ad_name or r.ad_id, "reason": r.reason,
+                    "cpl": r.cpl, "spend": r.spend, "created_at": r.created_at,
+                    "can_resume": (r.action or "paused") == "paused" and r.ad_id not in resumed_after
+                                  and current_user.role == "admin",
+                })
         except Exception:
             logger.exception("Dashboard: CPL avtomatik pauza jurnalini olishda xato")
 
@@ -7185,6 +7195,14 @@ def _handle_settings_post(session, action):
         else:
             flash(lang_module.translate("common.company_not_found", g.lang), "error")
 
+    elif action == "set_cpl_mode":
+        mode = request.form.get("cpl_mode", "")
+        if mode in orchestrator.CPL_MODES:
+            orchestrator.set_cpl_mode(mode, company_id=current_user.company_id)
+            flash(lang_module.translate(f"settings_cpl.mode_saved_{mode}", g.lang), "success")
+        else:
+            flash(lang_module.translate("settings_cpl.mode_invalid", g.lang), "error")
+
     elif action == "toggle_auto_watch":
         # 2026-09, foydalanuvchi so'rovi ("barchada bu narsa bo'lsin, lekin
         # ulanayotganda, ya'ni dostuplar olinsin, yoqsin o'zi odam"):
@@ -7353,9 +7371,49 @@ def settings_cpl():
         return render_template(
             "settings_cpl.html", cpl_rules=cpl_rules,
             auto_watch_enabled=auto_watch_enabled, has_telegram_group=has_telegram_group,
+            cpl_mode=orchestrator.get_cpl_mode(current_user.company_id),
+            max_auto_pauses=orchestrator.MAX_AUTO_PAUSES_PER_DAY,
         )
     finally:
         session.close()
+
+
+@app.route("/reklama/<ad_id>/qayta-yoqish", methods=["POST"])
+@login_required
+@module_required("target")
+@admin_required
+def resume_auto_paused_ad(ad_id):
+    """PLAN 4-bosqich: avtomatik pauzani bir bosishda bekor qilish. Faqat SHU
+    kompaniya jurnalida biz pauza qilgan reklama -- begona ID'ni yoqib bo'lmaydi.
+    Qayta yoqilgan reklamaga CPL himoyasi 7 kun tegmaydi (egasi qarori)."""
+    session = get_session()
+    try:
+        row = (
+            session.query(AdAutoActionLog)
+            .filter(AdAutoActionLog.ad_id == ad_id, AdAutoActionLog.action == "paused")
+            .order_by(AdAutoActionLog.created_at.desc()).first()
+        )
+        ad_name = row.ad_name if row else None
+    finally:
+        session.close()
+    if row is None:
+        flash("Bu reklama avtomatik pauza jurnalida topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    token, _account = _company_meta_creds(_current_company())
+    if not token:
+        flash("Meta hisobi ulanmagan -- avval Hisoblarni ulash bo'limidan ulang.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        orchestrator._execute_and_verify_status(ad_id, "ACTIVE", access_token=token)
+    except Exception as e:  # noqa: BLE001
+        flash(f"Reklamani yoqib bo'lmadi: {meta_api.safe_error_message(e)}", "error")
+        return redirect(url_for("dashboard"))
+    orchestrator._record_auto_action(
+        current_user.company_id, ad_id, ad_name or ad_id, "resumed",
+        f"Qo'lda qayta yoqildi ({current_user.username})",
+    )
+    flash(f"✅ {ad_name or ad_id} qayta yoqildi. CPL himoyasi unga 7 kun tegmaydi.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/sozlamalar/telegram", methods=["GET", "POST"])

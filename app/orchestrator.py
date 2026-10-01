@@ -1491,6 +1491,61 @@ def _crm_leads_count_today(company_id: "int | None" = None) -> int:
 _CPL_TREND_WINDOW_DAYS = 3  # "bugun tinch" bahonasi bilan surunkali yomon reklama o'tkazib yuborilmasligi uchun qo'shimcha tekshiruv oynasi
 
 
+# 2026-10-01, PLAN 4-bosqich: CPL avtopilot darajalari.
+#   "warn"  -- faqat ogohlantirish (Telegram + Dashboard), reklama O'CHIRILMAYDI
+#   "pause" -- chegaradan oshgan reklama avtomatik pauza (standart, avvalgidek)
+# Harakat darajasi (byudjet +-, auditoriya) -- alohida "AI avtomatik kuzatuv"
+# (Company.is_auto_watch_enabled), egasi o'zi yoqsagina ishlaydi.
+CPL_MODES = ("warn", "pause")
+_CPL_MODE_KV_KEY = "cpl_mode"
+# Bir kunda avtomatik pauzalar chegarasi: noto'g'ri ma'lumot (masalan Meta
+# vaqtincha 0 lid qaytarsa) butun hisobni o'chirib qo'ymasligi uchun. Shundan
+# keyingilari faqat ogohlantiriladi.
+MAX_AUTO_PAUSES_PER_DAY = 10
+
+
+def get_cpl_mode(company_id: "int | None" = None) -> str:
+    try:
+        value = kv_store.get_json(_scoped_kv_key(_CPL_MODE_KV_KEY, company_id), default=None)
+    except Exception:  # noqa: BLE001
+        value = None
+    return value if value in CPL_MODES else "pause"
+
+
+def set_cpl_mode(mode: str, company_id: "int | None" = None) -> None:
+    if mode not in CPL_MODES:
+        raise ValueError(f"Noma'lum CPL rejimi: {mode}")
+    kv_store.set_json(_scoped_kv_key(_CPL_MODE_KV_KEY, company_id), mode)
+
+
+def _kv_day_counter(key: str, company_id, *, increment: bool = False) -> int:
+    day = tz_utils.today_local().isoformat()
+    full = _scoped_kv_key(f"{key}:{day}", company_id)
+    try:
+        n = int(kv_store.get_json(full, default=0) or 0)
+        if increment:
+            n += 1
+            kv_store.set_json(full, n)
+        return n
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _record_auto_action(company_id, ad_id: str, ad_name: str, action: str, reason: str, cpl: float = 0.0, spend: float = 0.0) -> None:
+    try:
+        session = db.get_session()
+        try:
+            session.add(db.AdAutoActionLog(
+                company_id=company_id, ad_id=ad_id, ad_name=ad_name,
+                action=action, reason=reason, cpl=cpl, spend=spend,
+            ))
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        logger.exception("AdAutoActionLog yozib bo'lmadi (ad_id=%s, action=%s)", ad_id, action)
+
+
 def _record_auto_pause(company_id, ad_id: str, ad_name: str, reason: str, cpl: float, spend: float) -> None:
     """2026-09, foydalanuvchi shikoyati ("ochirsayam manga habar bersin"):
     HAR bir avtomatik pauzani `db.AdAutoActionLog`ga yozadi -- Telegram
@@ -1615,6 +1670,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
 
     checked = 0
     paused = []
+    warned = []
     errors = []
     for row in result.get("rows", []):
         if row.get("status") != "ACTIVE":
@@ -1690,8 +1746,24 @@ def enforce_cpl_hard_kill(company=None) -> dict:
         if currency_note:
             reason += f" ({currency_note})"
 
+        cpl_mode = get_cpl_mode(company_id)
+        over_cap = _kv_day_counter("cpl_auto_pauses", company_id) >= MAX_AUTO_PAUSES_PER_DAY
+        if cpl_mode == "warn" or over_cap:
+            # Faqat ogohlantirish -- har reklama uchun kuniga BIR marta.
+            warn_key = f"cpl_warned:{ad_id}"
+            if _kv_day_counter(warn_key, company_id) == 0:
+                _kv_day_counter(warn_key, company_id, increment=True)
+                note = " (kunlik avto-pauza chegarasi to'lgan -- pauza qilinmadi)" if (over_cap and cpl_mode != "warn") else ""
+                warned.append({
+                    "ad_id": ad_id, "name": row.get("name", ad_id),
+                    "reason": reason + note, "cpl": cpl, "spend": spend,
+                })
+                _record_auto_action(company_id, ad_id, row.get("name", ad_id), "warned", reason + note, cpl, spend)
+            continue
+
         try:
             _execute_and_verify_status(ad_id, "PAUSED", access_token=access_token)
+            _kv_day_counter("cpl_auto_pauses", company_id, increment=True)
             paused.append({
                 "ad_id": ad_id, "name": row.get("name", ad_id),
                 "reason": reason, "cpl": cpl, "spend": spend,
@@ -1702,7 +1774,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
             errors.append(f"{row.get('name', ad_id)} ({ad_id}): {e}")
             logger.error("CPL hard-kill: pauza qilishda xato -- %s: %s", ad_id, e)
 
-    return {"checked": checked, "paused": paused, "errors": errors}
+    return {"checked": checked, "paused": paused, "warned": warned, "errors": errors}
 
 
 _LEAD_GOALS = ("LEAD_GENERATION", "QUALITY_LEAD")
@@ -1750,7 +1822,10 @@ def _recently_auto_paused_ad_ids(company_id, days: int = 7) -> set:
     try:
         since = dt.datetime.utcnow() - dt.timedelta(days=days)
         with db.scoped_as(company_id or db.get_default_company_id()):
-            rows = session.query(db.AdAutoActionLog.ad_id).filter(db.AdAutoActionLog.created_at >= since).all()
+            rows = session.query(db.AdAutoActionLog.ad_id).filter(
+                db.AdAutoActionLog.created_at >= since,
+                db.AdAutoActionLog.action == "paused",  # "warned" -- o'chirilmagan, hisobga olinmaydi
+            ).all()
         return {r[0] for r in rows if r[0]}
     except Exception:
         logger.exception("CPL hard-kill: avtomatik pauza tarixini o'qib bo'lmadi")
