@@ -1639,7 +1639,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
         if not is_lead_goal and not (goal == "" and row.get("crm_leads_total")):
             continue
 
-        spend = (row.get("spend") or 0.0) * usd_factor
+        spend = (row.get("spend") or 0.0) * (1.0 if result.get("spend_in_usd") else usd_factor)
         # CRM sinxronizatsiyasi orqada qolishi mumkin (har 15 daqiqa) --
         # Meta'ning o'z sanog'i bilan kattasi olinadi (aks holda CPL sun'iy
         # oshib, asossiz pauza bo'lardi).
@@ -1666,7 +1666,7 @@ def enforce_cpl_hard_kill(company=None) -> dict:
         if not reason:
             w = window_by_ad.get(ad_id)
             if w:
-                w_spend = (w.get("spend") or 0.0) * usd_factor
+                w_spend = (w.get("spend") or 0.0) * (1.0 if window_result.get("spend_in_usd") else usd_factor)
                 w_leads = w.get("crm_leads_total", 0) or 0
                 if is_lead_goal:
                     w_leads = max(w_leads, w.get("meta_result") or 0, w.get("meta_leads") or 0)

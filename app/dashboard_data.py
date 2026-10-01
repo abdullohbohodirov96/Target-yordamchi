@@ -449,6 +449,19 @@ def _get_kpis_uncached(
     except meta_api.MetaAPIError:
         pass
 
+    # 2026-10-01: Meta xarajatni REKLAMA HISOBI valyutasida beradi. So'mli
+    # hisobda ilgari 1 200 000 so'm "$1 200 000" bo'lib, ROI/ROAS/CPL
+    # minglab barobar buzilardi. Endi xarajat dollarga o'tkaziladi (kurs --
+    # Sozlamalar). Valyutani bilib bo'lmasa -- avvalgidek, o'zgartirilmaydi.
+    spend_factor = 1.0
+    try:
+        import orchestrator  # aylanma importdan qochish uchun shu yerda
+        factor, _note = orchestrator._spend_to_usd_factor(db.get_current_company_id(), access_token, ad_account_id)
+        if factor:
+            spend_factor = float(factor)
+    except Exception:  # noqa: BLE001 -- valyuta ixtiyoriy aniqlik
+        spend_factor = 1.0
+
     meta_by_id = {}
     for row in insight_rows:
         oid = row.get(id_field)
@@ -463,7 +476,7 @@ def _get_kpis_uncached(
             "id": oid,
             "name": row.get(name_field, ""),
             "status": status_by_id.get(oid, ""),
-            "spend": float(row.get("spend", 0) or 0),
+            "spend": float(row.get("spend", 0) or 0) * spend_factor,
             "impressions": impressions,
             "reach": reach,
             "meta_leads": _extract_lead_count_from_actions(actions),
@@ -637,6 +650,9 @@ def _get_kpis_uncached(
     return {
         "rows": rows, "totals": totals, "goal_breakdown": goal_breakdown,
         "generated_at": dt.datetime.utcnow().isoformat(), "level": level,
+        # True -- spend allaqachon dollarga o'tkazilgan (CPL hard-kill qayta
+        # o'tkazmasligi uchun).
+        "spend_in_usd": spend_factor != 1.0,
     }
 
 
