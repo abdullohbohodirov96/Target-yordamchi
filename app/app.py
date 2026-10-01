@@ -5917,9 +5917,9 @@ def manager_daily_activity():
     `manager_reporting.daily_manager_activity()`ga qarang."""
     date_raw = request.args.get("date", "").strip()
     try:
-        day = dt.datetime.strptime(date_raw, "%Y-%m-%d").date() if date_raw else dt.datetime.utcnow().date()
+        day = dt.datetime.strptime(date_raw, "%Y-%m-%d").date() if date_raw else tz_utils.today_local()
     except ValueError:
-        day = dt.datetime.utcnow().date()
+        day = tz_utils.today_local()
         flash("Sana noto'g'ri formatda -- bugungi kun ko'rsatilmoqda.", "error")
     session = get_session()
     try:
@@ -5928,8 +5928,8 @@ def manager_daily_activity():
         session.close()
     return render_template(
         "manager_daily_activity.html", rows=rows, selected_date=day.isoformat(),
-        today=dt.datetime.utcnow().date().isoformat(),
-        yesterday=(dt.datetime.utcnow().date() - dt.timedelta(days=1)).isoformat(),
+        today=tz_utils.today_local().isoformat(),
+        yesterday=(tz_utils.today_local() - dt.timedelta(days=1)).isoformat(),
     )
 
 

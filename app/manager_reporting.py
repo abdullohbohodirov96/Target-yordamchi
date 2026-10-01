@@ -15,16 +15,18 @@ from __future__ import annotations
 import datetime as dt
 
 import db
+import tz_utils
 
 
 def daily_manager_activity(session, company_id: "int | None", day: "dt.date | None" = None) -> list[dict]:
-    day = day or dt.datetime.utcnow().date()
-    start = dt.datetime.combine(day, dt.time.min)
-    end = dt.datetime.combine(day, dt.time.max)
+    # Kun Toshkent vaqti bilan (bazada created_at UTC-naive saqlanadi).
+    day = day or tz_utils.today_local()
+    start = tz_utils.to_utc(dt.datetime.combine(day, dt.time.min))
+    end = start + dt.timedelta(days=1)
 
     q = session.query(db.LeadStatusEvent).filter(
         db.LeadStatusEvent.created_at >= start,
-        db.LeadStatusEvent.created_at <= end,
+        db.LeadStatusEvent.created_at < end,
     )
     if company_id is not None:
         q = q.filter(db.LeadStatusEvent.company_id == company_id)

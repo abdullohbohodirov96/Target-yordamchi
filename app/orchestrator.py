@@ -1859,13 +1859,28 @@ def gather_data(company=None) -> dict:
     # chaqiruvlar (kuzatuv cron ham, /analyze ham) hammasi bir xil "kecha"
     # ma'lumotini ko'radi. (2026-09: kalit endi kompaniya-bo'yicha --
     # yuqoridagi izohga qarang.)
-    previous_snapshot = kv_store.get_json(snapshot_kv_key, default=None)
-    today_str = datetime.utcnow().date().isoformat()
-    if previous_snapshot is None or previous_snapshot.get("date") != today_str:
-        kv_store.set_json(snapshot_kv_key, {
+    # 2026-10-01 tuzatish: ilgari kunning birinchi chaqiruvida snapshot
+    # BUGUNGI "kecha" ma'lumoti bilan ustidan yozilib, keyingi barcha
+    # chaqiruvlar kechani kecha bilan solishtirardi (o'zgarish doim 0%).
+    # Endi ikkala kun saqlanadi: "kecha" va "undan oldingi kun" --
+    # solishtirish uchun "undan oldingi kun" qaytariladi. Kun Toshkent
+    # vaqti bilan almashadi (UTC'da 05:00 da emas).
+    stored = kv_store.get_json(snapshot_kv_key, default=None) or {}
+    today_str = tz_utils.today_local().isoformat()
+    if stored.get("date") != today_str:
+        if "yesterday" in stored:
+            day_before = stored.get("yesterday")
+        elif stored.get("campaign_insights") is not None:  # eski format
+            day_before = {"date": stored.get("date"), "campaign_insights": stored.get("campaign_insights")}
+        else:
+            day_before = None
+        stored = {
             "date": today_str,
-            "campaign_insights": yesterday_campaign_insights,
-        })
+            "yesterday": {"date": today_str, "campaign_insights": yesterday_campaign_insights},
+            "day_before": day_before,
+        }
+        kv_store.set_json(snapshot_kv_key, stored)
+    previous_snapshot = stored.get("day_before")
 
     return {
         "account_structure": account_structure,

@@ -100,11 +100,12 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
             days = int(date_preset[len("last_"):-1])
         except ValueError:
             return None
-        # Meta'ning "last_Nd" preseti bugungi kunni ham o'z ichiga oladi
-        # (aylanma N-kunlik oyna) -- shuning uchun tugash chegarasi ham
-        # "ertaga boshlanishi"gacha.
+        # Meta'ning "last_Nd" preseti BUGUNNI O'Z ICHIGA OLMAYDI: bugun-N
+        # .. kecha (aniq N kun). 2026-10-01 tuzatish: ilgari CRM tomoni
+        # bugunni ham qo'shib N+1 kun sanardi -> CPL past chiqib, yomon
+        # reklama pauza qilinmay qolardi.
         start_tashkent = today_start_tashkent - dt.timedelta(days=days)
-        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+        end_tashkent = today_start_tashkent
     # 2026-09, foydalanuvchi so'rovi: "bugun/shu hafta/o'tgan hafta/shu oy/
     # o'tgan oy/shu yil" bo'yicha ko'rish -- Meta'ning o'zi ishlatadigan
     # taqvim-preset nomlari (`target.html`dagi davr tugmalari shu nomlarni

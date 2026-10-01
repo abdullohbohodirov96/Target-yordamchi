@@ -241,6 +241,10 @@ def _first_matching_action_value(actions, exact_priority, contains_keyword=None)
     if contains_keyword:
         for a in actions:
             at = str(a.get("action_type", "")).lower()
+            # "messaging_block"/"welcome_message_view" kabi natija BO'LMAGAN
+            # hodisalar xabar deb sanalmasin.
+            if any(bad in at for bad in ("block", "welcome_message_view", "first_reply", "user_depth")):
+                continue
             if contains_keyword in at and a.get("value") is not None:
                 try:
                     return int(round(float(a["value"])))
