@@ -8,7 +8,10 @@
   </div>
   <div class="page-head-actions">
     <a href="{{ url_for('creative_list') }}" class="btn btn-outline">{{ t('creative_new.back') }}</a>
-    <a href="{{ url_for('creative_carousel_zip', group=group) }}" class="btn">{{ t('carousel.download_zip') }}</a>
+    <a href="{{ url_for('creative_carousel_zip', group=group) }}" class="btn btn-outline">{{ t('carousel.download_zip') }}</a>
+    {% if current_user.role == 'admin' and cards|selectattr('thumbnail_url')|list|length >= 2 %}
+    <a href="{{ url_for('autopilot_new', carousel_group=group) }}" class="btn" title="{{ t('carousel.to_ads_tip') }}">{{ t('carousel.to_ads') }}</a>
+    {% endif %}
   </div>
 </div>
 <p class="text-faint" style="margin:0 0 14px">{{ t('carousel.edit_hint') }}</p>

@@ -599,6 +599,8 @@ _APP_STRINGS = [
     ("paths.targetolog_b4", "Raqobatchilar: Instagram o'rtacha like/ko'rish va Ad Library reklamalari", "Конкуренты: средние лайки/просмотры Instagram и реклама в Ad Library", "Competitors: Instagram averages and their Ad Library ads"),
     ("paths.cta_trial", "{trial_days} kun bepul sinash", "{trial_days} дней бесплатно", "Try free for {trial_days} days"),
     ("paths.cta_guide", "Qanday ishlaydi", "Как это работает", "How it works"),
+    ("carousel.to_ads", "Avtopilot orqali reklama qilish", "Запустить рекламу через Автопилот", "Advertise via Autopilot"),
+    ("carousel.to_ads_tip", "Kartalar Meta'ga karusel reklama sifatida chiqadi — doim PAUZADA, o'zingiz tekshirib yoqasiz.", "Карточки уйдут в Meta как карусельная реклама — всегда НА ПАУЗЕ, включаете сами после проверки.", "Cards go to Meta as a carousel ad — always PAUSED; you review and activate it."),
     ("dashboard.auto_pause_resume", "Qayta yoqish", "Включить снова", "Resume"),
     ("dashboard.auto_pause_resume_confirm", "Reklama qayta yoqilsinmi? Pul sarfi davom etadi, CPL himoyasi 7 kun tegmaydi.", "Включить объявление снова? Расход продолжится, CPL-защита не тронет его 7 дней.", "Resume this ad? Spending continues; CPL protection will skip it for 7 days."),
     ("dashboard.auto_pause_note", "CPL (lid narxi) chegaradan oshgani uchun oxirgi 7 kunda avtomatik pauza qilingan reklamalar — Telegram sozlanmagan bo'lsa ham shu yerda ko'rinadi.", "Рекламы, автоматически поставленные на паузу за последние 7 дней из-за превышения CPL (цены лида) — видно здесь, даже если Telegram не настроен.", "Ads auto-paused in the last 7 days for exceeding the CPL (cost-per-lead) limit — shown here even if Telegram isn't configured."),

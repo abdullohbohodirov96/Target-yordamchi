@@ -66,7 +66,7 @@
 - [x] 3 daraja: ogohlantirish, pauza, harakat (byudjet ±10–20%, auditoriya kengaytirish, zaif reklamani o'chirish). Biznes egalari uchun sukut bo'yicha pauza, targetologlar uchun harakat faqat o'zi yoqsa
 - [x] Minimal ma'lumot chegarasi, kuniga maksimal o'zgarishlar soni, har harakat logda va orqaga qaytariladigan
 - [x] Har kompaniyaga alohida kunlik Telegram hisobot
-- [ ] (4-bosqichdan keyin) Karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish — faqat PAUSED, birinchi sinov egasi bilan
+- [x] (4-bosqichdan keyin) Karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish — faqat PAUSED (kod tayyor; **birinchi real akkaunt sinovi egasi bilan qoladi**)
 
 ## 5-bosqich. KPI va agentlik
 - [x] `kpi_bonus.py` dagi Dunyabunya qoidalarini (oklad 4 000 000 so'm va bonuslar) har kompaniya o'zi sozlaydigan qilish

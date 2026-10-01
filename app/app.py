@@ -8060,6 +8060,57 @@ def _autopilot_attach_creative(session, draft, asset, company, assets) -> "str |
     return upload_err
 
 
+def _carousel_card_headline(asset) -> str:
+    """Karta sarlavhasi -- kartadagi birinchi mazmunli matn qatlami
+    (hisoblagich "2/5" emas)."""
+    try:
+        for layer in asset.get_layers() or []:
+            txt = (layer.get("text") or "").strip()
+            if layer.get("type") == "text" and txt and not re.fullmatch(r"\d+\s*/\s*\d+", txt):
+                return txt.replace("\n", " ")[:40]
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _autopilot_carousel_for_wizard(session, company, group) -> list:
+    """`?carousel_group=` -- faqat o'z kompaniyasining TAYYOR karusel kartalari."""
+    if not group or company is None:
+        return []
+    rows = creative_carousel.group_assets(session, company.id, str(group))
+    rows = [r for r in rows if r.status == "ready" and r.final_storage_path]
+    return rows if len(rows) >= 2 else []
+
+
+def _autopilot_attach_carousel(session, draft, rows, company, assets) -> "str | None":
+    """Karusel kartalarini qoralama mediasi qilib biriktiradi va
+    `ad.media.carousel`ga yozadi (birinchi karta asosiy rasm ham)."""
+    cards, errors = [], []
+    for asset in rows[:10]:
+        try:
+            row = autopilot_web.media_from_creative_asset(session, draft, asset, _autopilot_manager_id())
+        except campaign_media.MediaError as e:
+            return f"Karusel biriktirilmadi: {e}"
+        err = autopilot_web.try_upload_to_meta(session, row, company)
+        if err:
+            errors.append(err)
+        cards.append({"media_id": row.id, "image_hash": row.meta_image_hash, "headline": _carousel_card_headline(asset)})
+    first = cards[0]
+    try:
+        autopilot_web.apply_and_persist_patch(
+            session, draft, {"scope": "ad", "changes": {"ad.media": {
+                "media_id": first["media_id"], "image_hash": first["image_hash"], "video_id": None,
+                "selected_variant": None, "carousel": cards,
+            }}}, source="USER_OVERRIDDEN",
+            manager_id=_autopilot_manager_id(), actor="user", action="media_selected",
+            details={"carousel_cards": len(cards), "source": "creative_carousel", "upload_errors": errors[:3]},
+            company=company, assets=assets,
+        )
+    except campaign_draft.DraftPatchError as e:
+        return f"Karusel biriktirilmadi: {e}"
+    return errors[0] if errors else None
+
+
 def _autopilot_creative_for_wizard(session, company, raw_id) -> "db.CreativeAsset | None":
     """`?creative_asset_id=` -- faqat o'z kompaniyasining TAYYOR kreativi."""
     try:
@@ -8097,12 +8148,19 @@ def autopilot_new():
         # 2026-09, Kreativ studiya "Targetga ochish": tayyor kreativ media
         # sifatida biriktiriladi (fayl yuklash o'rniga), maydonlar oldindan
         # to'ldirilgan bo'lishi mumkin (`?objective=&budget=&product_focus=`).
-        creative_asset = _autopilot_creative_for_wizard(session, company, request.values.get("creative_asset_id"))
+        carousel_rows = _autopilot_carousel_for_wizard(session, company, request.values.get("carousel_group"))
+        creative_asset = carousel_rows[0] if carousel_rows else _autopilot_creative_for_wizard(session, company, request.values.get("creative_asset_id"))
         creative_info = None
         if creative_asset is not None:
             creative_info = {"id": creative_asset.id, "title": creative_asset.title or f"Kreativ #{creative_asset.id}",
                              "thumbnail_url": url_for("creative_image_file", asset_id=creative_asset.id),
                              "editor_url": url_for("creative_editor", asset_id=creative_asset.id)}
+            if carousel_rows:
+                creative_info.update({
+                    "title": f"Karusel — {len(carousel_rows)} karta (reklama pauzada chiqadi)",
+                    "editor_url": url_for("creative_carousel_view", group=request.values.get("carousel_group")),
+                    "carousel_group": request.values.get("carousel_group"), "carousel_count": len(carousel_rows),
+                })
         if request.method == "GET":
             for key in ("objective", "budget", "product_focus"):
                 v = (request.args.get(key) or "").strip()
@@ -8127,7 +8185,10 @@ def autopilot_new():
             if location_name:
                 answers["locations"] = [location_name]
             media_file = request.files.get("media")
-            if creative_asset is not None:
+            if carousel_rows:
+                answers["media"] = f"karusel ({len(carousel_rows)} karta, Kreativ studiya)"
+                media_file = None
+            elif creative_asset is not None:
                 answers["media"] = f"rasm (Kreativ studiya #{creative_asset.id})"
                 media_file = None
             elif media_file is not None and media_file.filename:
@@ -8159,7 +8220,11 @@ def autopilot_new():
                 return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
                                        form=form, connection=conn, ctx=ctx, **tpl_kwargs), 400
 
-            if creative_asset is not None:
+            if carousel_rows:
+                err = _autopilot_attach_carousel(session, draft, carousel_rows, company, assets)
+                if err:
+                    flash(err, "error")
+            elif creative_asset is not None:
                 err = _autopilot_attach_creative(session, draft, creative_asset, company, assets)
                 if err:
                     flash(err, "error")

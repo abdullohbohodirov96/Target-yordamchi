@@ -337,6 +337,10 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     # 2026-09-30: standart PAUSED (avval ACTIVE edi) -- egasi review oynasida
     # "Darhol yoqilsin"ni tanlasa ACTIVE (`/avtopilot/<id>/launch-status`).
     launch_status = "ACTIVE" if getattr(draft, "launch_active", False) else "PAUSED"
+    # 2026-10-01 (egasi qarori): karusel reklama -- yangi yo'l, birinchi
+    # sinovlar doim PAUZADA ("Darhol yoqilsin" belgilangan bo'lsa ham).
+    if ((draft.get_state().get("ad") or {}).get("media") or {}).get("carousel"):
+        launch_status = "PAUSED"
 
     # --- validate
     previous_step = draft.publish_step
@@ -386,6 +390,27 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
         session.commit()
     if not (image_hash or video_id):
         raise _fail(session, draft, "upload_media", meta_api.MetaAPIError({"message": "Rasm yoki video yuklanmagan."}), manager_id)
+
+    # Karusel kartalari: har biri Meta'ga yuklangan bo'lishi kerak (idempotent).
+    cards = (state["ad"]["media"].get("carousel") or [])
+    if cards:
+        changed = False
+        for card in cards:
+            if card.get("image_hash"):
+                continue
+            with db.scoped_as(draft.company_id):
+                row = session.get(db.CampaignDraftMedia, int(card["media_id"])) if card.get("media_id") else None
+            if row is None or row.draft_id != draft.id:
+                raise _fail(session, draft, "upload_media", meta_api.MetaAPIError({"message": "Karusel kartasining rasmi topilmadi."}), manager_id)
+            try:
+                campaign_media.ensure_uploaded_to_meta(session, row, company)
+            except Exception as e:  # noqa: BLE001
+                raise _fail(session, draft, "upload_media", e, manager_id)
+            card["image_hash"] = row.meta_image_hash
+            changed = True
+        if changed:
+            draft.set_state(state)
+            session.commit()
 
     # --- lead_form (faqat LEADS)
     lead_form_id = draft.meta_lead_form_id

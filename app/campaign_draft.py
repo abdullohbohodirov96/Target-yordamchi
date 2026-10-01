@@ -323,6 +323,7 @@ PATH_TYPES: dict[str, str] = {
     "ad.media.image_hash": "str_or_none",
     "ad.media.video_id": "str_or_none",
     "ad.media.selected_variant": "int_or_none",
+    "ad.media.carousel": "list_dict",
     "ad.primary_text": "str",
     "ad.headline": "str",
     "ad.description": "str",
@@ -356,7 +357,7 @@ ALLOWED_PATHS = frozenset(PATH_TYPES.keys())
 _DICT_CHILD_KEYS = {
     "adset.targeting.geo_locations": ["countries", "cities", "regions"],
     "adset.targeting.placements": ["mode", "publisher_platforms", "facebook_positions", "instagram_positions"],
-    "ad.media": ["media_id", "image_hash", "video_id", "selected_variant"],
+    "ad.media": ["media_id", "image_hash", "video_id", "selected_variant", "carousel"],
     "ad.copy_variants": ["primary_text", "headline", "description"],
     "ad.messages": ["greeting", "quick_replies"],
     "ad.lead_form": ["mode", "existing_form_id", "new_form"],
@@ -510,6 +511,20 @@ def _coerce_list_item(path: str, item: dict) -> dict:
     """Ro'yxat elementlarini (shahar, qiziqish, auditoriya, forma savoli)
     faqat KUTILGAN kalitlar bilan qoldiradi -- Meta'ga ortiqcha maydon
     ketmasligi va uydirma tuzilma kirmasligi uchun."""
+    if path.endswith("media.carousel"):
+        # 2026-10-01: karusel kartasi -- Kreativ studiyadan (media qatori) va
+        # Meta'ga yuklangach image_hash; sarlavha/izoh/havola karta uchun.
+        if not item.get("media_id") and not item.get("image_hash"):
+            raise DraftPatchError("Karusel kartasi uchun rasm (media) kerak.")
+        out = {
+            "media_id": _to_int(item["media_id"], path + ".media_id") if item.get("media_id") not in (None, "") else None,
+            "image_hash": (str(item["image_hash"]) if item.get("image_hash") else None),
+            "headline": str(item.get("headline") or "")[:40],
+            "description": str(item.get("description") or "")[:30],
+        }
+        link = str(item.get("link") or "").strip()
+        out["link"] = link or None
+        return out
     if path.endswith("geo_locations.cities"):
         if not item.get("key"):
             raise DraftPatchError("Shahar uchun Meta `key` kerak (nom bilan emas -- geo qidiruv orqali aniqlanadi).")
@@ -824,6 +839,10 @@ def validate_state(state: dict, *, company=None, meta_assets: "dict | None" = No
     media = ad.get("media") or {}
     if not (media.get("image_hash") or media.get("video_id")):
         errors.append(_err("ad", "media", "Rasm yoki video yuklanmagan."))
+    carousel = media.get("carousel") or []
+    if carousel:
+        if not 2 <= len(carousel) <= 10:
+            errors.append(_err("ad", "media", "Karusel 2 tadan 10 tagacha kartadan iborat bo'lishi kerak."))
     primary = ad.get("primary_text") or ""
     if not primary.strip():
         errors.append(_err("ad", "primary_text", "Asosiy matn (primary text) bo'sh."))
@@ -1026,6 +1045,34 @@ def to_meta_creative_spec(
     spec: dict = {"page_id": str(page_id)}
     if instagram_actor_id:
         spec["instagram_actor_id"] = str(instagram_actor_id)
+    cards = [c for c in ((ad.get("media") or {}).get("carousel") or []) if c.get("image_hash")]
+    if len(cards) >= 2 and not video_id:
+        # 2026-10-01: karusel reklama -- `link_data.child_attachments` (Meta
+        # Marketing API). Har karta o'z rasmi/sarlavhasi; CTA hammasida bir xil.
+        children = []
+        for c in cards[:10]:
+            child = {
+                "image_hash": c["image_hash"],
+                "link": c.get("link") or link,
+                "name": c.get("headline") or ad.get("headline") or "",
+                "call_to_action": call_to_action,
+            }
+            if c.get("description"):
+                child["description"] = c["description"]
+            children.append(child)
+        data = {
+            "message": ad.get("primary_text") or "",
+            "link": link,
+            "child_attachments": children,
+            "multi_share_optimized": True,
+            "multi_share_end_card": False,
+            "call_to_action": call_to_action,
+        }
+        if objective == "MESSAGES":
+            data["page_welcome_message"] = build_page_welcome_message(
+                (ad.get("messages") or {}).get("greeting") or "", (ad.get("messages") or {}).get("quick_replies") or [])
+        spec["link_data"] = data
+        return spec
     if video_id:
         data = {
             "video_id": str(video_id),
@@ -1142,7 +1189,8 @@ def summary_for_review(state: dict, ctx: "dict | None" = None) -> dict:
     else:
         placements_line = "Avtomatik (Advantage+ placements)"
     media = ad.get("media") or {}
-    creative = "Video" if media.get("video_id") else ("Rasm" if media.get("image_hash") else "Media yuklanmagan")
+    creative = (f"Karusel ({len(media.get('carousel'))} karta)" if media.get("carousel") else
+                ("Video" if media.get("video_id") else ("Rasm" if media.get("image_hash") else "Media yuklanmagan")))
 
     warnings = [e["message"] for e in validate_state(state, company=None, meta_assets=None)]
     return {
