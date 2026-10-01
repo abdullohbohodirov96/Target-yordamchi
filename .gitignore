@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 venv/
 app/logs/*.json
+# Foydalanuvchi yuklagan / generatsiya qilingan fayllar (lokal ishga tushirishda paydo bo'ladi)
+app/uploads/
