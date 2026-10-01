@@ -41,6 +41,7 @@ import orchestrator
 import budget_tracker
 import kv_store
 import monthly_report
+import ig_benchmark
 import permissions
 import plans
 import business_profile
@@ -9875,6 +9876,38 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
         for key in order
     ]
     return search_results, None
+
+
+def _ad_library_url(username: str, name: "str | None" = None) -> str:
+    """Meta Ad Library'ning rasmiy sahifasi -- raqobatchining BARCHA faol
+    reklamalari (O'zbekistondagi tijoriy reklamalar ham) ko'rinadi."""
+    from urllib.parse import urlencode
+    return "https://www.facebook.com/ads/library/?" + urlencode({
+        "active_status": "active", "ad_type": "all", "country": "ALL",
+        "q": name or username, "search_type": "keyword_unordered", "media_type": "all",
+    })
+
+
+@app.route("/raqobatchilar/instagram", methods=["GET"])
+@login_required
+@module_required("settings")
+def ig_benchmark_page():
+    """Instagram raqobatchi statistikasi: username(lar) -> so'nggi 12-30 post
+    bo'yicha o'rtacha like/komment/ko'rish, ER, post chastotasi + reklamalari."""
+    raw = request.args.get("u", "")
+    usernames = ig_benchmark.parse_usernames(raw)
+    limit = ig_benchmark.clamp_limit(request.args.get("n", ig_benchmark.DEFAULT_POSTS))
+    data = None
+    if usernames:
+        data = ig_benchmark.compare(_current_company(), usernames, limit, force=request.args.get("refresh") == "1")
+        for r in data["results"]:
+            r["ad_library_url"] = _ad_library_url(r["username"], r.get("name"))
+    elif raw.strip():
+        flash("Username noto'g'ri. Masalan: dunyabunya yoki instagram.com/dunyabunya", "error")
+    return render_template(
+        "ig_benchmark.html", data=data, raw=raw, limit=limit,
+        min_posts=ig_benchmark.MIN_POSTS, max_posts=ig_benchmark.MAX_POSTS,
+    )
 
 
 @app.route("/settings/competitors", methods=["GET", "POST"])

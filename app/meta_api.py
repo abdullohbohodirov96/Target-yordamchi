@@ -1677,6 +1677,30 @@ def get_instagram_media(ig_user_id: str, limit: int = 25, *, page_id: str | None
     return data.get("data", [])
 
 
+def get_instagram_business_discovery(
+    ig_user_id: str, username: str, limit: int = 30,
+    *, page_id: str | None = None, access_token: str | None = None, with_views: bool = True,
+) -> dict:
+    """Boshqa (ochiq, Business/Creator) Instagram akkauntining profili va
+    so'nggi `limit` ta posti -- Meta'ning RASMIY Business Discovery API'si
+    orqali (scraping emas). `ig_user_id` -- O'ZIMIZNING ulangan IG Business
+    akkauntimiz (so'rov shu nomidan yuboriladi). `view_count` ba'zi
+    akkaunt/versiyalarda qaytmasligi mumkin -- `with_views=False` bilan
+    qayta so'raladi."""
+    limit = max(1, min(50, int(limit)))
+    media_fields = "id,caption,timestamp,permalink,media_type,media_product_type,like_count,comments_count"
+    if with_views:
+        media_fields += ",view_count"
+    clean = username.strip().lstrip("@")
+    fields = (
+        f"business_discovery.username({clean})"
+        f"{{username,name,biography,followers_count,follows_count,media_count,profile_picture_url,"
+        f"media.limit({limit}){{{media_fields}}}}}"
+    )
+    data = _get(ig_user_id, {"fields": fields}, token=_get_page_access_token(page_id, access_token))
+    return data.get("business_discovery") or {}
+
+
 def get_instagram_media_insights(
     media_id: str, media_type: str = "IMAGE", media_product_type: str | None = None,
     *, page_id: str | None = None, access_token: str | None = None,
