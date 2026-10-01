@@ -74,7 +74,7 @@
 
 ## 6-bosqich. Instagram
 - [ ] Kommentariya va Direct'ga javob berish (`instagram_manage_comments`, `instagram_manage_messages`)
-- [ ] Kalit so'z bo'yicha avtojavob, issiq lidni CRM'ga va Telegram'ga
+- [x] Kalit so'z bo'yicha avtojavob, issiq lidni CRM'ga va Telegram'ga (Instagram xabarlar sahifasida; standart o'chiq, avtojavob faqat egasi matn yozsa)
 - [ ] Post, karusel, Reels joylash
 
 ## 7-bosqich. Tariflar va sayt

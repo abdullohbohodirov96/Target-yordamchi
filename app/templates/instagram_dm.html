@@ -150,6 +150,33 @@
 </div>
 {% endif %}
 
+{% if hot_leads is not none and current_user.role == 'admin' %}
+<details class="card" style="margin-bottom:20px" id="issiq-lid">
+  <summary style="cursor:pointer; display:flex; align-items:center; gap:10px">
+    <strong>🔥 {{ t('hot_leads.title') }}</strong>
+    <span class="badge {{ 'badge-color-good' if hot_leads.enabled else '' }}">{{ t('hot_leads.on') if hot_leads.enabled else t('hot_leads.off') }}</span>
+    {% if hot_leads.auto_reply %}<span class="badge">{{ t('hot_leads.auto_reply_on') }}</span>{% endif %}
+  </summary>
+  <p class="text-faint" style="font-size:13px; margin:10px 0">{{ t('hot_leads.desc') }}</p>
+  <form method="post" action="{{ url_for('instagram_dm_hot_leads') }}" style="display:flex; flex-direction:column; gap:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label style="display:flex; gap:8px; align-items:center; font-weight:600"><input type="checkbox" name="enabled" value="1" {{ 'checked' if hot_leads.enabled }}> {{ t('hot_leads.enable') }}</label>
+    <div class="field" style="margin:0">
+      <label>{{ t('hot_leads.keywords') }}</label>
+      <textarea name="keywords" rows="3">{{ hot_leads.keywords|join(', ') }}</textarea>
+      <div class="text-faint" style="font-size:12px">{{ t('hot_leads.keywords_hint') }}</div>
+    </div>
+    <label style="display:flex; gap:8px; align-items:center"><input type="checkbox" name="auto_reply" value="1" {{ 'checked' if hot_leads.auto_reply }}> {{ t('hot_leads.auto_reply') }}</label>
+    <div class="field" style="margin:0">
+      <label>{{ t('hot_leads.reply_text') }}</label>
+      <textarea name="reply_text" rows="3" maxlength="600" placeholder="{{ t('hot_leads.reply_ph') }}">{{ hot_leads.reply_text }}</textarea>
+      <div class="text-faint" style="font-size:12px">{{ t('hot_leads.reply_hint') }}</div>
+    </div>
+    <div><button type="submit">{{ t('common.save') }}</button></div>
+  </form>
+</details>
+{% endif %}
+
 <h2>{{ t('instagram_dm.current_status_title') }}</h2>
 
 {% if sync_status and sync_status.errors %}

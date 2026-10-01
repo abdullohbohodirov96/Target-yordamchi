@@ -40,6 +40,7 @@ import datetime as dt
 from pathlib import Path
 
 import meta_api
+import ig_hot_leads
 import kv_store
 import db
 from db import get_session, IgDmConversation, IgDmMessage, IgDmAdSource
@@ -377,6 +378,7 @@ def _upsert_conversation_and_messages(
         raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
 
     new_messages = 0
+    new_customer_texts: list[str] = []
     for m in raw_messages:
         ext_msg_id = m.get("id")
         if ext_msg_id:
@@ -393,9 +395,16 @@ def _upsert_conversation_and_messages(
         )
         session.add(msg_row)
         new_messages += 1
+        if msg_row.sender == "customer" and msg_row.text:
+            new_customer_texts.append(msg_row.text)
 
     session.flush()
     became_overdue = _recompute_conversation_state(session, row)
+    if new_customer_texts:
+        try:
+            ig_hot_leads.process_customer_messages(company_id, row.id, new_customer_texts)
+        except Exception:  # noqa: BLE001
+            logger.exception("Issiq lid tekshiruvida xato (conversation=%s)", row.id)
     return {"new_messages": new_messages, "became_overdue": became_overdue, "row": row}
 
 
@@ -755,9 +764,16 @@ def ingest_webhook_message(
         session.add(msg_row)
         session.flush()
         became_overdue = _recompute_conversation_state(session, row)
-        return {"new_message": True, "became_overdue": became_overdue, "conversation_id": row.id}
+        conv_id = row.id
     finally:
         session.close()
+    # PLAN 6-bosqich: kalit so'z bo'yicha issiq lid (kompaniya yoqqan bo'lsa).
+    if not is_echo and text:
+        try:
+            ig_hot_leads.process_customer_messages(company.id, conv_id, [text])
+        except Exception:  # noqa: BLE001 -- asosiy oqimni to'xtatmasin
+            logger.exception("Issiq lid tekshiruvida xato (conversation=%s)", conv_id)
+    return {"new_message": True, "became_overdue": became_overdue, "conversation_id": conv_id}
 
 
 def mark_alert_sent(conversation_id: int) -> None:

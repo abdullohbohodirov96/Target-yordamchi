@@ -43,6 +43,7 @@ import kv_store
 import monthly_report
 import ig_benchmark
 import guide_content
+import ig_hot_leads
 import permissions
 import plans
 import business_profile
@@ -7742,6 +7743,7 @@ def instagram_dm():
         dm_analytics=dm_analytics,
         dm_period=dm_period, dm_period_label=dm_period_label,
         dm_date_from=dm_date_from or "", dm_date_to=dm_date_to or "",
+        hot_leads=ig_hot_leads.get_settings(company.id) if company is not None else None,
     )
 
 
@@ -7887,6 +7889,29 @@ def instagram_dm_to_lead():
         return redirect(url_for("lead_detail", lead_id=lead.id))
     finally:
         session.close()
+
+
+@app.route("/instagram-xabarlar/issiq-lid", methods=["POST"])
+@login_required
+@module_required("target")
+@admin_required
+def instagram_dm_hot_leads():
+    """PLAN 6-bosqich: kalit so'z bo'yicha issiq lid + ixtiyoriy avtojavob sozlamalari."""
+    company = _current_company()
+    if company is None:
+        abort(404)
+    data = ig_hot_leads.save_settings(
+        company.id,
+        enabled=request.form.get("enabled") == "1",
+        keywords_text=request.form.get("keywords", ""),
+        auto_reply=request.form.get("auto_reply") == "1",
+        reply_text=request.form.get("reply_text", ""),
+    )
+    if request.form.get("auto_reply") == "1" and not data["auto_reply"]:
+        flash(lang_module.translate("hot_leads.need_reply_text", g.lang), "error")
+    else:
+        flash(lang_module.translate("hot_leads.saved_on" if data["enabled"] else "hot_leads.saved_off", g.lang), "success")
+    return redirect(url_for("instagram_dm"))
 
 
 @app.route("/instagram-xabarlar/templates", methods=["POST"])
