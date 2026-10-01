@@ -157,15 +157,105 @@ _TURNOVER_TIERS = [
 ]
 
 
-def activation_bonus_for_sale(sale_number: int, amount: float, days_since_first_sale: float | None) -> float:
+# ---------------------------------------------------------------------------
+# 2026-10-01, PLAN 5-bosqich: KPI/bonus qoidalari HAR BIR KOMPANIYA uchun
+# sozlanadi (Sozlamalar -> KPI va bonus). Standart qiymatlar -- yuqoridagi
+# Dunyabunya hujjati (o'zgartirilmagan kompaniyalarda natija AYNAN avvalgidek).
+# Bazaga yangi ustun qo'shilmaydi -- kv_store'da JSON (migratsiyasiz).
+# ---------------------------------------------------------------------------
+_KPI_CONFIG_KEY = "kpi_config"
+
+DEFAULT_KPI_CONFIG: dict = {
+    "salary_fixed": SALARY_FIXED,
+    "activation_first_fixed": 10_000.0,
+    "activation_second_fixed": 20_000.0,
+    "activation_percent": 0.5,              # % (0.5 = xarid summasining 0.5%)
+    "repeat_window_days": REPEAT_WINDOW_DAYS,
+    "progressive_tiers": [[75, 10_000], [150, 15_000], [300, 20_000]],       # [min sotuv, har sotuvga so'm]
+    "turnover_tiers": [[75_000_000, 500_000], [150_000_000, 1_000_000], [300_000_000, 2_000_000]],  # [min oborot, fiks bonus]
+    "turnover_top": 400_000_000,           # shundan yuqorisida har "step" uchun +step_bonus
+    "turnover_step": 100_000_000,
+    "turnover_step_bonus": 500_000,
+    "survival_min_sales": SURVIVAL_MIN_SALES,
+    "daily_calls_norm": DAILY_CALLS_NORM,
+}
+
+
+def _num(v, default, *, lo=0.0, hi=1e13):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if f != f or f < lo or f > hi:  # NaN / chegaradan tashqari
+        return default
+    return f
+
+
+def normalize_kpi_config(raw: "dict | None") -> dict:
+    """Foydalanuvchi kiritgan (yoki kv'dan o'qilgan) qiymatlarni tekshirib,
+    yetishmaganini standartdan to'ldiradi. Bosqichlar o'sish tartibida."""
+    cfg = {k: (list(map(list, v)) if isinstance(v, list) else v) for k, v in DEFAULT_KPI_CONFIG.items()}
+    if not isinstance(raw, dict):
+        return cfg
+    for key in ("salary_fixed", "activation_first_fixed", "activation_second_fixed", "turnover_top",
+                "turnover_step", "turnover_step_bonus"):
+        if key in raw:
+            cfg[key] = _num(raw[key], cfg[key])
+    if "activation_percent" in raw:
+        cfg["activation_percent"] = _num(raw["activation_percent"], cfg["activation_percent"], hi=100)
+    for key in ("repeat_window_days", "survival_min_sales", "daily_calls_norm"):
+        if key in raw:
+            cfg[key] = int(_num(raw[key], cfg[key], hi=100_000))
+    for key in ("progressive_tiers", "turnover_tiers"):
+        tiers = raw.get(key)
+        if isinstance(tiers, list):
+            clean = []
+            for t in tiers:
+                if isinstance(t, (list, tuple)) and len(t) == 2:
+                    lo, val = _num(t[0], None), _num(t[1], None)
+                    if lo is not None and val is not None and lo > 0:
+                        clean.append([lo, val])
+            clean.sort(key=lambda t: t[0])
+            cfg[key] = clean  # bo'sh ro'yxat ham mumkin -- shu bonus o'chirilgan
+    if cfg["turnover_step"] <= 0:
+        cfg["turnover_step"] = 0
+    return cfg
+
+
+def get_kpi_config(company_id: "int | None" = None) -> dict:
+    try:
+        raw = kv_store.get_json(_scoped_key(_KPI_CONFIG_KEY, company_id), default=None)
+    except Exception:  # noqa: BLE001
+        raw = None
+    return normalize_kpi_config(raw)
+
+
+def set_kpi_config(raw: dict, company_id: "int | None" = None) -> dict:
+    cfg = normalize_kpi_config(raw)
+    kv_store.set_json(_scoped_key(_KPI_CONFIG_KEY, company_id), cfg)
+    return cfg
+
+
+def _fmt_count(n) -> str:
+    return f"{int(round(n))}"
+
+
+def _fmt_mln(v) -> str:
+    m = v / 1_000_000
+    return (f"{m:.0f}" if abs(m - round(m)) < 1e-9 else f"{m:.1f}") + " mln"
+
+
+def activation_bonus_for_sale(sale_number: int, amount: float, days_since_first_sale: float | None, cfg: "dict | None" = None) -> float:
     """Bitta sotuv uchun "mijozni faollashtirish" bonusini (A) hisoblaydi.
     `days_since_first_sale` faqat sale_number==2 uchun ma'noli (1-sotuvdan
     necha kun o'tgani)."""
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    pct = cfg["activation_percent"] / 100.0
     if sale_number == 1:
-        return 10_000.0 + amount * 0.005
+        return float(cfg["activation_first_fixed"]) + amount * pct
     if sale_number == 2:
-        if days_since_first_sale is not None and days_since_first_sale <= REPEAT_WINDOW_DAYS:
-            return 20_000.0 + amount * 0.005
+        if days_since_first_sale is not None and days_since_first_sale <= cfg["repeat_window_days"]:
+            return float(cfg["activation_second_fixed"]) + amount * pct
         return 0.0
     return 0.0
 
@@ -187,9 +277,13 @@ def compute_prorate_factor(year: int, month: int, hire_date=None) -> tuple[float
     return work_days / days_in_month, work_days, days_in_month
 
 
-def _scaled_progressive_tiers(factor: float) -> list[dict]:
+def _scaled_progressive_tiers(factor: float, cfg: "dict | None" = None) -> list[dict]:
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    raw = cfg["progressive_tiers"]
     tiers = []
-    for label, lo, hi, rate in _PROGRESSIVE_TIERS:
+    for i, (lo, rate) in enumerate(raw):
+        hi = raw[i + 1][0] - 1 if i + 1 < len(raw) else None
+        label = f"{_fmt_count(lo)} - {_fmt_count(hi)} ta" if hi is not None else f"{_fmt_count(lo)}+ ta"
         tiers.append({
             "label": label,
             "min": round(lo * factor),
@@ -199,80 +293,77 @@ def _scaled_progressive_tiers(factor: float) -> list[dict]:
     return tiers
 
 
-def _scaled_turnover_tiers(factor: float) -> list[dict]:
+def _scaled_turnover_tiers(factor: float, cfg: "dict | None" = None) -> list[dict]:
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    raw = cfg["turnover_tiers"]
+    top = cfg["turnover_top"]
     tiers = []
-    for label, lo, hi, bonus in _TURNOVER_TIERS:
+    for i, (lo, bonus) in enumerate(raw):
+        hi = raw[i + 1][0] if i + 1 < len(raw) else (top if top and top > lo else None)
+        label = f"{_fmt_mln(lo)} - {_fmt_mln(hi)}" if hi is not None else f"{_fmt_mln(lo)}+"
         tiers.append({
             "label": label,
             "min": lo * factor,
-            "max": hi * factor,
+            "max": (hi * factor) if hi is not None else float("inf"),
             "bonus": bonus,
         })
     return tiers
 
 
-def progressive_rate_for_count(total_sales_count: int, factor: float = 1.0) -> int:
+def progressive_rate_for_count(total_sales_count: int, factor: float = 1.0, cfg: "dict | None" = None) -> int:
     """Oylik jami sotuvlar soniga qarab, HAR BIR sotuv uchun bonus stavkasi.
     `factor` -- proratsiya koeffitsienti (0..1), chegaralarni shu nisbatda
     kamaytiradi (masalan yarim oy ishlagan menejer uchun 75 o'rniga ~38)."""
-    if factor <= 0:
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    if factor <= 0 or not cfg["progressive_tiers"]:
         return 0
-    t1 = round(75 * factor)
-    t2 = round(150 * factor)
-    t3 = round(300 * factor)
-    if total_sales_count < max(t1, 1):
-        return 0
-    if total_sales_count < t2:
-        return 10_000
-    if total_sales_count < t3:
-        return 15_000
-    return 20_000
+    rate = 0
+    for i, (lo, r) in enumerate(cfg["progressive_tiers"]):
+        threshold = round(lo * factor)
+        if i == 0:
+            threshold = max(threshold, 1)
+        if total_sales_count >= threshold:
+            rate = r
+    return int(rate)
 
 
-def turnover_bonus_for_amount(total_turnover: float, factor: float = 1.0) -> float:
+def turnover_bonus_for_amount(total_turnover: float, factor: float = 1.0, cfg: "dict | None" = None) -> float:
     """Oylik umumiy oborot bo'yicha pog'onali FIKS bonus (proratsiyalangan)."""
-    if factor <= 0:
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    if factor <= 0 or not cfg["turnover_tiers"]:
         return 0.0
-    b1 = 75_000_000 * factor
-    b2 = 150_000_000 * factor
-    b3 = 300_000_000 * factor
-    b4 = 400_000_000 * factor
-    if total_turnover < b1:
-        return 0.0
-    if total_turnover < b2:
-        return 500_000.0
-    if total_turnover < b3:
-        return 1_000_000.0
-    if total_turnover <= b4:
-        return 2_000_000.0
-    extra_steps = math.ceil((total_turnover - b4) / (100_000_000 * factor))
-    return 2_000_000.0 + extra_steps * 500_000.0
+    bonus = 0.0
+    for lo, b in cfg["turnover_tiers"]:
+        if total_turnover >= lo * factor:
+            bonus = float(b)
+    top, step, step_bonus = cfg["turnover_top"], cfg["turnover_step"], cfg["turnover_step_bonus"]
+    if top and step and total_turnover > top * factor:
+        extra_steps = math.ceil((total_turnover - top * factor) / (step * factor))
+        bonus += extra_steps * float(step_bonus)
+    return bonus
 
 
-def _next_turnover_milestone(turnover: float, factor: float) -> tuple[float, float] | None:
+def _next_turnover_milestone(turnover: float, factor: float, cfg: "dict | None" = None) -> tuple[float, float] | None:
     """Oborot bo'yicha KEYINGI bonus bosqichi (pog'ona) qiymatini va shu
-    bosqichga yetganda olinadigan bonus (C)ni qaytaradi -- 400mlndan
-    yuqorida ham (cheksiz, har 100mln uchun +500ming) ishlaydi, shuning
-    uchun har doim "keyingi qadam" bo'ladi (agar factor>0 bo'lsa)."""
-    if factor <= 0:
+    bosqichga yetganda olinadigan bonus (C)ni qaytaradi -- yuqori chegaradan
+    keyin ham (har "step" uchun +bonus) ishlaydi."""
+    cfg = cfg or DEFAULT_KPI_CONFIG
+    if factor <= 0 or not cfg["turnover_tiers"]:
         return None
-    b1 = 75_000_000 * factor
-    b2 = 150_000_000 * factor
-    b3 = 300_000_000 * factor
-    b4 = 400_000_000 * factor
-    step = 100_000_000 * factor
-    if turnover < b1:
-        milestone = b1
-    elif turnover < b2:
-        milestone = b2
-    elif turnover < b3:
-        milestone = b3
-    elif turnover < b4:
-        milestone = b4
-    else:
-        steps_done = math.floor((turnover - b4) / step) if step else 0
-        milestone = b4 + (steps_done + 1) * step
-    return milestone, turnover_bonus_for_amount(milestone, factor)
+    marks = [lo * factor for lo, _b in cfg["turnover_tiers"]]
+    top, step = cfg["turnover_top"], cfg["turnover_step"]
+    if top:
+        marks.append(top * factor)
+    for m in marks:
+        if turnover < m:
+            return m, turnover_bonus_for_amount(m, factor, cfg)
+    if top and step:
+        base = top * factor
+        st = step * factor
+        steps_done = math.floor((turnover - base) / st)
+        milestone = base + (steps_done + 1) * st
+        return milestone, turnover_bonus_for_amount(milestone, factor, cfg)
+    return None
 
 
 def month_bounds(year: int, month: int) -> tuple[dt.datetime, dt.datetime]:
@@ -285,7 +376,7 @@ def month_bounds(year: int, month: int) -> tuple[dt.datetime, dt.datetime]:
     return start, end
 
 
-def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_date=None) -> dict:
+def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_date=None, cfg: "dict | None" = None) -> dict:
     """`valid_sales` -- shu menejerning shu oydagi, minimal chek shartidan
     o'tgan va QAYTARILMAGAN sotuvlari, har biri:
       {"sale_number": int, "amount": float, "sold_at": datetime,
@@ -296,18 +387,19 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
     Qaytaradi: oklad/bonus_a/bonus_b/bonus_c/jami, sales_count/turnover,
     proratsiya ma'lumoti (factor/work_days/days_in_month), UI uchun tier
     ro'yxatlari (is_current bilan) va kunlik taqsimot."""
+    cfg = cfg or get_kpi_config()
     factor, work_days, days_in_month = compute_prorate_factor(year, month, hire_date)
 
     sales_count = len(valid_sales)
     turnover = sum(s["amount"] for s in valid_sales)
 
     bonus_a = sum(
-        activation_bonus_for_sale(s["sale_number"], s["amount"], s.get("days_since_first_sale"))
+        activation_bonus_for_sale(s["sale_number"], s["amount"], s.get("days_since_first_sale"), cfg)
         for s in valid_sales
     )
-    rate = progressive_rate_for_count(sales_count, factor)
+    rate = progressive_rate_for_count(sales_count, factor, cfg)
     bonus_b = rate * sales_count
-    bonus_c = turnover_bonus_for_amount(turnover, factor)
+    bonus_c = turnover_bonus_for_amount(turnover, factor, cfg)
 
     daily: dict[str, dict] = {}
     for s in valid_sales:
@@ -316,18 +408,19 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
         d["sales_count"] += 1
         d["turnover"] += s["amount"]
 
-    oklad = SALARY_FIXED
+    oklad = float(cfg["salary_fixed"])
     jami = oklad + bonus_a + bonus_b + bonus_c
 
-    survival_min = round(SURVIVAL_MIN_SALES * factor)
-    progressive_tiers = _scaled_progressive_tiers(factor)
+    survival_min = round(cfg["survival_min_sales"] * factor)
+    progressive_tiers = _scaled_progressive_tiers(factor, cfg)
     for t in progressive_tiers:
         t["is_current"] = sales_count >= t["min"] and (t["max"] is None or sales_count <= t["max"])
-    turnover_tiers = _scaled_turnover_tiers(factor)
+    turnover_tiers = _scaled_turnover_tiers(factor, cfg)
     for t in turnover_tiers:
         t["is_current"] = turnover >= t["min"] and turnover < t["max"]
 
-    daily_turnover_target = round((400_000_000 * factor) / days_in_month) if days_in_month else 0
+    plan_top = cfg["turnover_top"] or (cfg["turnover_tiers"][-1][0] if cfg["turnover_tiers"] else 0)
+    daily_turnover_target = round((plan_top * factor) / days_in_month) if days_in_month else 0
 
     # UI uchun "keyingi bosqichgacha qoldi" ko'rsatkichlari (kartochkalardagi
     # "yetishi uchun qoldi"/"bonusgacha yetmaydi" maslahat matnlari shundan).
@@ -353,7 +446,7 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
         projected_bonus_b_at_next_sales_tier = None
         projected_total_at_next_sales_tier = None
 
-    milestone = _next_turnover_milestone(turnover, factor)
+    milestone = _next_turnover_milestone(turnover, factor, cfg)
     if milestone:
         next_turnover_milestone_amount, next_turnover_milestone_bonus = milestone
         turnover_to_next_milestone = max(0.0, next_turnover_milestone_amount - turnover)
@@ -382,7 +475,9 @@ def compute_manager_report(valid_sales: list[dict], year: int, month: int, hire_
         "is_prorated": factor < 1.0,
         "progressive_tiers": progressive_tiers,
         "turnover_tiers": turnover_tiers,
-        "turnover_bonus_start": round(75_000_000 * factor),
+        "turnover_bonus_start": round((cfg["turnover_tiers"][0][0] if cfg["turnover_tiers"] else 0) * factor),
+        "plan_top": plan_top,
+        "repeat_window_days": cfg["repeat_window_days"],
         "daily_turnover_target": daily_turnover_target,
         "next_progressive_tier": next_progressive_tier,
         "sales_to_next_tier": sales_to_next_tier,

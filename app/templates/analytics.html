@@ -272,10 +272,12 @@
         <div class="kpi-progress-label"><span>{{ r.sales_count }} / {{ r.survival_min }}</span><span>{{ t('analytics.progress_done') if r.survival_ok else t('analytics.sales_left', n=r.sales_to_survival) }}</span></div>
       </div>
       <div class="tier-grid">
+        {% if r.progressive_tiers %}
         <div class="tier-box {{ 'current' if r.sales_count < r.progressive_tiers[0].min else 'achieved' }}">
           <div class="t-label">{{ t('analytics.tier_0_label', n=r.progressive_tiers[0].min - 1) }}</div>
           <div class="t-rate">{{ t('analytics.tier_no_bonus') }}</div>
         </div>
+        {% endif %}
         {% for t3 in r.progressive_tiers %}
         <div class="tier-box {{ 'current' if t3.is_current else ('achieved' if r.sales_count > (t3.max or 999999) else '') }}">
           <div class="t-label">{{ t3.label }}</div>
@@ -297,7 +299,7 @@
       </div>
       <div class="kpidash-bignum som">{{ r.turnover|som }}</div>
       <div class="kpidash-subtext">
-        {{ t('analytics.turnover_prorata') }} <strong>{{ (400000000 * r.prorate_factor)|round|int|som }}</strong>
+        {{ t('analytics.turnover_prorata', top=((r.plan_top or 0) / 1000000)|round|int) }} <strong>{{ ((r.plan_top or 0) * r.prorate_factor)|round|int|som }}</strong>
       </div>
       <div class="stat-box-row" style="margin-top:12px">
         <div class="stat-box"><div class="s-label">{{ t('analytics.stat_turnover') }}</div><div class="s-val">{{ r.turnover|som }}</div></div>

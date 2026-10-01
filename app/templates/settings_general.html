@@ -18,6 +18,43 @@
    chunki bu sahifa (`/sozlamalar/umumiy`) FAQAT "settings" moduliga ruxsati
    bor menejerlar uchun ochiq (standart YO'Q), "Mening profilim" esa
    HAR QANDAY menejer uchun (modul ruxsatidan qat'iy nazar) ochiq. #}
+{% if current_user.role == 'admin' %}
+<details class="card" style="margin-bottom:16px" id="kpi">
+  <summary style="cursor:pointer; font-weight:700; font-size:16px">{{ t('kpi_cfg.title') }}</summary>
+  <p class="text-faint" style="font-size:13px; margin:8px 0 14px">{{ t('kpi_cfg.desc') }}</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="set_kpi_config">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px">
+      {% for key, step in [('salary_fixed', 1), ('activation_first_fixed', 1), ('activation_second_fixed', 1), ('activation_percent', 0.01), ('repeat_window_days', 1), ('survival_min_sales', 1), ('daily_calls_norm', 1), ('turnover_top', 1), ('turnover_step', 1), ('turnover_step_bonus', 1)] %}
+      <div class="field" style="margin:0">
+        <label>{{ t('kpi_cfg.f_' ~ key) }}</label>
+        <input type="number" step="{{ step }}" min="0" name="{{ key }}" value="{{ kpi_cfg[key]|round(2) if step < 1 else kpi_cfg[key]|int }}">
+      </div>
+      {% endfor %}
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-top:12px">
+      <div class="field" style="margin:0">
+        <label>{{ t('kpi_cfg.f_progressive_tiers') }}</label>
+        <textarea name="progressive_tiers" rows="4" style="font-family:ui-monospace,monospace">{% for lo, v in kpi_cfg.progressive_tiers %}{{ lo|int }} = {{ v|int }}
+{% endfor %}</textarea>
+        <div class="text-faint" style="font-size:12px">{{ t('kpi_cfg.h_progressive') }}</div>
+      </div>
+      <div class="field" style="margin:0">
+        <label>{{ t('kpi_cfg.f_turnover_tiers') }}</label>
+        <textarea name="turnover_tiers" rows="4" style="font-family:ui-monospace,monospace">{% for lo, v in kpi_cfg.turnover_tiers %}{{ lo|int }} = {{ v|int }}
+{% endfor %}</textarea>
+        <div class="text-faint" style="font-size:12px">{{ t('kpi_cfg.h_turnover') }}</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap">
+      <button type="submit" class="btn">{{ t('common.save') }}</button>
+      <button type="submit" name="reset" value="1" class="btn toggle-all-btn-outline" onclick="return confirm('{{ t('kpi_cfg.reset_confirm') }}')">{{ t('kpi_cfg.reset') }}</button>
+    </div>
+  </form>
+</details>
+{% endif %}
+
 <div class="card">
   <form method="post" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:18px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

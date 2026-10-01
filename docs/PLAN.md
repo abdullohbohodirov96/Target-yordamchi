@@ -69,7 +69,7 @@
 - [ ] (4-bosqichdan keyin) Karuselni Avtopilot orqali Meta karusel reklamasi sifatida chiqarish — faqat PAUSED, birinchi sinov egasi bilan
 
 ## 5-bosqich. KPI va agentlik
-- [ ] `kpi_bonus.py` dagi Dunyabunya qoidalarini (oklad 4 000 000 so'm va bonuslar) har kompaniya o'zi sozlaydigan qilish
+- [x] `kpi_bonus.py` dagi Dunyabunya qoidalarini (oklad 4 000 000 so'm va bonuslar) har kompaniya o'zi sozlaydigan qilish
 - [ ] Agentlik rejimi: bitta targetolog bir nechta mijoz kompaniyasini bitta logindan boshqarsin
 
 ## 6-bosqich. Instagram
@@ -84,6 +84,7 @@
 
 ## Qo'shimcha bajarilganlar (rejadan tashqari)
 - [x] (2026-10-01) 4-bosqich: CPL rejimi (faqat ogohlantirish / avtomatik pauza) Sozlamalar → CPL'da; kuniga ko'pi bilan 10 ta avto-pauza; Dashboard'da "Qayta yoqish" (jurnalda resumed); harakat darajasi = "AI avtomatik kuzatuv" (egasi yoqsa), AI byudjetni sutkada 1 marta oshiradi, oylik shift, yangi kampaniya doim PAUSED.
+- [x] (2026-10-01) 5-bosqich: KPI/bonus qoidalari Sozlamalar → Umumiy → "KPI va bonus qoidalari"da (oklad, 1/2-xarid bonusi, %, oyna, reja, sotuv/oborot bosqichlari); standart = Dunyabunya, natija aynan avvalgidek.
 - [x] (2026-10-01) Instagram raqobatchi tahlili (Business Discovery API) + Ad Library havolalari.
 - [x] (2026-10-01) Narxlar: har tarif yonida Payme yechadigan so'm summasi; "--" → "—".
 - [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).

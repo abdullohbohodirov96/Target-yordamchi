@@ -4046,7 +4046,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
     # 4) Qo'ng'iroq faolligi -- shu oy, butun jamoa (Moi Zvonki ulangan bo'lsa)
     calls_overview = call_analytics.build_team_daily_call_counts(
         session, month_start, dt.datetime.strptime(today_key, "%Y-%m-%d") + dt.timedelta(days=1),
-        norm_per_manager=kpi_bonus.DAILY_CALLS_NORM,
+        norm_per_manager=kpi_bonus.get_kpi_config(current_user.company_id)["daily_calls_norm"],
     )
 
     # 5) Qayta aloqa (follow-up) -- bugun va muddati o'tgan, ENG YAQINLARI
@@ -4515,17 +4515,18 @@ def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
             "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
             "days_since_first_sale": days_since_first, "lead_id": s.lead_id,
         })
-    report = kpi_bonus.compute_manager_report(valid_sales, year, month, manager.hire_date)
+    kpi_cfg = kpi_bonus.get_kpi_config(manager.company_id)
+    report = kpi_bonus.compute_manager_report(valid_sales, year, month, manager.hire_date, cfg=kpi_cfg)
     report["manager_id"] = manager.id
     report["manager_name"] = manager.full_name or manager.username
-    report["repeat_customers"] = _build_repeat_customer_breakdown(session, manager.id, valid_sales)
+    report["repeat_customers"] = _build_repeat_customer_breakdown(session, manager.id, valid_sales, kpi_cfg)
     report["daily_calls"] = call_analytics.build_daily_call_counts(
-        session, manager.id, start, end, norm=kpi_bonus.DAILY_CALLS_NORM
+        session, manager.id, start, end, norm=kpi_cfg["daily_calls_norm"]
     )
     return report
 
 
-def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list) -> dict:
+def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list, kpi_cfg: "dict | None" = None) -> dict:
     """"Qayta sotuv KPI (batafsil)" kartochkasi uchun -- shu oyda 15 kun
     ICHIDA 2-marta xarid qilgan (ya'ni "mijozni faollashtirish" bonusining
     2-xarid shartiga to'g'ri kelgan) har bir mijoz uchun 1- va 2-xarid
@@ -4533,7 +4534,7 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
     qualifying_lead_ids = {
         s["lead_id"] for s in valid_sales
         if s["sale_number"] == 2 and s.get("days_since_first_sale") is not None
-        and s["days_since_first_sale"] <= kpi_bonus.REPEAT_WINDOW_DAYS
+        and s["days_since_first_sale"] <= (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["repeat_window_days"]
     }
     if not qualifying_lead_ids:
         return {"customers": [], "total": 0.0}
@@ -4562,7 +4563,7 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
         first_sold_at = None
         for s in lead_sales:
             if s.sale_number == 1:
-                fixed, first_sold_at = 10_000.0, s.sold_at
+                fixed, first_sold_at = float((kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_first_fixed"]), s.sold_at
             else:
                 days_since_first = None
                 if first_sold_at and s.sold_at:
@@ -4571,11 +4572,11 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
                     first = next((x for x in lead_sales if x.sale_number == 1), None)
                     if first and first.sold_at and s.sold_at:
                         days_since_first = (s.sold_at - first.sold_at).total_seconds() / 86400.0
-                if days_since_first is not None and days_since_first <= kpi_bonus.REPEAT_WINDOW_DAYS:
-                    fixed = 20_000.0
+                if days_since_first is not None and days_since_first <= (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["repeat_window_days"]:
+                    fixed = float((kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_second_fixed"])
                 else:
                     fixed = 0.0
-            pct = s.amount * 0.005
+            pct = s.amount * (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_percent"] / 100.0
             total = fixed + pct
             customer_total += total
             rows.append({
@@ -7073,6 +7074,28 @@ def _handle_settings_post(session, action):
         except (TypeError, ValueError):
             flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
 
+    elif action == "set_kpi_config":
+        if request.form.get("reset") == "1":
+            kpi_bonus.set_kpi_config({}, company_id=current_user.company_id)
+            flash(lang_module.translate("kpi_cfg.reset_done", g.lang), "success")
+        else:
+            def _tiers(field):
+                out = []
+                for line in (request.form.get(field) or "").splitlines():
+                    parts = [p.strip().replace(" ", "") for p in line.replace(":", "=").split("=")]
+                    if len(parts) == 2 and parts[0] and parts[1]:
+                        out.append([parts[0], parts[1]])
+                return out
+            raw = {k: request.form.get(k) for k in (
+                "salary_fixed", "activation_first_fixed", "activation_second_fixed", "activation_percent",
+                "repeat_window_days", "survival_min_sales", "daily_calls_norm",
+                "turnover_top", "turnover_step", "turnover_step_bonus",
+            ) if request.form.get(k) not in (None, "")}
+            raw["progressive_tiers"] = _tiers("progressive_tiers")
+            raw["turnover_tiers"] = _tiers("turnover_tiers")
+            kpi_bonus.set_kpi_config(raw, company_id=current_user.company_id)
+            flash(lang_module.translate("kpi_cfg.saved", g.lang), "success")
+
     elif action == "set_usd_rate":
         raw = request.form.get("usd_to_uzs_rate", "").strip()
         try:
@@ -7338,6 +7361,7 @@ def settings_general():
             min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
             min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
             usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
+            kpi_cfg=kpi_bonus.get_kpi_config(current_user.company_id),
             moizvonki_configured=bool(company_row and company_row.is_moizvonki_configured()),
             moizvonki_api_address=(company_row.moizvonki_api_address if company_row else None),
             moizvonki_user_name=(company_row.moizvonki_user_name if company_row else None),
