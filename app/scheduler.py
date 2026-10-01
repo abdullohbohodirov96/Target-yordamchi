@@ -673,6 +673,9 @@ def job_watch_cycle() -> dict:
 
     Qaytaradi: {"owner": <matn>, <company_id>: <matn>, ...}."""
     results: dict = {}
+    # Xato yo'lida (`_mark_meta_reauth_required`) ham kerak -- shuning uchun
+    # ENG BOSHIDA (ilgari pastda edi -> UnboundLocalError).
+    default_company_id = db.get_default_company_id()
 
     # 1) Platforma egasi -- eski, global xatti-harakat.
     owner_targets = _full_activity_targets()
@@ -703,7 +706,6 @@ def job_watch_cycle() -> dict:
 
     # 2) Boshqa har bir Meta ulagan, guruhini sozlagan VA bu funksiyani
     #    o'zi yoqqan kompaniya.
-    default_company_id = db.get_default_company_id()
     session = db.get_session()
     try:
         with db.unscoped():

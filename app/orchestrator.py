@@ -622,6 +622,24 @@ def _execute_adjust_budget(action: dict, direction: str, *, access_token: str | 
             percent, max_percent, adset_id,
         )
         percent = max_percent
+    # 2026-10-01 pul xavfsizligi (audit B7): AI bir reklama guruhining
+    # byudjetini sutkada FAQAT BIR MARTA OSHIRA oladi -- aks holda har soatlik
+    # tsikl 20%dan "zinapoya" qilib (1.2^24) byudjetni bir kunda ko'p barobar
+    # oshirib yuborishi mumkin edi. Kamaytirish har doim ruxsat (xavfsiz).
+    guard_key = f"ai_budget_increase_at:{adset_id}"
+    if direction == "increase":
+        try:
+            last = kv_store.get_json(guard_key, default=None)
+        except Exception:
+            last = None
+        if last and time.time() - float(last) < 24 * 3600:
+            raise meta_api.MetaAPIError({
+                "message": (
+                    "Bu reklama guruhining byudjeti oxirgi 24 soat ichida allaqachon "
+                    "oshirilgan -- xavfsizlik uchun sutkada bir martadan ko'p oshirilmaydi."
+                ),
+                "adset_id": adset_id,
+            })
     if direction == "decrease":
         percent = -percent
 
@@ -639,6 +657,30 @@ def _execute_adjust_budget(action: dict, direction: str, *, access_token: str | 
             "adset_id": adset_id,
         })
     current_budget = int(current_budget)
+
+    if direction == "increase":
+        # Oylik shift (business_rules `monthly_budget_cap_usd`): yangi kunlik
+        # byudjet x 30 shu shiftdan oshsa -- oshirilmaydi. Faqat USD hisoblarda
+        # aniq hisoblanadi (boshqa valyutada minor-birlik farqi bor).
+        cap = BUSINESS_RULES.get("monthly_budget_cap_usd")
+        try:
+            company_id = db.get_current_company_id() or db.get_default_company_id()
+            factor, _ = _spend_to_usd_factor(company_id, access_token, ad_account_id)
+        except Exception:
+            factor = None  # valyutani bilib bo'lmadi -- oylik shift tekshiruvi o'tkaziladi
+        try:
+            cap = float(cap) if cap else None
+        except (TypeError, ValueError):
+            cap = None
+        new_daily_usd = current_budget * (1 + percent / 100) / 100.0
+        if cap and factor == 1.0 and new_daily_usd * 30 > cap:
+            raise meta_api.MetaAPIError({
+                "message": (
+                    f"Byudjet oshirilmadi: yangi kunlik ${new_daily_usd:.2f} x 30 kun "
+                    f"oylik shiftdan (${cap:.0f}) oshadi."
+                ),
+                "adset_id": adset_id,
+            })
 
     meta_api.adjust_budget_by_percent(adset_id, current_budget, percent, access_token=access_token)
 
@@ -660,16 +702,27 @@ def _execute_adjust_budget(action: dict, direction: str, *, access_token: str | 
             "old_budget_cents": current_budget, "expected_budget_cents": expected_budget,
             "actual_budget_cents": new_budget,
         })
+    if direction == "increase":
+        try:
+            kv_store.set_json(guard_key, time.time())
+        except Exception:
+            logger.exception("AI byudjet oshirish vaqtini saqlab bo'lmadi (adset_id=%s)", adset_id)
     return {"verified": True, "old_budget_cents": current_budget, "new_budget_cents": int(new_budget)}
 
 
 def _execute_launch_campaign(action: dict, *, access_token: str | None = None, ad_account_id: str | None = None, page_id: str | None = None) -> dict:
     """8-band (targetolog prompt): to'liq yangi campaign -> adset -> (ad) yaratadi."""
     params = action["params"]
-    campaign = meta_api.create_campaign(**params["campaign"], access_token=access_token, ad_account_id=ad_account_id)
+    # 2026-10-01 pul xavfsizligi (audit B7): AI yaratgan YANGI kampaniya
+    # HAR DOIM PAUZADA yaratiladi -- pul sarflashni odam o'zi yoqadi
+    # (Avtopilot / Ads Manager). LLM "ACTIVE" yozsa ham e'tiborga olinmaydi.
+    campaign_params = dict(params["campaign"])
+    campaign_params["status"] = "PAUSED"
+    campaign = meta_api.create_campaign(**campaign_params, access_token=access_token, ad_account_id=ad_account_id)
     campaign_id = campaign["id"]
 
     adset_params = dict(params["adset"])
+    adset_params["status"] = "PAUSED"
     adset_params["campaign_id"] = campaign_id
     adset = meta_api.create_adset(**adset_params, access_token=access_token, ad_account_id=ad_account_id)
 
@@ -681,12 +734,13 @@ def _execute_launch_campaign(action: dict, *, access_token: str | None = None, a
             adset_id=adset["id"],
             name=ad_spec.get("name", action.get("object_name", "Target Master ad")),
             creative_id=ad_spec["creative_id"],
-            status=ad_spec.get("status", "PAUSED"),
+            status="PAUSED",
             access_token=access_token, ad_account_id=ad_account_id,
         )
         result["ad"] = ad
     else:
         result["note"] = "creative_id berilmagan — reklama hali yaratilmadi, foydalanuvchi creative_id yuborishi kerak."
+    result["paused_note"] = "Kampaniya PAUZADA yaratildi -- tekshirib, o'zingiz yoqing."
     return result
 
 
