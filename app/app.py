@@ -1386,6 +1386,8 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
             if kind == "group":
                 if chat_type not in ("group", "supergroup"):
                     return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+                if _identifier_conflict(company_id, telegram_group_id=chat_id):
+                    return "⚠️ Bu guruh boshqa kompaniyaga ulangan. Har bir kompaniya uchun alohida guruh oching."
                 c = session.get(Company, company_id)
                 c.telegram_group_id = str(chat_id)
                 session.commit()
@@ -2312,6 +2314,15 @@ def connect_accounts():
     if request.method == "POST":
         session = get_session()
         try:
+            conflict = _identifier_conflict(
+                company.id,
+                telegram_group_id=request.form.get("telegram_group_id"),
+                page_id=request.form.get("meta_page_id") if plan_def.can_connect_meta_ads else None,
+                ad_account_id=request.form.get("meta_ad_account_id") if plan_def.can_connect_meta_ads else None,
+            )
+            if conflict:
+                flash(conflict, "error")
+                return redirect(url_for("connect_accounts"))
             c = session.get(Company, company.id)
             c.ig_business_id = request.form.get("ig_business_id", "").strip() or None
             # 2026-09 multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya
@@ -2632,6 +2643,30 @@ def _run_initial_lead_sync(company_id: int) -> None:
         session.close()
 
 
+def _identifier_conflict(company_id: int, *, page_id=None, ad_account_id=None, telegram_group_id=None) -> "str | None":
+    """Shu Facebook sahifa / reklama hisobi / Telegram guruh BOSHQA kompaniyaga
+    allaqachon ulangan bo'lsa -- xato matni (aks holda None). Ikki kompaniya
+    bitta sahifa/guruhni ulasa, webhook lidlari va hisobotlar aralashib ketadi."""
+    checks = (
+        (Company.meta_page_id, page_id, "Bu Facebook sahifasi"),
+        (Company.meta_ad_account_id, ad_account_id, "Bu reklama hisobi"),
+        (Company.telegram_group_id, telegram_group_id, "Bu Telegram guruhi"),
+    )
+    session = get_session()
+    try:
+        with db.unscoped():
+            for column, value, label in checks:
+                value = str(value).strip() if value else ""
+                if not value:
+                    continue
+                taken = session.query(Company.id).filter(column == value, Company.id != company_id).first()
+                if taken:
+                    return f"{label} boshqa kompaniyaga ulangan. Avval o'sha kompaniyadan uzing yoki boshqasini tanlang."
+    finally:
+        session.close()
+    return None
+
+
 def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
                                business: dict | None = None, dataset: dict | None = None,
                                expires_in: int | None = None) -> None:
@@ -2652,7 +2687,10 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
     kerak."""
     company = _current_company()
     if company is None:
-        return
+        return "Kompaniya topilmadi."
+    conflict = _identifier_conflict(company.id, page_id=page.get("id"), ad_account_id=(account or {}).get("id"))
+    if conflict:
+        return conflict
     pixel_id = dataset["id"] if dataset else None
     pixel_name = dataset.get("name") if dataset else None
     if not dataset and account:
@@ -2728,6 +2766,7 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
     # ko'pi bilan 15 daqiqalik) oynada kelgan har qanday lead kursor hali
     # yo'qligi sababli umuman kuzatilmay qolib ketishi mumkin edi.
     threading.Thread(target=_run_initial_lead_sync, args=(connected_company_id,), daemon=True).start()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -2832,7 +2871,10 @@ def connect_facebook_callback():
     # "birinchisi" deb avtomatik tanlash xavfli bo'lardi.
     if len(pages) == 1:
         if not include_ads:
-            _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
+            err = _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
+            if err:
+                flash(err, "error")
+                return redirect(url_for("connect_accounts"))
             flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
             return redirect(url_for("connect_accounts"))
 
@@ -2843,10 +2885,13 @@ def connect_facebook_callback():
             if len(accounts_pool or []) <= 1:
                 chosen_account = accounts_pool[0] if accounts_pool else None
                 chosen_dataset = pixels_pool[0] if len(pixels_pool or []) == 1 else None
-                _save_facebook_connection(
+                err = _save_facebook_connection(
                     long_token, pages[0], chosen_account,
                     business=single_business, dataset=chosen_dataset, expires_in=expires_in,
                 )
+                if err:
+                    flash(err, "error")
+                    return redirect(url_for("connect_accounts"))
                 flash("Facebook/Instagram/reklama hisobingiz to'liq avtomatik ulandi.", "success")
                 return redirect(url_for("connect_accounts"))
 
@@ -2893,10 +2938,13 @@ def connect_facebook_choose():
         chosen_account = next((a for a in available_accounts if a["id"] == account_id), None) if account_id else None
         chosen_dataset = next((p for p in available_pixels if p["id"] == dataset_id), None) if dataset_id else None
 
-        _save_facebook_connection(
+        err = _save_facebook_connection(
             token, chosen_page, chosen_account,
             business=chosen_business, dataset=chosen_dataset, expires_in=expires_in,
         )
+        if err:
+            flash(err, "error")
+            return redirect(url_for("connect_facebook_choose"))
         for key in ("fb_oauth_token", "fb_oauth_expires_in", "fb_oauth_pages", "fb_oauth_accounts", "fb_oauth_businesses", "fb_oauth_business_assets"):
             flask_session.pop(key, None)
         flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
@@ -2925,7 +2973,7 @@ def connect_meta_test():
         return redirect(url_for("connect_accounts"))
 
     token, dataset_id = meta_events._resolve_capi_credentials(company)
-    if not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
+    if not (token and dataset_id) or not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
         flash("Meta hali ulanmagan -- avval Facebook orqali ulang yoki Advanced sozlamalardan Dataset ID/CAPI token kiriting.", "error")
         return redirect(url_for("connect_accounts"))
 
@@ -5924,7 +5972,7 @@ def _manager_edit_body(session, m, redirect_target):
 # ---------------------------------------------------------------------------
 
 def _is_platform_owner() -> bool:
-    return current_user.is_authenticated and current_user.role == "admin" and getattr(current_user, "company_id", None) == 1
+    return current_user.is_authenticated and current_user.role == "admin" and getattr(current_user, "company_id", None) == db.get_default_company_id()
 
 
 def platform_owner_required(fn):

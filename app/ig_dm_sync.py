@@ -78,7 +78,9 @@ _ig_business_id_cache: dict = {}
 def _get_ig_business_id(*, page_id: str | None = None, access_token: str | None = None) -> "str | None":
     """Bir marta olib keshlaydi -- har sinxronizatsiyada qayta so'ramaslik
     uchun (jarayon qayta ishga tushirilganda tabiiy ravishda yangilanadi)."""
-    cache_key = page_id or "__default__"
+    # 2026-10-01 (audit): kalitga token xeshi ham -- boshqa kompaniya bir xil
+    # Page ID yozsa, birinchisining IG hisobi unga berilmasin.
+    cache_key = meta_api._page_cache_key(page_id or "__default__", access_token)
     if cache_key not in _ig_business_id_cache:
         try:
             _ig_business_id_cache[cache_key] = meta_api.get_instagram_business_account_id(page_id=page_id, access_token=access_token)
@@ -108,8 +110,9 @@ def invalidate_ig_business_id_cache(page_id: "str | None") -> None:
     saqlangan bo'lsa) olib tashlaydi, aks holda keyingi sinxronizatsiya
     process qayta ishga tushmaguncha eski (noto'g'ri) natijani qaytarib
     davom etardi."""
-    cache_key = page_id or "__default__"
-    _ig_business_id_cache.pop(cache_key, None)
+    prefix = (page_id or "__default__") + "|"
+    for key in [k for k in _ig_business_id_cache if str(k).startswith(prefix)]:
+        _ig_business_id_cache.pop(key, None)
 
 
 def _message_sender(raw_msg: dict, ig_business_id: "str | None") -> str:

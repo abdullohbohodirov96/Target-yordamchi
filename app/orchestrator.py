@@ -754,7 +754,10 @@ def _execute_replace_creative(action: dict, *, access_token: str | None = None, 
         })
 
     new_creative = meta_api.create_ad_creative_with_new_copy(
-        page_id=page_id or meta_api.PAGE_ID,
+        # Kompaniyaning o'z tokeni bo'lsa -- global (egasi) PAGE_ID'ga TUSHMAYMIZ:
+        # reklamaning joriy kreativi qaysi sahifada bo'lsa, o'sha sahifa.
+        page_id=(page_id or (current["object_story_spec"] or {}).get("page_id")
+                 or (meta_api.PAGE_ID if not access_token else None)),
         base_story_spec=current["object_story_spec"],
         primary_text=final_primary_text,
         headline=final_headline,

@@ -1411,6 +1411,13 @@ def job_standing_tasks() -> str:
                 if desired == t.last_desired_state:
                     continue
                 access_token = creds_by_company.get(t.company_id)
+                # 2026-10-01 (audit): token bo'lmasa `access_token=None` ENV
+                # (platforma EGASINING) tokeniga tushib qolardi. ENV faqat
+                # egasining (standart) kompaniyasi uchun; boshqasida -- xato.
+                if not access_token and t.company_id != db.get_default_company_id():
+                    t.last_error = "Kompaniyaning Meta hisobi ulanmagan -- vazifa bajarilmadi."
+                    errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, t.last_error))
+                    continue
                 try:
                     (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
                     t.last_desired_state = desired

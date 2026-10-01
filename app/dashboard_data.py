@@ -45,6 +45,7 @@ from sqlalchemy import func
 import meta_api
 import kpi_bonus
 import tz_utils
+import db
 from db import get_session, Lead, FunnelStage
 
 # MUHIM (2026-08, foydalanuvchi so'rovi: "sayt sekinlashib qoldi, tezroq
@@ -342,7 +343,13 @@ def get_kpis(
     yuboriladi, CRM tomonida esa `custom_range_bounds_utc()` bilan mos
     filtr qo'yiladi. Berilmasa (None, None) -- eski xatti-harakat
     (`date_preset` orqali) o'zgarishsiz saqlanadi."""
-    cache_key = (level, date_preset, active_only, date_from or "", date_to or "", ad_account_id or "__default__")
+    # 2026-10-01 (audit): kalitda kompaniya va token ham -- natijada CRM lid/
+    # daromad raqamlari bor; bir xil reklama hisobini ikki kompaniya ulasa
+    # (agentlik) yoki B A'ning act_ ID'sini yozsa, bir-birining raqamini ko'rmasin.
+    import hashlib
+    token_tag = hashlib.sha256((access_token or "").encode()).hexdigest()[:12]
+    cache_key = (level, date_preset, active_only, date_from or "", date_to or "", ad_account_id or "__default__",
+                 db.get_current_company_id(), token_tag)
     now = time.monotonic()
     with _kpi_cache_lock:
         cached = _kpi_cache.get(cache_key)

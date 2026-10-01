@@ -546,14 +546,23 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
     ulagan) Page/token uchun Page Access Token oladi. Ikkalasi ham
     berilmasa -- eski global (ENV) `PAGE_ID`/`ACCESS_TOKEN` ishlatiladi
     (orqaga moslik: CLI skript yoki hali company-parametrsiz chaqiruvlar)."""
+    # 2026-10-01 XAVFSIZLIK (audit): kesh ILGARI faqat `page_id` bo'yicha edi --
+    # B kompaniya "Hisoblarni ulash"da A'ning (ochiq) Page ID'sini yozsa, A
+    # uchun keshlangan Page tokeni B'ga berilib, A'ning lidlari/DM'lari B'ning
+    # CRM'iga oqib ketardi. Endi kalit = (page_id, foydalanuvchi tokeni xeshi):
+    # B o'z tokeni bilan A sahifasiga token ololmaydi (Meta rad etadi). Token
+    # berilgan, Page berilmagan bo'lsa -- egasining (ENV) sahifasiga O'TILMAYDI.
+    if user_access_token and not page_id:
+        raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     resolved_page_id = page_id or PAGE_ID
     resolved_user_token = user_access_token or ACCESS_TOKEN
-    cached = _page_token_cache.get(resolved_page_id)
+    cache_key = _page_cache_key(resolved_page_id, resolved_user_token)
+    cached = _page_token_cache.get(cache_key)
     if cached is not None:
         token, fetched_at = cached
         if time.monotonic() - fetched_at < _PAGE_TOKEN_TTL_SECONDS:
             return token
-        del _page_token_cache[resolved_page_id]  # TTL tugagan -- qayta so'raladi
+        del _page_token_cache[cache_key]  # TTL tugagan -- qayta so'raladi
     if not resolved_page_id:
         raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     # 2026-09: endi umumiy `_get()` orqali -- shu bilan tarmoq xatosi/Meta'ning
@@ -569,8 +578,13 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
                 "ulanganini tekshiring."
             )
         })
-    _page_token_cache[resolved_page_id] = (token, time.monotonic())
+    _page_token_cache[cache_key] = (token, time.monotonic())
     return token
+
+
+def _page_cache_key(page_id: "str | None", user_token: "str | None") -> str:
+    import hashlib
+    return f"{page_id}|{hashlib.sha256((user_token or '').encode()).hexdigest()[:16]}"
 
 
 def invalidate_page_token_cache(page_id: "str | None") -> None:
@@ -585,8 +599,9 @@ def invalidate_page_token_cache(page_id: "str | None") -> None:
     olmadi). Bu funksiya `_save_facebook_connection()`dan (app.py) HAR
     safar chaqiriladi -- shu Page uchun eski keshni olib tashlaydi, keyingi
     chaqiruv YANGI foydalanuvchi tokenidan yangi Page Access Token oladi."""
-    if page_id and page_id in _page_token_cache:
-        del _page_token_cache[page_id]
+    if page_id:
+        for key in [k for k in _page_token_cache if k.split("|", 1)[0] == str(page_id)]:
+            del _page_token_cache[key]
 
 
 # ---------------------------------------------------------------------------

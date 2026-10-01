@@ -1674,6 +1674,9 @@ def delete_company_cascade(session, company_id: int) -> dict:
     qarang (bir yagona manba, cascade-delete VA tenant-filtri doim sinxron)."""
     counts: dict[str, int] = {}
     with unscoped():
+        # Menejerlarga bog'langan KV kalitlari (masalan `web_chat_history:{id}`)
+        # -- menejerlar o'chirilishidan OLDIN id'larini yig'ib olamiz.
+        manager_ids = {str(mid) for (mid,) in session.query(Manager.id).filter(Manager.company_id == company_id).all()}
         for model in _TENANT_FILTERED_MODELS:
             n = session.query(model).filter(model.company_id == company_id).delete(synchronize_session=False)
             counts[model.__tablename__] = n
@@ -1683,7 +1686,9 @@ def delete_company_cascade(session, company_id: int) -> dict:
         suffix = f":{company_id}"
         kv_deleted = 0
         for row in session.query(KVEntry).all():
-            if row.key.endswith(suffix):
+            if row.key.endswith(suffix) or (
+                row.key.startswith("web_chat_history:") and row.key.split(":", 1)[1] in manager_ids
+            ):
                 session.delete(row)
                 kv_deleted += 1
         counts["kv_store"] = kv_deleted

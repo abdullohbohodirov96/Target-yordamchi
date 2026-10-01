@@ -35,6 +35,7 @@ funksiya argumentlariga ham qabul qilinmaydi)."""
 import datetime as dt
 import logging
 
+import db
 import meta_api
 from db import Company, MetaEventLog
 
@@ -53,11 +54,20 @@ def _resolve_capi_credentials(company: "Company | None") -> tuple[str | None, st
     oauth_token = company.get_meta_access_token()
     if oauth_token and company.meta_pixel_id:
         return oauth_token, company.meta_pixel_id
+    # 2026-10-01 XAVFSIZLIK (audit): ILGARI bu yerda (None, None) qaytib,
+    # `meta_api.is_capi_configured(None, None)` ENV (platforma egasining)
+    # Pixel'iga tushib qolardi -- B kompaniyaning mijozlari (xeshlangan
+    # telefon/email, sotuv summasi) EGASINING Pixel'iga yuborilardi. ENV
+    # zaxirasi endi FAQAT egasining (standart) kompaniyasi uchun.
+    if company.id == db.get_default_company_id() and meta_api.PIXEL_ID and meta_api.ACCESS_TOKEN:
+        return meta_api.ACCESS_TOKEN, meta_api.PIXEL_ID
     return None, None
 
 
 def capi_credentials_configured(company: "Company | None") -> bool:
     token, dataset_id = _resolve_capi_credentials(company)
+    if not (token and dataset_id):
+        return False
     return meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token)
 
 
@@ -102,7 +112,7 @@ def _dispatch(session, lead, event_name: str, *, sale=None, value: float | None 
             company = None
 
     token, dataset_id = _resolve_capi_credentials(company)
-    if not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
+    if not (token and dataset_id) or not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
         return  # CAPI ulanmagan -- jim o'tkazib yuborish (ixtiyoriy funksiya)
 
     event_id = f"lead-{lead.id}-{event_name.lower()}{event_id_suffix}"
