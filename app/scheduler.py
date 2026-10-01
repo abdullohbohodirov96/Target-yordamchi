@@ -313,7 +313,7 @@ def job_admin_report() -> dict:
                     db.Company.meta_ad_account_id.isnot(None),
                     db.Company.meta_access_token.isnot(None),
                     db.Company.telegram_group_id.isnot(None),
-                    db.Company.is_active.is_(True),
+                    db.company_paid_up_clause(),
                     db.Company.id != default_company_id,
                 )
                 .all()
@@ -715,7 +715,7 @@ def job_watch_cycle() -> dict:
                     db.Company.meta_ad_account_id.isnot(None),
                     db.Company.meta_access_token.isnot(None),
                     db.Company.telegram_group_id.isnot(None),
-                    db.Company.is_active.is_(True),
+                    db.company_paid_up_clause(),
                     db.Company.id != default_company_id,
                 )
                 .all()
@@ -1093,7 +1093,7 @@ def job_competitor_analysis() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            companies = session.query(db.Company).filter(db.company_paid_up_clause()).all()
             company_rows = [{"id": c.id, "telegram_group_id": c.telegram_group_id} for c in companies]
     finally:
         session.close()
@@ -1182,7 +1182,7 @@ def job_followup_reminders() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            companies = session.query(db.Company).filter(db.company_paid_up_clause()).all()
             company_rows = [{"id": c.id, "tasks_group_id": c.resolved_tasks_group_id()} for c in companies]
     finally:
         session.close()
@@ -1222,7 +1222,7 @@ def job_followup_reminders() -> dict:
 
                 sent_to_managers = 0
                 if by_manager:
-                    managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys())).all()
+                    managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys()), db.Manager.is_active.is_(True)).all()
                     for m in managers:
                         if not m.telegram_user_id:
                             continue
@@ -1297,7 +1297,7 @@ def job_followup_admin_escalation() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            company_ids = [c.id for c in session.query(db.Company).filter(db.Company.is_active.is_(True)).all()]
+            company_ids = [c.id for c in session.query(db.Company).filter(db.company_paid_up_clause()).all()]
     finally:
         session.close()
 
@@ -1322,7 +1322,7 @@ def job_followup_admin_escalation() -> dict:
 
                 admins = (
                     session.query(db.Manager)
-                    .filter(db.Manager.role == "admin", db.Manager.telegram_user_id.isnot(None))
+                    .filter(db.Manager.role == "admin", db.Manager.is_active.is_(True), db.Manager.telegram_user_id.isnot(None))
                     .all()
                 )
                 if not admins:
@@ -1460,6 +1460,29 @@ def job_standing_tasks() -> str:
     return f"o'zgardi={total_changed}, xato={total_errors}"
 
 
+def _chat_still_authorized(session, chat_id, company_id) -> bool:
+    """Chat hali ham shu kompaniyaga tegishlimi va kompaniya obunasi faolmi:
+    kompaniya guruhi / vazifalar guruhi, FAOL xodimning shaxsiy chati yoki
+    (egasi kompaniyasi uchun) ENV'dagi egasi guruhlari."""
+    if company_id is None or chat_id is None:
+        return False
+    chat = str(chat_id)
+    with db.unscoped():
+        company = session.get(db.Company, company_id)
+        if company is None or not company.is_paid_up():
+            return False
+        if chat in (company.telegram_group_id, company.tasks_group_id):
+            return True
+        if company_id == db.get_default_company_id():
+            for env_name in ("TELEGRAM_AGENTS_GROUP_ID", "TELEGRAM_REPORT_GROUP_ID"):
+                if os.environ.get(env_name, "").strip() == chat:
+                    return True
+        return session.query(db.Manager.id).filter(
+            db.Manager.telegram_user_id == chat, db.Manager.company_id == company_id,
+            db.Manager.is_active.is_(True),
+        ).first() is not None
+
+
 def job_standing_reports() -> str:
     """Foydalanuvchi Telegram orqali qo'shgan QO'SHIMCHA doimiy hisobot
     vaqtlarini (`db.StandingReport`) tekshiradi -- vaqti kelgan va bugun hali
@@ -1490,7 +1513,14 @@ def job_standing_reports() -> str:
             for r in due:
                 r.last_sent_date = today_str
             session.commit()
-            due_chat_ids = [r.chat_id for r in due]
+            # 2026-10-01: kompaniya chat'dan "taxmin" qilinmaydi (ilgari noma'lum
+            # chat egasi kompaniyasiga tushardi) -- yozuvning O'Z company_id'si,
+            # va chat hali ham shu kompaniyaga tegishli bo'lsagina yuboriladi.
+            due_pairs = [
+                (r.chat_id, r.company_id or db.get_default_company_id()) for r in due
+                if _chat_still_authorized(session, r.chat_id, r.company_id or db.get_default_company_id())
+            ]
+            due_chat_ids = [c for c, _ in due_pairs]
     finally:
         session.close()
 
@@ -1500,8 +1530,7 @@ def job_standing_reports() -> str:
     default_company_id = db.get_default_company_id()
     report_cache: dict = {}
     sent = []
-    for chat_id in due_chat_ids:
-        company_id = orchestrator._company_id_for_chat(chat_id)
+    for chat_id, company_id in due_pairs:
         if company_id not in report_cache:
             fake_company = None
             if company_id is not None and company_id != default_company_id:

@@ -944,6 +944,11 @@ def _company_id_for_chat(chat_id: "int | None") -> "int | None":
     hamma kompaniyaning doimiy vazifalari bitta "standart" kompaniyaga
     yozilib qolardi. Mos kompaniya topilmasa (hali hech kim o'z guruhini
     sozlamagan) standart kompaniyaga tushadi."""
+    # 2026-10-01: Telegram ishlovi allaqachon chat kompaniyasi kontekstida
+    # (`db.scoped_as`) -- avval shuni olamiz (shaxsiy menejer chatlari ham).
+    current = db.get_current_company_id()
+    if current is not None:
+        return current
     if chat_id is None:
         return db.get_default_company_id()
     session = db.get_session()

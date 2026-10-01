@@ -2188,3 +2188,12 @@ def get_session():
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL o'rnatilmagan.")
     return SessionLocal()
+
+
+def company_paid_up_clause(now: "dt.datetime | None" = None):
+    """SQL sharti: `Company.is_paid_up()` bilan bir xil -- faol VA (muddatsiz
+    yoki muddati o'tmagan). Fon hisobotlari/AI auditlari obunasi tugagan
+    kompaniyalarga yuborilmasligi uchun."""
+    from sqlalchemy import and_, or_
+    now = now or dt.datetime.utcnow()
+    return and_(Company.is_active.is_(True), or_(Company.paid_until.is_(None), Company.paid_until >= now))

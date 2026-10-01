@@ -896,7 +896,9 @@ def _is_bot_addressed(message: dict) -> bool:
         text = message.get("text") or ""
         for ent in message.get("entities") or []:
             if ent.get("type") == "mention":
-                mention_text = text[ent["offset"]: ent["offset"] + ent["length"]]
+                # Telegram offset'lari UTF-16 birliklarida (emoji 2 birlik).
+                raw16 = text.encode("utf-16-le")
+                mention_text = raw16[ent["offset"] * 2:(ent["offset"] + ent["length"]) * 2].decode("utf-16-le", errors="ignore")
                 if mention_text.lstrip("@").lower() == bot_username:
                     return True
     return False
@@ -1304,6 +1306,10 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         # (yuqoridagi XAVFSIZLIK TUZATISHI izohi).
         company, _manager = _resolve_telegram_company(chat_id)
         if company is not None:
+            if company.id != db.get_default_company_id() and not company.is_paid_up():
+                tg_send(chat_id, "🔒 Obuna muddati tugagan yoki kompaniya to'xtatilgan. "
+                                 "AI-yordamchidan foydalanish uchun replix.uz kabinetida to'lovni yangilang.")
+                return
             if not _tg_ai_quota_ok(chat_id):
                 tg_send(chat_id, "⏳ Bugungi AI savollar limiti tugadi. Ertaga davom ettiramiz -- "
                                  "batafsil ma'lumot replix.uz kabinetida doim mavjud.")
@@ -1473,6 +1479,8 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                 # kunlik lead-vazifalari (qayta aloqa eslatmalari) uchun.
                 # HAR QANDAY menejer (nafaqat admin) ulay oladi -- pastdagi
                 # `/sozlamalar/umumiy` sahifasidagi tugma orqali.
+                if _identifier_conflict(company_id, telegram_group_id=chat_id):
+                    return "⚠️ Bu guruh boshqa kompaniyaga ulangan. Har bir kompaniya uchun alohida guruh oching."
                 c = session.get(Company, company_id)
                 c.tasks_group_id = str(chat_id)
                 session.commit()
@@ -1649,7 +1657,7 @@ def _format_standing_tasks_text(chat_id: int) -> str:
     FAQAT so'ragan chatning O'Z kompaniyasiga tegishli vazifalar
     ko'rsatiladi."""
     from db import StandingTask, StandingReport
-    company_id = orchestrator._company_id_for_chat(chat_id)
+    company_id = _telegram_chat_company_id(chat_id)  # shaxsiy chat ham (menejer orqali)
     session = get_session()
     try:
         tasks = (
@@ -1699,7 +1707,15 @@ def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
         return
     kind, item_id = raw[0], int(raw[1:])
     model = StandingTask if kind == "T" else StandingReport
-    company_id = orchestrator._company_id_for_chat(chat_id)
+    # Reklamani yoqish/o'chirish jadvalini (T) faqat egasi bekor qila oladi --
+    # oddiy menejer yoki guruh a'zosi emas.
+    if kind == "T" and not _is_owner_telegram_chat(chat_id):
+        tg_send(chat_id, _NOT_OWNER_TEXT)
+        return
+    company_id = _telegram_chat_company_id(chat_id)
+    if company_id is None:
+        tg_send(chat_id, _REGISTER_HELP_TEXT)
+        return
     session = get_session()
     try:
         obj = session.get(model, item_id)
@@ -2050,7 +2066,12 @@ def _handle_telegram_message(chat_id: int, chat_type: str, text: str, message: d
     try:
         if text.startswith("/"):
             parts = text.split()
-            handle_command(chat_id, parts[0].split("@")[0], parts[1:], chat_type)
+            cmd, _, target_bot = parts[0].partition("@")
+            # "/pause@BoshqaBot" -- boshqa botga yozilgan buyruq, bizniki emas.
+            our_bot = (_get_bot_identity().get("username") or "").lower()
+            if target_bot and our_bot and target_bot.lower() != our_bot:
+                return jsonify({"ok": True})
+            handle_command(chat_id, cmd, parts[1:], chat_type)
         elif chat_type in ("group", "supergroup") and not _is_bot_addressed(message):
             # 2026-09, XAVFSIZLIK/XARAJAT TUZATISHI: guruh chatida odamlar
             # o'zaro oddiy gaplashganda bot javob QAYTARMASLIGI kerak --
@@ -2758,6 +2779,7 @@ def _identifier_conflict(company_id: int, *, page_id=None, ad_account_id=None, t
         (Company.meta_page_id, page_id, "Bu Facebook sahifasi"),
         (Company.meta_ad_account_id, ad_account_id, "Bu reklama hisobi"),
         (Company.telegram_group_id, telegram_group_id, "Bu Telegram guruhi"),
+        (Company.tasks_group_id, telegram_group_id, "Bu Telegram guruhi"),
     )
     session = get_session()
     try:

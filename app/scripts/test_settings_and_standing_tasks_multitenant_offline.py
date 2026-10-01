@@ -243,7 +243,9 @@ def test_vazifa_off_cannot_deactivate_another_companys_task():
             assert task_a_after.is_active, "Kompaniya B, Kompaniya A'ning vazifasini bekor qila OLMASLIGI kerak"
         finally:
             session.close()
-        assert any("topilmadi" in t for _, t in sent), f"Kompaniya B'ga 'topilmadi' javobi kelishi kerak: {sent}"
+        # 2026-10-01: reklama jadvalini (T) faqat egasi bekor qila oladi --
+        # B'ga "topilmadi" YOKI "faqat egasi" rad javobi keladi.
+        assert any("topilmadi" in t or t == app_module._NOT_OWNER_TEXT for _, t in sent), f"Kompaniya B'ga rad javobi kelishi kerak: {sent}"
     print("OK: /vazifa_off endi boshqa kompaniyaning vazifasini ID bo'yicha bekor qilishga yo'l qo'ymaydi (egalik tekshiruvi qo'shildi)")
 
 

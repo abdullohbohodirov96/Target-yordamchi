@@ -166,6 +166,47 @@ def run_all():
         res = [app_module._tg_ai_quota_ok(4242) for _ in range(3)]
     check("kunlik AI limiti: 2 ta ruxsat, 3-si rad", res == [True, True, False], str(res))
 
+    # Boshqa botga yozilgan buyruq bajarilmaydi.
+    with mock.patch.object(app_module, "_get_bot_identity", return_value={"id": 1, "username": "replixbot"}), \
+         mock.patch.object(meta_api, "pause_object") as pause, mock.patch.object(app_module, "tg_send"):
+        client.post("/api/webhook", json=_upd(501, "/pause@OtherBot 1"))
+        check("/pause@BoshqaBot bajarilmadi", pause.call_count == 0)
+        client.post("/api/webhook", json=_upd(501, "/pause@ReplixBot 1"))
+        check("/pause@bizningbot bajarildi", pause.call_count == 1)
+        msg = {"text": "😀 @replixbot salom", "entities": [{"type": "mention", "offset": 3, "length": 10}]}
+        check("emoji'dan keyingi @mention taniladi", app_module._is_bot_addressed(msg))
+
+    # Obunasi tugagan kompaniya -- AI javob bermaydi.
+    s2 = db_module.get_session()
+    try:
+        with db_module.unscoped():
+            c = s2.get(db_module.Company, other_id)
+            c.paid_until = dt.datetime.utcnow() - dt.timedelta(days=1)
+            s2.commit()
+    finally:
+        s2.close()
+    sent = []
+    with mock.patch.object(app_module, "tg_send", side_effect=lambda c, t, *a, **k: sent.append(t)), \
+         mock.patch.object(app_module, "_handle_company_free_text") as ai:
+        app_module.handle_free_text(777, "salom")
+        check("muddati o'tgan kompaniya -- AI chaqirilmadi", ai.call_count == 0)
+        check("... va to'lov eslatmasi yuborildi", sent and "Obuna" in sent[0], str(sent))
+
+    import scheduler
+    s3 = db_module.get_session()
+    try:
+        check("standing hisobot: muddati o'tgan kompaniyaga yuborilmaydi",
+              not scheduler._chat_still_authorized(s3, "-100777", other_id))
+        with db_module.unscoped():
+            ids_paid = {c.id for c in s3.query(db_module.Company).filter(db_module.company_paid_up_clause()).all()}
+        check("company_paid_up_clause muddati o'tganni chiqaradi", other_id not in ids_paid and db_module.get_default_company_id() in ids_paid)
+        check("standing hisobot: egasi admin chatiga ruxsat",
+              scheduler._chat_still_authorized(s3, "501", db_module.get_default_company_id()))
+        check("standing hisobot: oddiy begona chatga yo'q",
+              not scheduler._chat_still_authorized(s3, "999999", db_module.get_default_company_id()))
+    finally:
+        s3.close()
+
     if failures:
         print(f"\n{len(failures)} ta XATO")
         sys.exit(1)
