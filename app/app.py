@@ -10205,6 +10205,7 @@ def competitors_settings():
     return render_template(
         "competitors.html", competitors=rows, query_term=query_term,
         search_results=search_results, search_error=search_error,
+        ad_library_url=_ad_library_url(query_term) if query_term else None,
         rotation_days=competitor_analytics.ROTATION_DAYS,
         competitor_limit=competitor_limit,
     )

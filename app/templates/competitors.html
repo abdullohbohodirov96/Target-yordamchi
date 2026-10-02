@@ -40,7 +40,14 @@
   </form>
 
   {% if search_error %}
-  <div class="hint-box" style="margin-top:16px">{{ t('competitors.search_error', error=search_error) }}</div>
+  {# Meta Ad Library API O'zbekistondagi tijoriy reklamalarni bermaydi va
+     ko'p ilovalarda ruxsat ("does not have permission") xatosini qaytaradi --
+     xom inglizcha xato o'rniga Ad Library'ning rasmiy sahifasiga tugma. #}
+  <div class="hint-box" style="margin-top:16px">
+    <div>{{ t('competitors.search_unavailable') }}</div>
+    <a class="btn" style="display:inline-block; margin-top:10px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }}</a>
+    <div class="text-faint" style="font-size:12px; margin-top:8px">{{ t('competitors.search_error', error=search_error) }}</div>
+  </div>
   {% elif search_results is not none %}
     {% if search_results %}
     {# 2026-09, foydalanuvchi so'rovi ("ad library'ga o'xshab variantlar
@@ -98,6 +105,7 @@
     </div>
     {% else %}
     <p class="page-subtitle" style="margin-top:16px">{{ t('competitors.no_results', q=query_term) }}</p>
+    <a class="text-dim" style="font-size:13px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }} ↗</a>
     {% endif %}
   {% endif %}
 </div>
