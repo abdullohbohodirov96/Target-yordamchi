@@ -2225,6 +2225,10 @@ def instagram_webhook_receive():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # Kirgan foydalanuvchi /login'ga qaytsa -- sidebar ichida login formasi
+    # chiqib qolmasin (dizayn auditida topilgan), /signup kabi dashboard'ga.
+    if request.method == "GET" and current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")

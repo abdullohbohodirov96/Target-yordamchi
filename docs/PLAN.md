@@ -89,6 +89,8 @@
 - [x] (2026-10-01) Narxlar: har tarif yonida Payme yechadigan so'm summasi; "--" → "—".
 - [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).
 - [x] Sinov muddati "N kun qoldi" yaxlitlash xatosi tuzatildi.
+- [x] (2026-10-02) Shablon va karusel namunalari haqiqiy professional suratlarda (Shopify Burst — tijorat uchun bepul, `static/creative_templates/photos/CREDITS.md`); matn surat ustida doim o'qiladi (avtomatik scrim + soya, WCAG kontrast). Dalil: `scripts/test_creative_scrim_offline.py`.
+- [x] (2026-10-02) Dizayn auditi (150 sahifa ko'rinishi): Target jadvali sarlavhalari o'zbekchada, voronka ranglari namuna bilan, kirgan foydalanuvchi /login'da dashboard'ga o'tadi, telefonda AI tugmasi pastki tugmalarni yopmaydi.
 
 ## ✅ Qarorlar (2026-10-01, egasi qarorni hamkorga topshirdi)
 1. **Avtopilot nashri standart PAUSED** — pul sarfi faqat egasi "Faollashtirish" bosganda. Review oynasida "Darhol yoqilsin" tanlash mumkin. (Bajarildi.)

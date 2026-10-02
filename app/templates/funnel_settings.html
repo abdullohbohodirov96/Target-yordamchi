@@ -23,7 +23,7 @@
       <label>{{ t('funnel.field_color') }}</label>
       <select name="color">
         {% for c in colors %}
-        <option value="{{ c }}">{{ c }}</option>
+        <option value="{{ c }}">{{ t('funnel.color_' ~ c) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -40,7 +40,7 @@
       <tr>
         <td><span class="badge badge-color-{{ s.color }}">{{ s.label }}</span></td>
         <td class="text-dim">{{ dict(categories).get(s.category, s.category) }}</td>
-        <td class="text-dim">{{ s.color }}</td>
+        <td><span class="color-swatch badge-color-{{ s.color }}"></span> {{ t('funnel.color_' ~ s.color) if s.color in colors else s.color }}</td>
         <td>
           <form method="post" style="display:inline">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
