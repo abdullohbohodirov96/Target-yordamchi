@@ -1481,6 +1481,8 @@ _APP_STRINGS = [
      "Meta o'z API'si orqali O'zbekistondagi oddiy (tijoriy) reklamalarni bermaydi — shuning uchun bu yerda qidiruv ishlamadi. Raqobatchining hozir ishlayotgan BARCHA reklamalarini Meta Ad Library sahifasida bepul ko'rishingiz mumkin:",
      "Meta не отдаёт через API обычную (коммерческую) рекламу в Узбекистане — поэтому поиск здесь не сработал. Все текущие объявления конкурента можно бесплатно посмотреть на странице Meta Ad Library:",
      "Meta's API doesn't return regular (commercial) ads shown in Uzbekistan, so the search here didn't work. You can see all of the competitor's running ads for free on the Meta Ad Library page:"),
+    ("competitors.adlib_videos", "Video reklamalari", "Видеореклама", "Video ads"),
+    ("competitors.adlib_all", "Barcha reklamalari", "Вся реклама", "All ads"),
     ("competitors.open_ad_library", "\"{q}\" reklamalarini Ad Library'da ochish", "Открыть рекламу «{q}» в Ad Library", "Open \"{q}\" ads in the Ad Library"),
     ("competitors.ads_active_n", "Hozir {n} ta reklama yoqilgan", "Сейчас активно объявлений: {n}", "{n} ads running now"),
     ("competitors.ads_none", "Hozir reklamasi yo'q", "Сейчас рекламы нет", "No ads running now"),

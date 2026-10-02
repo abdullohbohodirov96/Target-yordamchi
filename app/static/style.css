@@ -2515,3 +2515,8 @@ td:has(> .color-swatch) { white-space: nowrap; }
 @media (max-width: 720px) {
   .container { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Raqobatchi kartasi: Ad Library'dagi video / barcha reklamalariga havolalar. */
+.cp-card-adlib { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 13px; font-weight: 600; }
+.cp-card-adlib a { color: var(--blue); text-decoration: none; }
+.cp-card-adlib a:hover { text-decoration: underline; }

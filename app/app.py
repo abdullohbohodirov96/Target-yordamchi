@@ -10081,13 +10081,14 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     return search_results, None
 
 
-def _ad_library_url(username: str, name: "str | None" = None) -> str:
+def _ad_library_url(username: str, name: "str | None" = None, media_type: str = "all") -> str:
     """Meta Ad Library'ning rasmiy sahifasi -- raqobatchining BARCHA faol
-    reklamalari (O'zbekistondagi tijoriy reklamalar ham) ko'rinadi."""
+    reklamalari (O'zbekistondagi tijoriy reklamalar ham) ko'rinadi.
+    `media_type="video"` -- faqat video reklamalar."""
     from urllib.parse import urlencode
     return "https://www.facebook.com/ads/library/?" + urlencode({
         "active_status": "active", "ad_type": "all", "country": "ALL",
-        "q": name or username, "search_type": "keyword_unordered", "media_type": "all",
+        "q": name or username, "search_type": "keyword_unordered", "media_type": media_type,
     })
 
 
@@ -10196,6 +10197,8 @@ def competitors_settings():
                 "id": c.id, "name": c.name, "domain": c.domain,
                 "search_term": c.search_term, "is_active": c.is_active,
                 "active_ads_count": ads_count,
+                "ad_library_url": _ad_library_url(c.search_term or c.name),
+                "ad_library_video_url": _ad_library_url(c.search_term or c.name, media_type="video"),
                 "last_analyzed_at": c.last_analyzed_at.strftime("%d.%m.%Y %H:%M") if c.last_analyzed_at else None,
             })
     finally:
@@ -10206,6 +10209,7 @@ def competitors_settings():
         "competitors.html", competitors=rows, query_term=query_term,
         search_results=search_results, search_error=search_error,
         ad_library_url=_ad_library_url(query_term) if query_term else None,
+        ad_library_video_url=_ad_library_url(query_term, media_type="video") if query_term else None,
         rotation_days=competitor_analytics.ROTATION_DAYS,
         competitor_limit=competitor_limit,
     )

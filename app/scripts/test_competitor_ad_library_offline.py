@@ -297,6 +297,9 @@ with mock.patch.object(meta_api, "search_ad_library",
 with mock.patch.object(meta_api, "search_ad_library", return_value=[]):
     html = client_a.get("/settings/competitors?q=Hechnarsa").get_data(as_text=True)
     check("natija yo'q -> baribir Ad Library havolasi", "q=Hechnarsa" in html)
+html = client_a.get("/settings/competitors").get_data(as_text=True)
+check("kuzatuvdagi raqobatchi kartasida video reklamalar havolasi (media_type=video)",
+      "cp-card-adlib" in html and "media_type=video" in html)
 
 print()
 if failures:

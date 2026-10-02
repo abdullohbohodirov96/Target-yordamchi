@@ -46,6 +46,7 @@
   <div class="hint-box" style="margin-top:16px">
     <div>{{ t('competitors.search_unavailable') }}</div>
     <a class="btn" style="display:inline-block; margin-top:10px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }}</a>
+    <a class="btn-outline" style="display:inline-block; margin-top:10px; margin-left:6px; border-radius:var(--radius); text-decoration:none" href="{{ ad_library_video_url }}" target="_blank" rel="noopener">▶ {{ t('competitors.adlib_videos') }}</a>
     <div class="text-faint" style="font-size:12px; margin-top:8px">{{ t('competitors.search_error', error=search_error) }}</div>
   </div>
   {% elif search_results is not none %}
@@ -156,6 +157,12 @@
         <input type="hidden" name="competitor_id" value="{{ c.id }}">
         <button type="submit" class="btn-outline" style="border-radius:var(--radius); color:var(--bad); border-color:var(--bad-bg)">{{ t('common.delete') }}</button>
       </form>
+    </div>
+    {# Meta API O'zbekiston tijoriy reklamalarini bermaydi -- rasmiy Ad Library
+       sahifasiga bir bosishda (video / barcha reklamalar) o'tish. #}
+    <div class="cp-card-adlib">
+      <a href="{{ c.ad_library_video_url }}" target="_blank" rel="noopener">▶ {{ t('competitors.adlib_videos') }}</a>
+      <a href="{{ c.ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.adlib_all') }} ↗</a>
     </div>
   </div>
   {% endfor %}
