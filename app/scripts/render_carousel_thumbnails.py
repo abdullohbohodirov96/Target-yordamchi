@@ -71,7 +71,7 @@ def render_all() -> list[Path]:
     for style in creative_carousel.CAROUSEL_STYLES:
         scene_key, sample = SAMPLES[style["key"]]
         tpl = creative_templates.get_template(scene_key)
-        scene = base_thumbs._scene(tpl, (CARD_PX, CARD_PX))
+        scene = base_thumbs._photo_scene(tpl, (CARD_PX, CARD_PX)) or base_thumbs._scene(tpl, (CARD_PX, CARD_PX))
         base_path = tmp / f"{style['key']}_base.png"
         scene.save(base_path, format="PNG")
         cards = creative_carousel.plan_cards(sample, 4)

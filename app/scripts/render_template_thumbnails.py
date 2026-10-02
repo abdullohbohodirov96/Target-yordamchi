@@ -338,6 +338,45 @@ def _logo_is_dark(tpl: dict, scene: Image.Image, size) -> bool:
     return lum > 140
 
 
+PHOTO_DIR = OUT_DIR / "photos"
+# Kadrdagi asosiy obyekt joylashuvi (0..1) -- "cover" kesishda shu nuqta
+# markazda qoladi (standart -- markaz).
+FOCUS = {
+    "minimal_clean": (0.62, 0.55), "luxury_dark": (0.5, 0.45), "tech_gradient": (0.62, 0.5),
+    "auto_dynamic": (0.5, 0.55), "new_arrival": (0.5, 0.6), "price_tag_highlight": (0.62, 0.5),
+    "real_estate_clean": (0.5, 0.35), "fashion_editorial": (0.5, 0.3), "testimonial_quote": (0.5, 0.3),
+    "before_after_split": (0.5, 0.35), "story_fullbleed": (0.5, 0.4),
+}
+
+
+def _photo_scene(tpl: dict, size: "tuple[int, int]") -> "Image.Image | None":
+    """2026-10-01 (foydalanuvchi: "shablonlarni real shablonlarga almashtir"):
+    namuna foni -- HAQIQIY surat (Shopify Burst, litsenziya: photos/CREDITS.md),
+    obyekt markazda qoladigan "cover" kesish bilan. Matn o'qilishini
+    `creative_studio._auto_scrim` ta'minlaydi (mijozning o'z suratida ham)."""
+    path = PHOTO_DIR / f"{tpl['key']}.jpg"
+    if not path.exists():
+        return None
+    W, H = size
+    img = Image.open(path).convert("RGB")
+    scale = max(W / img.width, H / img.height)
+    nw, nh = int(img.width * scale + 0.5), int(img.height * scale + 0.5)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    fx, fy = FOCUS.get(tpl["key"], (0.5, 0.5))
+    left = min(max(0, int(fx * nw - W / 2)), nw - W)
+    top = min(max(0, int(fy * nh - H / 2)), nh - H)
+    img = img.crop((left, top, left + W, top + H))
+    if tpl["key"] == "before_after_split":
+        # "Avval" yarmi -- xira, sovuq, rangsizroq; "Keyin" -- asl surat.
+        from PIL import ImageEnhance
+        half = img.crop((0, 0, W // 2, H))
+        half = ImageEnhance.Color(half).enhance(0.35)
+        half = ImageEnhance.Brightness(half).enhance(0.82)
+        img.paste(half, (0, 0))
+        ImageDraw.Draw(img).rectangle((W // 2 - 2, 0, W // 2 + 2, H), fill=(255, 255, 255))
+    return img
+
+
 def render_all() -> list[Path]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp())
@@ -347,7 +386,7 @@ def render_all() -> list[Path]:
     written = []
     for tpl in creative_templates.CREATIVE_TEMPLATES:
         size = _thumb_size(tpl["aspect_default"])
-        scene = _scene(tpl, size)
+        scene = _photo_scene(tpl, size) or _scene(tpl, size)
         base_path = tmp / f"{tpl['key']}_base.png"
         scene.save(base_path, format="PNG")
         values = dict(_BASE)
