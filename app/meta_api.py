@@ -1542,6 +1542,12 @@ def get_lead_forms(page_id: str, *, access_token: str | None = None) -> list[dic
 # bo'lishi kerak (Meta Business Suite -> Sozlamalar -> Bog'langan hisoblar).
 # ---------------------------------------------------------------------------
 
+# Ad Library API faqat shaxsi tasdiqlangan (facebook.com/ID) odamning USER
+# tokeni bilan ishlaydi -- reklama boshqaruvidagi asosiy `META_ACCESS_TOKEN`ga
+# tegmaslik uchun alohida (ixtiyoriy) token. Bo'sh bo'lsa asosiy token.
+AD_LIBRARY_TOKEN = os.environ.get("META_AD_LIBRARY_TOKEN", "").strip()
+
+
 def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), limit: int = 30) -> list[dict]:
     """Meta Ad Library (`ads_archive`) orqali biror brend/sahifa nomi
     bo'yicha HOZIR yoki YAQINDA ishlagan reklamalarni qaytaradi (2026-08,
@@ -1566,7 +1572,7 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
         "ad_type": "ALL",
         "limit": limit,
         "fields": "id,ad_snapshot_url,page_id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time",
-    })
+    }, token=AD_LIBRARY_TOKEN or None)
     return data.get("data", [])
 
 

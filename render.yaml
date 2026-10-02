@@ -44,6 +44,9 @@ services:
         value: gpt-4o-mini
       - key: META_ACCESS_TOKEN
         sync: false
+      # Ixtiyoriy: Ad Library API uchun shaxsi tasdiqlangan odamning user tokeni.
+      - key: META_AD_LIBRARY_TOKEN
+        sync: false
       - key: META_AD_ACCOUNT_ID
         sync: false
       - key: META_PAGE_ID
