@@ -93,6 +93,11 @@ logger = logging.getLogger("target-crm")
 
 app = Flask(__name__)
 
+# Raqobatchilar: Ad Library sahifasini o'qiydigan brauzer -- yoqilgan bo'lsa
+# fonda tayyorlanadi (Docker'da allaqachon bor, native muhitda yuklab olinadi).
+import adlib_scraper  # noqa: E402
+adlib_scraper.ensure_browser_async()
+
 # 2026-09, PRODUCTION xavfsizlik hodisasi (loglarda topildi: "TOKEN_ENCRYPTION_KEY
 # HAM, FLASK_SECRET_KEY HAM sozlanmagan"): Render'da bu ikkala environment
 # o'zgaruvchi sozlanmagan bo'lib chiqdi -- ya'ni sessiya cookie'lari VA
@@ -10103,6 +10108,11 @@ def _adlib_status() -> str:
     import adlib_scraper
     if not adlib_scraper.is_enabled():
         return "Ad Library sahifasidan o'qish o'chiq (Render → Environment: ADLIB_SCRAPER=1 qo'shing)."
+    st = adlib_scraper._install_state
+    if st["status"] == "installing":
+        return "Ad Library uchun brauzer o'rnatilmoqda -- 2-3 daqiqadan keyin qayta qidiring."
+    if st["status"] == "failed":
+        return f"Brauzerni o'rnatib bo'lmadi: {st['error']}"
     if adlib_scraper.last_error:
         return f"Ad Library sahifasini o'qib bo'lmadi: {adlib_scraper.last_error}"
     return ""
