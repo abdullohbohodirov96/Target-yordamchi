@@ -55,7 +55,48 @@ class AdLibraryBlocked(Exception):
 
 
 def is_enabled() -> bool:
-    return os.environ.get("ADLIB_SCRAPER", "").strip().lower() in ("1", "true", "yes")
+    """Aniq `ADLIB_SCRAPER` qiymati ustun ("0" -- o'chiq). Berilmagan bo'lsa,
+    Render'da (Render har servisga `RENDER=true` beradi) o'zi YOQILGAN --
+    lokal/test muhitida o'chiq."""
+    raw = os.environ.get("ADLIB_SCRAPER", "").strip().lower()
+    if raw:
+        return raw in ("1", "true", "yes")
+    return bool(os.environ.get("RENDER"))
+
+
+# Brauzer (Chromium) o'rnatilganmi -- Docker'da build paytida o'rnatiladi;
+# oddiy (native) Python muhitida ilova ishga tushganda fonda o'zi o'rnatadi.
+_install_state = {"status": "unknown", "error": None}
+
+
+def _install_browser() -> None:
+    import subprocess
+    import sys
+    _install_state["status"] = "installing"
+    try:
+        r = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
+                           capture_output=True, text=True, timeout=900)
+        if r.returncode == 0:
+            _install_state.update(status="ready", error=None)
+        else:
+            _install_state.update(status="failed", error=(r.stderr or r.stdout or "")[-300:])
+    except Exception as e:  # noqa: BLE001
+        _install_state.update(status="failed", error=str(e)[:300])
+    logger.warning("adlib_scraper: brauzer o'rnatish natijasi: %s %s", _install_state["status"], _install_state["error"] or "")
+
+
+def ensure_browser_async() -> None:
+    """Ilova ishga tushganda chaqiriladi: yoqilgan bo'lsa, Chromium'ni fonda
+    o'rnatadi (allaqachon o'rnatilgan bo'lsa bir zumda tugaydi)."""
+    if not is_enabled() or _install_state["status"] in ("installing", "ready"):
+        return
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        _install_state.update(status="failed", error="playwright paketi o'rnatilmagan")
+        return
+    _install_state["status"] = "installing"
+    threading.Thread(target=_install_browser, name="adlib-browser-install", daemon=True).start()
 
 
 def library_url(terms: str, country: str = "UZ", active_only: bool = True) -> str:
@@ -219,6 +260,8 @@ def search(terms: str, country: str = "UZ", limit: int = 30) -> list[dict]:
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_SECONDS:
         return hit[1]
+    if _install_state["status"] == "installing":
+        raise AdLibraryBlocked("brauzer o'rnatilmoqda -- 2-3 daqiqadan keyin qayta urinib ko'ring")
     if not _lock.acquire(timeout=LOCK_WAIT_SECONDS):
         raise AdLibraryBlocked("band (boshqa qidiruv ketmoqda)")
     try:
