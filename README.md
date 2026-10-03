@@ -99,6 +99,32 @@ kam uchraydigan holat), xatolik matni to'g'ridan-to'g'ri Telegram
 xabarida ko'rinadi — shunda Meta Business Manager'da tokenga `ads_read`
 ruxsatini qo'shish kifoya qiladi, yangi ilova yaratish shart emas.
 
+### 3c. Competitor Ads / Ad Library moduli (2026-10)
+
+Sahifa: **Raqobatchilar → Reklamalar paneli** (`/raqobatchilar/reklamalar`).
+Kompaniya nomi, Facebook sahifa havolasi yoki Page ID bo'yicha faol
+reklamalar: video/rasm, matn, sarlavha, CTA, platforma, holat, boshlangan
+sana; har birida **AI tahlil** (Hook, Offer, CTA, Pain point, Creative type,
+Lead magnet).
+
+Tuzilma (`app/services/ad_library/`): `provider.py` (interfeys + tanlov),
+`providers/web.py` (Ad Library veb-sahifasi, token kerak emas),
+`providers/apify.py`, `providers/meta_api.py`, `query.py`, `analyzer.py`,
+`store.py`. API: `GET /api/ad-library/search?q=&country=UZ&active=1`,
+`POST /api/ad-library/analyze {"ad_id": "..."}`.
+
+| O'zgaruvchi | Majburiy | Ma'nosi |
+|---|---|---|
+| `AD_LIBRARY_PROVIDER` | yo'q | `auto` (standart: web → apify → meta_api), `web`, `apify`, `meta_api` |
+| `ADLIB_SCRAPER` | yo'q | Render'da standart yoqilgan; `0` — veb-sahifadan o'qish o'chiq |
+| `APIFY_TOKEN` | yo'q | Apify provider uchun |
+| `APIFY_AD_LIBRARY_ACTOR` | yo'q | standart `curious_coder~facebook-ads-library-scraper` |
+| `META_AD_LIBRARY_TOKEN` | yo'q | rasmiy API uchun shaxsi tasdiqlangan user token |
+| `OPENAI_API_KEY` | AI uchun | "AI tahlil" tugmasi (mavjud kalit) |
+| `AD_LIBRARY_AI_DAILY_LIMIT` | yo'q | kompaniya bo'yicha kunlik AI tahlil soni (standart 40) |
+
+Test: `cd app && python3 scripts/test_competitor_ads_module_offline.py`.
+
 ### 4. Birinchi admin hisobni yarating
 
 Deploy tugagach, Render dashboard → sizning service → **Shell** bo'limini

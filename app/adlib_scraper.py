@@ -99,11 +99,14 @@ def ensure_browser_async() -> None:
     threading.Thread(target=_install_browser, name="adlib-browser-install", daemon=True).start()
 
 
-def library_url(terms: str, country: str = "UZ", active_only: bool = True) -> str:
-    return "https://www.facebook.com/ads/library/?" + urlencode({
-        "active_status": "active" if active_only else "all", "ad_type": "all", "country": country,
-        "q": terms, "search_type": "keyword_unordered", "media_type": "all",
-    })
+def library_url(terms: str, country: str = "UZ", active_only: bool = True, page_id: "str | None" = None) -> str:
+    params = {"active_status": "active" if active_only else "all", "ad_type": "all", "country": country,
+              "media_type": "all"}
+    if page_id:
+        params.update(view_all_page_id=page_id, search_type="page")
+    else:
+        params.update(q=terms, search_type="keyword_unordered")
+    return "https://www.facebook.com/ads/library/?" + urlencode(params)
 
 
 def _iso(epoch) -> "str | None":
@@ -157,6 +160,13 @@ def normalize(node: dict) -> "dict | None":
         "link_url": s.get("link_url"),
         "platforms": node.get("publisher_platform") or [],
         "page_picture_url": s.get("page_profile_picture_url"),
+        "page_profile_uri": s.get("page_profile_uri"),
+        "headline": title or None,
+        "primary_text": body or None,
+        "link_caption": s.get("caption"),
+        "is_active": is_active,
+        "image_url": (images[0].get("resized_image_url") or images[0].get("original_image_url")) if images else None,
+        "card_images": [c.get("resized_image_url") for c in cards if c.get("resized_image_url")][:10],
         "page_like_count": s.get("page_like_count"),
         "collation_count": node.get("collation_count") or 1,
     }
@@ -188,7 +198,7 @@ def parse_results(text: str) -> list[dict]:
     return out
 
 
-def _fetch(terms: str, country: str, limit: int) -> list[dict]:
+def _fetch(terms: str, country: str, limit: int, page_id: "str | None" = None, active_only: bool = True) -> list[dict]:
     from playwright.sync_api import sync_playwright  # faqat yoqilganda kerak
 
     launch_kwargs = {"args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]}
@@ -218,7 +228,8 @@ def _fetch(terms: str, country: str, limit: int) -> list[dict]:
                                     ignore_https_errors=bool(os.environ.get("ADLIB_IGNORE_HTTPS_ERRORS")))
             page.route("**/*", lambda r: r.abort() if r.request.resource_type in ("image", "media", "font", "stylesheet") else r.continue_())
             page.on("response", on_response)
-            page.goto(library_url(terms, country), wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
+            page.goto(library_url(terms, country, active_only=active_only, page_id=page_id),
+                      wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
             # Birinchi javob ko'pincha bot-tekshiruv sahifasi: u o'zi POST qilib
             # sahifani qayta yuklaydi -- natija bloki paydo bo'lguncha kutamiz.
             html = ""
@@ -251,12 +262,15 @@ def _fetch(terms: str, country: str, limit: int) -> list[dict]:
             browser.close()
 
 
-def search(terms: str, country: str = "UZ", limit: int = 30) -> list[dict]:
-    """Keshli qidiruv. Xato/to'siqda `AdLibraryBlocked` ko'taradi."""
+def search(terms: str, country: str = "UZ", limit: int = 30, *, page_id: "str | None" = None,
+           active_only: bool = True) -> list[dict]:
+    """Keshli qidiruv (kalit so'z yoki `page_id` bo'yicha). Xato/to'siqda
+    `AdLibraryBlocked` ko'taradi."""
     terms = (terms or "").strip()
-    if not terms:
+    page_id = (str(page_id).strip() if page_id else None) or None
+    if not terms and not page_id:
         return []
-    key = (terms.lower(), country, limit)
+    key = (terms.lower(), country, limit, page_id, active_only)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_SECONDS:
         return hit[1]
@@ -269,7 +283,7 @@ def search(terms: str, country: str = "UZ", limit: int = 30) -> list[dict]:
         if hit and time.time() - hit[0] < CACHE_TTL_SECONDS:
             return hit[1]
         try:
-            ads = _fetch(terms, country, limit)
+            ads = _fetch(terms, country, limit, page_id=page_id, active_only=active_only)
         except AdLibraryBlocked:
             raise
         except Exception as e:  # noqa: BLE001 -- brauzer/tarmoq xatosi

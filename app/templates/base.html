@@ -301,7 +301,7 @@
       {% set _creative_eps = ['creative_list', 'creative_templates_gallery', 'creative_new', 'creative_editor'] %}
       {% set _lead_analytics_eps = ['lead_analytics_page'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
-      {% set _competitors_eps = ['competitors_settings', 'competitor_detail', 'ig_benchmark_page'] %}
+      {% set _competitors_eps = ['competitors_settings', 'competitor_detail', 'ig_benchmark_page', 'competitor_ads_page'] %}
       {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_business_profile', 'settings_brand_kit', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'funnel_settings', 'custom_fields_settings', 'standing_tasks_settings', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {# 2026-09, foydalanuvchi so'rovi ("habarlani alohida panelga chiqaz
          side barga"): ilgari "Instagram xabarlar" Marketing guruhi ichida,
@@ -580,9 +580,10 @@
         <a href="{{ url_for('target_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'target_page' }}">{{ navicon('target') }}<span>{{ t('shell.sub_target') }}</span></a>
         <a href="{{ url_for('smm_report') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'smm_report' }}">{{ navicon('analytics') }}<span>{{ t('shell.sub_smm') }}</span></a>
       </nav>
-      {% elif request.endpoint in ('competitors_settings', 'competitor_detail', 'ig_benchmark_page') %}
+      {% elif request.endpoint in ('competitors_settings', 'competitor_detail', 'ig_benchmark_page', 'competitor_ads_page') %}
       <nav class="page-subnav">
         <a href="{{ url_for('competitors_settings') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('competitors_settings', 'competitor_detail') }}">{{ navicon('radar') }}<span>{{ t('igb.tab_ads') }}</span></a>
+        <a href="{{ url_for('competitor_ads_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'competitor_ads_page' }}">{{ navicon('target') }}<span>{{ t('cads.tab') }}</span></a>
         <a href="{{ url_for('ig_benchmark_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'ig_benchmark_page' }}">{{ navicon('analytics') }}<span>{{ t('igb.title') }}</span></a>
       </nav>
       {% elif request.endpoint in _boshqaruv_eps %}

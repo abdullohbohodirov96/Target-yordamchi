@@ -10151,6 +10151,81 @@ def ig_benchmark_page():
     )
 
 
+# ---------------------------------------------------------------------------
+# Competitor Ads / Ad Library moduli (2026-10): services/ad_library/ ga qarang.
+# Sahifa bo'sh holda ochiladi, qidiruv va "AI Analyze" JSON API orqali (loading /
+# empty / error holatlari front-end'da).
+# ---------------------------------------------------------------------------
+
+@app.route("/raqobatchilar/reklamalar", methods=["GET"])
+@login_required
+@module_required("settings")
+def competitor_ads_page():
+    from services import ad_library
+    from services.ad_library import analyzer as adlib_analyzer
+    try:
+        chain = [p.label for p in ad_library.provider_chain()]
+    except ad_library.AdLibraryError:
+        chain = []
+    return render_template(
+        "competitor_ads.html", initial_q=(request.args.get("q") or "").strip()[:200],
+        providers=chain, ai_limit=adlib_analyzer.daily_limit(),
+        ai_used=adlib_analyzer.usage_today(current_user.company_id),
+    )
+
+
+@app.route("/api/ad-library/search", methods=["GET"])
+@login_required
+@module_required("settings")
+def api_ad_library_search():
+    from services import ad_library
+    from services.ad_library import store as adlib_store
+    raw = (request.args.get("q") or "").strip()
+    if len(raw) < 2:
+        return jsonify({"ok": False, "error_code": "bad_query",
+                        "error": lang_module.translate("cads.err_short_query", g.lang)}), 400
+    query = ad_library.parse_query(
+        raw, country=request.args.get("country") or "UZ",
+        active_only=request.args.get("active", "1") != "0",
+        limit=request.args.get("limit", type=int) or 30,
+    )
+    fallback_url = adlib_scraper.library_url(query.term or query.page_vanity or raw, query.country,
+                                             active_only=query.active_only, page_id=query.page_id)
+    try:
+        ads, provider = ad_library.search_ads(query)
+    except ad_library.AdLibraryError as e:
+        return jsonify({"ok": False, "error_code": e.code, "error": str(e), "provider": e.provider,
+                        "ad_library_url": fallback_url}), 502
+    adlib_store.remember(current_user.company_id, ads)
+    return jsonify({
+        "ok": True, "provider": provider, "ad_library_url": fallback_url,
+        "query": {"kind": query.kind, "term": query.term, "page_id": query.page_id,
+                  "page_vanity": query.page_vanity, "country": query.country},
+        "ads": [a.to_dict() for a in ads],
+    })
+
+
+@app.route("/api/ad-library/analyze", methods=["POST"])
+@login_required
+@module_required("settings")
+def api_ad_library_analyze():
+    from services.ad_library import analyzer as adlib_analyzer
+    from services.ad_library import store as adlib_store
+    payload = request.get_json(silent=True) or {}
+    ad = adlib_store.get(current_user.company_id, str(payload.get("ad_id") or ""))
+    if ad is None:
+        return jsonify({"ok": False, "error_code": "not_found",
+                        "error": lang_module.translate("cads.err_ad_expired", g.lang)}), 404
+    try:
+        res = adlib_analyzer.analyze_ad(ad, company_id=current_user.company_id)
+    except adlib_analyzer.AnalyzeLimitReached as e:
+        return jsonify({"ok": False, "error_code": e.code, "error": str(e)}), 429
+    except adlib_analyzer.AnalyzeError as e:
+        return jsonify({"ok": False, "error_code": e.code, "error": str(e)}), 502
+    return jsonify({"ok": True, **res, "used_today": adlib_analyzer.usage_today(current_user.company_id),
+                    "limit": adlib_analyzer.daily_limit()})
+
+
 @app.route("/settings/competitors", methods=["GET", "POST"])
 @login_required
 @module_required("settings")

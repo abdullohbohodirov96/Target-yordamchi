@@ -49,6 +49,15 @@ services:
         sync: false
       # Raqobatchi reklamalarini Ad Library veb-sahifasidan o'qish (video, matn,
       # sana). "1" -- yoqilgan; bo'sh -- o'chiq. Xotira yetmasa o'chiring.
+      # Competitor Ads moduli: provider tanlovi (auto | web | apify | meta_api).
+      - key: AD_LIBRARY_PROVIDER
+        value: auto
+      # Ixtiyoriy: Apify provider tokeni (auto navbatida web'dan keyin).
+      - key: APIFY_TOKEN
+        sync: false
+      # "AI tahlil" tugmasi uchun kompaniya bo'yicha kunlik limit.
+      - key: AD_LIBRARY_AI_DAILY_LIMIT
+        value: "40"
       - key: ADLIB_SCRAPER
         value: "1"
       - key: META_AD_ACCOUNT_ID
