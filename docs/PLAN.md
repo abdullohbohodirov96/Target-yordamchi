@@ -90,6 +90,7 @@
 - [x] Dizayn: logo 2 marta chiqishi, login til tanlagichi, telefon sarlavhasi, bo'sh sidebar qutisi, dashboard grafik o'qi, lidlar qidiruvi — tuzatildi (2026-09-30).
 - [x] Sinov muddati "N kun qoldi" yaxlitlash xatosi tuzatildi.
 - [x] (2026-10-02) Shablon va karusel namunalari haqiqiy professional suratlarda (Shopify Burst — tijorat uchun bepul, `static/creative_templates/photos/CREDITS.md`); matn surat ustida doim o'qiladi (avtomatik scrim + soya, WCAG kontrast). Dalil: `scripts/test_creative_scrim_offline.py`.
+- [x] (2026-10-03) Raqobatchilar: Ad Library veb-sahifasidan o'qish (`adlib_scraper.py`, `ADLIB_SCRAPER=1`) — qidiruvda video/rasm kartochkalar, qachondan beri ishlayotgani; tahlil AI'siz (`competitor_insights.py`). Dalil: `scripts/test_adlib_scraper_offline.py`, `scripts/test_competitor_insights_offline.py`.
 - [x] (2026-10-02) Dizayn auditi (150 sahifa ko'rinishi): Target jadvali sarlavhalari o'zbekchada, voronka ranglari namuna bilan, kirgan foydalanuvchi /login'da dashboard'ga o'tadi, telefonda AI tugmasi pastki tugmalarni yopmaydi.
 
 ## ✅ Qarorlar (2026-10-01, egasi qarorni hamkorga topshirdi)

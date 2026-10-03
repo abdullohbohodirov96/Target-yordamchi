@@ -94,10 +94,32 @@
         {% if r.ads %}
         <div class="cp-result-ads">
           {% for ad in r.ads %}
+          {% if ad.preview_image_url %}
+          {# Ad Library sahifasidan: haqiqiy video/rasm, qachondan beri ishlayapti. #}
+          <div class="cp-media-ad">
+            <div class="cp-media-box">
+              {% if ad.video_url %}
+              <video controls preload="none" playsinline poster="{{ ad.preview_image_url }}" src="{{ ad.video_url }}"></video>
+              <span class="cp-media-tag">▶ {{ t('competitors.media_video') }}</span>
+              {% else %}
+              <img src="{{ ad.preview_image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">
+              {% endif %}
+            </div>
+            <div class="cp-media-body">
+              {% if ad.running_days is not none %}<div class="cp-media-days{% if ad.running_days >= 14 %} is-long{% endif %}">{{ t('competitors.running_since', d=ad.started, n=ad.running_days) }}</div>{% endif %}
+              <div class="cp-media-text">{{ ad.snippet or t('competitors.no_ad_text') }}</div>
+              <div class="cp-media-foot">
+                {% if ad.cta_text %}<span class="badge badge-color-dim">{{ ad.cta_text }}</span>{% endif %}
+                {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener">{{ t('competitors.view') }} ↗</a>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% else %}
           <div class="cp-result-ad">
             <div class="cp-result-snippet" style="white-space:normal">{{ ad.snippet or t('competitors.no_ad_text') }}</div>
             {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12px; flex-shrink:0">{{ t('competitors.view') }}</a>{% endif %}
           </div>
+          {% endif %}
           {% endfor %}
         </div>
         {% endif %}

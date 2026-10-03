@@ -10010,14 +10010,19 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     tracked_names = {n.lower() for (n,) in session.query(Competitor.name).all()}
     grouped: dict[str, dict] = {}
     order: list[str] = []
-    MAX_AD_EXAMPLES = 2
+    # Ad Library sahifasidan (adlib_scraper) kelgan natijada video/rasm bor --
+    # ko'proq namuna ko'rsatamiz.
+    has_media = any(ad.get("preview_image_url") for ad in raw_results)
+    MAX_AD_EXAMPLES = 4 if has_media else 2
+    now_utc = dt.datetime.utcnow()
     for ad in raw_results:
         page_name = (ad.get("page_name") or "").strip()
         if not page_name:
             continue
         key = page_name.lower()
         if key not in grouped:
-            grouped[key] = {"page_name": page_name, "page_id": ad.get("page_id"), "ads": [], "active_count": 0}
+            grouped[key] = {"page_name": page_name, "page_id": ad.get("page_id"), "ads": [], "active_count": 0,
+                            "page_picture_url": ad.get("page_picture_url"), "page_like_count": ad.get("page_like_count")}
             order.append(key)
         bucket = grouped[key]
         # `ad_delivery_stop_time` bo'sh/yo'q bo'lsa -- reklama HALI ham
@@ -10031,9 +10036,19 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
         if len(bucket["ads"]) >= MAX_AD_EXAMPLES:
             continue
         bodies = ad.get("ad_creative_bodies") or []
+        started = None
+        try:
+            started = dt.datetime.strptime((ad.get("ad_delivery_start_time") or "")[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
         bucket["ads"].append({
             "snippet": (bodies[0].strip().replace("\n", " ")[:200] if bodies else ""),
             "snapshot_url": ad.get("ad_snapshot_url"),
+            "preview_image_url": ad.get("preview_image_url"),
+            "video_url": ad.get("video_url"),
+            "cta_text": ad.get("cta_text"),
+            "started": started.strftime("%d.%m.%Y") if started else None,
+            "running_days": max(0, (now_utc - started).days) if started else None,
         })
 
     # 2026-09, foydalanuvchi so'rovi ("brendlarni aniq logo, nechta
@@ -10056,13 +10071,15 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     for key in order:
         bucket = grouped[key]
         profile = {}
-        if bucket.get("page_id"):
+        if bucket.get("page_id") and not bucket.get("page_picture_url"):
             try:
                 profile = meta_api.get_page_public_profile(bucket["page_id"])
             except Exception:
                 profile = {}
-        bucket["picture_url"] = profile.get("picture_url")
+        bucket["picture_url"] = profile.get("picture_url") or bucket.get("page_picture_url")
         fan_count = profile.get("fan_count")
+        if not isinstance(fan_count, int) and str(bucket.get("page_like_count") or "").isdigit():
+            fan_count = int(bucket["page_like_count"])
         bucket["fan_count_display"] = (
             f"{fan_count:,}".replace(",", " ") + " obunachi" if isinstance(fan_count, int) else None
         )
@@ -10235,6 +10252,11 @@ def competitors_live_search():
     """
     query_term = (request.args.get("q") or "").strip()
     if len(query_term) < 2:
+        return jsonify({"results": []})
+    import adlib_scraper
+    if adlib_scraper.is_enabled():
+        # Har harf bosilganda brauzer ochilmasin (~10 s, ko'p xotira) --
+        # to'liq natija "Qidirish" bosilganda chiqadi.
         return jsonify({"results": []})
     session = get_session()
     try:

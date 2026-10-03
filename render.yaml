@@ -47,6 +47,10 @@ services:
       # Ixtiyoriy: Ad Library API uchun shaxsi tasdiqlangan odamning user tokeni.
       - key: META_AD_LIBRARY_TOKEN
         sync: false
+      # Raqobatchi reklamalarini Ad Library veb-sahifasidan o'qish (video, matn,
+      # sana). "1" -- yoqilgan; bo'sh -- o'chiq. Xotira yetmasa o'chiring.
+      - key: ADLIB_SCRAPER
+        value: "1"
       - key: META_AD_ACCOUNT_ID
         sync: false
       - key: META_PAGE_ID

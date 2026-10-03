@@ -2520,3 +2520,16 @@ td:has(> .color-swatch) { white-space: nowrap; }
 .cp-card-adlib { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 13px; font-weight: 600; }
 .cp-card-adlib a { color: var(--blue); text-decoration: none; }
 .cp-card-adlib a:hover { text-decoration: underline; }
+
+/* Raqobatchi qidiruvi: Ad Library sahifasidan kelgan video/rasm reklamalar. */
+.cp-result-ads:has(.cp-media-ad) { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; padding: 12px 0 4px; }
+.cp-media-ad { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); display: flex; flex-direction: column; }
+.cp-media-box { position: relative; aspect-ratio: 4 / 5; background: #0f172a; }
+.cp-media-box video, .cp-media-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cp-media-tag { position: absolute; top: 8px; left: 8px; background: rgba(15, 23, 42, .75); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; pointer-events: none; }
+.cp-media-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.cp-media-days { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.cp-media-days.is-long { color: var(--good); }
+.cp-media-text { font-size: 13px; line-height: 1.4; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cp-media-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.cp-media-foot a { color: var(--blue); text-decoration: none; font-weight: 600; }

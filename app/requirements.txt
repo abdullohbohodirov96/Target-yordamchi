@@ -29,3 +29,6 @@ alembic==1.13.2
 # o'zgaruvchilari sozlanmasa bu paket import qilinadi, lekin hech qanday
 # tarmoq so'rovi yubormaydi (xavfsiz no-op).
 boto3==1.43.95
+# 2026-10: raqobatchi reklamalarini Meta Ad Library veb-sahifasidan o'qish
+# (`adlib_scraper.py`, faqat ADLIB_SCRAPER=1 bo'lsa ishlatiladi).
+playwright==1.48.0

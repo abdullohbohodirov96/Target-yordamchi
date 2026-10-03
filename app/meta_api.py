@@ -1565,6 +1565,15 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
     # uchun keyinroq `get_page_public_profile(page_id)` alohida so'raladi
     # (ads_archive'ning o'zi bu ma'lumotni bermaydi) -- shuning uchun
     # page_id shu yerda so'ralishi shart.
+    # 2026-10: rasmiy API O'zbekiston tijoriy reklamalarini bermaydi --
+    # `ADLIB_SCRAPER=1` bo'lsa avval Ad Library veb-sahifasidan o'qiladi
+    # (`adlib_scraper`), to'siq/xato bo'lsa rasmiy API'ga qaytiladi.
+    import adlib_scraper
+    if adlib_scraper.is_enabled():
+        try:
+            return adlib_scraper.search(search_terms, country=countries[0] if countries else "UZ", limit=limit)
+        except adlib_scraper.AdLibraryBlocked as e:
+            logger.warning("Ad Library sahifasidan o'qib bo'lmadi (%s), rasmiy API'ga qaytilmoqda", e)
     data = _get("ads_archive", {
         "search_terms": search_terms,
         "ad_reached_countries": list(countries),
