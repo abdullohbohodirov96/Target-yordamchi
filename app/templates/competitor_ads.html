@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}{{ t('cads.title') }} — Replix{% endblock %}
+{% block content %}
+{# 2026-10: Competitor Ads / Ad Library moduli -- services/ad_library/ ga qarang.
+   Qidiruv va AI tahlil JSON API orqali; loading / empty / error holatlari shu yerda. #}
+<style>
+  .cads-form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .cads-form .field { margin:0; }
+  .cads-form .f-q { flex:1 1 320px; }
+  .cads-form .f-country { flex:0 0 150px; }
+  .cads-form .f-active { flex:0 0 auto; display:flex; align-items:center; gap:6px; height:38px; font-size:13.5px; }
+  .cads-form .f-active input { width:auto; margin:0; }
+  .cads-form > button { height:38px; padding:0 20px; margin:0; }
+  .cads-hint { font-size:12.5px; color:var(--text-faint); margin-top:8px; }
+  .cads-summary { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin:20px 0 12px; }
+  .cads-sum-page { display:flex; gap:12px; align-items:center; min-width:0; flex:1 1 260px; }
+  .cads-avatar { width:44px; height:44px; border-radius:50%; object-fit:cover; background:var(--border-light); flex:0 0 44px; display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--text-dim); }
+  .cads-sum-name { font-weight:800; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cads-sum-meta { font-size:12.5px; color:var(--text-dim); }
+  .cads-stats { display:flex; gap:8px; flex-wrap:wrap; }
+  .cads-stat { border:1px solid var(--border); border-radius:10px; padding:6px 12px; background:var(--card); text-align:center; min-width:76px; }
+  .cads-stat b { display:block; font-size:18px; font-variant-numeric:tabular-nums; }
+  .cads-stat span { font-size:11.5px; color:var(--text-dim); }
+  .cads-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .cads-chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .cads-chip { border:1px solid var(--border); background:var(--card); color:var(--ink); border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer; box-shadow:none; }
+  .cads-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .cads-chip:hover { transform:none; }
+  .cads-sort { width:auto; max-width:260px; height:34px; padding:0 10px; font-size:13px; }
+  .cads-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; }
+  .cads-card { border:1px solid var(--border); border-radius:var(--radius-lg, 14px); background:var(--card); overflow:hidden; display:flex; flex-direction:column; box-shadow:var(--shadow-sm); }
+  .cads-media { position:relative; aspect-ratio:1 / 1; background:#0f172a; }
+  .cads-media video, .cads-media img { width:100%; height:100%; object-fit:cover; display:block; }
+  .cads-media-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:13px; padding:16px; text-align:center; }
+  .cads-badge { position:absolute; top:10px; left:10px; background:rgba(15,23,42,.78); color:#fff; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; pointer-events:none; }
+  .cads-status { position:absolute; top:10px; right:10px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; pointer-events:none; }
+  .cads-status.on { background:#dcfce7; color:#166534; }
+  .cads-status.off { background:#f1f5f9; color:#475569; }
+  .cads-body { padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .cads-head { display:flex; gap:8px; align-items:center; min-width:0; }
+  .cads-head img, .cads-head .cads-avatar { width:28px; height:28px; flex:0 0 28px; font-size:12px; }
+  .cads-head-name { font-weight:700; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cads-meta { font-size:12px; color:var(--text-dim); display:flex; gap:6px; flex-wrap:wrap; }
+  .cads-meta .long { color:var(--good); font-weight:700; }
+  .cads-headline { font-weight:700; font-size:14px; line-height:1.35; }
+  .cads-text { font-size:13px; line-height:1.45; color:var(--ink); white-space:pre-line; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+  .cads-text.open { -webkit-line-clamp:unset; display:block; }
+  .cads-more { font-size:12px; color:var(--blue); background:none; border:none; padding:0; box-shadow:none; cursor:pointer; align-self:flex-start; }
+  .cads-more:hover { transform:none; text-decoration:underline; }
+  .cads-tags { display:flex; gap:6px; flex-wrap:wrap; }
+  .cads-tag { font-size:11.5px; border:1px solid var(--border); border-radius:6px; padding:2px 7px; color:var(--text-dim); }
+  .cads-tag.cta { border-color:var(--blue); color:var(--blue); font-weight:700; }
+  .cads-actions { margin-top:auto; display:flex; gap:8px; align-items:center; padding-top:6px; }
+  .cads-actions .cads-ai { flex:1; height:36px; padding:0 12px; font-size:13px; }
+  .cads-actions a { font-size:12.5px; font-weight:600; color:var(--blue); text-decoration:none; white-space:nowrap; }
+  .cads-ai-box { border-top:1px dashed var(--border); padding-top:10px; display:flex; flex-direction:column; gap:7px; font-size:12.5px; }
+  .cads-ai-row b { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); margin-bottom:1px; }
+  .cads-ai-row.idea { background:var(--blue-bg); border-radius:8px; padding:8px 10px; }
+  .cads-ai-err { color:var(--bad); }
+  .cads-state { text-align:center; padding:48px 16px; border:1px dashed var(--border); border-radius:var(--radius-lg, 14px); color:var(--text-dim); }
+  .cads-state h3 { margin:0 0 6px; color:var(--ink); font-size:16px; }
+  .cads-state .btn, .cads-state button { margin-top:12px; }
+  .cads-state.err { border-color:var(--warn); background:var(--warn-bg); color:var(--ink); }
+  .cads-skel { border-radius:var(--radius-lg, 14px); border:1px solid var(--border); overflow:hidden; background:var(--card); }
+  .cads-skel .m { aspect-ratio:1/1; }
+  .cads-skel .l { height:12px; margin:12px 14px; border-radius:6px; }
+  .cads-skel .m, .cads-skel .l { background:linear-gradient(90deg, var(--border-light) 25%, var(--border) 50%, var(--border-light) 75%); background-size:200% 100%; animation:cads-shimmer 1.2s infinite; }
+  @keyframes cads-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .cads-skel .m, .cads-skel .l { animation:none; } }
+  .cads-loading-note { font-size:13px; color:var(--text-dim); margin:16px 0 10px; }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>{{ t('cads.title') }}</h1>
+    <p class="page-subtitle">{{ t('cads.subtitle') }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <form class="cads-form" id="cadsForm" autocomplete="off">
+    <div class="field f-q">
+      <label for="cadsQ">{{ t('cads.q_label') }}</label>
+      <input type="text" id="cadsQ" name="q" value="{{ initial_q }}" placeholder="{{ t('cads.q_placeholder') }}" required minlength="2" maxlength="200">
+    </div>
+    <div class="field f-country">
+      <label for="cadsCountry">{{ t('cads.country') }}</label>
+      <select id="cadsCountry" name="country">
+        <option value="UZ" selected>{{ t('cads.country_uz') }}</option>
+        <option value="KZ">{{ t('cads.country_kz') }}</option>
+        <option value="RU">{{ t('cads.country_ru') }}</option>
+        <option value="ALL">{{ t('cads.country_all') }}</option>
+      </select>
+    </div>
+    <label class="f-active"><input type="checkbox" id="cadsActive" checked> {{ t('cads.active_only') }}</label>
+    <button type="submit" id="cadsBtn">{{ t('cads.search_btn') }}</button>
+  </form>
+  <div class="cads-hint">{{ t('cads.hint') }}{% if providers %} · {{ t('cads.source') }}: {{ providers|join(' → ') }}{% endif %} · {{ t('cads.ai_quota', used=ai_used, limit=ai_limit) }}</div>
+</div>
+
+<div id="cadsResult" aria-live="polite">
+  <div class="cads-state" style="margin-top:20px">
+    <h3>{{ t('cads.start_title') }}</h3>
+    <div>{{ t('cads.start_text') }}</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var I = {{ {
+    'loading': t('cads.loading'), 'empty_title': t('cads.empty_title'), 'empty_text': t('cads.empty_text'),
+    'err_title': t('cads.err_title'), 'retry': t('cads.retry'), 'open_adlib': t('cads.open_adlib'),
+    'active': t('cads.status_active'), 'inactive': t('cads.status_inactive'), 'since': t('cads.since'),
+    'days': t('cads.days'), 'variants': t('cads.variants'), 'more': t('cads.more'), 'less': t('cads.less'),
+    'ai_btn': t('cads.ai_btn'), 'ai_loading': t('cads.ai_loading'), 'ai_cached': t('cads.ai_cached'),
+    'view': t('cads.view'), 'no_media': t('cads.no_media'), 'no_text': t('cads.no_text'),
+    'all': t('cads.f_all'), 'video': t('cads.f_video'), 'image': t('cads.f_image'), 'carousel': t('cads.f_carousel'),
+    'dynamic': t('cads.f_dynamic'), 'sort_long': t('cads.sort_long'), 'sort_new': t('cads.sort_new'),
+    'stat_total': t('cads.stat_total'), 'stat_active': t('cads.stat_active'), 'stat_video': t('cads.stat_video'),
+    'stat_long': t('cads.stat_long'), 'pages': t('cads.pages'), 'followers': t('cads.followers'),
+    'hook': 'Hook', 'offer': 'Offer', 'cta': 'CTA', 'pain_point': 'Pain point', 'creative_type': 'Creative type',
+    'lead_magnet': 'Lead magnet', 'summary': t('cads.ai_summary'), 'idea': t('cads.ai_idea'),
+    'network': t('cads.err_network'), 'all_pages': t('cads.all_pages')
+  }|tojson }};
+  var CSRF = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  var form = document.getElementById('cadsForm'), res = document.getElementById('cadsResult');
+  var btn = document.getElementById('cadsBtn');
+  var state = { ads: [], filter: 'all', sort: 'long', page: '', adlibUrl: '' };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmtDate(iso) { if (!iso) return ''; var p = iso.split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso; }
+  function initial(n) { return esc((n || '?').trim().charAt(0).toUpperCase()); }
+  function safeUrl(u) { return /^https:\/\//i.test(u || '') ? u : ''; }
+
+  function skeleton() {
+    var h = '<div class="cads-loading-note">' + esc(I.loading) + '</div><div class="cads-grid">';
+    for (var i = 0; i < 6; i++) h += '<div class="cads-skel"><div class="m"></div><div class="l" style="width:60%"></div><div class="l"></div><div class="l" style="width:80%"></div></div>';
+    return h + '</div>';
+  }
+  function stateBox(cls, title, text, url, retry) {
+    var h = '<div class="cads-state ' + cls + '" style="margin-top:20px"><h3>' + esc(title) + '</h3><div>' + esc(text) + '</div>';
+    if (retry) h += '<button type="button" class="btn-outline" data-act="retry">' + esc(I.retry) + '</button> ';
+    if (safeUrl(url)) h += '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(I.open_adlib) + ' ↗</a>';
+    return h + '</div>';
+  }
+
+  function summary(ads) {
+    var pages = {}, active = 0, video = 0, long = 0;
+    ads.forEach(function (a) {
+      var k = a.page_id || a.page_name; if (!pages[k]) pages[k] = { n: 0, a: a }; pages[k].n++;
+      if (a.is_active) active++; if (a.media_type === 'video') video++; if ((a.running_days || 0) >= 14) long++;
+    });
+    var keys = Object.keys(pages).sort(function (x, y) { return pages[y].n - pages[x].n; });
+    var top = pages[keys[0]].a;
+    var pic = safeUrl(top.page_picture_url);
+    var h = '<div class="cads-summary"><div class="cads-sum-page">' +
+      (pic ? '<img class="cads-avatar" src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer">' : '<span class="cads-avatar">' + initial(top.page_name) + '</span>') +
+      '<div style="min-width:0"><div class="cads-sum-name">' + esc(top.page_name || '—') + '</div><div class="cads-sum-meta">' +
+      (top.page_like_count ? esc(Number(top.page_like_count).toLocaleString('ru-RU')) + ' ' + esc(I.followers) + ' · ' : '') +
+      (keys.length > 1 ? esc(I.pages.replace('{n}', keys.length)) : '') + '</div></div></div><div class="cads-stats">' +
+      '<div class="cads-stat"><b>' + ads.length + '</b><span>' + esc(I.stat_total) + '</span></div>' +
+      '<div class="cads-stat"><b>' + active + '</b><span>' + esc(I.stat_active) + '</span></div>' +
+      '<div class="cads-stat"><b>' + video + '</b><span>' + esc(I.stat_video) + '</span></div>' +
+      '<div class="cads-stat"><b>' + long + '</b><span>' + esc(I.stat_long) + '</span></div></div></div>';
+    return h;
+  }
+
+  function card(a) {
+    var media;
+    var poster = safeUrl(a.video_poster_url), vid = safeUrl(a.video_url), img = safeUrl(a.image_url);
+    if (vid) media = '<video controls preload="none" playsinline' + (poster ? ' poster="' + esc(poster) + '"' : '') + ' src="' + esc(vid) + '"></video>';
+    else if (img) media = '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">';
+    else media = '<div class="cads-media-empty">' + esc(I.no_media) + '</div>';
+    var label = I[a.media_type] || '';
+    var days = a.running_days;
+    var pic = safeUrl(a.page_picture_url);
+    var text = a.primary_text || '';
+    var h = '<article class="cads-card" data-id="' + esc(a.id) + '"><div class="cads-media">' + media +
+      (label ? '<span class="cads-badge">' + (a.media_type === 'video' ? '▶ ' : '') + esc(label) + '</span>' : '') +
+      '<span class="cads-status ' + (a.is_active ? 'on' : 'off') + '">' + esc(a.is_active ? I.active : I.inactive) + '</span></div>' +
+      '<div class="cads-body"><div class="cads-head">' +
+      (pic ? '<img class="cads-avatar" src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer">' : '<span class="cads-avatar">' + initial(a.page_name) + '</span>') +
+      '<span class="cads-head-name">' + esc(a.page_name || '—') + '</span></div>' +
+      '<div class="cads-meta">' + (a.start_date ? '<span>' + esc(I.since.replace('{d}', fmtDate(a.start_date))) + '</span>' : '') +
+      (days != null ? '<span class="' + (days >= 14 ? 'long' : '') + '">· ' + esc(I.days.replace('{n}', days)) + '</span>' : '') +
+      (a.variants > 1 ? '<span>· ' + esc(I.variants.replace('{n}', a.variants)) + '</span>' : '') + '</div>' +
+      (a.headline ? '<div class="cads-headline">' + esc(a.headline) + '</div>' : '') +
+      '<div class="cads-text">' + esc(text || I.no_text) + '</div>' +
+      (text.length > 180 ? '<button type="button" class="cads-more" data-act="more">' + esc(I.more) + '</button>' : '') +
+      '<div class="cads-tags">' + (a.cta_text ? '<span class="cads-tag cta">' + esc(a.cta_text) + '</span>' : '') +
+      (a.platforms || []).map(function (p) { return '<span class="cads-tag">' + esc(p.charAt(0).toUpperCase() + p.slice(1)) + '</span>'; }).join('') +
+      (a.link_caption ? '<span class="cads-tag">' + esc(a.link_caption) + '</span>' : '') + '</div>' +
+      '<div class="cads-ai-slot"></div>' +
+      '<div class="cads-actions"><button type="button" class="cads-ai" data-act="ai">✨ ' + esc(I.ai_btn) + '</button>' +
+      (safeUrl(a.ad_library_url) ? '<a href="' + esc(a.ad_library_url) + '" target="_blank" rel="noopener">' + esc(I.view) + ' ↗</a>' : '') +
+      '</div></div></article>';
+    return h;
+  }
+
+  function pageKey(a) { return String(a.page_id || a.page_name || ''); }
+  function byPage() { return state.page ? state.ads.filter(function (a) { return pageKey(a) === state.page; }) : state.ads; }
+
+  function renderList() {
+    var ads = byPage().filter(function (a) { return state.filter === 'all' || a.media_type === state.filter; });
+    ads.sort(function (x, y) {
+      return state.sort === 'new' ? String(y.start_date || '').localeCompare(String(x.start_date || ''))
+                                  : (y.running_days || 0) - (x.running_days || 0);
+    });
+    document.getElementById('cadsGrid').innerHTML = ads.length ? ads.map(card).join('')
+      : '<div class="cads-state" style="grid-column:1/-1">' + esc(I.empty_text) + '</div>';
+  }
+
+  function renderResults(data) {
+    state.ads = data.ads || []; state.adlibUrl = data.ad_library_url || ''; state.page = ''; state.filter = 'all';
+    if (!state.ads.length) { res.innerHTML = stateBox('', I.empty_title, I.empty_text, state.adlibUrl, false); return; }
+    renderAll();
+  }
+
+  function renderAll() {
+    var list = byPage();
+    var pages = {};
+    state.ads.forEach(function (a) { var k = pageKey(a); if (!pages[k]) pages[k] = { n: 0, name: a.page_name || '—' }; pages[k].n++; });
+    var pkeys = Object.keys(pages).sort(function (x, y) { return pages[y].n - pages[x].n; });
+    var pageSel = pkeys.length > 1 ? '<select class="cads-sort" id="cadsPage" aria-label="Page"><option value="">' + esc(I.all_pages.replace('{n}', pkeys.length)) + '</option>' +
+      pkeys.map(function (k) { return '<option value="' + esc(k) + '"' + (k === state.page ? ' selected' : '') + '>' + esc(pages[k].name) + ' · ' + pages[k].n + '</option>'; }).join('') + '</select>' : '';
+    var types = {}; list.forEach(function (a) { types[a.media_type] = (types[a.media_type] || 0) + 1; });
+    if (state.filter !== 'all' && !types[state.filter]) state.filter = 'all';
+    var chips = ['all', 'video', 'image', 'carousel', 'dynamic'].filter(function (k) { return k === 'all' || types[k]; })
+      .map(function (k) { return '<button type="button" class="cads-chip' + (k === state.filter ? ' active' : '') + '" data-filter="' + k + '">' + esc(I[k]) + ' · ' + (k === 'all' ? list.length : types[k]) + '</button>'; }).join('');
+    res.innerHTML = summary(list) + '<div class="cads-toolbar"><div class="cads-chips">' + chips + '</div><div class="cads-chips">' + pageSel +
+      '<select class="cads-sort" id="cadsSort" aria-label="Sort"><option value="long">' + esc(I.sort_long) + '</option><option value="new"' + (state.sort === 'new' ? ' selected' : '') + '>' + esc(I.sort_new) + '</option></select></div></div>' +
+      '<div class="cads-grid" id="cadsGrid"></div>';
+    renderList();
+  }
+
+  var lastParams = null;
+  function search(params) {
+    lastParams = params;
+    btn.disabled = true; res.innerHTML = skeleton();
+    var url = '/api/ad-library/search?' + new URLSearchParams(params).toString();
+    fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: I.network }; }); })
+      .then(function (data) {
+        if (data.ok) renderResults(data);
+        else res.innerHTML = stateBox('err', I.err_title, data.error || I.network, data.ad_library_url, true);
+      })
+      .catch(function () { res.innerHTML = stateBox('err', I.err_title, I.network, '', true); })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var q = document.getElementById('cadsQ').value.trim(); if (q.length < 2) return;
+    state.filter = 'all';
+    var params = { q: q, country: document.getElementById('cadsCountry').value, active: document.getElementById('cadsActive').checked ? '1' : '0' };
+    try { history.replaceState(null, '', '?q=' + encodeURIComponent(q)); } catch (err) {}
+    search(params);
+  });
+
+  res.addEventListener('change', function (e) {
+    if (e.target.id === 'cadsSort') { state.sort = e.target.value; renderList(); }
+    if (e.target.id === 'cadsPage') { state.page = e.target.value; state.filter = 'all'; renderAll(); }
+  });
+  res.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-filter],[data-act]'); if (!t) return;
+    if (t.dataset.filter) {
+      state.filter = t.dataset.filter;
+      res.querySelectorAll('.cads-chip').forEach(function (c) { c.classList.toggle('active', c === t); });
+      renderList(); return;
+    }
+    if (t.dataset.act === 'retry' && lastParams) { search(lastParams); return; }
+    var cardEl = t.closest('.cads-card'); if (!cardEl) return;
+    if (t.dataset.act === 'more') {
+      var tx = cardEl.querySelector('.cads-text'); var open = tx.classList.toggle('open');
+      t.textContent = open ? I.less : I.more; return;
+    }
+    if (t.dataset.act === 'ai') analyze(cardEl, t);
+  });
+
+  function analyze(cardEl, b) {
+    var slot = cardEl.querySelector('.cads-ai-slot');
+    b.disabled = true; b.textContent = I.ai_loading;
+    slot.innerHTML = '<div class="cads-ai-box"><div class="cads-skel" style="border:none"><div class="l"></div><div class="l" style="width:70%"></div><div class="l" style="width:85%"></div></div></div>';
+    fetch('/api/ad-library/analyze', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'Accept': 'application/json' },
+      body: JSON.stringify({ ad_id: cardEl.dataset.id })
+    }).then(function (r) { return r.json().catch(function () { return { ok: false, error: I.network }; }); })
+      .then(function (data) {
+        if (!data.ok) { slot.innerHTML = '<div class="cads-ai-box cads-ai-err">' + esc(data.error || I.network) + '</div>'; b.disabled = false; b.textContent = '✨ ' + I.ai_btn; return; }
+        var a = data.analysis || {};
+        var rows = ['hook', 'offer', 'cta', 'pain_point', 'creative_type', 'lead_magnet', 'summary'].map(function (k) {
+          return '<div class="cads-ai-row"><b>' + esc(I[k]) + '</b>' + esc(a[k] || '—') + '</div>';
+        }).join('') + (a.idea ? '<div class="cads-ai-row idea"><b>' + esc(I.idea) + '</b>' + esc(a.idea) + '</div>' : '');
+        slot.innerHTML = '<div class="cads-ai-box">' + rows + (data.cached ? '<div class="text-faint" style="font-size:11px">' + esc(I.ai_cached) + '</div>' : '') + '</div>';
+        b.style.display = 'none';
+      })
+      .catch(function () { slot.innerHTML = '<div class="cads-ai-box cads-ai-err">' + esc(I.network) + '</div>'; b.disabled = false; b.textContent = '✨ ' + I.ai_btn; });
+  }
+
+  {% if initial_q %}form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'));{% endif %}
+})();
+</script>
+{% endblock %}
