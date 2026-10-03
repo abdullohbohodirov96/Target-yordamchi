@@ -36,6 +36,8 @@ import secrets
 
 import requests
 
+import db
+
 logger = logging.getLogger("integrations")
 
 _WEBHOOK_TIMEOUT_SECONDS = 8
@@ -137,36 +139,44 @@ def dispatch_pending_webhooks(session, limit: int = _DISPATCH_BATCH_LIMIT) -> di
         if not url:
             continue
         result["companies"] += 1
-        pending = (
-            session.query(Lead)
-            .filter(
-                Lead.company_id == company.id,
-                Lead.webhook_delivered_at.is_(None),
-            )
-            .order_by(Lead.created_at.asc())
-            .limit(limit)
-            .all()
-        )
-        for lead in pending:
-            outcome = _post_webhook(url, company.webhook_out_secret, lead_payload(lead))
-            now = dt.datetime.utcnow()
-            if outcome["ok"]:
-                lead.webhook_delivered_at = now
-                lead.webhook_delivery_error = None
-                result["sent"] += 1
-            else:
-                lead.webhook_delivery_error = outcome["error"]
-                result["failed"] += 1
-            company.webhook_out_last_status = "ok" if outcome["ok"] else "error"
-            company.webhook_out_last_at = now
-            company.webhook_out_last_error = outcome["error"]
-        if pending:
-            try:
-                session.commit()
-            except Exception:
-                logger.exception("dispatch_pending_webhooks: commit xatosi (company_id=%s)", company.id)
-                session.rollback()
+        with db.scoped_as(company.id):
+            _dispatch_company_webhooks(session, company, url, limit, result)
     return result
+
+
+def _dispatch_company_webhooks(session, company, url, limit, result) -> None:
+    """Bitta kompaniyaning yuborilmagan lead'lari (shu kompaniya kontekstida)."""
+    from db import Lead
+
+    pending = (
+        session.query(Lead)
+        .filter(
+            Lead.company_id == company.id,
+            Lead.webhook_delivered_at.is_(None),
+        )
+        .order_by(Lead.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    for lead in pending:
+        outcome = _post_webhook(url, company.webhook_out_secret, lead_payload(lead))
+        now = dt.datetime.utcnow()
+        if outcome["ok"]:
+            lead.webhook_delivered_at = now
+            lead.webhook_delivery_error = None
+            result["sent"] += 1
+        else:
+            lead.webhook_delivery_error = outcome["error"]
+            result["failed"] += 1
+        company.webhook_out_last_status = "ok" if outcome["ok"] else "error"
+        company.webhook_out_last_at = now
+        company.webhook_out_last_error = outcome["error"]
+    if pending:
+        try:
+            session.commit()
+        except Exception:
+            logger.exception("dispatch_pending_webhooks: commit xatosi (company_id=%s)", company.id)
+            session.rollback()
 
 
 # Turli CRM/forma/Zapier ssenariylari lead maydonlarini har xil nom bilan

@@ -10,13 +10,15 @@
 
 <div class="page-head">
   <div>
-    <h1>{{ t('creative.inline_title') }}</h1>
+    <h1>{{ t('creative.inline_title') }} <span class="badge-beta" title="{{ t('creative.beta_tip') }}">{{ t('creative.beta') }}</span></h1>
     <p class="page-subtitle" style="margin-bottom:0">{{ t('creative_gallery.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
     <a href="{{ url_for('creative_list') }}{% if from_autopilot %}?from_autopilot={{ from_autopilot }}{% endif %}" class="btn btn-outline">{{ t('creative_new.back') }}</a>
   </div>
 </div>
+
+{% if carousel_styles %}{% include "_carousel_styles.html" %}{% endif %}
 
 <div class="cs-filter" id="cs-tpl-filter">
   <button type="button" class="ap-mini-btn primary" data-cat="">{{ t('common.all') }}</button>

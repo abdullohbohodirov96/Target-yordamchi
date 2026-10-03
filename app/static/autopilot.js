@@ -573,9 +573,9 @@
     });
     sec.appendChild(fieldWrap('campaign.special_ad_categories', 'Maxsus reklama toifasi', catBox, { hint: 'Uy-joy/ish/kredit/siyosat reklamalari uchun Meta talab qiladi; oddiy biznes uchun bo\'sh qoldiring.' }));
     sec.appendChild(fieldWrap('campaign.budget_mode', 'Byudjet darajasi', h('input', { type: 'text', value: 'Ad Set darajasida (ABO)', disabled: true })));
-    // 2026-09: standart -- nashr qilinishi bilan ACTIVE; nashr modalida
-    // "Pauzada qolsin"ni tanlasa PAUSED (qarang `openSummaryModal`).
-    var launchText = d.launch_active === false
+    // 2026-09-30: standart -- PAUSED (pul sarfi egasi qarori bilan); nashr
+    // modalida "Darhol yoqilsin"ni tanlasa ACTIVE (qarang `openSummaryModal`).
+    var launchText = d.launch_active !== true
       ? 'PAUSED -- nashrdan keyin alohida "Faollashtirish" bilan yoqiladi'
       : 'ACTIVE -- nashr qilinishi bilan darhol ishga tushadi (nashr oynasida o\'zgartirish mumkin)';
     sec.appendChild(fieldWrap('campaign.status', 'Nashrdan keyingi holat', h('input', { type: 'text', value: launchText, disabled: true })));
@@ -1407,7 +1407,7 @@
       // 2026-09, foydalanuvchi so'rovi: "srazu aktiv holatga chiqazadigan
       // qilish kerak, pauzaga emas" -- standart ACTIVE, lekin Ads
       // Manager'dagi kabi xohlasa PAUSED'ga o'tkazishi mumkin.
-      var launchActive = store.draft.launch_active !== false;
+      var launchActive = store.draft.launch_active === true;
       var launchWrap = h('div', { class: 'ap-launch-toggle', role: 'radiogroup', 'aria-label': 'Nashrdan keyingi holat' });
       launchWrap.appendChild(h('span', { text: 'Nashr qilingach:' }));
       var mkRadio = function (val, label) {
@@ -1417,7 +1417,7 @@
           launchActive = val;
           api('/launch-status', { method: 'POST', body: { active: val } }).catch(function (e) {
             // Saqlanmasa -- foydalanuvchi bilsin (real pul sarfi shunga bog'liq)
-            launchActive = store.draft.launch_active !== false;
+            launchActive = store.draft.launch_active === true;
             launchWrap.querySelectorAll('input').forEach(function (r) { r.checked = (r.value === 'active') === launchActive; });
             chatSystem('Nashr holati saqlanmadi: ' + e.message, 'err');
           });

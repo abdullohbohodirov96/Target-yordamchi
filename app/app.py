@@ -9,6 +9,7 @@ gunicorn orqali). Uch narsani birlashtiradi:
      cron-job.org shart emas, chunki bu yerda jarayon DOIMIY ishlaydi.
 """
 
+import collections
 import os
 import re
 import hmac
@@ -16,7 +17,9 @@ import json
 import time
 import secrets
 import logging
+import math
 import threading
+import contextvars
 import html as html_stdlib
 import datetime as dt
 from collections import defaultdict
@@ -30,6 +33,7 @@ from flask_login import (
 )
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from sqlalchemy import func
+import requests
 import meta_api
 import meta_events
 import payme_subscribe
@@ -37,6 +41,9 @@ import orchestrator
 import budget_tracker
 import kv_store
 import monthly_report
+import ig_benchmark
+import guide_content
+import ig_hot_leads
 import permissions
 import plans
 import business_profile
@@ -75,6 +82,7 @@ import autopilot_web
 import target_analysis
 # 2026-09, Kreativ studiya (AI rasm-generatsiya): OpenAI fon + Pillow
 # matn/logo qatlamlari, 20 ta shablon, PNG/PDF eksport, Autopilot mediasi.
+import creative_carousel
 import creative_studio
 import creative_templates
 import creative_web
@@ -179,24 +187,76 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 #
 # `TELEGRAM_WEBHOOK_SECRET` ENV o'rnatilgan bo'lsa -- sarlavha MOS
 # KELMAGAN har bir so'rov 403 bilan RAD ETILADI (vaqt-hujumidan himoya
-# uchun `hmac.compare_digest`). O'rnatilMAGAN bo'lsa -- eski (ochiq)
-# xatti-harakat saqlanadi (deploy'ni sindirmaslik uchun), lekin har ishga
-# tushishda ogohlantirish log qilinadi. Yoqish: Render'da
-# `TELEGRAM_WEBHOOK_SECRET` qo'shing, so'ng webhook'ni QAYTA ro'yxatdan
-# o'tkazing (README, 5-qadam): `.../setWebhook?url=...&secret_token=<o'sha>`.
+# uchun `hmac.compare_digest`). O'rnatilMAGAN bo'lsa -- ilova secret'ni
+# O'ZI hosil qilib, Telegram'ga avtomatik ulaydi (pastga qarang).
 TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
-if not TELEGRAM_WEBHOOK_SECRET:
-    logger.warning(
-        "TELEGRAM_WEBHOOK_SECRET sozlanmagan -- /api/webhook soxta so'rovlardan HIMOYALANMAGAN. "
-        "Render'da TELEGRAM_WEBHOOK_SECRET qo'shib, webhook'ni secret_token bilan qayta ro'yxatdan o'tkazing."
-    )
+
+# 2026-09-30 (docs/PLAN.md, 1-bosqich): ENV sozlanmagan bo'lsa ham webhook
+# OCHIQ qolmasin. Ilova `FLASK_SECRET_KEY` + bot tokenidan BARQAROR (har
+# restartda bir xil) secret hosil qiladi va ishga tushganda Telegram'dagi
+# MAVJUD webhook URL'ini o'zgartirmasdan unga shu secret'ni qo'shadi
+# (`_ensure_telegram_webhook_secret`). Telegram tasdiqlagach -- secret'siz
+# har bir so'rov 403. Tasdiq olinmaguncha (masalan tarmoq xatosi) eski
+# xatti-harakat saqlanadi, bot ishlashdan to'xtamaydi.
+_TG_AUTO_SECRET = {"value": None, "active": False}
+
+
+def _derived_telegram_webhook_secret() -> "str | None":
+    flask_secret = os.environ.get("FLASK_SECRET_KEY", "")
+    if not (TELEGRAM_TOKEN and flask_secret):
+        return None
+    return hmac.new(flask_secret.encode(), f"tg-webhook:{TELEGRAM_TOKEN}".encode(), "sha256").hexdigest()
+
+
+def _ensure_telegram_webhook_secret() -> bool:
+    """Telegram'dagi mavjud webhook'ga hosil qilingan secret'ni qo'shadi.
+    URL va `allowed_updates` o'zgarmaydi. Muvaffaqiyatli bo'lsa `True`."""
+    if TELEGRAM_WEBHOOK_SECRET:
+        return True
+    secret = _derived_telegram_webhook_secret()
+    if not secret:
+        logger.warning("Telegram webhook secret: bot tokeni yoki FLASK_SECRET_KEY yo'q -- himoya yoqilmadi.")
+        return False
+    _TG_AUTO_SECRET["value"] = secret
+    try:
+        info = requests.get(f"{TELEGRAM_API}/getWebhookInfo", timeout=15).json().get("result") or {}
+        url = info.get("url")
+        if not url:
+            logger.warning("Telegram webhook o'rnatilmagan (getWebhookInfo: url bo'sh) -- secret qo'shilmadi.")
+            return False
+        payload = {"url": url, "secret_token": secret}
+        if info.get("allowed_updates"):
+            payload["allowed_updates"] = info["allowed_updates"]
+        body = requests.post(f"{TELEGRAM_API}/setWebhook", json=payload, timeout=15).json()
+        if body.get("ok"):
+            _TG_AUTO_SECRET["active"] = True
+            logger.info("Telegram webhook secret avtomatik yoqildi -- /api/webhook endi himoyalangan.")
+            return True
+        logger.error("Telegram setWebhook secret'ni rad etdi: %s", body.get("description"))
+    except Exception as e:
+        logger.error("Telegram webhook secret'ni yoqib bo'lmadi (%s).", type(e).__name__)
+    return False
+
+
+def _ensure_telegram_webhook_secret_with_retry(attempts: int = 5) -> None:
+    """Fon oqimi: tarmoq xatosida 30s, 60s, 120s, ... kutib qayta urinadi."""
+    for i in range(attempts):
+        if _ensure_telegram_webhook_secret():
+            return
+        time.sleep(30 * (2 ** i))
 
 
 def _telegram_webhook_authorized() -> bool:
-    if not TELEGRAM_WEBHOOK_SECRET:
-        return True  # ataylab: sozlanmaguncha eski xatti-harakat (yuqoridagi izoh)
     provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    return bool(provided) and hmac.compare_digest(provided, TELEGRAM_WEBHOOK_SECRET)
+    if TELEGRAM_WEBHOOK_SECRET:
+        return bool(provided) and hmac.compare_digest(provided, TELEGRAM_WEBHOOK_SECRET)
+    auto = _TG_AUTO_SECRET["value"]
+    if auto and provided and hmac.compare_digest(provided, auto):
+        return True
+    if _TG_AUTO_SECRET["active"]:
+        return False  # secret Telegram'da yoqilgan -- secret'siz so'rov soxta
+    logger.warning("TELEGRAM webhook hali secret'siz -- so'rov vaqtincha qabul qilindi.")
+    return True
 KNOWLEDGE_BASE = orchestrator.KNOWLEDGE_BASE
 
 # 2026-09, XATO TUZATISHI ("hammayoqda ulash ishlamayapti" -- Facebook
@@ -382,8 +442,11 @@ class ManagerUser(UserMixin):
 def load_user(user_id):
     session = get_session()
     try:
-        m = session.get(Manager, int(user_id))
-        return ManagerUser(m) if m and m.is_active else None
+        # Foydalanuvchi hali aniqlanmagan -- kompaniya konteksti yo'q, shuning
+        # uchun ATAYLAB filtrsiz (fail-closed rejim: `db._apply_tenant_scope`).
+        with db.unscoped():
+            m = session.get(Manager, int(user_id))
+            return ManagerUser(m) if m and m.is_active else None
     finally:
         session.close()
 
@@ -409,7 +472,10 @@ def load_user(user_id):
 # qilib, keyin aniqlash bu xavfni bartaraf etadi.
 @app.before_request
 def _set_tenant_scope():
-    db.set_current_company_id(None)
+    # Fail-closed: avval yopiq holat (load_user o'zi `unscoped()` ishlatadi),
+    # keyin foydalanuvchining kompaniyasi. Token teardown'da AYNAN oldingi
+    # holatni qaytarish uchun saqlanadi.
+    g._tenant_token = db.push_company_context(None)
     if current_user.is_authenticated:
         db.set_current_company_id(getattr(current_user, "company_id", None))
 
@@ -454,7 +520,11 @@ app.jinja_env.globals["lang_url"] = _lang_url
 
 @app.teardown_request
 def _clear_tenant_scope(exception=None):
-    db.set_current_company_id(None)
+    token = g.pop("_tenant_token", None)
+    if token is not None:
+        db.pop_company_context(token)
+    else:
+        db.set_current_company_id(None)
 
 
 def admin_required(fn):
@@ -682,14 +752,45 @@ app.jinja_env.filters["cp_summary"] = _format_competitor_summary
 # Telegram yordamchi funksiyalar
 # ---------------------------------------------------------------------------
 
+def _migrate_telegram_chat_id(old_chat_id, new_chat_id) -> None:
+    """Guruh supergroup'ga aylanganda Telegram yangi chat ID beradi --
+    kompaniyaning guruh/vazifalar guruhi ID'si avtomatik yangilanadi."""
+    session = get_session()
+    try:
+        with db.unscoped():
+            for column in (Company.telegram_group_id, Company.tasks_group_id):
+                session.query(Company).filter(column == str(old_chat_id)).update(
+                    {column: str(new_chat_id)}, synchronize_session=False,
+                )
+            session.commit()
+        logger.warning("Telegram guruh ID ko'chirildi: %s -> %s", old_chat_id, new_chat_id)
+    except Exception:
+        logger.exception("Telegram guruh ID'ni ko'chirib bo'lmadi (%s -> %s)", old_chat_id, new_chat_id)
+    finally:
+        session.close()
+
+
 def tg_send(chat_id: int, text: str) -> None:
     import requests
+    text = text if isinstance(text, str) else str(text or "")
+    if not text.strip():
+        text = "(bo'sh javob)"  # Telegram bo'sh matnni rad etadi -- foydalanuvchi jim qolmasin
     for i in range(0, len(text), 4000):
         chunk = text[i:i + 4000]
         try:
-            requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
-        except Exception:
-            logger.exception("Telegramga xabar yuborishda xatolik")
+            r = requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
+            body = r.json() if r is not None else {}
+            if isinstance(body, dict) and not body.get("ok", True):
+                new_id = (body.get("parameters") or {}).get("migrate_to_chat_id")
+                if new_id:
+                    _migrate_telegram_chat_id(chat_id, new_id)
+                    chat_id = new_id
+                    requests.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": chunk}, timeout=20)
+                else:
+                    logger.warning("Telegram xabarni qabul qilmadi (chat_id=%s): %s", chat_id, body.get("description"))
+        except Exception as e:
+            # `logger.exception` ishlatilmaydi -- xato matnida bot TOKENli URL bo'lishi mumkin.
+            logger.error("Telegramga xabar yuborishda xatolik (chat_id=%s): %s", chat_id, type(e).__name__)
 
 
 def tg_send_document(chat_id: int, filename: str, file_bytes: bytes, caption: str = "") -> bool:
@@ -798,7 +899,9 @@ def _is_bot_addressed(message: dict) -> bool:
         text = message.get("text") or ""
         for ent in message.get("entities") or []:
             if ent.get("type") == "mention":
-                mention_text = text[ent["offset"]: ent["offset"] + ent["length"]]
+                # Telegram offset'lari UTF-16 birliklarida (emoji 2 birlik).
+                raw16 = text.encode("utf-16-le")
+                mention_text = raw16[ent["offset"] * 2:(ent["offset"] + ent["length"]) * 2].decode("utf-16-le", errors="ignore")
                 if mention_text.lstrip("@").lower() == bot_username:
                     return True
     return False
@@ -832,8 +935,10 @@ def _is_owner_telegram_chat(chat_id: int) -> bool:
     session = get_session()
     try:
         with db.unscoped():
-            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
-        return bool(manager and manager.company_id == db.get_default_company_id())
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first()
+        # Faqat egasi kompaniyasining FAOL ADMINI -- oddiy menejer yoki
+        # o'chirilgan xodim reklamani pauza/yoqish huquqini olmasin.
+        return bool(manager and manager.role == "admin" and manager.company_id == db.get_default_company_id())
     finally:
         session.close()
 
@@ -952,6 +1057,22 @@ _REGISTERED_MEMBER_WELCOME_TEXT = (
 )
 
 
+def _telegram_chat_scoped(fn):
+    """Telegram ishlovchilarini (buyruq/erkin matn) chat egasi kompaniyasi
+    kontekstida bajaradi -- agar chaqiruvchi (webhook) kontekstni hali
+    o'rnatmagan bo'lsa. Fail-closed tenant rejimi uchun himoya qatlami."""
+    from functools import wraps
+
+    @wraps(fn)
+    def wrapper(chat_id, *args, **kwargs):
+        if db.get_current_company_id() is not None or db.is_unscoped():
+            return fn(chat_id, *args, **kwargs)
+        with db.scoped_as(_telegram_chat_company_id(chat_id)):
+            return fn(chat_id, *args, **kwargs)
+
+    return wrapper
+
+
 def _resolve_telegram_company(chat_id: int) -> "tuple[Company | None, Manager | None]":
     """2026-09, foydalanuvchi so'rovi ("har company ownerga openai
     tirkab qoyamiz keyin ... shunda ozini kompaniyasidan royhatdan otgan
@@ -971,7 +1092,7 @@ def _resolve_telegram_company(chat_id: int) -> "tuple[Company | None, Manager | 
             company = session.query(Company).filter_by(telegram_group_id=str(chat_id)).first()
             if company is not None:
                 return company, None
-            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first()
+            manager = session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first()
             if manager is not None:
                 company = session.query(Company).filter_by(id=manager.company_id).first()
                 return company, manager
@@ -1136,13 +1257,31 @@ def _is_registered_chat(chat_id: int) -> bool:
         with db.unscoped():
             if session.query(Company).filter_by(telegram_group_id=str(chat_id)).first():
                 return True
-            if session.query(Manager).filter_by(telegram_user_id=str(chat_id)).first():
+            if session.query(Manager).filter_by(telegram_user_id=str(chat_id), is_active=True).first():
                 return True
         return False
     finally:
         session.close()
 
 
+TG_AI_DAILY_LIMIT_PER_CHAT = int(os.environ.get("TG_AI_DAILY_LIMIT_PER_CHAT", "150"))
+
+
+def _tg_ai_quota_ok(chat_id: int) -> bool:
+    """Mijoz-kompaniya chati uchun kunlik AI so'rov limiti (spam/ortiqcha
+    xarajatdan himoya). Hisoblagich kv'da, kun bo'yicha."""
+    key = f"tg_ai_quota:{chat_id}:{dt.datetime.utcnow().date().isoformat()}"
+    try:
+        used = int(kv_store.get_json(key, default=0) or 0)
+        if used >= TG_AI_DAILY_LIMIT_PER_CHAT:
+            return False
+        kv_store.set_json(key, used + 1)
+    except Exception:
+        logger.exception("AI kvota hisoblagichi xatosi (chat_id=%s)", chat_id)
+    return True
+
+
+@_telegram_chat_scoped
 def handle_free_text(chat_id: int, user_text: str) -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: bu yerdagi butun mantiq (classify_intent,
     # execute_intent, oylik hisobot, /pause va /resume'ga olib boradigan
@@ -1170,7 +1309,16 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
         # (yuqoridagi XAVFSIZLIK TUZATISHI izohi).
         company, _manager = _resolve_telegram_company(chat_id)
         if company is not None:
-            _handle_company_free_text(chat_id, company, user_text)
+            if company.id != db.get_default_company_id() and not company.is_paid_up():
+                tg_send(chat_id, "🔒 Obuna muddati tugagan yoki kompaniya to'xtatilgan. "
+                                 "AI-yordamchidan foydalanish uchun replix.uz kabinetida to'lovni yangilang.")
+                return
+            if not _tg_ai_quota_ok(chat_id):
+                tg_send(chat_id, "⏳ Bugungi AI savollar limiti tugadi. Ertaga davom ettiramiz -- "
+                                 "batafsil ma'lumot replix.uz kabinetida doim mavjud.")
+                return
+            with db.scoped_as(company.id):
+                _handle_company_free_text(chat_id, company, user_text)
         else:
             tg_send(chat_id, _REGISTER_HELP_TEXT)
         return
@@ -1207,8 +1355,8 @@ def handle_free_text(chat_id: int, user_text: str) -> None:
     if orchestrator.is_heavy_intent(verdict):
         tg_send(chat_id, "⏳ Qabul qildim, ishlab chiqyapman...")
         thread = threading.Thread(
-            target=_run_heavy_in_background,
-            args=(chat_id, user_text, history_text, verdict),
+            target=contextvars.copy_context().run,  # tenant kontekstini fon oqimiga ham o'tkazish
+            args=(_run_heavy_in_background, chat_id, user_text, history_text, verdict),
             daemon=True,
         )
         thread.start()
@@ -1261,12 +1409,25 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
     kind = data.get("kind")
     company_id = data.get("company_id")
     created_at = data.get("created_at")
+    # Sanasi yo'q yoki buzilgan token -- muddati o'tgan deb hisoblanadi.
     try:
-        if created_at and (dt.datetime.utcnow() - dt.datetime.fromisoformat(created_at)).total_seconds() > 86400:
-            kv_store.set_json(key, None)
-            return None
+        expired = (not created_at) or (
+            (dt.datetime.utcnow() - dt.datetime.fromisoformat(created_at)).total_seconds() > 86400
+        )
     except Exception:
-        pass
+        expired = True
+    if expired:
+        kv_store.set_json(key, None)
+        return None
+    # Noto'g'ri chat turida bosilsa -- token YONIB KETMASIN (foydalanuvchi
+    # to'g'ri joyda qayta bosa olsin).
+    if kind == "personal" and chat_type != "private":
+        return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
+    if kind in ("group", "tasks_group") and chat_type not in ("group", "supergroup"):
+        return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+    if kind not in ("personal", "group", "tasks_group"):
+        kv_store.set_json(key, None)
+        return None
     kv_store.set_json(key, None)  # bir martalik -- darhol "iste'mol qilinadi" (muvaffaqiyatsiz bo'lsa ham qayta ishlatilmaydi)
 
     session = get_session()
@@ -1278,12 +1439,17 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
             if kind == "personal":
                 manager_id = data.get("manager_id")
                 manager = session.get(Manager, manager_id) if manager_id else None
-                if manager is None or manager.company_id != company_id:
+                if manager is None or manager.company_id != company_id or not manager.is_active:
                     return None
-                if chat_type != "private":
-                    return "⚠️ Bu shaxsiy ulash havolasi -- botga guruhda emas, shaxsiy xabarda /start bosing."
+                # Shu Telegram hisobi ilgari BOSHQA xodimga (boshqa kompaniyada
+                # ham bo'lishi mumkin) bog'langan bo'lsa -- o'sha bog'lanish
+                # uziladi: bitta chat faqat BITTA hisobga tegishli.
+                session.query(Manager).filter(
+                    Manager.telegram_user_id == str(chat_id), Manager.id != manager.id,
+                ).update({Manager.telegram_user_id: None}, synchronize_session=False)
                 manager.telegram_user_id = str(chat_id)
                 session.commit()
+                save_history(chat_id, [])  # oldingi (boshqa hisob) suhbat konteksti AI'ga o'tmasin
                 # 2026-09, foydalanuvchi so'rovi ("menejer topilganda siz
                 # mana bu akkauntga ulandingiz, muvaffaqiyatli ulandingiz
                 # degan xabar kelsin"): qaysi menejer sifatida (ism/rol)
@@ -1300,11 +1466,12 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                     "hisobotlari bu yerga kelmaydi -- ular admin/guruh uchun."
                 )
             if kind == "group":
-                if chat_type not in ("group", "supergroup"):
-                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+                if _identifier_conflict(company_id, telegram_group_id=chat_id):
+                    return "⚠️ Bu guruh boshqa kompaniyaga ulangan. Har bir kompaniya uchun alohida guruh oching."
                 c = session.get(Company, company_id)
                 c.telegram_group_id = str(chat_id)
                 session.commit()
+                save_history(chat_id, [])
                 return (
                     f"✅ Ushbu guruh \"{company.name}\" kompaniyasiga ulandi. Targeting/xarajat va CPL "
                     "avtomatik pauza ogohlantirishlari, shuningdek lidlar haqidagi xabarlar endi shu guruhga keladi."
@@ -1315,8 +1482,8 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
                 # kunlik lead-vazifalari (qayta aloqa eslatmalari) uchun.
                 # HAR QANDAY menejer (nafaqat admin) ulay oladi -- pastdagi
                 # `/sozlamalar/umumiy` sahifasidagi tugma orqali.
-                if chat_type not in ("group", "supergroup"):
-                    return "⚠️ Bu guruhga qo'shish havolasi -- botni guruhga qo'shib, o'sha yerda /start bosing."
+                if _identifier_conflict(company_id, telegram_group_id=chat_id):
+                    return "⚠️ Bu guruh boshqa kompaniyaga ulangan. Har bir kompaniya uchun alohida guruh oching."
                 c = session.get(Company, company_id)
                 c.tasks_group_id = str(chat_id)
                 session.commit()
@@ -1329,6 +1496,7 @@ def _consume_telegram_link_token(token: str, chat_id: int, chat_type: str) -> "s
         session.close()
 
 
+@_telegram_chat_scoped
 def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "private") -> None:
     # 2026-09, XAVFSIZLIK TUZATISHI: /status, /analyze, /pause, /resume
     # to'g'ridan-to'g'ri platforma egasining GLOBAL Meta hisobiga ta'sir
@@ -1378,25 +1546,39 @@ def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "pr
         return
     if cmd == "/analyze":
         tg_send(chat_id, "⏳ Hisobni tahlil qilyapman...")
-        thread = threading.Thread(
-            target=lambda: tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False)),
-            daemon=True,
-        )
+        ctx = contextvars.copy_context()  # tenant kontekstini fon oqimiga ham o'tkazish
+
+        def _run_analyze():
+            # Fon oqimidagi xato ilgari JIM yo'qolardi -- foydalanuvchi
+            # "⏳"dan keyin hech narsa olmasdi.
+            try:
+                tg_send(chat_id, orchestrator.run_analysis_cycle(dry_run=False) or "Diqqatga loyiq narsa topilmadi.")
+            except Exception as e:
+                logger.exception("/analyze xatosi (chat_id=%s)", chat_id)
+                tg_send(chat_id, f"⚠️ Tahlil bajarilmadi: {meta_api.safe_error_message(e)}")
+
+        thread = threading.Thread(target=lambda: ctx.run(_run_analyze), daemon=True)
         thread.start()
         return
-    if cmd == "/pause" and args:
+    if cmd == "/pause":
+        if not args:
+            tg_send(chat_id, "Foydalanish: /pause <reklama/adset/kampaniya ID>")
+            return
         try:
             meta_api.pause_object(args[0])
             tg_send(chat_id, f"⏸ {args[0]} to'xtatildi.")
         except meta_api.MetaAPIError as e:
-            tg_send(chat_id, f"⚠️ Xatolik: {e}")
+            tg_send(chat_id, f"⚠️ Xatolik: {meta_api.safe_error_message(e)}")
         return
-    if cmd == "/resume" and args:
+    if cmd == "/resume":
+        if not args:
+            tg_send(chat_id, "Foydalanish: /resume <reklama/adset/kampaniya ID>")
+            return
         try:
             meta_api.activate_object(args[0])
             tg_send(chat_id, f"▶️ {args[0]} ishga tushirildi.")
         except meta_api.MetaAPIError as e:
-            tg_send(chat_id, f"⚠️ Xatolik: {e}")
+            tg_send(chat_id, f"⚠️ Xatolik: {meta_api.safe_error_message(e)}")
         return
     if cmd == "/vazifalar":
         # 2026-09, JONLI BUG TUZATISHI (foydalanuvchi so'rovi bilan
@@ -1457,6 +1639,7 @@ def handle_command(chat_id: int, cmd: str, args: list[str], chat_type: str = "pr
     tg_send(chat_id, "Noma'lum buyruq. /start yozing.\n\nQo'shimcha buyruqlar: /vazifalar (doimiy vazifalar ro'yxati), /vazifa_off <ID> (birini bekor qilish), /id (Telegram ID'ingizni ko'rsatish), /groupid (shu guruhning ID'sini ko'rsatish).")
 
 
+@_telegram_chat_scoped
 def _format_standing_tasks_text(chat_id: int) -> str:
     """`/vazifalar` buyrug'iga javob -- shu CHATNING kompaniyasiga tegishli
     FAOL doimiy (schedule_on_off/schedule_report) vazifalarni ro'yxat
@@ -1477,7 +1660,7 @@ def _format_standing_tasks_text(chat_id: int) -> str:
     FAQAT so'ragan chatning O'Z kompaniyasiga tegishli vazifalar
     ko'rsatiladi."""
     from db import StandingTask, StandingReport
-    company_id = orchestrator._company_id_for_chat(chat_id)
+    company_id = _telegram_chat_company_id(chat_id)  # shaxsiy chat ham (menejer orqali)
     session = get_session()
     try:
         tasks = (
@@ -1527,7 +1710,15 @@ def _deactivate_standing_task(chat_id: int, raw_id: str) -> None:
         return
     kind, item_id = raw[0], int(raw[1:])
     model = StandingTask if kind == "T" else StandingReport
-    company_id = orchestrator._company_id_for_chat(chat_id)
+    # Reklamani yoqish/o'chirish jadvalini (T) faqat egasi bekor qila oladi --
+    # oddiy menejer yoki guruh a'zosi emas.
+    if kind == "T" and not _is_owner_telegram_chat(chat_id):
+        tg_send(chat_id, _NOT_OWNER_TEXT)
+        return
+    company_id = _telegram_chat_company_id(chat_id)
+    if company_id is None:
+        tg_send(chat_id, _REGISTER_HELP_TEXT)
+        return
     session = get_session()
     try:
         obj = session.get(model, item_id)
@@ -1587,6 +1778,42 @@ def api_assistant():
     history_key = _web_chat_history_key()
     history = kv_store.get_json(history_key, default=[])
     is_admin = current_user.role == "admin"
+
+    # 2026-10-01 XAVFSIZLIK TUZATISHI (audit): `orchestrator.execute_intent`
+    # (target pauza/resume, byudjet, to'liq tahlil, metrika) kompaniya
+    # tokenisiz ishlaydi -- ya'ni PLATFORMA EGASINING global Meta hisobiga
+    # tegadi. ILGARI istalgan kompaniya admini shu yerdan egasining
+    # reklamasini to'xtatishi, menejer esa egasining xarajat/CPL'ini ko'rishi
+    # mumkin edi. Endi boshqa kompaniyalar Telegram'dagi kabi FAQAT o'z
+    # ma'lumotlari asosidagi savol-javob oladi (reklama boshqaruvi yo'q).
+    if company is not None and company.id != db.get_default_company_id():
+        history.append({"role": "user", "content": user_text})
+        try:
+            snapshot = _company_ai_snapshot(company.id)
+            prompt = (
+                f"{_web_assistant_system_prompt(company)}\n\n---\n\n"
+                f"# \"{company.name}\" kompaniyasining bugungi qisqacha holati\n\n{snapshot}\n"
+                "Faqat shu kompaniyaga oid savollarga javob ber. Reklama hisobini "
+                "boshqarish (target yoqish/o'chirish/pauza, byudjet) bu chatdan mumkin "
+                "emas -- bunday so'rov kelsa, buni \"Target\" yoki \"Avtopilot\" "
+                "bo'limidan qilish kerakligini ayt."
+            )
+            result = orchestrator.call_light_chat(prompt, history, max_tokens=800)
+        except Exception as e:
+            logger.exception("Web yordamchi (kompaniya) xatosi (company_id=%s)", company.id)
+            result = orchestrator.friendly_error_message(e)
+        unanswered = bool(result and "[[UNANSWERED]]" in result)
+        if unanswered:
+            result = result.replace("[[UNANSWERED]]", "").strip()
+        history.append({"role": "assistant", "content": result})
+        kv_store.set_json(history_key, history[-12:])
+        if unanswered:
+            session = get_session()
+            try:
+                _log_unanswered_question(session, current_user.full_name or current_user.username, user_text)
+            finally:
+                session.close()
+        return jsonify({"reply": result, "is_admin": is_admin})
 
     try:
         verdict, history_text = orchestrator.classify_intent(user_text, history)
@@ -1762,6 +1989,24 @@ def _try_handle_assistant_reply(chat_id: int, message: dict) -> bool:
         session.close()
 
 
+_TG_SEEN_UPDATES: "collections.OrderedDict[int, bool]" = collections.OrderedDict()
+_TG_SEEN_LOCK = threading.Lock()
+
+
+def _telegram_update_seen(update_id) -> bool:
+    """`update_id` avval ko'rilgan bo'lsa True; aks holda belgilab False.
+    Jarayon xotirasida oxirgi 5000 ta saqlanadi."""
+    if update_id is None:
+        return False
+    with _TG_SEEN_LOCK:
+        if update_id in _TG_SEEN_UPDATES:
+            return True
+        _TG_SEEN_UPDATES[update_id] = True
+        while len(_TG_SEEN_UPDATES) > 5000:
+            _TG_SEEN_UPDATES.popitem(last=False)
+    return False
+
+
 @app.route("/api/webhook", methods=["POST"])
 @csrf.exempt  # Telegram server-serverga chaqiradi -- brauzer sessiyasi/CSRF tokeni yo'q
 def webhook():
@@ -1771,13 +2016,43 @@ def webhook():
     if not _telegram_webhook_authorized():
         return jsonify({"ok": False, "error": "unauthorized"}), 403
     update = request.get_json(silent=True) or {}
-    message = update.get("message") or update.get("edited_message")
+    # Tahrirlangan xabar (`edited_message`) QAYTA ishlanmaydi -- aks holda
+    # "/pause" yoki AI so'rovi tahrirdan keyin ikkinchi marta bajarilardi.
+    message = update.get("message")
     if not message or "text" not in message:
+        return jsonify({"ok": True})
+    # Telegram javobni kutmay qolsa bir xil update'ni QAYTA yuboradi --
+    # bir update faqat bir marta ishlanadi.
+    if _telegram_update_seen(update.get("update_id")):
         return jsonify({"ok": True})
 
     chat_id = message["chat"]["id"]
     chat_type = message.get("chat", {}).get("type", "private")
     text = message["text"].strip()
+
+    # Fail-closed tenant rejimi: chat qaysi kompaniyaga tegishli bo'lsa,
+    # butun ishlov berish FAQAT o'sha kompaniya doirasida bajariladi.
+    # Ro'yxatdan o'tmagan chat uchun kontekst bo'sh qoladi -- u hech bir
+    # kompaniyaning ma'lumotini o'qiy olmaydi.
+    with db.scoped_as(_telegram_chat_company_id(chat_id)):
+        return _handle_telegram_message(chat_id, chat_type, text, message)
+
+
+def _telegram_chat_company_id(chat_id: int) -> "int | None":
+    """Telegram chat -> kompaniya id: platforma egasining chati -> standart
+    kompaniya, aks holda `_resolve_telegram_company()`. Topilmasa `None`
+    (yot chat -- hech bir kompaniyaning ma'lumotiga kira olmaydi)."""
+    try:
+        if _is_owner_telegram_chat(chat_id):
+            return db.get_default_company_id()
+        company, _manager = _resolve_telegram_company(chat_id)
+        return company.id if company is not None else None
+    except Exception:
+        logger.exception("Telegram chat -> kompaniya aniqlashda xato (chat_id=%s)", chat_id)
+        return None
+
+
+def _handle_telegram_message(chat_id: int, chat_type: str, text: str, message: dict):
 
     try:
         if _try_handle_assistant_reply(chat_id, message):
@@ -1794,7 +2069,12 @@ def webhook():
     try:
         if text.startswith("/"):
             parts = text.split()
-            handle_command(chat_id, parts[0].split("@")[0], parts[1:], chat_type)
+            cmd, _, target_bot = parts[0].partition("@")
+            # "/pause@BoshqaBot" -- boshqa botga yozilgan buyruq, bizniki emas.
+            our_bot = (_get_bot_identity().get("username") or "").lower()
+            if target_bot and our_bot and target_bot.lower() != our_bot:
+                return jsonify({"ok": True})
+            handle_command(chat_id, cmd, parts[1:], chat_type)
         elif chat_type in ("group", "supergroup") and not _is_bot_addressed(message):
             # 2026-09, XAVFSIZLIK/XARAJAT TUZATISHI: guruh chatida odamlar
             # o'zaro oddiy gaplashganda bot javob QAYTARMASLIGI kerak --
@@ -1914,17 +2194,18 @@ def instagram_webhook_receive():
                         # ikkalasi ham tekshiriladi.
                         referral = m.get("referral") or message.get("referral") or {}
                         source_ad_id = referral.get("ad_id")
-                        ig_dm_sync.ingest_webhook_message(
-                            company,
-                            sender_id=(m.get("sender") or {}).get("id"),
-                            recipient_id=(m.get("recipient") or {}).get("id"),
-                            message_id=message.get("mid"),
-                            text=message.get("text"),
-                            timestamp_ms=m.get("timestamp"),
-                            is_echo=bool(message.get("is_echo")),
-                            channel=channel,
-                            source_ad_id=source_ad_id,
-                        )
+                        with db.scoped_as(company.id):
+                            ig_dm_sync.ingest_webhook_message(
+                                company,
+                                sender_id=(m.get("sender") or {}).get("id"),
+                                recipient_id=(m.get("recipient") or {}).get("id"),
+                                message_id=message.get("mid"),
+                                text=message.get("text"),
+                                timestamp_ms=m.get("timestamp"),
+                                is_echo=bool(message.get("is_echo")),
+                                channel=channel,
+                                source_ad_id=source_ad_id,
+                            )
                     except Exception:
                         logger.exception(
                             "Instagram/Facebook webhook: bitta xabarni yozishda xato (page_id=%s, channel=%s)",
@@ -1944,15 +2225,21 @@ def instagram_webhook_receive():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # Kirgan foydalanuvchi /login'ga qaytsa -- sidebar ichida login formasi
+    # chiqib qolmasin (dizayn auditida topilgan), /signup kabi dashboard'ga.
+    if request.method == "GET" and current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         session = get_session()
         try:
-            m = session.query(Manager).filter_by(username=username, is_active=True).first()
-            if m and m.check_password(password):
-                login_user(ManagerUser(m))
-                return redirect(url_for("dashboard"))
+            # Login -- kompaniya hali noma'lum, username GLOBAL noyob.
+            with db.unscoped():
+                m = session.query(Manager).filter_by(username=username, is_active=True).first()
+                if m and m.check_password(password):
+                    login_user(ManagerUser(m))
+                    return redirect(url_for("dashboard"))
         finally:
             session.close()
         flash(lang_module.translate("login.flash_bad_credentials", g.lang), "error")
@@ -2082,20 +2369,22 @@ def signup():
                 session.add(c)
                 session.commit()
 
-                admin = Manager(
-                    username=admin_username, role="admin", company_id=c.id,
-                    full_name=admin_full_name or company_name,
-                )
-                admin.set_password(password)
-                session.add(admin)
-                session.commit()
-                db.seed_default_funnel_stages_for_company(c.id)
+                with db.scoped_as(c.id):  # yangi kompaniya doirasida
+                    admin = Manager(
+                        username=admin_username, role="admin", company_id=c.id,
+                        full_name=admin_full_name or company_name,
+                    )
+                    admin.set_password(password)
+                    session.add(admin)
+                    session.commit()
+                    db.seed_default_funnel_stages_for_company(c.id)
+                    admin_user = ManagerUser(admin)
 
                 _notify_platform_owner(
                     f"🆕 Yangi kompaniya ro'yxatdan o'tdi: \"{company_name}\" "
                     f"(tarif: {plan_def.name}, admin login: {admin_username})."
                 )
-                login_user(ManagerUser(admin))
+                login_user(admin_user)
                 if requested_plan == "trial":
                     flash(
                         lang_module.translate(
@@ -2160,6 +2449,15 @@ def connect_accounts():
     if request.method == "POST":
         session = get_session()
         try:
+            conflict = _identifier_conflict(
+                company.id,
+                telegram_group_id=request.form.get("telegram_group_id"),
+                page_id=request.form.get("meta_page_id") if plan_def.can_connect_meta_ads else None,
+                ad_account_id=request.form.get("meta_ad_account_id") if plan_def.can_connect_meta_ads else None,
+            )
+            if conflict:
+                flash(conflict, "error")
+                return redirect(url_for("connect_accounts"))
             c = session.get(Company, company.id)
             c.ig_business_id = request.form.get("ig_business_id", "").strip() or None
             # 2026-09 multi-tenant (foydalanuvchi so'rovi: "har bir kompaniya
@@ -2422,6 +2720,8 @@ def webhook_leads_intake(token):
             company = session.query(Company).filter_by(inbound_lead_token=token).first()
         if company is None or not company.is_active:
             return jsonify({"ok": False, "error": "noto'g'ri yoki eskirgan token"}), 404
+        # Qolgan ish FAQAT shu token egasi kompaniya doirasida (fail-closed).
+        db.set_current_company_id(company.id)
 
         data = request.get_json(silent=True) or {}
         parsed = integrations.parse_inbound_payload(data)
@@ -2466,14 +2766,41 @@ def _run_initial_lead_sync(company_id: int) -> None:
     oqimida chaqiriladi -- to'liq izoh chaqiruv joyida."""
     session = get_session()
     try:
-        company = session.get(Company, company_id)
+        with db.unscoped():
+            company = session.get(Company, company_id)
         if not company:
             return
-        lead_sync.sync_once(company=company)
+        with db.scoped_as(company_id):
+            lead_sync.sync_once(company=company)
     except Exception:
         logger.exception("Ulanishdan keyingi darhol lead-sinxronizatsiyasida xato (company_id=%s)", company_id)
     finally:
         session.close()
+
+
+def _identifier_conflict(company_id: int, *, page_id=None, ad_account_id=None, telegram_group_id=None) -> "str | None":
+    """Shu Facebook sahifa / reklama hisobi / Telegram guruh BOSHQA kompaniyaga
+    allaqachon ulangan bo'lsa -- xato matni (aks holda None). Ikki kompaniya
+    bitta sahifa/guruhni ulasa, webhook lidlari va hisobotlar aralashib ketadi."""
+    checks = (
+        (Company.meta_page_id, page_id, "Bu Facebook sahifasi"),
+        (Company.meta_ad_account_id, ad_account_id, "Bu reklama hisobi"),
+        (Company.telegram_group_id, telegram_group_id, "Bu Telegram guruhi"),
+        (Company.tasks_group_id, telegram_group_id, "Bu Telegram guruhi"),
+    )
+    session = get_session()
+    try:
+        with db.unscoped():
+            for column, value, label in checks:
+                value = str(value).strip() if value else ""
+                if not value:
+                    continue
+                taken = session.query(Company.id).filter(column == value, Company.id != company_id).first()
+                if taken:
+                    return f"{label} boshqa kompaniyaga ulangan. Avval o'sha kompaniyadan uzing yoki boshqasini tanlang."
+    finally:
+        session.close()
+    return None
 
 
 def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
@@ -2496,7 +2823,10 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
     kerak."""
     company = _current_company()
     if company is None:
-        return
+        return "Kompaniya topilmadi."
+    conflict = _identifier_conflict(company.id, page_id=page.get("id"), ad_account_id=(account or {}).get("id"))
+    if conflict:
+        return conflict
     pixel_id = dataset["id"] if dataset else None
     pixel_name = dataset.get("name") if dataset else None
     if not dataset and account:
@@ -2572,6 +2902,7 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
     # ko'pi bilan 15 daqiqalik) oynada kelgan har qanday lead kursor hali
     # yo'qligi sababli umuman kuzatilmay qolib ketishi mumkin edi.
     threading.Thread(target=_run_initial_lead_sync, args=(connected_company_id,), daemon=True).start()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -2676,7 +3007,10 @@ def connect_facebook_callback():
     # "birinchisi" deb avtomatik tanlash xavfli bo'lardi.
     if len(pages) == 1:
         if not include_ads:
-            _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
+            err = _save_facebook_connection(long_token, pages[0], None, expires_in=expires_in)
+            if err:
+                flash(err, "error")
+                return redirect(url_for("connect_accounts"))
             flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
             return redirect(url_for("connect_accounts"))
 
@@ -2687,10 +3021,13 @@ def connect_facebook_callback():
             if len(accounts_pool or []) <= 1:
                 chosen_account = accounts_pool[0] if accounts_pool else None
                 chosen_dataset = pixels_pool[0] if len(pixels_pool or []) == 1 else None
-                _save_facebook_connection(
+                err = _save_facebook_connection(
                     long_token, pages[0], chosen_account,
                     business=single_business, dataset=chosen_dataset, expires_in=expires_in,
                 )
+                if err:
+                    flash(err, "error")
+                    return redirect(url_for("connect_accounts"))
                 flash("Facebook/Instagram/reklama hisobingiz to'liq avtomatik ulandi.", "success")
                 return redirect(url_for("connect_accounts"))
 
@@ -2737,10 +3074,13 @@ def connect_facebook_choose():
         chosen_account = next((a for a in available_accounts if a["id"] == account_id), None) if account_id else None
         chosen_dataset = next((p for p in available_pixels if p["id"] == dataset_id), None) if dataset_id else None
 
-        _save_facebook_connection(
+        err = _save_facebook_connection(
             token, chosen_page, chosen_account,
             business=chosen_business, dataset=chosen_dataset, expires_in=expires_in,
         )
+        if err:
+            flash(err, "error")
+            return redirect(url_for("connect_facebook_choose"))
         for key in ("fb_oauth_token", "fb_oauth_expires_in", "fb_oauth_pages", "fb_oauth_accounts", "fb_oauth_businesses", "fb_oauth_business_assets"):
             flask_session.pop(key, None)
         flash("Facebook/Instagram hisobingiz muvaffaqiyatli ulandi.", "success")
@@ -2769,7 +3109,7 @@ def connect_meta_test():
         return redirect(url_for("connect_accounts"))
 
     token, dataset_id = meta_events._resolve_capi_credentials(company)
-    if not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
+    if not (token and dataset_id) or not meta_api.is_capi_configured(pixel_id=dataset_id, access_token=token):
         flash("Meta hali ulanmagan -- avval Facebook orqali ulang yoki Advanced sozlamalardan Dataset ID/CAPI token kiriting.", "error")
         return redirect(url_for("connect_accounts"))
 
@@ -3124,6 +3464,19 @@ def data_deletion():
     return render_template("data_deletion.html")
 
 
+@app.route("/qollanma")
+def guide_page():
+    """PLAN 7-bosqich: ochiq (mehmon ham ko'radi) qadamma-qadam qo'llanma.
+    Kirgan foydalanuvchiga har bo'limda ilovadagi tegishli sahifaga tugma."""
+    texts, sections = guide_content.sections_for(g.lang, plans.PLANS["trial"].period_days or 7)
+    for sec in sections:
+        try:
+            sec["url"] = url_for(sec["endpoint"]) if current_user.is_authenticated else None
+        except Exception:  # noqa: BLE001 -- endpoint bo'lmasa tugma ko'rsatilmaydi
+            sec["url"] = None
+    return render_template("guide.html", texts=texts, sections=sections)
+
+
 # ---------------------------------------------------------------------------
 # Tariflar (narxlar) -- ochiq (mehmon ham ko'ra oladi) taqqoslash sahifasi.
 # ---------------------------------------------------------------------------
@@ -3379,7 +3732,7 @@ _SUBSCRIPTION_EXEMPT_ENDPOINTS = {
     # to'lanmagan) kompaniya admin'i uchun ham OCHIQ turishi kerak --
     # aks holda "sinov tugadi" holatiga tushgan mijoz hatto TO'LASH
     # sahifasiga ham kira olmay qolardi.
-    "signup", "pricing", "payment_page", "connect_accounts",
+    "signup", "pricing", "payment_page", "connect_accounts", "guide_page",
     # 2026-09, Payme Subscribe (avtomatik oylik to'lov): karta bog'lash/
     # tasdiqlash/o'chirish -- xuddi `payment_page` kabi, muddati tugagan
     # kompaniya ham AYNAN shu orqali to'lovni tiklashi kerak, shuning uchun
@@ -3712,7 +4065,7 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
     # 4) Qo'ng'iroq faolligi -- shu oy, butun jamoa (Moi Zvonki ulangan bo'lsa)
     calls_overview = call_analytics.build_team_daily_call_counts(
         session, month_start, dt.datetime.strptime(today_key, "%Y-%m-%d") + dt.timedelta(days=1),
-        norm_per_manager=kpi_bonus.DAILY_CALLS_NORM,
+        norm_per_manager=kpi_bonus.get_kpi_config(current_user.company_id)["daily_calls_norm"],
     )
 
     # 5) Qayta aloqa (follow-up) -- bugun va muddati o'tgan, ENG YAQINLARI
@@ -3770,10 +4123,20 @@ def _build_dashboard_overview(session, period: str = "this_month", date_from: st
                 .limit(20)
                 .all()
             )
-            auto_pause_events = [{
-                "ad_name": r.ad_name or r.ad_id, "reason": r.reason,
-                "cpl": r.cpl, "spend": r.spend, "created_at": r.created_at,
-            } for r in auto_pause_rows]
+            # Eng yangisi birinchi -- shu reklama keyin qayta yoqilgan bo'lsa
+            # ("resumed"), eski "paused" yozuvida tugma ko'rsatilmaydi.
+            resumed_after = set()
+            auto_pause_events = []
+            for r in auto_pause_rows:
+                if r.action == "resumed":
+                    resumed_after.add(r.ad_id)
+                auto_pause_events.append({
+                    "ad_id": r.ad_id, "action": r.action or "paused",
+                    "ad_name": r.ad_name or r.ad_id, "reason": r.reason,
+                    "cpl": r.cpl, "spend": r.spend, "created_at": r.created_at,
+                    "can_resume": (r.action or "paused") == "paused" and r.ad_id not in resumed_after
+                                  and current_user.role == "admin",
+                })
         except Exception:
             logger.exception("Dashboard: CPL avtomatik pauza jurnalini olishda xato")
 
@@ -4171,17 +4534,18 @@ def _build_manager_kpi_report(session, manager, year: int, month: int) -> dict:
             "sale_number": s.sale_number, "amount": s.amount, "sold_at": s.sold_at,
             "days_since_first_sale": days_since_first, "lead_id": s.lead_id,
         })
-    report = kpi_bonus.compute_manager_report(valid_sales, year, month, manager.hire_date)
+    kpi_cfg = kpi_bonus.get_kpi_config(manager.company_id)
+    report = kpi_bonus.compute_manager_report(valid_sales, year, month, manager.hire_date, cfg=kpi_cfg)
     report["manager_id"] = manager.id
     report["manager_name"] = manager.full_name or manager.username
-    report["repeat_customers"] = _build_repeat_customer_breakdown(session, manager.id, valid_sales)
+    report["repeat_customers"] = _build_repeat_customer_breakdown(session, manager.id, valid_sales, kpi_cfg)
     report["daily_calls"] = call_analytics.build_daily_call_counts(
-        session, manager.id, start, end, norm=kpi_bonus.DAILY_CALLS_NORM
+        session, manager.id, start, end, norm=kpi_cfg["daily_calls_norm"]
     )
     return report
 
 
-def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list) -> dict:
+def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list, kpi_cfg: "dict | None" = None) -> dict:
     """"Qayta sotuv KPI (batafsil)" kartochkasi uchun -- shu oyda 15 kun
     ICHIDA 2-marta xarid qilgan (ya'ni "mijozni faollashtirish" bonusining
     2-xarid shartiga to'g'ri kelgan) har bir mijoz uchun 1- va 2-xarid
@@ -4189,7 +4553,7 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
     qualifying_lead_ids = {
         s["lead_id"] for s in valid_sales
         if s["sale_number"] == 2 and s.get("days_since_first_sale") is not None
-        and s["days_since_first_sale"] <= kpi_bonus.REPEAT_WINDOW_DAYS
+        and s["days_since_first_sale"] <= (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["repeat_window_days"]
     }
     if not qualifying_lead_ids:
         return {"customers": [], "total": 0.0}
@@ -4218,7 +4582,7 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
         first_sold_at = None
         for s in lead_sales:
             if s.sale_number == 1:
-                fixed, first_sold_at = 10_000.0, s.sold_at
+                fixed, first_sold_at = float((kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_first_fixed"]), s.sold_at
             else:
                 days_since_first = None
                 if first_sold_at and s.sold_at:
@@ -4227,11 +4591,11 @@ def _build_repeat_customer_breakdown(session, manager_id: int, valid_sales: list
                     first = next((x for x in lead_sales if x.sale_number == 1), None)
                     if first and first.sold_at and s.sold_at:
                         days_since_first = (s.sold_at - first.sold_at).total_seconds() / 86400.0
-                if days_since_first is not None and days_since_first <= kpi_bonus.REPEAT_WINDOW_DAYS:
-                    fixed = 20_000.0
+                if days_since_first is not None and days_since_first <= (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["repeat_window_days"]:
+                    fixed = float((kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_second_fixed"])
                 else:
                     fixed = 0.0
-            pct = s.amount * 0.005
+            pct = s.amount * (kpi_cfg or kpi_bonus.DEFAULT_KPI_CONFIG)["activation_percent"] / 100.0
             total = fixed + pct
             customer_total += total
             rows.append({
@@ -5337,6 +5701,19 @@ _followups_badge_cache: dict[str, tuple[float, int]] = {}
 _followups_badge_cache_lock = threading.Lock()
 
 
+def _price_uzs(price_usd) -> str:
+    """Tarif narxining Payme AYNAN yechadigan so'm summasi ("254 000 so'm") --
+    mijoz dollarda ko'rib, kartadan qancha so'm yechilishini bilmay qolmasin."""
+    if not price_usd:
+        return ""
+    uzs = payme_subscribe.usd_to_tiyin(price_usd) // 100
+    unit = {"ru": "сум", "en": "UZS"}.get(getattr(g, "lang", "uz"), "so'm")
+    return f"{uzs:,}".replace(",", " ") + " " + unit
+
+
+app.jinja_env.globals["price_uzs"] = _price_uzs
+
+
 @app.context_processor
 def _inject_followups_badge():
     """Har bir sahifada navbar'dagi "Qayta aloqa" havolasiga qizil raqamli
@@ -5431,7 +5808,10 @@ def _inject_plan_upsell():
     if current_user.role == "admin":
         days_left = None
         if company.paid_until:
-            days_left = max(0, (company.paid_until - dt.datetime.utcnow()).days)
+            # Yuqoriga yaxlitlanadi: 5 kunlik sinovda ro'yxatdan o'tgan zahoti
+            # ILGARI "4 kun qoldi" chiqardi (.days pastga yaxlitlaydi).
+            remaining_s = (company.paid_until - dt.datetime.utcnow()).total_seconds()
+            days_left = max(0, math.ceil(remaining_s / 86400))
         result.update({
             "sidebar_plan": plan_def,
             "sidebar_plan_days_left": days_left,
@@ -5603,9 +5983,9 @@ def manager_daily_activity():
     `manager_reporting.daily_manager_activity()`ga qarang."""
     date_raw = request.args.get("date", "").strip()
     try:
-        day = dt.datetime.strptime(date_raw, "%Y-%m-%d").date() if date_raw else dt.datetime.utcnow().date()
+        day = dt.datetime.strptime(date_raw, "%Y-%m-%d").date() if date_raw else tz_utils.today_local()
     except ValueError:
-        day = dt.datetime.utcnow().date()
+        day = tz_utils.today_local()
         flash("Sana noto'g'ri formatda -- bugungi kun ko'rsatilmoqda.", "error")
     session = get_session()
     try:
@@ -5614,8 +5994,8 @@ def manager_daily_activity():
         session.close()
     return render_template(
         "manager_daily_activity.html", rows=rows, selected_date=day.isoformat(),
-        today=dt.datetime.utcnow().date().isoformat(),
-        yesterday=(dt.datetime.utcnow().date() - dt.timedelta(days=1)).isoformat(),
+        today=tz_utils.today_local().isoformat(),
+        yesterday=(tz_utils.today_local() - dt.timedelta(days=1)).isoformat(),
     )
 
 
@@ -5765,7 +6145,7 @@ def _manager_edit_body(session, m, redirect_target):
 # ---------------------------------------------------------------------------
 
 def _is_platform_owner() -> bool:
-    return current_user.is_authenticated and current_user.role == "admin" and getattr(current_user, "company_id", None) == 1
+    return current_user.is_authenticated and current_user.role == "admin" and getattr(current_user, "company_id", None) == db.get_default_company_id()
 
 
 def platform_owner_required(fn):
@@ -6713,6 +7093,28 @@ def _handle_settings_post(session, action):
         except (TypeError, ValueError):
             flash("Noto'g'ri qiymat -- summani raqam ko'rinishida kiriting.", "error")
 
+    elif action == "set_kpi_config":
+        if request.form.get("reset") == "1":
+            kpi_bonus.set_kpi_config({}, company_id=current_user.company_id)
+            flash(lang_module.translate("kpi_cfg.reset_done", g.lang), "success")
+        else:
+            def _tiers(field):
+                out = []
+                for line in (request.form.get(field) or "").splitlines():
+                    parts = [p.strip().replace(" ", "") for p in line.replace(":", "=").split("=")]
+                    if len(parts) == 2 and parts[0] and parts[1]:
+                        out.append([parts[0], parts[1]])
+                return out
+            raw = {k: request.form.get(k) for k in (
+                "salary_fixed", "activation_first_fixed", "activation_second_fixed", "activation_percent",
+                "repeat_window_days", "survival_min_sales", "daily_calls_norm",
+                "turnover_top", "turnover_step", "turnover_step_bonus",
+            ) if request.form.get(k) not in (None, "")}
+            raw["progressive_tiers"] = _tiers("progressive_tiers")
+            raw["turnover_tiers"] = _tiers("turnover_tiers")
+            kpi_bonus.set_kpi_config(raw, company_id=current_user.company_id)
+            flash(lang_module.translate("kpi_cfg.saved", g.lang), "success")
+
     elif action == "set_usd_rate":
         raw = request.form.get("usd_to_uzs_rate", "").strip()
         try:
@@ -6834,6 +7236,14 @@ def _handle_settings_post(session, action):
             )
         else:
             flash(lang_module.translate("common.company_not_found", g.lang), "error")
+
+    elif action == "set_cpl_mode":
+        mode = request.form.get("cpl_mode", "")
+        if mode in orchestrator.CPL_MODES:
+            orchestrator.set_cpl_mode(mode, company_id=current_user.company_id)
+            flash(lang_module.translate(f"settings_cpl.mode_saved_{mode}", g.lang), "success")
+        else:
+            flash(lang_module.translate("settings_cpl.mode_invalid", g.lang), "error")
 
     elif action == "toggle_auto_watch":
         # 2026-09, foydalanuvchi so'rovi ("barchada bu narsa bo'lsin, lekin
@@ -6970,6 +7380,7 @@ def settings_general():
             min_sale_amount=kpi_bonus.get_min_sale_amount(company_id=current_user.company_id),
             min_real_talk_seconds=call_analytics.get_min_real_talk_seconds(company_id=current_user.company_id),
             usd_to_uzs_rate=kpi_bonus.get_usd_to_uzs_rate(company_id=current_user.company_id),
+            kpi_cfg=kpi_bonus.get_kpi_config(current_user.company_id),
             moizvonki_configured=bool(company_row and company_row.is_moizvonki_configured()),
             moizvonki_api_address=(company_row.moizvonki_api_address if company_row else None),
             moizvonki_user_name=(company_row.moizvonki_user_name if company_row else None),
@@ -7003,9 +7414,49 @@ def settings_cpl():
         return render_template(
             "settings_cpl.html", cpl_rules=cpl_rules,
             auto_watch_enabled=auto_watch_enabled, has_telegram_group=has_telegram_group,
+            cpl_mode=orchestrator.get_cpl_mode(current_user.company_id),
+            max_auto_pauses=orchestrator.MAX_AUTO_PAUSES_PER_DAY,
         )
     finally:
         session.close()
+
+
+@app.route("/reklama/<ad_id>/qayta-yoqish", methods=["POST"])
+@login_required
+@module_required("target")
+@admin_required
+def resume_auto_paused_ad(ad_id):
+    """PLAN 4-bosqich: avtomatik pauzani bir bosishda bekor qilish. Faqat SHU
+    kompaniya jurnalida biz pauza qilgan reklama -- begona ID'ni yoqib bo'lmaydi.
+    Qayta yoqilgan reklamaga CPL himoyasi 7 kun tegmaydi (egasi qarori)."""
+    session = get_session()
+    try:
+        row = (
+            session.query(AdAutoActionLog)
+            .filter(AdAutoActionLog.ad_id == ad_id, AdAutoActionLog.action == "paused")
+            .order_by(AdAutoActionLog.created_at.desc()).first()
+        )
+        ad_name = row.ad_name if row else None
+    finally:
+        session.close()
+    if row is None:
+        flash("Bu reklama avtomatik pauza jurnalida topilmadi.", "error")
+        return redirect(url_for("dashboard"))
+    token, _account = _company_meta_creds(_current_company())
+    if not token:
+        flash("Meta hisobi ulanmagan -- avval Hisoblarni ulash bo'limidan ulang.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        orchestrator._execute_and_verify_status(ad_id, "ACTIVE", access_token=token)
+    except Exception as e:  # noqa: BLE001
+        flash(f"Reklamani yoqib bo'lmadi: {meta_api.safe_error_message(e)}", "error")
+        return redirect(url_for("dashboard"))
+    orchestrator._record_auto_action(
+        current_user.company_id, ad_id, ad_name or ad_id, "resumed",
+        f"Qo'lda qayta yoqildi ({current_user.username})",
+    )
+    flash(f"✅ {ad_name or ad_id} qayta yoqildi. CPL himoyasi unga 7 kun tegmaydi.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/sozlamalar/telegram", methods=["GET", "POST"])
@@ -7296,6 +7747,7 @@ def instagram_dm():
         dm_analytics=dm_analytics,
         dm_period=dm_period, dm_period_label=dm_period_label,
         dm_date_from=dm_date_from or "", dm_date_to=dm_date_to or "",
+        hot_leads=ig_hot_leads.get_settings(company.id) if company is not None else None,
     )
 
 
@@ -7441,6 +7893,29 @@ def instagram_dm_to_lead():
         return redirect(url_for("lead_detail", lead_id=lead.id))
     finally:
         session.close()
+
+
+@app.route("/instagram-xabarlar/issiq-lid", methods=["POST"])
+@login_required
+@module_required("target")
+@admin_required
+def instagram_dm_hot_leads():
+    """PLAN 6-bosqich: kalit so'z bo'yicha issiq lid + ixtiyoriy avtojavob sozlamalari."""
+    company = _current_company()
+    if company is None:
+        abort(404)
+    data = ig_hot_leads.save_settings(
+        company.id,
+        enabled=request.form.get("enabled") == "1",
+        keywords_text=request.form.get("keywords", ""),
+        auto_reply=request.form.get("auto_reply") == "1",
+        reply_text=request.form.get("reply_text", ""),
+    )
+    if request.form.get("auto_reply") == "1" and not data["auto_reply"]:
+        flash(lang_module.translate("hot_leads.need_reply_text", g.lang), "error")
+    else:
+        flash(lang_module.translate("hot_leads.saved_on" if data["enabled"] else "hot_leads.saved_off", g.lang), "success")
+    return redirect(url_for("instagram_dm"))
 
 
 @app.route("/instagram-xabarlar/templates", methods=["POST"])
@@ -7614,6 +8089,57 @@ def _autopilot_attach_creative(session, draft, asset, company, assets) -> "str |
     return upload_err
 
 
+def _carousel_card_headline(asset) -> str:
+    """Karta sarlavhasi -- kartadagi birinchi mazmunli matn qatlami
+    (hisoblagich "2/5" emas)."""
+    try:
+        for layer in asset.get_layers() or []:
+            txt = (layer.get("text") or "").strip()
+            if layer.get("type") == "text" and txt and not re.fullmatch(r"\d+\s*/\s*\d+", txt):
+                return txt.replace("\n", " ")[:40]
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _autopilot_carousel_for_wizard(session, company, group) -> list:
+    """`?carousel_group=` -- faqat o'z kompaniyasining TAYYOR karusel kartalari."""
+    if not group or company is None:
+        return []
+    rows = creative_carousel.group_assets(session, company.id, str(group))
+    rows = [r for r in rows if r.status == "ready" and r.final_storage_path]
+    return rows if len(rows) >= 2 else []
+
+
+def _autopilot_attach_carousel(session, draft, rows, company, assets) -> "str | None":
+    """Karusel kartalarini qoralama mediasi qilib biriktiradi va
+    `ad.media.carousel`ga yozadi (birinchi karta asosiy rasm ham)."""
+    cards, errors = [], []
+    for asset in rows[:10]:
+        try:
+            row = autopilot_web.media_from_creative_asset(session, draft, asset, _autopilot_manager_id())
+        except campaign_media.MediaError as e:
+            return f"Karusel biriktirilmadi: {e}"
+        err = autopilot_web.try_upload_to_meta(session, row, company)
+        if err:
+            errors.append(err)
+        cards.append({"media_id": row.id, "image_hash": row.meta_image_hash, "headline": _carousel_card_headline(asset)})
+    first = cards[0]
+    try:
+        autopilot_web.apply_and_persist_patch(
+            session, draft, {"scope": "ad", "changes": {"ad.media": {
+                "media_id": first["media_id"], "image_hash": first["image_hash"], "video_id": None,
+                "selected_variant": None, "carousel": cards,
+            }}}, source="USER_OVERRIDDEN",
+            manager_id=_autopilot_manager_id(), actor="user", action="media_selected",
+            details={"carousel_cards": len(cards), "source": "creative_carousel", "upload_errors": errors[:3]},
+            company=company, assets=assets,
+        )
+    except campaign_draft.DraftPatchError as e:
+        return f"Karusel biriktirilmadi: {e}"
+    return errors[0] if errors else None
+
+
 def _autopilot_creative_for_wizard(session, company, raw_id) -> "db.CreativeAsset | None":
     """`?creative_asset_id=` -- faqat o'z kompaniyasining TAYYOR kreativi."""
     try:
@@ -7651,12 +8177,19 @@ def autopilot_new():
         # 2026-09, Kreativ studiya "Targetga ochish": tayyor kreativ media
         # sifatida biriktiriladi (fayl yuklash o'rniga), maydonlar oldindan
         # to'ldirilgan bo'lishi mumkin (`?objective=&budget=&product_focus=`).
-        creative_asset = _autopilot_creative_for_wizard(session, company, request.values.get("creative_asset_id"))
+        carousel_rows = _autopilot_carousel_for_wizard(session, company, request.values.get("carousel_group"))
+        creative_asset = carousel_rows[0] if carousel_rows else _autopilot_creative_for_wizard(session, company, request.values.get("creative_asset_id"))
         creative_info = None
         if creative_asset is not None:
             creative_info = {"id": creative_asset.id, "title": creative_asset.title or f"Kreativ #{creative_asset.id}",
                              "thumbnail_url": url_for("creative_image_file", asset_id=creative_asset.id),
                              "editor_url": url_for("creative_editor", asset_id=creative_asset.id)}
+            if carousel_rows:
+                creative_info.update({
+                    "title": f"Karusel — {len(carousel_rows)} karta (reklama pauzada chiqadi)",
+                    "editor_url": url_for("creative_carousel_view", group=request.values.get("carousel_group")),
+                    "carousel_group": request.values.get("carousel_group"), "carousel_count": len(carousel_rows),
+                })
         if request.method == "GET":
             for key in ("objective", "budget", "product_focus"):
                 v = (request.args.get(key) or "").strip()
@@ -7681,7 +8214,10 @@ def autopilot_new():
             if location_name:
                 answers["locations"] = [location_name]
             media_file = request.files.get("media")
-            if creative_asset is not None:
+            if carousel_rows:
+                answers["media"] = f"karusel ({len(carousel_rows)} karta, Kreativ studiya)"
+                media_file = None
+            elif creative_asset is not None:
                 answers["media"] = f"rasm (Kreativ studiya #{creative_asset.id})"
                 media_file = None
             elif media_file is not None and media_file.filename:
@@ -7713,7 +8249,11 @@ def autopilot_new():
                 return render_template("autopilot_new.html", questions=questions, question_keys=question_keys, objectives=objectives,
                                        form=form, connection=conn, ctx=ctx, **tpl_kwargs), 400
 
-            if creative_asset is not None:
+            if carousel_rows:
+                err = _autopilot_attach_carousel(session, draft, carousel_rows, company, assets)
+                if err:
+                    flash(err, "error")
+            elif creative_asset is not None:
                 err = _autopilot_attach_creative(session, draft, creative_asset, company, assets)
                 if err:
                     flash(err, "error")
@@ -8729,7 +9269,11 @@ def _creative_urls(asset, from_autopilot: "str | None") -> dict:
         "list": url_for("creative_list"), "templates": url_for("creative_templates_gallery"), "new": url_for("creative_new"),
         "brand_settings": url_for("settings_brand_kit"), "brand_logo": url_for("brand_logo_file"), "pricing": url_for("pricing"),
         "target_create": url_for("creative_target_create", asset_id=asset.id), "autopilot_new": url_for("autopilot_new"),
+        "carousel_create": url_for("creative_carousel_create"),
     }
+    carousel = creative_carousel.info(asset)
+    if carousel:
+        urls["carousel_view"] = url_for("creative_carousel_view", group=carousel["group"])
     if from_autopilot and str(from_autopilot).isdigit():
         urls["from_autopilot_draft_id"] = int(from_autopilot)
         urls["autopilot"] = url_for("autopilot_review", draft_id=int(from_autopilot))
@@ -8786,10 +9330,91 @@ def creative_list():
         }) if company else None
         if style_onboarding is not None:
             style_onboarding["force_show"] = bool(request.args.get("open_style"))
+        carousel_styles = creative_web.carousel_style_cards(_carousel_preview_url)
         return render_template("creative_list.html", assets=assets, quota=quota, from_autopilot=draft_id,
+                               carousel_styles=carousel_styles,
                                aspect=request.args.get("aspect") or "", templates=templates,
                                templates_initial=creative_web.INLINE_TEMPLATES_INITIAL,
                                style_onboarding=style_onboarding)
+    finally:
+        session.close()
+
+
+def _carousel_preview_url(style_key: str) -> str:
+    return url_for("static", filename=f"creative_templates/carousel_{style_key}.png")
+
+
+@app.route("/kreativ/karusel/yangi", methods=["POST"])
+@login_required
+@module_required("target")
+def creative_carousel_create():
+    """Karusel yaratish (OpenAI'siz, kvota sarflanmaydi). Forma: style,
+    cards (3-6), aspect; ixtiyoriy source_asset_id -- tayyor kreativ foni bilan."""
+    company = _current_company()
+    if company is None:
+        abort(404)
+    session = get_session()
+    try:
+        source = None
+        source_id = (request.form.get("source_asset_id") or "").strip()
+        if source_id.isdigit():
+            source = _creative_load_asset(session, int(source_id), company)
+        try:
+            cards_n = int(request.form.get("cards") or creative_carousel.DEFAULT_CARDS)
+        except ValueError:
+            cards_n = creative_carousel.DEFAULT_CARDS
+        try:
+            cards = creative_carousel.create_carousel(
+                session, company, _autopilot_manager_id(), style_key=request.form.get("style") or "",
+                n_cards=cards_n, source_asset=source, aspect=(request.form.get("aspect") or "1:1").strip(),
+            )
+        except creative_studio.CreativeError as e:
+            flash(str(e), "error")
+            return redirect(url_for("creative_editor", asset_id=source.id) if source else url_for("creative_list") + "#cs-carousel")
+        flash(lang_module.translate("carousel.created", g.lang, n=len(cards)), "success")
+        return redirect(url_for("creative_carousel_view", group=creative_carousel.info(cards[0])["group"]))
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/karusel/<group>")
+@login_required
+@module_required("target")
+def creative_carousel_view(group: str):
+    company = _current_company()
+    session = get_session()
+    try:
+        rows = creative_carousel.group_assets(session, company.id, group) if company else []
+        if not rows:
+            abort(404)
+        cards = []
+        for a in rows:
+            ready = a.status == "ready" and bool(a.final_storage_path)
+            cards.append({"id": a.id, "title": a.title, "aspect": a.aspect,
+                          "thumbnail_url": (url_for("creative_image_file", asset_id=a.id) + "?v=" + creative_web._version(a)) if ready else None})
+        style = creative_carousel.get_style((creative_carousel.info(rows[0]) or {}).get("style"))
+        return render_template("creative_carousel.html", cards=cards, group=group, style_name=style["name"])
+    finally:
+        session.close()
+
+
+@app.route("/kreativ/karusel/<group>.zip")
+@login_required
+@module_required("target")
+def creative_carousel_zip(group: str):
+    company = _current_company()
+    session = get_session()
+    try:
+        rows = creative_carousel.group_assets(session, company.id, group) if company else []
+        if not rows:
+            abort(404)
+        try:
+            data = creative_carousel.zip_bytes(rows)
+        except creative_studio.CreativeError as e:
+            flash(str(e), "error")
+            return redirect(url_for("creative_carousel_view", group=group))
+        return Response(data, mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="replix_karusel_{group}.zip"'})
     finally:
         session.close()
 
@@ -8805,6 +9430,7 @@ def creative_templates_gallery():
         preferred_styles = brand_kit.get_preferred_styles() if brand_kit is not None else None
         cards = creative_web.template_cards(lambda key: url_for("static", filename=f"creative_templates/{key}.png"), preferred_styles=preferred_styles)
         return render_template("creative_templates_gallery.html", templates=cards, categories=creative_templates.TEMPLATE_CATEGORIES,
+                               carousel_styles=creative_web.carousel_style_cards(_carousel_preview_url),
                                from_autopilot=request.args.get("from_autopilot") or "")
     finally:
         session.close()
@@ -9384,14 +10010,19 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     tracked_names = {n.lower() for (n,) in session.query(Competitor.name).all()}
     grouped: dict[str, dict] = {}
     order: list[str] = []
-    MAX_AD_EXAMPLES = 2
+    # Ad Library sahifasidan (adlib_scraper) kelgan natijada video/rasm bor --
+    # ko'proq namuna ko'rsatamiz.
+    has_media = any(ad.get("preview_image_url") for ad in raw_results)
+    MAX_AD_EXAMPLES = 4 if has_media else 2
+    now_utc = dt.datetime.utcnow()
     for ad in raw_results:
         page_name = (ad.get("page_name") or "").strip()
         if not page_name:
             continue
         key = page_name.lower()
         if key not in grouped:
-            grouped[key] = {"page_name": page_name, "page_id": ad.get("page_id"), "ads": [], "active_count": 0}
+            grouped[key] = {"page_name": page_name, "page_id": ad.get("page_id"), "ads": [], "active_count": 0,
+                            "page_picture_url": ad.get("page_picture_url"), "page_like_count": ad.get("page_like_count")}
             order.append(key)
         bucket = grouped[key]
         # `ad_delivery_stop_time` bo'sh/yo'q bo'lsa -- reklama HALI ham
@@ -9405,9 +10036,19 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
         if len(bucket["ads"]) >= MAX_AD_EXAMPLES:
             continue
         bodies = ad.get("ad_creative_bodies") or []
+        started = None
+        try:
+            started = dt.datetime.strptime((ad.get("ad_delivery_start_time") or "")[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
         bucket["ads"].append({
             "snippet": (bodies[0].strip().replace("\n", " ")[:200] if bodies else ""),
             "snapshot_url": ad.get("ad_snapshot_url"),
+            "preview_image_url": ad.get("preview_image_url"),
+            "video_url": ad.get("video_url"),
+            "cta_text": ad.get("cta_text"),
+            "started": started.strftime("%d.%m.%Y") if started else None,
+            "running_days": max(0, (now_utc - started).days) if started else None,
         })
 
     # 2026-09, foydalanuvchi so'rovi ("brendlarni aniq logo, nechta
@@ -9430,13 +10071,15 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     for key in order:
         bucket = grouped[key]
         profile = {}
-        if bucket.get("page_id"):
+        if bucket.get("page_id") and not bucket.get("page_picture_url"):
             try:
                 profile = meta_api.get_page_public_profile(bucket["page_id"])
             except Exception:
                 profile = {}
-        bucket["picture_url"] = profile.get("picture_url")
+        bucket["picture_url"] = profile.get("picture_url") or bucket.get("page_picture_url")
         fan_count = profile.get("fan_count")
+        if not isinstance(fan_count, int) and str(bucket.get("page_like_count") or "").isdigit():
+            fan_count = int(bucket["page_like_count"])
         bucket["fan_count_display"] = (
             f"{fan_count:,}".replace(",", " ") + " obunachi" if isinstance(fan_count, int) else None
         )
@@ -9453,6 +10096,39 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
         for key in order
     ]
     return search_results, None
+
+
+def _ad_library_url(username: str, name: "str | None" = None, media_type: str = "all") -> str:
+    """Meta Ad Library'ning rasmiy sahifasi -- raqobatchining BARCHA faol
+    reklamalari (O'zbekistondagi tijoriy reklamalar ham) ko'rinadi.
+    `media_type="video"` -- faqat video reklamalar."""
+    from urllib.parse import urlencode
+    return "https://www.facebook.com/ads/library/?" + urlencode({
+        "active_status": "active", "ad_type": "all", "country": "ALL",
+        "q": name or username, "search_type": "keyword_unordered", "media_type": media_type,
+    })
+
+
+@app.route("/raqobatchilar/instagram", methods=["GET"])
+@login_required
+@module_required("settings")
+def ig_benchmark_page():
+    """Instagram raqobatchi statistikasi: username(lar) -> so'nggi 12-30 post
+    bo'yicha o'rtacha like/komment/ko'rish, ER, post chastotasi + reklamalari."""
+    raw = request.args.get("u", "")
+    usernames = ig_benchmark.parse_usernames(raw)
+    limit = ig_benchmark.clamp_limit(request.args.get("n", ig_benchmark.DEFAULT_POSTS))
+    data = None
+    if usernames:
+        data = ig_benchmark.compare(_current_company(), usernames, limit, force=request.args.get("refresh") == "1")
+        for r in data["results"]:
+            r["ad_library_url"] = _ad_library_url(r["username"], r.get("name"))
+    elif raw.strip():
+        flash("Username noto'g'ri. Masalan: dunyabunya yoki instagram.com/dunyabunya", "error")
+    return render_template(
+        "ig_benchmark.html", data=data, raw=raw, limit=limit,
+        min_posts=ig_benchmark.MIN_POSTS, max_posts=ig_benchmark.MAX_POSTS,
+    )
 
 
 @app.route("/settings/competitors", methods=["GET", "POST"])
@@ -9538,6 +10214,8 @@ def competitors_settings():
                 "id": c.id, "name": c.name, "domain": c.domain,
                 "search_term": c.search_term, "is_active": c.is_active,
                 "active_ads_count": ads_count,
+                "ad_library_url": _ad_library_url(c.search_term or c.name),
+                "ad_library_video_url": _ad_library_url(c.search_term or c.name, media_type="video"),
                 "last_analyzed_at": c.last_analyzed_at.strftime("%d.%m.%Y %H:%M") if c.last_analyzed_at else None,
             })
     finally:
@@ -9547,6 +10225,8 @@ def competitors_settings():
     return render_template(
         "competitors.html", competitors=rows, query_term=query_term,
         search_results=search_results, search_error=search_error,
+        ad_library_url=_ad_library_url(query_term) if query_term else None,
+        ad_library_video_url=_ad_library_url(query_term, media_type="video") if query_term else None,
         rotation_days=competitor_analytics.ROTATION_DAYS,
         competitor_limit=competitor_limit,
     )
@@ -9572,6 +10252,11 @@ def competitors_live_search():
     """
     query_term = (request.args.get("q") or "").strip()
     if len(query_term) < 2:
+        return jsonify({"results": []})
+    import adlib_scraper
+    if adlib_scraper.is_enabled():
+        # Har harf bosilganda brauzer ochilmasin (~10 s, ko'p xotira) --
+        # to'liq natija "Qidirish" bosilganda chiqadi.
         return jsonify({"results": []})
     session = get_session()
     try:
@@ -9820,6 +10505,8 @@ def manual_trigger(job_name):
 def create_app():
     init_db()
     call_analysis.log_model_config()
+    if TELEGRAM_TOKEN and not TELEGRAM_WEBHOOK_SECRET:
+        threading.Thread(target=_ensure_telegram_webhook_secret_with_retry, daemon=True).start()
     from scheduler import start_scheduler
     start_scheduler(app)
     return app

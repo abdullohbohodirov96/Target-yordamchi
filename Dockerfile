@@ -21,6 +21,13 @@ WORKDIR /app
 COPY app/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 2026-10: raqobatchi reklamalari uchun Ad Library sahifasini o'qiydigan
+# yashirin brauzer (`adlib_scraper.py`) -- faqat Chromium va uning tizim
+# kutubxonalari. Brauzer faqat ADLIB_SCRAPER=1 bo'lsa va qidiruv paytida ishga
+# tushadi, so'rovdan keyin darhol yopiladi.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
+
 COPY app/ ./
 
 EXPOSE 10000

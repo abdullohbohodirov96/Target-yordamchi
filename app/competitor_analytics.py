@@ -28,10 +28,18 @@ qimmat Anthropic chaqiruvi shart emas (xarajat strategiyasi `orchestrator.py`
 dagi bilan bir xil)."""
 
 import datetime as dt
+import os
 
 import orchestrator
+import competitor_insights
 import competitor_sync
 from db import get_session, Competitor, CompetitorAd, CompetitorAnalysis
+
+# 2026-10, foydalanuvchi so'rovi ("token ai qiladigan emas avtomatik
+# qiladigan qilishimiz kerak xozircha"): tahlil endi standart bo'yicha
+# AI'SIZ (`competitor_insights`, qoidalar bilan). AI xulosasi faqat shu
+# o'zgaruvchi yoqilsa qo'shiladi.
+AI_SUMMARY_ENABLED = os.environ.get("COMPETITOR_AI_SUMMARY", "").strip().lower() in ("1", "true", "yes")
 
 # 2 kunda bir marta -- foydalanuvchi aniq shunday so'ragan ("har 2 kunda
 # bir raqobatchilani analiz qilsin").
@@ -95,6 +103,23 @@ def _build_report(competitor: Competitor, ads: list[CompetitorAd]) -> dict:
     return {"telegram_text": telegram_text, "summary_text": summary}
 
 
+def _build_rule_report(session, competitor: Competitor) -> dict:
+    """AI'siz avtomatik tahlil (`competitor_insights.analyze`) -- barcha
+    saqlangan reklamalar (faol + to'xtagan) va oldingi tahlil vaqti bilan."""
+    all_ads = session.query(CompetitorAd).filter_by(competitor_id=competitor.id).all()
+    report = competitor_insights.analyze(competitor, all_ads, since=competitor.last_analyzed_at)
+    summary = report["summary_text"]
+    if AI_SUMMARY_ENABLED:
+        active = [a for a in all_ads if a.is_active][:8]
+        try:
+            summary += "\n\n" + _build_report(competitor, active)["summary_text"]
+        except Exception:  # noqa: BLE001 -- AI qismi ixtiyoriy
+            pass
+    tg_body = "\n".join("▪️ " + l[3:].upper() if l.startswith("## ") else l for l in summary.split("\n"))
+    telegram_text = f"📊 Raqobatchi tahlili: {competitor.name} ({competitor.domain or '—'})\n\n{tg_body}"
+    return {"telegram_text": telegram_text, "summary_text": summary}
+
+
 def _analyze(session, competitor: Competitor, *, resync: bool = True) -> dict:
     """Bitta (allaqachon aniqlangan) raqobatchini tahlil qiladi:
     xohlasa qayta sinxronlaydi (`resync`), joriy faol e'lonlarini o'qiydi,
@@ -119,7 +144,7 @@ def _analyze(session, competitor: Competitor, *, resync: bool = True) -> dict:
             "hali reklama yoqmagan, yoki sinxronizatsiya endi boshlandi."
         )
     else:
-        report = _build_report(competitor, ads)
+        report = _build_rule_report(session, competitor)
         summary_text = report["summary_text"]
         telegram_text = report["telegram_text"]
 

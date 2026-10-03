@@ -12,7 +12,7 @@
 
 <div class="page-head">
   <div>
-    <h1>{{ t('creative.title') }}</h1>
+    <h1>{{ t('creative.title') }} <span class="badge-beta" title="{{ t('creative.beta_tip') }}">{{ t('creative.beta') }}</span></h1>
     <p class="page-subtitle" style="margin-bottom:0">{{ t('creative.subtitle') }}</p>
   </div>
   <div class="page-head-actions">
@@ -62,6 +62,7 @@
           <span class="badge badge-color-{{ a.status_color }}">{{ a.status_label }}</span>
           <span class="badge badge-color-{{ 'blue' if a.kind == 'ai_generated' else 'dim' }}">{{ a.kind_label }}</span>
           <span>{{ a.aspect }}</span>
+          {% if a.carousel %}<a href="{{ url_for('creative_carousel_view', group=a.carousel.group) }}" class="badge badge-color-blue" style="text-decoration:none">{{ t('carousel.badge', i=a.carousel.index, n=a.carousel.total) }}</a>{% endif %}
           {% if a.template_name %}<span title="{{ t('creative.template_tip') }}">{{ a.template_name }}</span>{% endif %}
           <span>{{ a.updated_at.strftime('%d.%m.%Y %H:%M') if a.updated_at else '—' }}</span>
         </div>
@@ -98,6 +99,8 @@
      -- bir bosishda tanlash ("Shundan boshlash" -> /kreativ/yangi, xuddi
      to'liq galereyadagi kabi). Dastlab {{ templates_initial }} ta, qolgani
      shu yerda ochiladi; to'liq galereya (kategoriya filtri bilan) alohida. #}
+  {% if carousel_styles %}{% include "_carousel_styles.html" %}{% endif %}
+
   {% if templates %}
   <section class="cs-inline-tpl" id="cs-inline-tpl" aria-label="{{ t('creative.inline_title') }}">
     <div class="cs-inline-tpl-head">

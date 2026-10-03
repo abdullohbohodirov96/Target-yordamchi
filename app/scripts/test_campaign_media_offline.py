@@ -20,6 +20,7 @@ import unittest.mock as mock
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("META_ACCESS_TOKEN", "test-dummy-token")
@@ -131,7 +132,7 @@ def test_ensure_uploaded_idempotent_and_failure():
                 check("xato qayta ko'tariladi", False)
             except meta_api.MetaAPIError:
                 check("xato qayta ko'tariladi", True)
-        check("failed + upload_error", row2.upload_status == "failed" and row2.upload_error == "Invalid image")
+        check("failed + upload_error (tushunarli matn)", row2.upload_status == "failed" and (row2.upload_error or "").startswith("Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi") and "kod 100" in row2.upload_error)
         with db_module.scoped_as(c.id):
             ev = session.query(db_module.CampaignDraftEvent).filter_by(draft_id=d.id, action="meta_error").all()
         check("meta_error event", len(ev) == 1 and ev[0].get_details()["step"] == "upload_media")

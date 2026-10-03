@@ -78,6 +78,7 @@
     <a href="#imkoniyatlar">{{ t('nav.features') }}</a>
     <a href="#qanday-ishlaydi">{{ t('nav.how') }}</a>
     <a href="{{ url_for('pricing') }}">{{ t('nav.pricing') }}</a>
+    <a href="{{ url_for('guide_page') }}">{{ t('guide.card_title') }}</a>
   </div>
   <div class="lp-nav-cta">
     <div class="lp-lang-switch">
@@ -116,7 +117,7 @@
       <div class="lp-mock-bar"><span></span><span></span><span></span></div>
       <div class="lp-mock-kpis">
         <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.new_leads') }}</div><div class="lp-mock-kpi-value">128</div></div>
-        <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.cpl') }}</div><div class="lp-mock-kpi-value good">0.01$ <span class="lp-mock-kpi-arrow" aria-hidden="true">&darr;</span></div></div>
+        <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.cpl') }}</div><div class="lp-mock-kpi-value good">$4.80 <span class="lp-mock-kpi-arrow" aria-hidden="true">&darr;</span></div></div>
         <div class="lp-mock-kpi"><div class="lp-mock-kpi-label">{{ t('mock.sales') }}</div><div class="lp-mock-kpi-value good">34</div></div>
       </div>
       <div class="lp-mock-row"><span class="lp-mock-name"><span class="lp-mock-dot" style="background:var(--good)"></span>Kamola A.</span><span class="lp-mock-tag" style="background:var(--good-bg);color:var(--good)">{{ t('mock.status_sold') }}</span></div>
@@ -155,6 +156,30 @@
     </div>
   </div>
 </header>
+
+<section class="lp-section" id="kim-uchun" data-reveal>
+  <div class="lp-section-head">
+    <h2>{{ t('paths.h2') }}</h2>
+    <p>{{ t('paths.sub') }}</p>
+  </div>
+  <div class="lp-paths">
+    {% for key in ('owner', 'targetolog') %}
+    <div class="lp-path">
+      <div class="lp-path-tag">{{ t('paths.' ~ key ~ '_tag') }}</div>
+      <h3>{{ t('paths.' ~ key ~ '_title') }}</h3>
+      <ul>
+        {% for i in range(1, 5) %}
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ t('paths.' ~ key ~ '_b' ~ i) }}</li>
+        {% endfor %}
+      </ul>
+      <div class="lp-path-cta">
+        <a href="{{ url_for('signup', plan='trial') }}" class="btn{{ '' if key == 'owner' else ' btn-ghost' }}">{{ t('paths.cta_trial') }}</a>
+        <a href="{{ url_for('guide_page') }}#{{ 'lidlar' if key == 'owner' else 'avtopilot' }}" class="lp-path-link">{{ t('paths.cta_guide') }} →</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
 
 <section class="lp-section lp-section-alt" id="imkoniyatlar" data-reveal>
   <div class="lp-section-head">
@@ -267,13 +292,18 @@
         {% if plan.price_usd %}<b>${{ plan.price_usd }}</b><span>{{ t('pricing.per_month') }}</span>
         {% else %}<b>{{ t('pricing.free') }}</b>{% endif %}
       </div>
+      {% if plan.price_usd %}<div class="lp-plan-uzs">≈ {{ price_uzs(plan.price_usd) }}{{ t('pricing.per_month') }}</div>{% endif %}
       <div class="lp-plan-period">{% if plan.period_days %}{{ plan.period_days }} {{ t('pricing.days') }}{% else %}{{ t('pricing.monthly_renew') }}{% endif %}</div>
       <div class="lp-plan-cta">
         <a href="{{ url_for('signup', plan=plan.key) }}" class="btn block{{ '' if plan.highlight else ' btn-ghost' }}">{{ t('pricing.cta_trial') if plan.key == 'trial' else t('pricing.cta_signup') }}</a>
       </div>
       <ul>
         {% for f in plan.features %}
+        {% if f.endswith(('kiritilmagan', 'не включён', 'не включены', 'not included')) %}
+        <li class="lp-feat-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>{{ f }}</li>
+        {% else %}
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>{{ f }}</li>
+        {% endif %}
         {% endfor %}
       </ul>
     </div>
@@ -356,6 +386,7 @@
 
 <footer class="lp-footer">
   © {{ current_year() }} Replix. {{ t('footer.rights') }} &middot; <a href="{{ url_for('login') }}" class="text-blue">{{ t('footer.login') }}</a>
+  &middot; <a href="{{ url_for('guide_page') }}" class="text-blue">{{ t('guide.card_title') }}</a>
   &middot; <a href="{{ url_for('privacy_policy') }}" class="text-blue">{{ t('privacy_policy.title') }}</a>
   &middot; <a href="{{ url_for('data_deletion') }}" class="text-blue">{{ t('data_deletion.title') }}</a>
 </footer>

@@ -1102,7 +1102,10 @@ class CampaignDraft(Base):
     # xalaqit berdi. Endi tanlov bor -- standart holat ACTIVE (darhol
     # ishga tushadi), review modalida foydalanuvchi xohlasa PAUSED'ga
     # o'tkazishi mumkin (`meta_publish.publish_draft`).
-    launch_active = Column(Boolean, nullable=False, default=True)
+    # 2026-09-30 (docs/PLAN.md, egasi qarorni hamkorga topshirdi): standart
+    # endi PAUSED -- biznes egasi pulni nazorat qilsin, "Faollashtirish" --
+    # bitta tugma (tasdiq bilan). Faqat YANGI qoralamalar; ustun o'zgarmadi.
+    launch_active = Column(Boolean, nullable=False, default=False)
     publish_step = Column(String(32), nullable=True)
     publish_error = Column(Text, nullable=True)
     last_meta_error_raw = Column(Text, nullable=True)
@@ -1377,11 +1380,12 @@ def seed_default_funnel_stages_for_company(company_id: int) -> None:
     voronkasi BUTUNLAY BO'SH qolib, lidlarga status berib bo'lmas edi."""
     session = get_session()
     try:
-        if session.query(FunnelStage).filter_by(company_id=company_id).count() > 0:
-            return
-        for i, (key, label, category, color) in enumerate(DEFAULT_FUNNEL_STAGES):
-            session.add(FunnelStage(company_id=company_id, key=key, label=label, category=category, color=color, sort_order=i))
-        session.commit()
+        with scoped_as(company_id):
+            if session.query(FunnelStage).filter_by(company_id=company_id).count() > 0:
+                return
+            for i, (key, label, category, color) in enumerate(DEFAULT_FUNNEL_STAGES):
+                session.add(FunnelStage(company_id=company_id, key=key, label=label, category=category, color=color, sort_order=i))
+            session.commit()
     finally:
         session.close()
 
@@ -1670,6 +1674,9 @@ def delete_company_cascade(session, company_id: int) -> dict:
     qarang (bir yagona manba, cascade-delete VA tenant-filtri doim sinxron)."""
     counts: dict[str, int] = {}
     with unscoped():
+        # Menejerlarga bog'langan KV kalitlari (masalan `web_chat_history:{id}`)
+        # -- menejerlar o'chirilishidan OLDIN id'larini yig'ib olamiz.
+        manager_ids = {str(mid) for (mid,) in session.query(Manager.id).filter(Manager.company_id == company_id).all()}
         for model in _TENANT_FILTERED_MODELS:
             n = session.query(model).filter(model.company_id == company_id).delete(synchronize_session=False)
             counts[model.__tablename__] = n
@@ -1679,7 +1686,9 @@ def delete_company_cascade(session, company_id: int) -> dict:
         suffix = f":{company_id}"
         kv_deleted = 0
         for row in session.query(KVEntry).all():
-            if row.key.endswith(suffix):
+            if row.key.endswith(suffix) or (
+                row.key.startswith("web_chat_history:") and row.key.split(":", 1)[1] in manager_ids
+            ):
                 session.delete(row)
                 kv_deleted += 1
         counts["kv_store"] = kv_deleted
@@ -1896,35 +1905,84 @@ def get_default_company_id() -> "int | None":
 #      kompaniyaga (`get_default_company_id()`) o'rnatiladi, chunki Meta/
 #      Moi Zvonki ulanishlari hali GLOBAL (bitta akkaunt) -- bu KEYINGI
 #      alohida bosqichda har bir kompaniyaning o'z ulanishiga almashtiriladi.
-#   3. `None` -- "filtrsiz" (masalan `/login` sahifasi -- foydalanuvchi
-#      HALI aniqlanmagan, `Manager`ni username bo'yicha GLOBAL qidirish
-#      kerak; yoki migratsiya/urug'lantirish kodi) -- contextvar standart
-#      holatda ham `None`.
+#   3. ESKI: `None` -- "filtrsiz". YANGI (2026-09-30): `None` = yopiq holat,
+#      filtrsiz o'qish faqat `unscoped()` orqali (pastga qarang).
+#
+# 2026-09-30 (docs/PLAN.md, 1-bosqich): "YOPIQ HOLATDA YIQILADIGAN" (fail-closed)
+# rejim. ILGARI kontekst `None` bo'lsa filtr BUTUNLAY o'chardi -- ya'ni
+# qaysidir fon vazifasi yoki yangi route kontekst o'rnatishni unutsa, u
+# JIM-JIT barcha kompaniyalarning ma'lumotini ko'rardi. Endi uch holat bor:
+#   * aniq `company_id` (int)  -> filtr qo'llanadi (SELECT, UPDATE, DELETE);
+#   * `unscoped()` bloki        -> ATAYLAB filtrsiz (login, cron, migratsiya);
+#   * hech narsa o'rnatilmagan  -> tenant-jadvalga har qanday so'rov
+#                                  `TenantScopeError` bilan RAD ETILADI.
+# Favqulodda zaxira: `TENANT_SCOPE_MODE=warn` muhit o'zgaruvchisi bilan rad
+# etish o'rniga faqat ERROR log yoziladi va so'rov eski usulda (filtrsiz)
+# bajariladi -- kodni orqaga qaytarmasdan tezkor "rollback" uchun.
+class TenantScopeError(RuntimeError):
+    """Tenant-jadvalga kompaniya konteksti o'rnatilmagan holda murojaat."""
+
+
+_UNSET = object()      # kontekst o'rnatilmagan -> yopiq (rad etiladi)
+_UNSCOPED = object()   # `unscoped()` -- ataylab filtrsiz
+
+# FAQAT offline testlar uchun: test skripti bazani to'g'ridan-to'g'ri
+# tayyorlaydi/tekshiradi ("admin rejimi"). HTTP so'rovlar baribir har doim
+# `before_request`da aniq kontekst oladi. Production'da HECH QACHON
+# o'rnatilmaydi (o'rnatilsa -- ogohlantirish logi).
+_TEST_DEFAULT_UNSCOPED = os.environ.get("REPLIX_TEST_DEFAULT_UNSCOPED") == "1"
+if _TEST_DEFAULT_UNSCOPED:
+    logger.warning("REPLIX_TEST_DEFAULT_UNSCOPED=1 -- faqat testlar uchun! Production'da o'chiring.")
+
 _current_company_id: contextvars.ContextVar = contextvars.ContextVar(
-    "current_company_id", default=None,
+    "current_company_id", default=_UNSCOPED if _TEST_DEFAULT_UNSCOPED else _UNSET,
 )
 
 
+def _tenant_scope_mode() -> str:
+    return (os.environ.get("TENANT_SCOPE_MODE") or "strict").strip().lower()
+
+
 def set_current_company_id(company_id) -> None:
+    """`None` -- kontekstni boshlang'ich holatga TOZALASH (production'da --
+    yopiq holat), filtrsiz rejim EMAS. Filtrsiz ishlash kerak bo'lsa --
+    `unscoped()` ni ishlating."""
+    if company_id is None:
+        company_id = _UNSCOPED if _TEST_DEFAULT_UNSCOPED else _UNSET
     _current_company_id.set(company_id)
 
 
+def push_company_context(company_id):
+    """Kontekstni o'rnatib, keyin `pop_company_context()` bilan AYNAN oldingi
+    holatga qaytarish uchun token qaytaradi (Flask before/teardown_request)."""
+    return _current_company_id.set(_UNSET if company_id is None else company_id)
+
+
+def pop_company_context(token) -> None:
+    try:
+        _current_company_id.reset(token)
+    except (ValueError, RuntimeError):
+        _current_company_id.set(_UNSET)
+
+
 def get_current_company_id():
-    return _current_company_id.get()
+    """Joriy kompaniya id'si yoki `None` (o'rnatilmagan yoki `unscoped()`)."""
+    value = _current_company_id.get()
+    return None if value is _UNSET or value is _UNSCOPED else value
+
+
+def is_unscoped() -> bool:
+    return _current_company_id.get() is _UNSCOPED
 
 
 @contextlib.contextmanager
 def unscoped():
-    """Vaqtincha (shu `with` bloki davomida) tenant-filtrni o'chiradi --
+    """Vaqtincha (shu `with` bloki davomida) tenant-filtrni ATAYLAB o'chiradi --
     masalan `Manager.username` kabi ATAYLAB HALI GLOBAL unique qolgan
-    ustunni tekshirish uchun kerak (login formasi kompaniya tanlashni
-    talab qilmasligi uchun username'lar ATAYLAB kompaniyalar oralig'ida
-    ham noyob qoldirilgan -- shuning uchun "bu username band" tekshiruvi
-    ham GLOBAL bo'lishi kerak, aks holda ikkinchi kompaniya xuddi shu
-    username bilan menejer qo'shishga urinib, DB darajasidagi unique
-    cheklovga urilib, chiroyli xato xabari o'rniga xom IntegrityError
-    ko'rsatib qo'yardi)."""
-    token = _current_company_id.set(None)
+    ustunni tekshirish, login, cron/fon vazifalarining "barcha kompaniyalar
+    ro'yxati" bosqichi, migratsiya kabi joylar uchun. Filtrsiz o'qish
+    FAQAT shu blok orqali mumkin (fail-closed rejim)."""
+    token = _current_company_id.set(_UNSCOPED)
     try:
         yield
     finally:
@@ -1935,16 +1993,10 @@ def unscoped():
 def scoped_as(company_id):
     """Vaqtincha (shu `with` bloki davomida) tenant-filtrni ANIQ berilgan
     `company_id`ga o'rnatadi -- `current_user`ning O'Z company_id'sidan
-    MUSTAQIL. 2026-09, foydalanuvchi so'rovi ("kompaniyaga kirganda
-    manager qo'shib bo'lmayapti"): Manager tenant-filtrga tushgandan
-    keyin, platforma egasi `/managers` sahifasida ENDI faqat O'ZINING
-    kompaniyasi (Company #1) menejerlarini ko'radi/qo'sha oladi --
-    boshqa (masalan yangi yaratilgan) kompaniyaga menejer qo'shish uchun
-    avval o'sha kompaniyaning avtomatik yaratilgan admin hisobi bilan
-    chiqib-kirish kerak bo'lib qolgan edi. Bu funksiya platforma egasiga
-    `/companies/<id>/managers` orqali, chiqib-kirmasdan, TO'G'RIDAN-TO'G'RI
-    o'sha kompaniyaning menejerlarini boshqarish imkonini beradi."""
-    token = _current_company_id.set(company_id)
+    MUSTAQIL (masalan platforma egasi `/companies/<id>/managers` orqali
+    boshqa kompaniyani boshqarganda, yoki fon vazifasi har bir kompaniya
+    uchun alohida ishlaganda). `None` berilsa -- yopiq holat."""
+    token = _current_company_id.set(_UNSET if company_id is None else company_id)
     try:
         yield
     finally:
@@ -1954,16 +2006,72 @@ def scoped_as(company_id):
 _TENANT_FILTERED_MODELS = tuple(_COMPANY_SCOPED_MODELS)
 
 
+def company_scoped(fn):
+    """Dekorator: `company=` argumentini oladigan funksiyani (sinxronlash,
+    hisobot, CPL tekshiruvi) AVTOMATIK o'sha kompaniya kontekstida
+    bajaradi. `company` berilmasa (platforma egasining ENV hisobi) --
+    joriy kontekst saqlanadi, u ham bo'lmasa standart kompaniya olinadi.
+    Fon vazifalari (scheduler) shu orqali fail-closed rejimda ham to'g'ri
+    kompaniya bilan ishlaydi."""
+    import functools
+    import inspect
+
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            company = sig.bind_partial(*args, **kwargs).arguments.get("company")
+        except TypeError:
+            company = kwargs.get("company")
+        company_id = getattr(company, "id", None) if company is not None else None
+        if company_id is None:
+            company_id = get_current_company_id()
+        if company_id is None:
+            if SessionLocal is None:  # baza ulanmagan (oflayn yordamchi chaqiruv)
+                return fn(*args, **kwargs)
+            with unscoped():
+                company_id = get_default_company_id()
+        with scoped_as(company_id):
+            return fn(*args, **kwargs)
+
+    return wrapper
+_TENANT_FILTERED_MAPPER_CLASSES = frozenset(_TENANT_FILTERED_MODELS)
+
+
+def _statement_tenant_models(execute_state) -> list:
+    try:
+        mappers = execute_state.all_mappers
+    except Exception:
+        mappers = []
+    return [m.class_ for m in mappers if m.class_ in _TENANT_FILTERED_MAPPER_CLASSES]
+
+
 @sa_event.listens_for(_SASession, "do_orm_execute")
 def _apply_tenant_scope(execute_state) -> None:
-    if not execute_state.is_select:
+    if not (execute_state.is_select or execute_state.is_update or execute_state.is_delete):
         return
-    company_id = _current_company_id.get()
-    if company_id is None:
+    value = _current_company_id.get()
+    if value is _UNSCOPED:
         return
+    if value is _UNSET:
+        touched = _statement_tenant_models(execute_state)
+        if not touched:
+            return
+        names = ", ".join(sorted({m.__name__ for m in touched}))
+        if _tenant_scope_mode() == "warn":
+            logger.error(
+                "TENANT SCOPE: kompaniya konteksti yo'q, lekin %s ga so'rov "
+                "(TENANT_SCOPE_MODE=warn -- filtrsiz bajarilmoqda)", names,
+            )
+            return
+        raise TenantScopeError(
+            f"Kompaniya konteksti o'rnatilmagan: {names} jadvaliga so'rov rad etildi. "
+            "set_current_company_id()/scoped_as() yoki ataylab unscoped() ishlating."
+        )
     for model in _TENANT_FILTERED_MODELS:
         execute_state.statement = execute_state.statement.options(
-            with_loader_criteria(model, model.company_id == company_id, include_aliases=True)
+            with_loader_criteria(model, model.company_id == value, include_aliases=True)
         )
 
 
@@ -2023,6 +2131,40 @@ def _migrate_key_uniqueness_to_per_company() -> None:
             logger.info("Migratsiya: %s uchun composite unique constraint allaqachon bor (yoki qo'shib bo'lmadi): %s", table, e)
 
 
+_SECRET_COLUMNS = (
+    "meta_access_token", "meta_capi_access_token", "moizvonki_api_key",
+    "payme_card_token", "payme_card_pending_token",
+)
+
+
+def encrypt_legacy_plaintext_secrets() -> dict:
+    """2026-09-30 (docs/PLAN.md, 1-bosqich): shifrlash qo'shilishidan OLDIN
+    ochiq matnda saqlangan maxfiy qiymatlarni (Meta/CAPI token, Moi Zvonki
+    kaliti, Payme karta tokeni) BIR MARTA shifrlaydi. Idempotent: Fernet
+    shifriga o'xshagan qiymatga ("gAAAAA...") tegilmaydi -- kalit
+    almashgan holatda ham ikki marta shifrlanib qolmaydi. Baza TUZILISHI
+    o'zgarmaydi, faqat qiymatlar. Qaytaradi: {ustun: shifrlangan soni}.
+    Qiymatlarning o'zi HECH QACHON logga yozilmaydi."""
+    counts = {col: 0 for col in _SECRET_COLUMNS}
+    session = get_session()
+    try:
+        for company in session.query(Company).all():
+            for col in _SECRET_COLUMNS:
+                value = getattr(company, col, None)
+                if value and not crypto_util.looks_like_fernet(value):
+                    setattr(company, col, crypto_util.encrypt_token(value))
+                    counts[col] += 1
+        if any(counts.values()):
+            session.commit()
+            logger.warning("Eski ochiq matnli maxfiy qiymatlar shifrlandi: %s", counts)
+    except Exception:
+        session.rollback()
+        logger.exception("Eski maxfiy qiymatlarni shifrlashda xato (ilova ishlashda davom etadi)")
+    finally:
+        session.close()
+    return counts
+
+
 def init_db() -> None:
     """Jadvallarni yaratadi (agar hali yo'q bo'lsa) va mavjud jadvallarga
     yetishmayotgan ustunlarni qo'shadi (`_migrate_add_missing_columns`).
@@ -2036,11 +2178,22 @@ def init_db() -> None:
     _migrate_add_missing_columns()
     _migrate_widen_columns()
     _migrate_key_uniqueness_to_per_company()
-    default_company_id = ensure_default_company()
-    seed_default_funnel_stages_for_company(default_company_id)
+    with unscoped():  # migratsiya/urug'lantirish -- ataylab barcha kompaniyalar bo'yicha
+        default_company_id = ensure_default_company()
+        seed_default_funnel_stages_for_company(default_company_id)
+    encrypt_legacy_plaintext_secrets()
 
 
 def get_session():
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL o'rnatilmagan.")
     return SessionLocal()
+
+
+def company_paid_up_clause(now: "dt.datetime | None" = None):
+    """SQL sharti: `Company.is_paid_up()` bilan bir xil -- faol VA (muddatsiz
+    yoki muddati o'tmagan). Fon hisobotlari/AI auditlari obunasi tugagan
+    kompaniyalarga yuborilmasligi uchun."""
+    from sqlalchemy import and_, or_
+    now = now or dt.datetime.utcnow()
+    return and_(Company.is_active.is_(True), or_(Company.paid_until.is_(None), Company.paid_until >= now))

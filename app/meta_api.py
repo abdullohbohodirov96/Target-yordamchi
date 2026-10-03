@@ -38,7 +38,10 @@ import requests
 
 logger = logging.getLogger("meta_api")
 
-GRAPH_API_VERSION = "v21.0"
+# 2026-09-30: v21.0 (2024-10) muddati tugayapti -> v25.0 (2026-02, amal
+# qilish muddati 2028-07). Kerak bo'lsa Render'da META_GRAPH_API_VERSION
+# bilan kodni o'zgartirmasdan almashtiriladi (masalan "v26.0").
+GRAPH_API_VERSION = (os.environ.get("META_GRAPH_API_VERSION") or "v25.0").strip()
 GRAPH_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
 ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
@@ -96,10 +99,87 @@ def safe_error_message(e: Exception) -> str:
     joyga) yoziladi -- diagnostika uchun yo'qolmaydi, faqat ekranga
     chiqmaydi."""
     if isinstance(e, MetaAPIError) and e.args and isinstance(e.args[0], dict):
-        msg = e.args[0].get("message")
+        err = e.args[0]
+        friendly = friendly_meta_error(err)
+        if friendly:
+            return friendly
+        msg = err.get("error_user_msg") or err.get("message")
         if msg:
-            return str(msg)
+            return f"{msg}{_error_code_suffix(err)}"
     return "Meta bilan bog'lanishda vaqtinchalik xatolik yuz berdi (tarmoq muammosi bo'lishi mumkin). Birozdan keyin sahifani yangilab ko'ring."
+
+
+def _error_code_suffix(err: dict) -> str:
+    """Qo'llab-quvvatlash uchun qisqa kod: " (kod 100/4834011)"."""
+    code, sub = err.get("code"), err.get("error_subcode")
+    if code is None:
+        return ""
+    return f" (kod {code}/{sub})" if sub else f" (kod {code})"
+
+
+def friendly_meta_error(err: dict, step: "str | None" = None) -> "str | None":
+    """2026-09-30 (docs/PLAN.md, 2-bosqich): Meta xatosini foydalanuvchi
+    tushunadigan o'zbekcha matnga aylantiradi (+ qisqa kod). Tanilmagan
+    xato uchun `None` -- chaqiruvchi o'zi qaror qiladi. Matnda token/URL
+    bo'lmaydi (faqat Meta JSON xatosi maydonlari ishlatiladi)."""
+    if not isinstance(err, dict):
+        return None
+    code = err.get("code")
+    subcode = err.get("error_subcode")
+    text = " ".join(str(err.get(k) or "") for k in ("message", "error_user_msg", "error_user_title")).lower()
+    suffix = _error_code_suffix(err)
+    if code == 190 or ("access token" in text and ("expired" in text or "invalid" in text or "session" in text)):
+        return "Meta ulanishi muddati tugagan -- \"Hisoblarni ulash\" sahifasidan Facebook'ni qayta ulang." + suffix
+    if subcode == 4834011 or "is_adset_budget_sharing_enabled" in text:
+        return "Meta kampaniya byudjeti sozlamasini (Ad Set byudjetini bo'lishish) talab qildi -- yangilangan tizim buni avtomatik yuboradi, qayta urinib ko'ring." + suffix
+    if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
+        return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering." + suffix
+    if code in (4, 17, 32, 613, 80000, 80004) or ("rate" in text and "limit" in text) or "too many calls" in text:
+        return "Meta so'rovlar chegarasiga yetildi -- bir necha daqiqadan keyin qayta urinib ko'ring." + suffix
+    if code == 2 or code == 1 or err.get("is_transient"):
+        return "Meta serverida vaqtinchalik nosozlik -- birozdan keyin qayta urinib ko'ring." + suffix
+    if "payment" in text or "billing" in text or "funding" in text or subcode in (1359188,):
+        return "Reklama akkauntida to'lov usuli muammosi bor -- Ads Manager'da to'lov sozlamalarini tekshiring." + suffix
+    if "disabled" in text and "account" in text or code == 1487390:
+        return "Reklama akkaunti Meta tomonidan cheklangan yoki o'chirilgan -- Ads Manager'da akkaunt holatini tekshiring." + suffix
+    if "instagram" in text and ("not connected" in text or "connect" in text or "actor" in text or "linked" in text):
+        return "Instagram akkaunt reklama akkauntiga ulanmagan. Meta Business Suite'da Instagram'ni sahifaga ulang." + suffix
+    if "pixel" in text or (step == "adset" and "promoted_object" in text):
+        return "Bu maqsad uchun Pixel tanlash kerak (Meta Events Manager)." + suffix
+    if "page" in text and ("not" in text and ("own" in text or "admin" in text or "access" in text)):
+        return "Bu sahifa kompaniyaga ulanmagan yoki unga ruxsat yo'q." + suffix
+    if "targeting" in text or "audience" in text or "geo" in text or "location" in text or subcode in (1487079, 1487760):
+        return "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring." + suffix
+    if "budget" in text or ("minimum" in text and "amount" in text):
+        return "Byudjet Meta'ning minimal chegarasidan kam -- kunlik byudjetni oshiring." + suffix
+    if "image" in text or "video" in text or "creative" in text or step == "creative":
+        return "Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi. Rasm hajmi va matnni tekshiring." + suffix
+    if ("lead" in text and "form" in text) or step == "lead_form":
+        return "Instant Form yaratib bo'lmadi -- savollar va maxfiylik havolasini tekshiring." + suffix
+    return None
+
+
+def _redact_path(path: str) -> str:
+    """Log uchun yo'l -- hech qachon token/query'siz."""
+    return (path or "").split("?", 1)[0]
+
+
+def _log_meta_call(method: str, path: str, started: float, http_status, result) -> None:
+    """Har bir Meta chaqiruvi -- bitta qator (token YO'Q). Xato -> WARNING
+    (kod, subkod, turi, fbtrace_id, xabar); yozuv (POST) -> INFO; o'qish -> DEBUG."""
+    ms = int((time.monotonic() - started) * 1000)
+    err = result.get("error") if isinstance(result, dict) else None
+    if isinstance(err, dict):
+        logger.warning(
+            "META %s %s -> HTTP %s %sms XATO code=%s subcode=%s type=%s fbtrace_id=%s msg=%r user_title=%r",
+            method, _redact_path(path), http_status, ms, err.get("code"), err.get("error_subcode"),
+            err.get("type"), err.get("fbtrace_id"), (err.get("message") or "")[:300], err.get("error_user_title"),
+        )
+        return
+    level = logging.INFO if method != "GET" else logging.DEBUG
+    obj_id = result.get("id") if isinstance(result, dict) else None
+    logger.log(level, "META %s %s -> HTTP %s %sms ok%s", method, _redact_path(path), http_status, ms,
+               f" id={obj_id}" if obj_id else "")
 
 
 # 2026-09, Item J xavfsizlik auditi (🟠 YUQORI, 8-band): "Meta API va Claude
@@ -153,14 +233,17 @@ def _get(path: str, params: dict | None = None, token: str | None = None) -> dic
     params["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.get(url, params=params, timeout=30)
             data = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META GET %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             if attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("GET", path, started, getattr(r, "status_code", None), data)
         if "error" in data:
             if _is_transient_meta_error(data) and attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
@@ -182,10 +265,12 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
     payload["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.post(url, data=payload, timeout=30)
             result = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META POST %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             # Faqat SOF tarmoq xatosida qayta urinamiz (izohga qarang, yuqorida)
             # -- Meta javob qaytargan har qanday holatda (hatto xato bilan ham)
             # darhol to'xtaymiz, IKKILANTIRIB YUBORISH xavfini olmaslik uchun.
@@ -193,6 +278,7 @@ def _post(path: str, data: dict, token: str | None = None) -> dict:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("POST", path, started, getattr(r, "status_code", None), result)
         if isinstance(result, dict) and "error" in result:
             raise MetaAPIError(result["error"])
         return result
@@ -213,14 +299,17 @@ def _post_multipart(path: str, data: dict, files: dict, token: str | None = None
     payload["access_token"] = token or ACCESS_TOKEN
     url = f"{GRAPH_URL}/{path}"
     for attempt in range(_MAX_ATTEMPTS):
+        started = time.monotonic()
         try:
             r = requests.post(url, data=payload, files=files, timeout=120)
             result = r.json()
-        except _RETRYABLE_NETWORK_ERRORS:
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            logger.warning("META UPLOAD %s -> tarmoq xatosi (%s), urinish %s/%s", _redact_path(path), type(e).__name__, attempt + 1, _MAX_ATTEMPTS)
             if attempt < _MAX_ATTEMPTS - 1:
                 _retry_sleep(attempt)
                 continue
             raise
+        _log_meta_call("UPLOAD", path, started, getattr(r, "status_code", None), result)
         if isinstance(result, dict) and "error" in result:
             raise MetaAPIError(result["error"])
         return result
@@ -289,6 +378,9 @@ def is_capi_configured(*, pixel_id: str | None = None, access_token: str | None 
 
 def _hash_sha256(value: str) -> str:
     return hashlib.sha256(value.strip().lower().encode("utf-8")).hexdigest()
+
+
+CAPI_LEAD_EVENT_SOURCE = os.environ.get("CAPI_LEAD_EVENT_SOURCE", "Replix CRM").strip() or "Replix CRM"
 
 
 def send_conversion_event(
@@ -395,8 +487,18 @@ def send_conversion_event(
         event["event_source_url"] = event_source_url
     if event_id:
         event["event_id"] = event_id
+    custom_data: dict = {}
     if value is not None:
-        event["custom_data"] = {"value": round(float(value), 2), "currency": currency}
+        custom_data.update({"value": round(float(value), 2), "currency": currency})
+    if lead_id:
+        # 2026-09-30 (docs/PLAN.md, 2-bosqich): Meta "Conversion Leads" (CRM
+        # integratsiyasi) Lead Ads lidining keyingi bosqichlarini (sifatli
+        # lid, sotuv) reklama optimizatsiyasiga bog'lashi uchun shu ikki
+        # maydonni kutadi.
+        custom_data["event_source"] = "crm"
+        custom_data["lead_event_source"] = CAPI_LEAD_EVENT_SOURCE
+    if custom_data:
+        event["custom_data"] = custom_data
 
     payload: dict = {"data": [event]}
     if test_event_code:
@@ -444,14 +546,23 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
     ulagan) Page/token uchun Page Access Token oladi. Ikkalasi ham
     berilmasa -- eski global (ENV) `PAGE_ID`/`ACCESS_TOKEN` ishlatiladi
     (orqaga moslik: CLI skript yoki hali company-parametrsiz chaqiruvlar)."""
+    # 2026-10-01 XAVFSIZLIK (audit): kesh ILGARI faqat `page_id` bo'yicha edi --
+    # B kompaniya "Hisoblarni ulash"da A'ning (ochiq) Page ID'sini yozsa, A
+    # uchun keshlangan Page tokeni B'ga berilib, A'ning lidlari/DM'lari B'ning
+    # CRM'iga oqib ketardi. Endi kalit = (page_id, foydalanuvchi tokeni xeshi):
+    # B o'z tokeni bilan A sahifasiga token ololmaydi (Meta rad etadi). Token
+    # berilgan, Page berilmagan bo'lsa -- egasining (ENV) sahifasiga O'TILMAYDI.
+    if user_access_token and not page_id:
+        raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     resolved_page_id = page_id or PAGE_ID
     resolved_user_token = user_access_token or ACCESS_TOKEN
-    cached = _page_token_cache.get(resolved_page_id)
+    cache_key = _page_cache_key(resolved_page_id, resolved_user_token)
+    cached = _page_token_cache.get(cache_key)
     if cached is not None:
         token, fetched_at = cached
         if time.monotonic() - fetched_at < _PAGE_TOKEN_TTL_SECONDS:
             return token
-        del _page_token_cache[resolved_page_id]  # TTL tugagan -- qayta so'raladi
+        del _page_token_cache[cache_key]  # TTL tugagan -- qayta so'raladi
     if not resolved_page_id:
         raise MetaAPIError({"message": "Page ID sozlanmagan -- Page Access Token olib bo'lmaydi."})
     # 2026-09: endi umumiy `_get()` orqali -- shu bilan tarmoq xatosi/Meta'ning
@@ -467,8 +578,13 @@ def _get_page_access_token(page_id: str | None = None, user_access_token: str | 
                 "ulanganini tekshiring."
             )
         })
-    _page_token_cache[resolved_page_id] = (token, time.monotonic())
+    _page_token_cache[cache_key] = (token, time.monotonic())
     return token
+
+
+def _page_cache_key(page_id: "str | None", user_token: "str | None") -> str:
+    import hashlib
+    return f"{page_id}|{hashlib.sha256((user_token or '').encode()).hexdigest()[:16]}"
 
 
 def invalidate_page_token_cache(page_id: "str | None") -> None:
@@ -483,8 +599,9 @@ def invalidate_page_token_cache(page_id: "str | None") -> None:
     olmadi). Bu funksiya `_save_facebook_connection()`dan (app.py) HAR
     safar chaqiriladi -- shu Page uchun eski keshni olib tashlaydi, keyingi
     chaqiruv YANGI foydalanuvchi tokenidan yangi Page Access Token oladi."""
-    if page_id and page_id in _page_token_cache:
-        del _page_token_cache[page_id]
+    if page_id:
+        for key in [k for k in _page_token_cache if k.split("|", 1)[0] == str(page_id)]:
+            del _page_token_cache[key]
 
 
 # ---------------------------------------------------------------------------
@@ -562,8 +679,9 @@ def get_insights(
         params["breakdowns"] = ",".join(breakdowns)
     if time_increment:
         params["time_increment"] = time_increment
-    data = _get(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
-    return data.get("data", [])
+    # 200 qatordan ko'p (ko'p reklamali hisob / kunlik jadval) bo'lsa ham
+    # natija kesilmasligi uchun barcha sahifalar o'qiladi (audit B10).
+    return _get_all_pages(f"{ad_account_id or AD_ACCOUNT_ID}/insights", params, token=access_token)
 
 
 def get_campaign_insights(
@@ -1132,12 +1250,19 @@ def create_campaign(
     *,
     access_token: str | None = None,
     ad_account_id: str | None = None,
+    adset_budget_sharing: bool = False,
 ) -> dict:
+    # MUHIM (2026-09-30, "reklama Ads Manager'ga qoralama sifatida ham
+    # tushmayapti"): byudjet Ad Set darajasida (kampaniya byudjeti -- CBO
+    # yo'q) bo'lsa, Meta endi `is_adset_budget_sharing_enabled`ni MAJBURIY
+    # talab qiladi -- yuborilmasa kampaniya UMUMAN yaratilmaydi. `False` --
+    # har bir Ad Set o'z byudjetini to'liq ishlatadi (eski xatti-harakat).
     return _post(f"{ad_account_id or AD_ACCOUNT_ID}/campaigns", {
         "name": name,
         "objective": objective,
         "status": status,
         "special_ad_categories": special_ad_categories or [],
+        "is_adset_budget_sharing_enabled": bool(adset_budget_sharing),
     }, access_token)
 
 
@@ -1172,7 +1297,7 @@ def create_adset(
     chaqiruvlar o'zgarmaydi): `lifetime_budget_cents` berilsa `daily_budget`
     O'RNIGA umumiy byudjet yuboriladi (Meta ikkalasini birga qabul
     qilmaydi); `start_time`/`end_time` (ISO); `destination_type` (MESSENGER/
-    INSTAGRAM_DIRECT/WHATSAPP/WEBSITE/ON_AD/PHONE_CALL) -- Meta v21 hujjati
+    INSTAGRAM_DIRECT/WHATSAPP/WEBSITE/ON_AD/PHONE_CALL) -- Meta Marketing API hujjati
     bo'yicha; rad etilsa friendly xato ko'rsatiladi.
     """
     payload = {
@@ -1417,6 +1542,12 @@ def get_lead_forms(page_id: str, *, access_token: str | None = None) -> list[dic
 # bo'lishi kerak (Meta Business Suite -> Sozlamalar -> Bog'langan hisoblar).
 # ---------------------------------------------------------------------------
 
+# Ad Library API faqat shaxsi tasdiqlangan (facebook.com/ID) odamning USER
+# tokeni bilan ishlaydi -- reklama boshqaruvidagi asosiy `META_ACCESS_TOKEN`ga
+# tegmaslik uchun alohida (ixtiyoriy) token. Bo'sh bo'lsa asosiy token.
+AD_LIBRARY_TOKEN = os.environ.get("META_AD_LIBRARY_TOKEN", "").strip()
+
+
 def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), limit: int = 30) -> list[dict]:
     """Meta Ad Library (`ads_archive`) orqali biror brend/sahifa nomi
     bo'yicha HOZIR yoki YAQINDA ishlagan reklamalarni qaytaradi (2026-08,
@@ -1434,6 +1565,15 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
     # uchun keyinroq `get_page_public_profile(page_id)` alohida so'raladi
     # (ads_archive'ning o'zi bu ma'lumotni bermaydi) -- shuning uchun
     # page_id shu yerda so'ralishi shart.
+    # 2026-10: rasmiy API O'zbekiston tijoriy reklamalarini bermaydi --
+    # `ADLIB_SCRAPER=1` bo'lsa avval Ad Library veb-sahifasidan o'qiladi
+    # (`adlib_scraper`), to'siq/xato bo'lsa rasmiy API'ga qaytiladi.
+    import adlib_scraper
+    if adlib_scraper.is_enabled():
+        try:
+            return adlib_scraper.search(search_terms, country=countries[0] if countries else "UZ", limit=limit)
+        except adlib_scraper.AdLibraryBlocked as e:
+            logger.warning("Ad Library sahifasidan o'qib bo'lmadi (%s), rasmiy API'ga qaytilmoqda", e)
     data = _get("ads_archive", {
         "search_terms": search_terms,
         "ad_reached_countries": list(countries),
@@ -1441,7 +1581,7 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
         "ad_type": "ALL",
         "limit": limit,
         "fields": "id,ad_snapshot_url,page_id,page_name,ad_creative_bodies,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time",
-    })
+    }, token=AD_LIBRARY_TOKEN or None)
     return data.get("data", [])
 
 
@@ -1550,6 +1690,30 @@ def get_instagram_media(ig_user_id: str, limit: int = 25, *, page_id: str | None
     fields = "id,caption,timestamp,permalink,media_type,media_product_type,media_url,thumbnail_url,like_count,comments_count"
     data = _get(f"{ig_user_id}/media", {"fields": fields, "limit": limit}, token=_get_page_access_token(page_id, access_token))
     return data.get("data", [])
+
+
+def get_instagram_business_discovery(
+    ig_user_id: str, username: str, limit: int = 30,
+    *, page_id: str | None = None, access_token: str | None = None, with_views: bool = True,
+) -> dict:
+    """Boshqa (ochiq, Business/Creator) Instagram akkauntining profili va
+    so'nggi `limit` ta posti -- Meta'ning RASMIY Business Discovery API'si
+    orqali (scraping emas). `ig_user_id` -- O'ZIMIZNING ulangan IG Business
+    akkauntimiz (so'rov shu nomidan yuboriladi). `view_count` ba'zi
+    akkaunt/versiyalarda qaytmasligi mumkin -- `with_views=False` bilan
+    qayta so'raladi."""
+    limit = max(1, min(50, int(limit)))
+    media_fields = "id,caption,timestamp,permalink,media_type,media_product_type,like_count,comments_count"
+    if with_views:
+        media_fields += ",view_count"
+    clean = username.strip().lstrip("@")
+    fields = (
+        f"business_discovery.username({clean})"
+        f"{{username,name,biography,followers_count,follows_count,media_count,profile_picture_url,"
+        f"media.limit({limit}){{{media_fields}}}}}"
+    )
+    data = _get(ig_user_id, {"fields": fields}, token=_get_page_access_token(page_id, access_token))
+    return data.get("business_discovery") or {}
 
 
 def get_instagram_media_insights(
@@ -1897,7 +2061,7 @@ def verify_webhook_signature(payload_body: bytes, signature_header: "str | None"
 # Kampaniya qoralamasini (`campaign_draft.py`) Meta'ga chiqarish
 # (`meta_publish.py`) uchun kerak bo'lgan QO'SHIMCHA endpoint'lar. Hammasi
 # `access_token` (kompaniyaning O'Z tokeni) bilan ishlaydi -- global ENV
-# tokeniga tayanmaydi. Meta v21 hujjati bo'yicha yozilgan; rad etilsa
+# tokeniga tayanmaydi. Meta Marketing API hujjati bo'yicha yozilgan; rad etilsa
 # `meta_publish.friendly_publish_error()` foydalanuvchiga tushunarli xato
 # ko'rsatadi (xom API matni ekranga chiqmaydi).
 # ---------------------------------------------------------------------------
@@ -1986,7 +2150,7 @@ def search_targeting_interests(query: str, *, access_token: str, limit: int = 10
 def generate_ad_preview(ad_account_id: str, object_story_spec: dict, ad_format: str, *, access_token: str) -> str:
     """Kreativ hali yaratilmagan bo'lsa ham reklama ko'rinishini (iframe
     HTML) qaytaradi -- `act_x/generatepreviews`. `ad_format` --
-    `AD_PREVIEW_FORMATS` qiymatlaridan. Meta v21 hujjati bo'yicha; rad
+    `AD_PREVIEW_FORMATS` qiymatlaridan. Meta Marketing API hujjati bo'yicha; rad
     etilsa friendly xato ko'rsatiladi."""
     data = _get(f"{ad_account_id}/generatepreviews", {
         "creative": {"object_story_spec": object_story_spec},

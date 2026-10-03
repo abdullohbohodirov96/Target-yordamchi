@@ -89,15 +89,23 @@ PLANS = {
         # ro'yxatdan o'tishda), boshqa hech qayerda muddat qattiq
         # yozilmagan (faqat ko'rsatiladigan matnlar, ular ham shu songa
         # moslab yangilandi -- qarang `lang.py`).
-        key="trial", name="Sinov", price_usd=None, period_days=5,
-        tagline="5 kun bepul — Instagram'ni ulab, xom natijalarni ko'ring",
+        #
+        # 2026-09-30 (egasi qarorni hamkorga topshirdi, docs/PLAN.md): 5 -> 7
+        # kun -- Meta reklamasining "o'rganish davri" 3-5 kun, 5 kunlik
+        # sinovda mijoz birinchi natijani ko'rmasdan sinov tugardi. Meta
+        # reklama hisobini ulash ham ochildi -- Replix'ning asosiy qiymati
+        # (o'z reklama natijalari + lidlar CRM'da) sinovda ko'rinsin;
+        # reklama puli mijozning o'z hisobidan, Avtopilot nashri standart
+        # PAUSED. AI kvotalari o'zgarmadi (sinovda 0).
+        key="trial", name="Sinov", price_usd=None, period_days=7,
+        tagline="7 kun bepul — Meta reklamangizni ulab, natijalarni ko'ring",
         modules=frozenset({"dashboard", "leads", "target", "analytics"}),
         manager_limit=1, leads_limit=100, competitor_limit=0,
-        ai_enabled=False, can_connect_meta_ads=False, highlight=False,
+        ai_enabled=False, can_connect_meta_ads=True, highlight=False,
         image_generation_monthly_limit=0,
         features=(
-            "5 kun bepul, karta shart emas",
-            "Faqat Instagram akkauntini ulash",
+            "7 kun bepul, karta shart emas",
+            "Meta reklama hisobi va Instagram'ni ulash",
             "Target (Meta Ads) bo'yicha XOM natijalar: xarajat, lead, CPL",
             "Lidlar bazasi va asosiy CRM voronkasi (100 tagacha lid)",
             "1 ta admin hisob",
@@ -123,14 +131,15 @@ PLANS = {
         features=(
             "Sinovdagi hammasi",
             "To'liq Meta Ads hisoblar (bir nechta kampaniya) ulash",
-            "Meta Conversions API (CAPI) -- konversiya signalini qaytarish",
+            "Meta Conversions API (CAPI) — konversiya signalini qaytarish",
             "SMM hisobot va Instagram xabarlar",
             "Lid tahlili (CRM/voronka bo'yicha chuqur tahlil)",
-            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 3 tagacha",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) — 3 tagacha",
             "Voronka, majburiy vazifalar, qo'shimcha maydonlar sozlamalari",
-            "500 tagacha lid (CRM) -- limitga yaqinlashganda ogohlantirish, yangi lidlar hech qachon bloklanmaydi",
+            "500 tagacha lid (CRM) — limitga yaqinlashganda ogohlantirish, yangi lidlar hech qachon bloklanmaydi",
             "2 tagacha menejer/admin hisob",
             "Email orqali qo'llab-quvvatlash",
+            "Instagram raqobatchilar tahlili — o'rtacha like, komment, ko'rishlar",
         ),
     ),
     "business": Plan(
@@ -142,7 +151,7 @@ PLANS = {
         image_generation_monthly_limit=30,
         features=(
             "Boshlang'ichdagi hammasi",
-            "Raqobatchilar kuzatuvi (Meta Ad Library) -- 10 tagacha",
+            "Raqobatchilar kuzatuvi (Meta Ad Library) — 10 tagacha",
             "Qo'ng'iroq audio nazorati (Individual tekshirish)",
             "Ichki AI-yordamchi (real vaqtda savol-javob va hisobot)",
             "5 000 tagacha lid (CRM)",

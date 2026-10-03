@@ -301,7 +301,7 @@
       {% set _creative_eps = ['creative_list', 'creative_templates_gallery', 'creative_new', 'creative_editor'] %}
       {% set _lead_analytics_eps = ['lead_analytics_page'] %}
       {% set _ig_dm_eps = ['instagram_dm'] %}
-      {% set _competitors_eps = ['competitors_settings', 'competitor_detail'] %}
+      {% set _competitors_eps = ['competitors_settings', 'competitor_detail', 'ig_benchmark_page'] %}
       {% set _boshqaruv_eps = ['settings_hub', 'settings_general', 'settings_business_profile', 'settings_brand_kit', 'settings_cpl', 'settings_telegram', 'settings_modules', 'settings_ai', 'settings_unanswered', 'funnel_settings', 'custom_fields_settings', 'standing_tasks_settings', 'managers', 'manager_edit', 'payment_page', 'companies', 'company_edit'] %}
       {# 2026-09, foydalanuvchi so'rovi ("habarlani alohida panelga chiqaz
          side barga"): ilgari "Instagram xabarlar" Marketing guruhi ichida,
@@ -374,7 +374,7 @@
          ishlatish") -- Avtopilot kabi 'target' moduliga bog'liq. #}
       {% if has_module(current_user, 'target') %}
       <a href="{{ url_for('creative_list') }}" class="nav-item {{ 'active' if request.endpoint in _creative_eps }}" data-tooltip="{{ t('shell.nav_creative_tip') }}" aria-label="{{ t('shell.nav_creative') }}">
-        <span class="nav-icon">{{ navicon('creative') }}</span><span class="nav-text">{{ t('shell.nav_creative') }}</span>
+        <span class="nav-icon">{{ navicon('creative') }}</span><span class="nav-text">{{ t('shell.nav_creative') }} <span class="badge-beta badge-beta-sm">{{ t('creative.beta') }}</span></span>
       </a>
       {% endif %}
       {# 2026-09, foydalanuvchi so'rovi ("lead analyticsni alohida bo'lim
@@ -461,7 +461,8 @@
          "yig'ilgan" holatda ham matn CSS orqali yashiriladi (nav-text
          klassi bilan bir xil qoidaga bo'ysunadi). #}
       <a href="{{ url_for('pricing') }}" class="nav-item sidebar-upsell" title="{{ t('shell.upsell_title') }}">
-        <span class="nav-text" style="display:block; width:100%">
+        <span class="nav-icon sidebar-upsell-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/></svg></span>
+        <span class="nav-text sidebar-upsell-text" style="display:block; width:100%">
           <span style="display:block; font-weight:600; font-size:12.5px">{{ t('shell.plan_label', plan=sidebar_plan.name) }}{% if sidebar_plan_days_left is not none %} · {{ t('shell.days_left', n=sidebar_plan_days_left) }}{% endif %}</span>
           <span style="display:block; font-size:11.5px; opacity:0.85; margin-top:2px">{{ t('shell.upgrade_to', plan=sidebar_plan_next.name) }}</span>
         </span>
@@ -578,6 +579,11 @@
       <nav class="page-subnav">
         <a href="{{ url_for('target_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'target_page' }}">{{ navicon('target') }}<span>{{ t('shell.sub_target') }}</span></a>
         <a href="{{ url_for('smm_report') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'smm_report' }}">{{ navicon('analytics') }}<span>{{ t('shell.sub_smm') }}</span></a>
+      </nav>
+      {% elif request.endpoint in ('competitors_settings', 'competitor_detail', 'ig_benchmark_page') %}
+      <nav class="page-subnav">
+        <a href="{{ url_for('competitors_settings') }}" class="page-subnav-item {{ 'active' if request.endpoint in ('competitors_settings', 'competitor_detail') }}">{{ navicon('radar') }}<span>{{ t('igb.tab_ads') }}</span></a>
+        <a href="{{ url_for('ig_benchmark_page') }}" class="page-subnav-item {{ 'active' if request.endpoint == 'ig_benchmark_page' }}">{{ navicon('analytics') }}<span>{{ t('igb.title') }}</span></a>
       </nav>
       {% elif request.endpoint in _boshqaruv_eps %}
       <nav class="page-subnav">

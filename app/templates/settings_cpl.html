@@ -13,6 +13,22 @@
 </div>
 
 <div class="card" style="margin-bottom:16px">
+  <h3 style="margin-top:0">{{ t('settings_cpl.mode_title') }}</h3>
+  <p class="text-faint" style="font-size:13px">{{ t('settings_cpl.mode_desc', n=max_auto_pauses) }}</p>
+  <form method="post" style="display:flex; flex-direction:column; gap:10px; margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="set_cpl_mode">
+    {% for m in ('warn', 'pause') %}
+    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; font-weight:400">
+      <input type="radio" name="cpl_mode" value="{{ m }}" {{ 'checked' if cpl_mode == m }} style="margin-top:3px">
+      <span><strong>{{ t('settings_cpl.mode_' ~ m) }}</strong><br><span class="text-faint" style="font-size:13px">{{ t('settings_cpl.mode_' ~ m ~ '_desc') }}</span></span>
+    </label>
+    {% endfor %}
+    <div><button type="submit">{{ t('settings_cpl.mode_save') }}</button></div>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:16px">
   <h3 style="margin-top:0">{{ t('settings_cpl.auto_audit_title') }}</h3>
   <p class="text-faint" style="font-size:13px">{{ t('settings_cpl.auto_audit_desc') }}</p>
   {% if not has_telegram_group %}

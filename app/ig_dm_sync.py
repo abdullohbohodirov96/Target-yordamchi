@@ -40,6 +40,7 @@ import datetime as dt
 from pathlib import Path
 
 import meta_api
+import ig_hot_leads
 import kv_store
 import db
 from db import get_session, IgDmConversation, IgDmMessage, IgDmAdSource
@@ -78,7 +79,9 @@ _ig_business_id_cache: dict = {}
 def _get_ig_business_id(*, page_id: str | None = None, access_token: str | None = None) -> "str | None":
     """Bir marta olib keshlaydi -- har sinxronizatsiyada qayta so'ramaslik
     uchun (jarayon qayta ishga tushirilganda tabiiy ravishda yangilanadi)."""
-    cache_key = page_id or "__default__"
+    # 2026-10-01 (audit): kalitga token xeshi ham -- boshqa kompaniya bir xil
+    # Page ID yozsa, birinchisining IG hisobi unga berilmasin.
+    cache_key = meta_api._page_cache_key(page_id or "__default__", access_token)
     if cache_key not in _ig_business_id_cache:
         try:
             _ig_business_id_cache[cache_key] = meta_api.get_instagram_business_account_id(page_id=page_id, access_token=access_token)
@@ -108,8 +111,9 @@ def invalidate_ig_business_id_cache(page_id: "str | None") -> None:
     saqlangan bo'lsa) olib tashlaydi, aks holda keyingi sinxronizatsiya
     process qayta ishga tushmaguncha eski (noto'g'ri) natijani qaytarib
     davom etardi."""
-    cache_key = page_id or "__default__"
-    _ig_business_id_cache.pop(cache_key, None)
+    prefix = (page_id or "__default__") + "|"
+    for key in [k for k in _ig_business_id_cache if str(k).startswith(prefix)]:
+        _ig_business_id_cache.pop(key, None)
 
 
 def _message_sender(raw_msg: dict, ig_business_id: "str | None") -> str:
@@ -374,6 +378,7 @@ def _upsert_conversation_and_messages(
         raise  # chaqiruvchi (sync_once) tutib, xatolar ro'yxatiga yozadi
 
     new_messages = 0
+    new_customer_texts: list[str] = []
     for m in raw_messages:
         ext_msg_id = m.get("id")
         if ext_msg_id:
@@ -390,9 +395,16 @@ def _upsert_conversation_and_messages(
         )
         session.add(msg_row)
         new_messages += 1
+        if msg_row.sender == "customer" and msg_row.text:
+            new_customer_texts.append(msg_row.text)
 
     session.flush()
     became_overdue = _recompute_conversation_state(session, row)
+    if new_customer_texts:
+        try:
+            ig_hot_leads.process_customer_messages(company_id, row.id, new_customer_texts)
+        except Exception:  # noqa: BLE001
+            logger.exception("Issiq lid tekshiruvida xato (conversation=%s)", row.id)
     return {"new_messages": new_messages, "became_overdue": became_overdue, "row": row}
 
 
@@ -456,6 +468,7 @@ def resolve_ad_sources(session, *, company_id, access_token) -> int:
     return resolved_count
 
 
+@db.company_scoped
 def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa
     (`db.Company` qatori) -- O'SHA kompaniyaning O'Z `meta_page_id`/
@@ -751,9 +764,16 @@ def ingest_webhook_message(
         session.add(msg_row)
         session.flush()
         became_overdue = _recompute_conversation_state(session, row)
-        return {"new_message": True, "became_overdue": became_overdue, "conversation_id": row.id}
+        conv_id = row.id
     finally:
         session.close()
+    # PLAN 6-bosqich: kalit so'z bo'yicha issiq lid (kompaniya yoqqan bo'lsa).
+    if not is_echo and text:
+        try:
+            ig_hot_leads.process_customer_messages(company.id, conv_id, [text])
+        except Exception:  # noqa: BLE001 -- asosiy oqimni to'xtatmasin
+            logger.exception("Issiq lid tekshiruvida xato (conversation=%s)", conv_id)
+    return {"new_message": True, "became_overdue": became_overdue, "conversation_id": conv_id}
 
 
 def mark_alert_sent(conversation_id: int) -> None:
@@ -763,10 +783,11 @@ def mark_alert_sent(conversation_id: int) -> None:
     javobsiz qolmaguncha)."""
     session = get_session()
     try:
-        row = session.get(IgDmConversation, conversation_id)
-        if row is not None:
-            row.unanswered_alert_sent_at = dt.datetime.utcnow()
-            session.commit()
+        with db.unscoped():  # id bo'yicha -- chaqiruvchi (scheduler) o'z kompaniyasidan olgan
+            row = session.get(IgDmConversation, conversation_id)
+            if row is not None:
+                row.unanswered_alert_sent_at = dt.datetime.utcnow()
+                session.commit()
     finally:
         session.close()
 

@@ -47,6 +47,7 @@
 <form method="post" enctype="multipart/form-data" class="card ap-wizard" id="ap-wizard-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if creative %}<input type="hidden" name="creative_asset_id" value="{{ creative.id }}">{% endif %}
+  {% if creative and creative.carousel_group %}<input type="hidden" name="carousel_group" value="{{ creative.carousel_group }}">{% endif %}
 
   <div class="ap-wizard-step">
     <div class="ap-wizard-step-head"><span class="ap-step-num">1</span><div><h2>{{ t('autopilot_new.step1_title') }}</h2><p class="text-faint">{{ t('autopilot_new.step1_text') }}</p></div></div>

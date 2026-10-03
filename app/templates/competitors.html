@@ -40,7 +40,15 @@
   </form>
 
   {% if search_error %}
-  <div class="hint-box" style="margin-top:16px">{{ t('competitors.search_error', error=search_error) }}</div>
+  {# Meta Ad Library API O'zbekistondagi tijoriy reklamalarni bermaydi va
+     ko'p ilovalarda ruxsat ("does not have permission") xatosini qaytaradi --
+     xom inglizcha xato o'rniga Ad Library'ning rasmiy sahifasiga tugma. #}
+  <div class="hint-box" style="margin-top:16px">
+    <div>{{ t('competitors.search_unavailable') }}</div>
+    <a class="btn" style="display:inline-block; margin-top:10px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }}</a>
+    <a class="btn-outline" style="display:inline-block; margin-top:10px; margin-left:6px; border-radius:var(--radius); text-decoration:none" href="{{ ad_library_video_url }}" target="_blank" rel="noopener">▶ {{ t('competitors.adlib_videos') }}</a>
+    <div class="text-faint" style="font-size:12px; margin-top:8px">{{ t('competitors.search_error', error=search_error) }}</div>
+  </div>
   {% elif search_results is not none %}
     {% if search_results %}
     {# 2026-09, foydalanuvchi so'rovi ("ad library'ga o'xshab variantlar
@@ -86,10 +94,32 @@
         {% if r.ads %}
         <div class="cp-result-ads">
           {% for ad in r.ads %}
+          {% if ad.preview_image_url %}
+          {# Ad Library sahifasidan: haqiqiy video/rasm, qachondan beri ishlayapti. #}
+          <div class="cp-media-ad">
+            <div class="cp-media-box">
+              {% if ad.video_url %}
+              <video controls preload="none" playsinline poster="{{ ad.preview_image_url }}" src="{{ ad.video_url }}"></video>
+              <span class="cp-media-tag">▶ {{ t('competitors.media_video') }}</span>
+              {% else %}
+              <img src="{{ ad.preview_image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">
+              {% endif %}
+            </div>
+            <div class="cp-media-body">
+              {% if ad.running_days is not none %}<div class="cp-media-days{% if ad.running_days >= 14 %} is-long{% endif %}">{{ t('competitors.running_since', d=ad.started, n=ad.running_days) }}</div>{% endif %}
+              <div class="cp-media-text">{{ ad.snippet or t('competitors.no_ad_text') }}</div>
+              <div class="cp-media-foot">
+                {% if ad.cta_text %}<span class="badge badge-color-dim">{{ ad.cta_text }}</span>{% endif %}
+                {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener">{{ t('competitors.view') }} ↗</a>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% else %}
           <div class="cp-result-ad">
             <div class="cp-result-snippet" style="white-space:normal">{{ ad.snippet or t('competitors.no_ad_text') }}</div>
             {% if ad.snapshot_url %}<a href="{{ ad.snapshot_url }}" target="_blank" rel="noopener" class="text-dim" style="font-size:12px; flex-shrink:0">{{ t('competitors.view') }}</a>{% endif %}
           </div>
+          {% endif %}
           {% endfor %}
         </div>
         {% endif %}
@@ -98,6 +128,7 @@
     </div>
     {% else %}
     <p class="page-subtitle" style="margin-top:16px">{{ t('competitors.no_results', q=query_term) }}</p>
+    <a class="text-dim" style="font-size:13px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }} ↗</a>
     {% endif %}
   {% endif %}
 </div>
@@ -148,6 +179,12 @@
         <input type="hidden" name="competitor_id" value="{{ c.id }}">
         <button type="submit" class="btn-outline" style="border-radius:var(--radius); color:var(--bad); border-color:var(--bad-bg)">{{ t('common.delete') }}</button>
       </form>
+    </div>
+    {# Meta API O'zbekiston tijoriy reklamalarini bermaydi -- rasmiy Ad Library
+       sahifasiga bir bosishda (video / barcha reklamalar) o'tish. #}
+    <div class="cp-card-adlib">
+      <a href="{{ c.ad_library_video_url }}" target="_blank" rel="noopener">▶ {{ t('competitors.adlib_videos') }}</a>
+      <a href="{{ c.ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.adlib_all') }} ↗</a>
     </div>
   </div>
   {% endfor %}

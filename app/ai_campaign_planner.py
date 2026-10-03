@@ -376,7 +376,7 @@ def plan_campaign(ctx: dict, answers: dict, *, meta_assets: "dict | None", resol
     link = raw.get("link_url")
     ad["link_url"] = str(link).strip() if isinstance(link, str) and link.strip().startswith("http") else None
     if objective == "CALLS":
-        # Click-to-call: CTA CALL_NOW `link` = "tel:+998..." (Meta v21 hujjati bo'yicha)
+        # Click-to-call: CTA CALL_NOW `link` = "tel:+998..." (Meta Marketing API hujjati bo'yicha)
         phone = (ctx.get("phone") or "").replace(" ", "")
         ad["link_url"] = f"tel:{phone}" if phone else None
         if not phone:

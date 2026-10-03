@@ -11,12 +11,11 @@ ASOSIY KAFOLATLAR:
     qadam oldidan yangilanadi -- jarayon o'rtada uzilsa (crash/tarmoq),
     qayta urinish ALLAQACHON yaratilgan qadamlarni o'tkazib yuboradi,
     dublikat kampaniya/adset/reklama HECH QACHON yaratilmaydi.
-  - Standart holat ACTIVE (2026-09'dan): `draft.launch_active` (standart
-    True) ACTIVE bo'lsa, kampaniya/adset/reklama Meta'ga chiqarilishi bilan
-    DARHOL ishga tushadi. Foydalanuvchi review oynasida "Paused (qo'lda
-    yoqaman)"ni tanlasa (`launch_active=False`), avvalgidek PAUSED
-    yaratiladi va alohida, ANIQ `activate_draft()` qadami bilan keyinroq
-    yoqiladi.
+  - Standart holat PAUSED (2026-09-30'dan; avval ACTIVE edi):
+    `draft.launch_active` False bo'lsa kampaniya/adset/reklama PAUSED
+    yaratiladi va alohida, ANIQ `activate_draft()` qadami bilan yoqiladi
+    (pul sarfi faqat egasi qarori bilan). Review oynasida "Darhol yoqilsin"
+    tanlansa (`launch_active=True`) -- nashr bilan DARHOL ishga tushadi.
   - Meta xatosi foydalanuvchiga XOM API matni bilan EMAS, tushunarli
     o'zbekcha xabar bilan ko'rsatiladi (`friendly_publish_error`); xom matn
     `last_meta_error_raw`da diagnostika uchun saqlanadi.
@@ -154,34 +153,15 @@ def _raw_error_text(e: Exception) -> str:
 
 def friendly_publish_error(e: Exception, step: str) -> str:
     """Meta xatosini foydalanuvchi tushunadigan o'zbekcha xabarga
-    aylantiradi. Kod/matn bo'yicha eng ko'p uchraydigan holatlar alohida,
-    qolgani umumiy xabar (xom API matni ekranga chiqmaydi)."""
+    aylantiradi (`meta_api.friendly_meta_error` -- yagona manba, Target
+    sahifasi/Telegram/hisobotlar bilan bir xil). Tanilmagan xato --
+    bosqich nomi bilan Meta xabari (xom JSON ekranga chiqmaydi)."""
     err = e.args[0] if isinstance(e, meta_api.MetaAPIError) and e.args and isinstance(e.args[0], dict) else {}
-    code = err.get("code")
-    subcode = err.get("error_subcode")
-    text = " ".join(str(err.get(k) or "") for k in ("message", "error_user_msg", "error_user_title")).lower()
-    if code == 190 or "access token" in text and ("expired" in text or "invalid" in text or "session" in text):
-        return "Meta ulanishi muddati tugagan -- Sozlamalar'dan Facebook'ni qayta ulang."
-    if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
-        return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering."
-    if "instagram" in text and ("not connected" in text or "connect" in text or "actor" in text or "linked" in text):
-        return "Instagram akkaunt reklama akkauntiga ulanmagan. Meta Business Suite'da Instagram'ni sahifaga ulang."
-    if "pixel" in text or (step == "adset" and "promoted_object" in text):
-        return "Bu maqsad uchun Pixel tanlash kerak (Meta Events Manager)."
-    if "page" in text and ("not" in text and ("own" in text or "admin" in text or "access" in text)):
-        return "Bu sahifa kompaniyaga ulanmagan yoki unga ruxsat yo'q."
-    if "targeting" in text or "audience" in text or "geo" in text or "location" in text or subcode in (1487079, 1487760):
-        return "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring."
-    if "budget" in text or "minimum" in text and "amount" in text:
-        return "Byudjet Meta'ning minimal chegarasidan kam -- kunlik byudjetni oshiring."
-    if "image" in text or "video" in text or "creative" in text or step == "creative":
-        return "Kreativ (rasm/video/matn) Meta tomonidan qabul qilinmadi. Rasm hajmi va matnni tekshiring."
-    if "lead" in text and "form" in text or step == "lead_form":
-        return "Instant Form yaratib bo'lmadi -- savollar va maxfiylik havolasini tekshiring."
-    if code in (4, 17, 32, 613) or "rate" in text and "limit" in text:
-        return "Meta so'rovlar chegarasi -- bir necha daqiqadan keyin qayta urinib ko'ring."
+    friendly = meta_api.friendly_meta_error(err, step)
+    if friendly:
+        return friendly
     if err.get("message"):
-        return f"Meta xatosi ({step} bosqichi): {err['message']}"
+        return f"Meta xatosi ({step} bosqichi): {err.get('error_user_msg') or err['message']}{meta_api._error_code_suffix(err)}"
     return "Meta bilan bog'lanishda xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring."
 
 
@@ -267,7 +247,7 @@ def _diff_snapshots(expected: dict, actual: dict) -> list[str]:
 
 
 def _promoted_object(objective: str, *, page_id: "str | None", pixel_id: "str | None") -> "dict | None":
-    """Maqsadga qarab `promoted_object` (Meta v21 hujjati bo'yicha):
+    """Maqsadga qarab `promoted_object` (Meta Marketing API hujjati bo'yicha):
     MESSAGES/LEADS/CALLS -> {page_id}; SALES -> {pixel_id, custom_event_type:
     PURCHASE}; TRAFFIC/AWARENESS/ENGAGEMENT -> yo'q."""
     if objective in ("MESSAGES", "LEADS", "CALLS"):
@@ -354,12 +334,13 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
     warnings: list[str] = []
     token = company.get_meta_access_token()
     ad_account_id = company.meta_ad_account_id
-    # 2026-09, foydalanuvchi so'rovi: standart holat endi ACTIVE -- kampaniya
-    # Meta'ga chiqarilishi bilan darhol ishga tushadi (avval doim PAUSED
-    # bo'lib, alohida "Faollashtirish" bosish kerak edi). Xohlasa, review
-    # oynasida PAUSED'ga o'tkazishi mumkin (`draft.launch_active=False`,
-    # `/avtopilot/<id>/launch-status`).
-    launch_status = "ACTIVE" if getattr(draft, "launch_active", True) else "PAUSED"
+    # 2026-09-30: standart PAUSED (avval ACTIVE edi) -- egasi review oynasida
+    # "Darhol yoqilsin"ni tanlasa ACTIVE (`/avtopilot/<id>/launch-status`).
+    launch_status = "ACTIVE" if getattr(draft, "launch_active", False) else "PAUSED"
+    # 2026-10-01 (egasi qarori): karusel reklama -- yangi yo'l, birinchi
+    # sinovlar doim PAUZADA ("Darhol yoqilsin" belgilangan bo'lsa ham).
+    if ((draft.get_state().get("ad") or {}).get("media") or {}).get("carousel"):
+        launch_status = "PAUSED"
 
     # --- validate
     previous_step = draft.publish_step
@@ -409,6 +390,27 @@ def publish_draft(session, draft, company, *, manager_id: "int | None" = None) -
         session.commit()
     if not (image_hash or video_id):
         raise _fail(session, draft, "upload_media", meta_api.MetaAPIError({"message": "Rasm yoki video yuklanmagan."}), manager_id)
+
+    # Karusel kartalari: har biri Meta'ga yuklangan bo'lishi kerak (idempotent).
+    cards = (state["ad"]["media"].get("carousel") or [])
+    if cards:
+        changed = False
+        for card in cards:
+            if card.get("image_hash"):
+                continue
+            with db.scoped_as(draft.company_id):
+                row = session.get(db.CampaignDraftMedia, int(card["media_id"])) if card.get("media_id") else None
+            if row is None or row.draft_id != draft.id:
+                raise _fail(session, draft, "upload_media", meta_api.MetaAPIError({"message": "Karusel kartasining rasmi topilmadi."}), manager_id)
+            try:
+                campaign_media.ensure_uploaded_to_meta(session, row, company)
+            except Exception as e:  # noqa: BLE001
+                raise _fail(session, draft, "upload_media", e, manager_id)
+            card["image_hash"] = row.meta_image_hash
+            changed = True
+        if changed:
+            draft.set_state(state)
+            session.commit()
 
     # --- lead_form (faqat LEADS)
     lead_form_id = draft.meta_lead_form_id

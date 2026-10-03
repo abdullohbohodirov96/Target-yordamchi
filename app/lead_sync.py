@@ -258,6 +258,7 @@ def other_form_answers(raw_field_data_json: "str | None", *, exclude_values: "li
     return out
 
 
+@db.company_scoped
 def sync_once(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa (yengil
     `_CompanyCreds` yoki `db.Company` qatori) -- O'SHA kompaniyaning O'Z
@@ -579,8 +580,6 @@ def cleanup_backlog_leads() -> dict:
 
     Qaytaradi: {"deleted": N, "kept_has_sale": N, "notes_deleted": N,
     "calls_unlinked": N} yoki cursor hali o'rnatilmagan bo'lsa {"error": "..."}."""
-    from db import Sale, LeadNote, CallRecord
-
     cutoff_unix = kv_store.get_json(_backlog_key(None), default=None)
     if cutoff_unix is None:
         return {
@@ -612,21 +611,30 @@ def cleanup_backlog_leads() -> dict:
                 .filter((Lead.created_at < cutoff_dt) | (Lead.created_at.is_(None)))
                 .all()
             )
-        for lead in candidates:
-            has_sale = session.query(Sale).filter_by(lead_id=lead.id).first() is not None
-            if has_sale:
-                stats["kept_has_sale"] += 1
-                continue
-            stats["notes_deleted"] += session.query(LeadNote).filter_by(lead_id=lead.id).delete()
-            stats["calls_unlinked"] += (
-                session.query(CallRecord).filter_by(lead_id=lead.id).update({"lead_id": None})
-            )
-            session.delete(lead)
-            stats["deleted"] += 1
+            stats = _delete_backlog_candidates(session, candidates, stats)
         session.commit()
         return stats
     finally:
         session.close()
+
+
+def _delete_backlog_candidates(session, candidates, stats) -> dict:
+    """`cleanup_backlog_leads()` yordamchisi -- chaqiruvchining tenant
+    kontekstida (standart kompaniya) ishlaydi."""
+    from db import Sale, LeadNote, CallRecord
+
+    for lead in candidates:
+        has_sale = session.query(Sale).filter_by(lead_id=lead.id).first() is not None
+        if has_sale:
+            stats["kept_has_sale"] += 1
+            continue
+        stats["notes_deleted"] += session.query(LeadNote).filter_by(lead_id=lead.id).delete()
+        stats["calls_unlinked"] += (
+            session.query(CallRecord).filter_by(lead_id=lead.id).update({"lead_id": None})
+        )
+        session.delete(lead)
+        stats["deleted"] += 1
+    return stats
 
 
 if __name__ == "__main__":

@@ -313,7 +313,7 @@ def job_admin_report() -> dict:
                     db.Company.meta_ad_account_id.isnot(None),
                     db.Company.meta_access_token.isnot(None),
                     db.Company.telegram_group_id.isnot(None),
-                    db.Company.is_active.is_(True),
+                    db.company_paid_up_clause(),
                     db.Company.id != default_company_id,
                 )
                 .all()
@@ -673,6 +673,9 @@ def job_watch_cycle() -> dict:
 
     Qaytaradi: {"owner": <matn>, <company_id>: <matn>, ...}."""
     results: dict = {}
+    # Xato yo'lida (`_mark_meta_reauth_required`) ham kerak -- shuning uchun
+    # ENG BOSHIDA (ilgari pastda edi -> UnboundLocalError).
+    default_company_id = db.get_default_company_id()
 
     # 1) Platforma egasi -- eski, global xatti-harakat.
     owner_targets = _full_activity_targets()
@@ -703,7 +706,6 @@ def job_watch_cycle() -> dict:
 
     # 2) Boshqa har bir Meta ulagan, guruhini sozlagan VA bu funksiyani
     #    o'zi yoqqan kompaniya.
-    default_company_id = db.get_default_company_id()
     session = db.get_session()
     try:
         with db.unscoped():
@@ -713,7 +715,7 @@ def job_watch_cycle() -> dict:
                     db.Company.meta_ad_account_id.isnot(None),
                     db.Company.meta_access_token.isnot(None),
                     db.Company.telegram_group_id.isnot(None),
-                    db.Company.is_active.is_(True),
+                    db.company_paid_up_clause(),
                     db.Company.id != default_company_id,
                 )
                 .all()
@@ -810,8 +812,18 @@ def job_cpl_hard_kill() -> dict:
 
     for company_id, result in (overall.get("per_company") or {}).items():
         paused = result.get("paused") or []
+        warned = result.get("warned") or []
         errors = result.get("errors") or []
-        if not paused and not errors:
+        # 2026-10-01 (audit): token eskirsa xato har 15 daqiqada (kuniga 96
+        # marta) guruhga ketardi. Endi bir xil xato 6 soatda BIR marta.
+        if errors and not paused and not warned:
+            err_key = f"cpl_hard_kill_error_notified:{company_id}"
+            last = kv_store.get_json(err_key, default=None)
+            if isinstance(last, dict) and last.get("text") == errors[0] and (dt.datetime.utcnow().timestamp() - float(last.get("at") or 0)) < 6 * 3600:
+                errors = []
+            else:
+                kv_store.set_json(err_key, {"text": errors[0], "at": dt.datetime.utcnow().timestamp()})
+        if not paused and not errors and not warned:
             continue
 
         chat_id = None
@@ -838,6 +850,11 @@ def job_cpl_hard_kill() -> dict:
             lines.append(f"\U0001F6D1 CPL chegarasi oshgani uchun {len(paused)} ta reklama AVTOMATIK pauza qilindi (LLM'siz, darhol):\n")
             for p in paused:
                 lines.append(f"- {p['name']} ({p['ad_id']}): {p['reason']}")
+        if warned:
+            lines.append(f"\n⚠️ {len(warned)} ta reklamada CPL chegaradan oshdi (ogohlantirish -- reklama O'CHIRILMADI, "
+                         "qaror sizda; avtomatik pauzani Sozlamalar -> CPL bo'limida yoqish mumkin):\n")
+            for w in warned:
+                lines.append(f"- {w['name']} ({w['ad_id']}): {w['reason']}")
         if errors:
             lines.append("\n⚠️ Pauza qilishga urinishda xatoliklar:")
             for e in errors:
@@ -1082,7 +1099,7 @@ def job_competitor_analysis() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            companies = session.query(db.Company).filter(db.company_paid_up_clause()).all()
             company_rows = [{"id": c.id, "telegram_group_id": c.telegram_group_id} for c in companies]
     finally:
         session.close()
@@ -1171,7 +1188,7 @@ def job_followup_reminders() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            companies = session.query(db.Company).filter(db.Company.is_active.is_(True)).all()
+            companies = session.query(db.Company).filter(db.company_paid_up_clause()).all()
             company_rows = [{"id": c.id, "tasks_group_id": c.resolved_tasks_group_id()} for c in companies]
     finally:
         session.close()
@@ -1211,7 +1228,7 @@ def job_followup_reminders() -> dict:
 
                 sent_to_managers = 0
                 if by_manager:
-                    managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys())).all()
+                    managers = session.query(db.Manager).filter(db.Manager.id.in_(by_manager.keys()), db.Manager.is_active.is_(True)).all()
                     for m in managers:
                         if not m.telegram_user_id:
                             continue
@@ -1286,7 +1303,7 @@ def job_followup_admin_escalation() -> dict:
     session = db.get_session()
     try:
         with db.unscoped():
-            company_ids = [c.id for c in session.query(db.Company).filter(db.Company.is_active.is_(True)).all()]
+            company_ids = [c.id for c in session.query(db.Company).filter(db.company_paid_up_clause()).all()]
     finally:
         session.close()
 
@@ -1311,7 +1328,7 @@ def job_followup_admin_escalation() -> dict:
 
                 admins = (
                     session.query(db.Manager)
-                    .filter(db.Manager.role == "admin", db.Manager.telegram_user_id.isnot(None))
+                    .filter(db.Manager.role == "admin", db.Manager.is_active.is_(True), db.Manager.telegram_user_id.isnot(None))
                     .all()
                 )
                 if not admins:
@@ -1376,41 +1393,51 @@ def job_standing_tasks() -> str:
     changes_by_chat: dict = {}
     errors_by_chat: dict = {}
     try:
-        tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
-        # 2026-09, xavfsizlik/ishonchlilik tuzatishi ("bir ikkita xatolar
-        # chiqyapti, o'chirmayapti vaqtida"): ILGARI bu yer HAR BIR vazifani
-        # (qaysi kompaniyaga tegishli bo'lishidan qat'iy nazar) doim GLOBAL
-        # (ENV) token bilan bajarardi -- ya'ni boshqa kompaniyaning
-        # `schedule_on_off` vazifasi ATAYLAB ulangan O'Z Meta hisobi emas,
-        # PLATFORMA EGASINING hisobiga (yoki, ehtimolroq, mavjud bo'lmagan
-        # `object_id`ga -- shu sabab "xato chiqib, o'chirmayapti" belgisi)
-        # yuborilardi. Endi har bir vazifaning O'Z kompaniyasining Meta
-        # token'i bilan bajariladi (bitta so'rovda oldindan xaritaga
-        # yig'ilgan -- har bir vazifa uchun alohida DB so'rov shart emas).
-        company_ids = {t.company_id for t in tasks if t.company_id is not None}
-        creds_by_company: dict = {}
-        if company_ids:
-            with db.unscoped():
-                for c in session.query(db.Company).filter(db.Company.id.in_(company_ids)).all():
-                    creds_by_company[c.id] = c.get_meta_access_token()
+        # Barcha kompaniyalarning vazifalari -- ATAYLAB filtrsiz; har bir vazifa
+        # FAQAT o'z `company_id`sining Meta tokeni bilan bajariladi (pastda).
+        with db.unscoped():
+            tasks = session.query(db.StandingTask).filter_by(is_active=True).all()
+            # 2026-09, xavfsizlik/ishonchlilik tuzatishi ("bir ikkita xatolar
+            # chiqyapti, o'chirmayapti vaqtida"): ILGARI bu yer HAR BIR vazifani
+            # (qaysi kompaniyaga tegishli bo'lishidan qat'iy nazar) doim GLOBAL
+            # (ENV) token bilan bajarardi -- ya'ni boshqa kompaniyaning
+            # `schedule_on_off` vazifasi ATAYLAB ulangan O'Z Meta hisobi emas,
+            # PLATFORMA EGASINING hisobiga (yoki, ehtimolroq, mavjud bo'lmagan
+            # `object_id`ga -- shu sabab "xato chiqib, o'chirmayapti" belgisi)
+            # yuborilardi. Endi har bir vazifaning O'Z kompaniyasining Meta
+            # token'i bilan bajariladi (bitta so'rovda oldindan xaritaga
+            # yig'ilgan -- har bir vazifa uchun alohida DB so'rov shart emas).
+            company_ids = {t.company_id for t in tasks if t.company_id is not None}
+            creds_by_company: dict = {}
+            if company_ids:
+                with db.unscoped():
+                    for c in session.query(db.Company).filter(db.Company.id.in_(company_ids)).all():
+                        creds_by_company[c.id] = c.get_meta_access_token()
 
-        for t in tasks:
-            desired = _desired_state(now_hhmm, t.on_time, t.off_time)
-            if desired == t.last_desired_state:
-                continue
-            access_token = creds_by_company.get(t.company_id)
-            try:
-                (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
-                t.last_desired_state = desired
-                t.last_checked_at = now
-                t.last_error = None
-                changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
-            except Exception as e:
-                safe_msg = meta_api.safe_error_message(e)
-                t.last_error = safe_msg
-                logger.exception("Standing task xatosi (object_id=%s, company_id=%s)", t.object_id, t.company_id)
-                errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
-        session.commit()
+            for t in tasks:
+                desired = _desired_state(now_hhmm, t.on_time, t.off_time)
+                if desired == t.last_desired_state:
+                    continue
+                access_token = creds_by_company.get(t.company_id)
+                # 2026-10-01 (audit): token bo'lmasa `access_token=None` ENV
+                # (platforma EGASINING) tokeniga tushib qolardi. ENV faqat
+                # egasining (standart) kompaniyasi uchun; boshqasida -- xato.
+                if not access_token and t.company_id != db.get_default_company_id():
+                    t.last_error = "Kompaniyaning Meta hisobi ulanmagan -- vazifa bajarilmadi."
+                    errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, t.last_error))
+                    continue
+                try:
+                    (meta_api.activate_object if desired == "on" else meta_api.pause_object)(t.object_id, access_token=access_token)
+                    t.last_desired_state = desired
+                    t.last_checked_at = now
+                    t.last_error = None
+                    changes_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, desired))
+                except Exception as e:
+                    safe_msg = meta_api.safe_error_message(e)
+                    t.last_error = safe_msg
+                    logger.exception("Standing task xatosi (object_id=%s, company_id=%s)", t.object_id, t.company_id)
+                    errors_by_chat.setdefault(t.chat_id, []).append((t.object_name or t.object_id, safe_msg))
+            session.commit()
     finally:
         session.close()
 
@@ -1439,6 +1466,29 @@ def job_standing_tasks() -> str:
     return f"o'zgardi={total_changed}, xato={total_errors}"
 
 
+def _chat_still_authorized(session, chat_id, company_id) -> bool:
+    """Chat hali ham shu kompaniyaga tegishlimi va kompaniya obunasi faolmi:
+    kompaniya guruhi / vazifalar guruhi, FAOL xodimning shaxsiy chati yoki
+    (egasi kompaniyasi uchun) ENV'dagi egasi guruhlari."""
+    if company_id is None or chat_id is None:
+        return False
+    chat = str(chat_id)
+    with db.unscoped():
+        company = session.get(db.Company, company_id)
+        if company is None or not company.is_paid_up():
+            return False
+        if chat in (company.telegram_group_id, company.tasks_group_id):
+            return True
+        if company_id == db.get_default_company_id():
+            for env_name in ("TELEGRAM_AGENTS_GROUP_ID", "TELEGRAM_REPORT_GROUP_ID"):
+                if os.environ.get(env_name, "").strip() == chat:
+                    return True
+        return session.query(db.Manager.id).filter(
+            db.Manager.telegram_user_id == chat, db.Manager.company_id == company_id,
+            db.Manager.is_active.is_(True),
+        ).first() is not None
+
+
 def job_standing_reports() -> str:
     """Foydalanuvchi Telegram orqali qo'shgan QO'SHIMCHA doimiy hisobot
     vaqtlarini (`db.StandingReport`) tekshiradi -- vaqti kelgan va bugun hali
@@ -1460,15 +1510,23 @@ def job_standing_reports() -> str:
     today_str = now.strftime("%Y-%m-%d")
     session = db.get_session()
     try:
-        reports = session.query(db.StandingReport).filter_by(is_active=True).all()
-        # MUHIM: aniq tenglik emas ( >= ) -- job har 5 daqiqada ishlaydi, aniq
-        # HH:MM daqiqasiga to'g'ri kelib qolmasligi mumkin. `last_sent_date`
-        # bir kunda faqat BIR MARTA yuborilishini kafolatlaydi.
-        due = [r for r in reports if now_hhmm >= r.time_hhmm and r.last_sent_date != today_str]
-        for r in due:
-            r.last_sent_date = today_str
-        session.commit()
-        due_chat_ids = [r.chat_id for r in due]
+        with db.unscoped():  # barcha kompaniyalarning hisobot vaqtlari
+            reports = session.query(db.StandingReport).filter_by(is_active=True).all()
+            # MUHIM: aniq tenglik emas ( >= ) -- job har 5 daqiqada ishlaydi, aniq
+            # HH:MM daqiqasiga to'g'ri kelib qolmasligi mumkin. `last_sent_date`
+            # bir kunda faqat BIR MARTA yuborilishini kafolatlaydi.
+            due = [r for r in reports if now_hhmm >= r.time_hhmm and r.last_sent_date != today_str]
+            for r in due:
+                r.last_sent_date = today_str
+            session.commit()
+            # 2026-10-01: kompaniya chat'dan "taxmin" qilinmaydi (ilgari noma'lum
+            # chat egasi kompaniyasiga tushardi) -- yozuvning O'Z company_id'si,
+            # va chat hali ham shu kompaniyaga tegishli bo'lsagina yuboriladi.
+            due_pairs = [
+                (r.chat_id, r.company_id or db.get_default_company_id()) for r in due
+                if _chat_still_authorized(session, r.chat_id, r.company_id or db.get_default_company_id())
+            ]
+            due_chat_ids = [c for c, _ in due_pairs]
     finally:
         session.close()
 
@@ -1478,8 +1536,7 @@ def job_standing_reports() -> str:
     default_company_id = db.get_default_company_id()
     report_cache: dict = {}
     sent = []
-    for chat_id in due_chat_ids:
-        company_id = orchestrator._company_id_for_chat(chat_id)
+    for chat_id, company_id in due_pairs:
         if company_id not in report_cache:
             fake_company = None
             if company_id is not None and company_id != default_company_id:

@@ -31,7 +31,7 @@
           <input type="radio" name="plan" id="plan_{{ plan.key }}" value="{{ plan.key }}" {{ 'checked' if form.plan == plan.key }}>
           <label for="plan_{{ plan.key }}">
             <div class="plan-pick-name">{{ plan.name }}</div>
-            <div class="plan-pick-price">{% if plan.price_usd %}${{ plan.price_usd }}{{ t('pricing.per_month') }}{% else %}{{ t('pricing.free') }}{% endif %}</div>
+            <div class="plan-pick-price">{% if plan.price_usd %}${{ plan.price_usd }}{{ t('pricing.per_month') }} <span class="plan-pick-uzs">≈ {{ price_uzs(plan.price_usd) }}</span>{% else %}{{ t('pricing.free') }}{% endif %}</div>
           </label>
         </div>
         {% endfor %}

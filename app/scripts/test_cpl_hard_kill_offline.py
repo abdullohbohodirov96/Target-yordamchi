@@ -49,7 +49,7 @@ _BASE_RULES = {
 }
 
 
-def _run(rows, rules=None, structure=None):
+def _run(rows, rules=None, structure=None, usd_factor=(1.0, None), resumed=()):
     """`enforce_cpl_hard_kill()`ni berilgan qatorlar/qoidalar bilan chaqiradi,
     `_execute_and_verify_status`ni mock qilib (haqiqiy pauza QILMAYDI),
     natija dict'i va chaqirilgan ad_id'lar ro'yxatini qaytaradi."""
@@ -58,6 +58,9 @@ def _run(rows, rules=None, structure=None):
     with mock.patch.object(orch, "BUSINESS_RULES", rules), \
          mock.patch.object(orch.dashboard_data, "get_kpis", return_value={"rows": rows}), \
          mock.patch.object(orch.meta_api, "get_account_structure", return_value=structure), \
+         mock.patch.object(orch, "_spend_to_usd_factor", return_value=usd_factor), \
+         mock.patch.object(orch, "_recently_auto_paused_ad_ids", return_value=set(resumed)), \
+         mock.patch.object(orch, "_record_auto_pause"), \
          mock.patch.object(orch, "_execute_and_verify_status") as mock_pause:
         result = orch.enforce_cpl_hard_kill()
     paused_ad_ids = [c.args[0] for c in mock_pause.call_args_list]
@@ -134,6 +137,8 @@ def test_records_pause_errors_without_crashing():
     with mock.patch.object(orch, "BUSINESS_RULES", rules), \
          mock.patch.object(orch.dashboard_data, "get_kpis", return_value={"rows": rows}), \
          mock.patch.object(orch.meta_api, "get_account_structure", return_value={"ads": []}), \
+         mock.patch.object(orch, "_spend_to_usd_factor", return_value=(1.0, None)), \
+         mock.patch.object(orch, "_recently_auto_paused_ad_ids", return_value=set()), \
          mock.patch.object(orch, "_execute_and_verify_status", side_effect=meta_api.MetaAPIError({"message": "Meta xatosi"})):
         result = orch.enforce_cpl_hard_kill()
     assert result["paused"] == []
@@ -152,12 +157,64 @@ def test_disabled_when_threshold_not_configured():
 def test_get_kpis_error_returns_gracefully():
     with mock.patch.object(orch, "BUSINESS_RULES", dict(_BASE_RULES)), \
          mock.patch.object(orch.dashboard_data, "get_kpis", return_value={"error": "Meta ulanmadi", "rows": []}), \
+         mock.patch.object(orch, "_spend_to_usd_factor", return_value=(1.0, None)), \
          mock.patch.object(orch, "_execute_and_verify_status") as mock_pause:
         result = orch.enforce_cpl_hard_kill()
     mock_pause.assert_not_called()
     assert result["checked"] == 0
     assert result["errors"] == ["Meta ulanmadi"]
     print("OK: dashboard_data.get_kpis xato qaytarsa -- funksiya yiqilmasdan xatoni qaytaradi")
+
+
+def test_messaging_ads_never_paused_for_zero_leads():
+    # 2026-10-01 audit (KRITIK): "Xabarlar" reklamasida CRM'da Lead yo'q --
+    # ilgari $8+ sarflanishi bilan "0 lid" deb pauza qilinardi.
+    rows = [_row("ad_msg", spend=50.0, cpl=0.0, crm_leads_total=0, goal="CONVERSATIONS", meta_result=40),
+            _row("ad_traffic", spend=50.0, cpl=0.0, crm_leads_total=0, goal="LINK_CLICKS")]
+    result, paused_ids = _run(rows)
+    assert paused_ids == [], f"xabar/trafik reklamasi pauza qilinmasligi kerak, olindi: {paused_ids}"
+    print("OK: Xabarlar/trafik reklamalari 'lid yo'q' deb pauza qilinmaydi")
+
+
+def test_uzs_account_spend_converted_to_usd():
+    # 120 000 so'm sarflangan, 0 lid -- 1$=12 700 so'mda ~$9.4; zero-lead chegarasi $4.5
+    rows = [_row("ad_uzs", spend=120000.0, crm_leads_total=0, goal="LEAD_GENERATION")]
+    result, paused_ids = _run(rows, usd_factor=(1 / 12700.0, "kurs"))
+    assert paused_ids == ["ad_uzs"], paused_ids
+    # 30 000 so'm (~$2.4) -- chegaradan past, pauza YO'Q (ilgari "30 000$" deb pauza bo'lardi)
+    rows = [_row("ad_uzs2", spend=30000.0, crm_leads_total=0, goal="LEAD_GENERATION")]
+    _, paused_ids = _run(rows, usd_factor=(1 / 12700.0, "kurs"))
+    assert paused_ids == [], paused_ids
+    print("OK: UZS hisobida xarajat dollarga o'tkaziladi")
+
+
+def test_unknown_currency_skips_safely():
+    rows = [_row("ad_eur", spend=500.0, crm_leads_total=0, goal="LEAD_GENERATION")]
+    result, paused_ids = _run(rows, usd_factor=(None, "EUR qo'llab-quvvatlanmaydi"))
+    assert paused_ids == [] and "EUR" in result.get("note", ""), result
+    print("OK: noma'lum valyuta -- xavfsiz tomonga, hech narsa pauza qilinmaydi")
+
+
+def test_meta_count_used_when_crm_lags():
+    # spend $40, Meta 8 lid (CPL $5), CRM hali 2 tasini sinxronlagan (CPL $20)
+    rows = [_row("ad_lag", spend=40.0, cpl=20.0, crm_leads_total=2, goal="LEAD_GENERATION", meta_result=8)]
+    _, paused_ids = _run(rows, rules={"cpl_hard_kill_usd": 10.0})
+    assert paused_ids == [], f"CRM orqada qolganda asossiz pauza bo'lmasligi kerak: {paused_ids}"
+    print("OK: CRM orqada qolsa Meta'ning lid soni ishlatiladi (asossiz pauza yo'q)")
+
+
+def test_manually_resumed_ad_not_repaused():
+    rows = [_row("ad_back", spend=20.0, crm_leads_total=0, goal="LEAD_GENERATION")]
+    _, paused_ids = _run(rows, resumed=["ad_back"])
+    assert paused_ids == [], paused_ids
+    print("OK: egasi qo'lda qayta yoqqan reklama qayta o'chirilmaydi")
+
+
+def test_structure_failure_is_reported_not_silent():
+    rows = [_row("ad_x", status="", spend=50.0, goal="LEAD_GENERATION")]
+    result, paused_ids = _run(rows)
+    assert paused_ids == [] and result["errors"], result
+    print("OK: reklama holatlari olinmasa -- xato qaytadi (jim 'checked: 0' emas)")
 
 
 def run_all():

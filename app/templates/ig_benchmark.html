@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}{{ t('igb.title') }} — Replix{% endblock %}
+{% block content %}
+{# 2026-10-01: Instagram raqobatchi statistikasi -- ig_benchmark.py'ga qarang. #}
+<style>
+  .igb-form { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+  .igb-form .field { flex:1 1 280px; margin:0; }
+  .igb-form .field-n { flex:0 0 120px; }
+  .igb-form > button, .igb-form > a.btn { height:38px; padding:0 18px; margin:0; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; }
+  @media (max-width:600px) { .igb-form > button, .igb-form > a.btn { flex:1 1 auto; } }
+  .igb-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin:20px 0; }
+  .igb-card { display:flex; flex-direction:column; gap:12px; }
+  .igb-head { display:flex; gap:12px; align-items:center; min-width:0; }
+  .igb-avatar { width:48px; height:48px; border-radius:50%; object-fit:cover; flex:0 0 48px; background:var(--surface-2, #eee); display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .igb-head-text { min-width:0; }
+  .igb-head-text strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .igb-head-text a { font-size:13px; }
+  .igb-stats { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; }
+  .igb-stat { background:var(--surface-2, rgba(0,0,0,.03)); border-radius:10px; padding:8px 10px; }
+  .igb-stat .l { font-size:12px; color:var(--text-dim, #777); }
+  .igb-stat .v { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .igb-mix { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .igb-mix span { border:1px solid var(--border, #ddd); border-radius:999px; padding:2px 8px; }
+  .igb-best { color:var(--good, #16a34a); font-weight:700; }
+  .igb-best-tag { font-size:11px; margin-left:4px; }
+  table td.num, table th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .igb-caption { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>{{ t('igb.title') }}</h1>
+    <p class="page-subtitle" style="margin-bottom:0">{{ t('igb.subtitle') }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" class="igb-form" autocomplete="off">
+    <div class="field">
+      <label for="igbU">{{ t('igb.usernames_label') }}</label>
+      <input type="text" id="igbU" name="u" value="{{ raw }}" placeholder="{{ t('igb.usernames_ph') }}" required>
+    </div>
+    <div class="field field-n">
+      <label for="igbN">{{ t('igb.posts_label') }}</label>
+      <input type="number" id="igbN" name="n" min="{{ min_posts }}" max="{{ max_posts }}" value="{{ limit }}">
+    </div>
+    <button type="submit">{{ t('igb.analyze') }}</button>
+    {% if data and data.results %}
+    <a class="btn toggle-all-btn-outline" href="{{ url_for('ig_benchmark_page', u=raw, n=limit, refresh=1) }}">{{ t('igb.refresh') }}</a>
+    {% endif %}
+  </form>
+  <p class="text-dim" style="margin:10px 0 0; font-size:13px">{{ t('igb.hint') }}</p>
+</div>
+
+{% if data %}
+  {% for err in data.errors %}
+  <div class="hint-box" style="margin-top:16px; border-color:var(--bad-border)">⚠️ {{ err }}</div>
+  {% endfor %}
+
+  {% if data.results %}
+  {% macro num(v, d=0) %}{% if v is none %}—{% else %}{{ ('{:,.%df}' % d).format(v).replace(',', ' ') }}{% endif %}{% endmacro %}
+  {% macro best_cls(key, v) %}{% if v is not none and data.best.get(key) is not none and v == data.best[key] %}igb-best{% endif %}{% endmacro %}
+
+  {% if data.results|length > 1 %}
+  <div class="card" style="margin-top:20px">
+    <h2 style="margin-top:0">{{ t('igb.compare_title') }}</h2>
+    <div class="table-scroll">
+    <table>
+      <thead><tr>
+        <th>{{ t('igb.col_account') }}</th>
+        <th class="num">{{ t('igb.col_followers') }}</th>
+        <th class="num">{{ t('igb.col_avg_likes') }}</th>
+        <th class="num">{{ t('igb.col_avg_comments') }}</th>
+        <th class="num">{{ t('igb.col_avg_views') }}</th>
+        <th class="num">{{ t('igb.col_er') }}</th>
+        <th class="num">{{ t('igb.col_freq') }}</th>
+        <th>{{ t('igb.col_ads') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in data.results %}
+      <tr>
+        <td><a href="https://www.instagram.com/{{ r.username }}/" target="_blank" rel="noopener">@{{ r.username }}</a></td>
+        <td class="num">{{ num(r.followers) }}</td>
+        <td class="num {{ best_cls('avg_likes', r.avg_likes) }}">{{ num(r.avg_likes) }}</td>
+        <td class="num {{ best_cls('avg_comments', r.avg_comments) }}">{{ num(r.avg_comments) }}</td>
+        <td class="num {{ best_cls('avg_views', r.avg_views) }}">{{ num(r.avg_views) }}</td>
+        <td class="num {{ best_cls('engagement_rate', r.engagement_rate) }}">{% if r.engagement_rate is none %}—{% else %}{{ r.engagement_rate }}%{% endif %}</td>
+        <td class="num {{ best_cls('posts_per_week', r.posts_per_week) }}">{{ num(r.posts_per_week, 1) }}</td>
+        <td><a href="{{ r.ad_library_url }}" target="_blank" rel="noopener">{{ t('igb.open_ads') }} ↗</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="text-dim" style="font-size:12px; margin:8px 0 0"><span class="igb-best">■</span> — {{ t('igb.best') }}</p>
+  </div>
+  {% endif %}
+
+  <div class="igb-cards">
+    {% for r in data.results %}
+    <div class="card igb-card">
+      <div class="igb-head">
+        {% if r.picture %}<img class="igb-avatar" src="{{ r.picture }}" alt="" loading="lazy">{% else %}<span class="igb-avatar">{{ (r.username or '?')[0]|upper }}</span>{% endif %}
+        <div class="igb-head-text">
+          <strong>{{ r.name }}</strong>
+          <a href="https://www.instagram.com/{{ r.username }}/" target="_blank" rel="noopener">@{{ r.username }}</a>
+        </div>
+      </div>
+      <div class="igb-stats">
+        <div class="igb-stat"><div class="l">{{ t('igb.col_followers') }}</div><div class="v">{{ num(r.followers) }}</div></div>
+        <div class="igb-stat"><div class="l">{{ t('igb.col_posts') }}</div><div class="v">{{ r.posts_analyzed }}</div></div>
+        <div class="igb-stat"><div class="l">{{ t('igb.col_avg_likes') }}</div><div class="v">{{ num(r.avg_likes) }}</div></div>
+        <div class="igb-stat"><div class="l">{{ t('igb.col_avg_comments') }}</div><div class="v">{{ num(r.avg_comments) }}</div></div>
+        <div class="igb-stat"><div class="l">{{ t('igb.col_avg_views') }}</div><div class="v">{{ num(r.avg_views) }}</div></div>
+        <div class="igb-stat"><div class="l">{{ t('igb.col_er') }}</div><div class="v">{% if r.engagement_rate is none %}—{% else %}{{ r.engagement_rate }}%{% endif %}</div></div>
+      </div>
+      {% if r.likes_hidden %}<p class="text-dim" style="font-size:12px; margin:0">{{ t('igb.likes_hidden') }}</p>{% endif %}
+      {% if r.video_count and r.avg_views is none %}<p class="text-dim" style="font-size:12px; margin:0">{{ t('igb.views_na') }}</p>{% endif %}
+      {% if r.kinds %}
+      <div><div class="text-dim" style="font-size:12px; margin-bottom:4px">{{ t('igb.mix') }}</div>
+        <div class="igb-mix">{% for k, c in r.kinds.items() %}<span>{{ k }}: {{ c }}</span>{% endfor %}</div>
+      </div>
+      {% endif %}
+      <a class="btn toggle-all-btn-outline" href="{{ r.ad_library_url }}" target="_blank" rel="noopener">{{ t('igb.open_ads') }} ↗</a>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="hint-box">{{ t('igb.ads_note') }}</div>
+
+  {% for r in data.results %}
+  <div class="card" style="margin-top:20px">
+    <h2 style="margin-top:0">@{{ r.username }} — {{ t('igb.posts_title') }} ({{ r.posts_analyzed }})</h2>
+    <div class="table-scroll">
+    <table>
+      <thead><tr>
+        <th>{{ t('igb.th_date') }}</th><th>{{ t('igb.th_type') }}</th><th>{{ t('igb.th_text') }}</th>
+        <th class="num">{{ t('igb.th_likes') }}</th><th class="num">{{ t('igb.th_comments') }}</th><th class="num">{{ t('igb.th_views') }}</th><th class="num">ER</th>
+      </tr></thead>
+      <tbody>
+      {% for p in r.posts %}
+      <tr>
+        <td class="text-dim">{{ p.timestamp.strftime('%Y-%m-%d') if p.timestamp else '—' }}</td>
+        <td>{{ p.kind }}</td>
+        <td class="igb-caption">{% if p.permalink %}<a href="{{ p.permalink }}" target="_blank" rel="noopener">{{ p.caption or '↗' }}</a>{% else %}{{ p.caption }}{% endif %}</td>
+        <td class="num">{{ num(p.likes) }}</td>
+        <td class="num">{{ num(p.comments) }}</td>
+        <td class="num">{{ num(p.views) }}</td>
+        <td class="num">{% if p.er is none %}—{% else %}{{ p.er }}%{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+{% else %}
+  <div class="hint-box" style="margin-top:16px">{{ t('igb.empty') }}</div>
+{% endif %}
+{% endblock %}

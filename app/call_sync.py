@@ -343,6 +343,7 @@ def reconcile_existing_records() -> dict:
         session.close()
 
 
+@db.company_scoped
 def debug_sample_calls(n: int = 5, company=None) -> dict:
     """VAQTINCHALIK DIAGNOSTIKA (2026-08): foydalanuvchi menejer telefon
     raqamlarini to'g'ri to'ldirgan bo'lsa-yu, BARCHA qo'ng'iroqlar
@@ -388,6 +389,7 @@ def debug_sample_calls(n: int = 5, company=None) -> dict:
     return result
 
 
+@db.company_scoped
 def sync_once(since: dt.datetime | None = None, company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. Qaytaradi:
     {"configured": bool, "new_calls": N, "skipped_unmatched": N, "errors": [...]}
@@ -471,8 +473,11 @@ def sync_once(since: dt.datetime | None = None, company=None) -> dict:
             phone_key = phone_key9(mapped["phone_number"])
             lead_id = None
             if phone_key:
+                # Faqat SHU kompaniyaning lidlari -- boshqa kompaniyaning
+                # bir xil raqamli lidiga bog'lanib qolmasin.
                 lead = session.query(Lead).filter(
-                    Lead.phone.ilike(f"%{phone_key}%") | Lead.phone2.ilike(f"%{phone_key}%")
+                    Lead.company_id == company_id,
+                    Lead.phone.ilike(f"%{phone_key}%") | Lead.phone2.ilike(f"%{phone_key}%"),
                 ).first()
                 if lead:
                     lead_id = lead.id

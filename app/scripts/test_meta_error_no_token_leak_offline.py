@@ -116,7 +116,7 @@ meta_api.get_insights = _fake_get_insights_meta_error
 try:
     _login()
     html = client.get("/target").get_data(as_text=True)
-    check("Meta'ning o'z (tokensiz) xato xabari foydalanuvchiga ko'rsatiladi", "Invalid OAuth access token." in html)
+    check("Meta xatosi foydalanuvchiga tushunarli (o'zbekcha, kod bilan) ko'rsatiladi", "Meta ulanishi muddati tugagan" in html and "kod 190" in html)
 finally:
     meta_api.get_insights = real_get_insights
     client.get("/logout")

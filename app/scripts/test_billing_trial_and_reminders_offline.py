@@ -4,7 +4,7 @@ so'rovi (Item D, "Trial muddati/limitlarini o'zgartirish" +
 
   1. Sinov (trial) muddati 14 kundan 7 kunga, keyin (bosh sahifadagi yangi
      "ro'yxatdan o'tmaganlar uchun eslatma" popup'i bilan birga so'ralganda)
-     7 kundan 5 kunga qisqartirildi (`plans.py: PLANS["trial"].period_days`)
+     2026-09-30: 7 kun (`plans.py: PLANS["trial"].period_days`)
      -- ochiq ro'yxatdan o'tish (`/signup`) VA platforma egasi qo'lda
      yaratadigan (`/companies`) kompaniya, IKKALASI ham shu YAGONA
      qiymatdan hisoblaydi.
@@ -25,6 +25,7 @@ import tempfile
 import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("FLASK_SECRET_KEY", "test-secret")
@@ -82,19 +83,18 @@ def _add_admin(db_module, company_id, *, telegram_user_id=None, username=None):
 
 
 # ---------------------------------------------------------------------------
-# 1) Trial muddati -- 7 kundan 5 kunga
+# 1) Trial muddati -- 7 kun (2026-09-30: 5 -> 7, docs/PLAN.md)
 # ---------------------------------------------------------------------------
 
-def test_trial_plan_period_is_five_days():
+def test_trial_plan_period_is_seven_days():
     with tempfile.TemporaryDirectory() as tmp:
         _db, _app, _sched, plans_module = _fresh_modules(os.path.join(tmp, "p1.db"))
-        assert plans_module.PLANS["trial"].period_days == 5, (
-            "Sinov tarifi endi 5 kun bo'lishi kerak (foydalanuvchi so'rovi bo'yicha, avval 7 kun edi)"
-        )
-    print("OK: plans.py -- sinov tarifi 5 kunga qisqartirildi")
+        assert plans_module.PLANS["trial"].period_days == 7, "Sinov tarifi 7 kun bo'lishi kerak"
+        assert plans_module.PLANS["trial"].can_connect_meta_ads is True, "Sinovda Meta reklama hisobini ulash ochiq bo'lishi kerak"
+    print("OK: plans.py -- sinov tarifi 7 kun, Meta ulash ochiq")
 
 
-def test_signup_sets_paid_until_five_days_out():
+def test_signup_sets_paid_until_seven_days_out():
     with tempfile.TemporaryDirectory() as tmp:
         db_module, app_module, _sched, _plans = _fresh_modules(os.path.join(tmp, "p2.db"))
         client = app_module.app.test_client()
@@ -112,12 +112,12 @@ def test_signup_sets_paid_until_five_days_out():
                 c = session.query(db_module.Company).filter_by(name="Yangi Kompaniya").first()
             assert c is not None
             delta = c.paid_until - before
-            assert dt.timedelta(days=4, hours=23) < delta < dt.timedelta(days=5, hours=1), (
-                f"paid_until ~5 kundan keyin bo'lishi kerak, oldi: {delta}"
+            assert dt.timedelta(days=6, hours=23) < delta < dt.timedelta(days=7, hours=1), (
+                f"paid_until ~7 kundan keyin bo'lishi kerak, oldi: {delta}"
             )
         finally:
             session.close()
-    print("OK: /signup orqali ochilgan sinov kompaniyasi paid_until'i ~5 kundan keyin")
+    print("OK: /signup orqali ochilgan sinov kompaniyasi paid_until'i ~7 kundan keyin")
 
 
 def test_admin_created_company_respects_selected_plans_period():

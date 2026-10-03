@@ -265,6 +265,9 @@
 .lp-plan-price { display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px; }
 .lp-plan-price b { font-size: 30px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
 .lp-plan-price span { font-size: 13px; color: var(--text-faint); }
+.lp-plan li.lp-feat-no { color: var(--text-faint); }
+.lp-plan li.lp-feat-no svg { color: var(--text-faint) !important; stroke: var(--text-faint); }
+.lp-plan-uzs { font-size: 13px; color: var(--text-dim); margin: -2px 0 4px; font-variant-numeric: tabular-nums; }
 .lp-plan-period { font-size: 12px; color: var(--text-faint); margin-bottom: 18px; }
 .lp-plan-cta { margin-bottom: 18px; }
 .lp-plan ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; }
@@ -370,6 +373,7 @@
 .plan-pick input:checked + label { border-color: var(--blue); background: var(--blue-bg); }
 .plan-pick-name { font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .plan-pick-price { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+.plan-pick-uzs { display: block; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .auth-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .auth-form-grid .field.full { grid-column: 1 / -1; }
 .auth-foot-link { text-align: center; font-size: 13px; color: var(--text-dim); margin-top: 16px; }
@@ -438,6 +442,16 @@
   .plan-picker { grid-template-columns: 1fr 1fr; }
   .auth-form-grid { grid-template-columns: 1fr; }
   .auth-card { padding: 26px 20px; }
+  /* 2026-09-30: telefonda sarlavha sig'masdan "Bepul boshlash" tugmasi
+     o'ngdan kesilib qolardi -- ixchamroq o'lchamlar. */
+  .lp-nav { padding: 14px 4px; flex-wrap: wrap; row-gap: 10px; }
+  .lp-nav-brand img { height: 24px; }
+  .lp-nav-cta { gap: 5px; }
+  .lp-nav-cta .btn { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+  .lp-lang-switch { font-size: 12px; gap: 2px; margin-right: 2px; }
+  .lp-lang-switch a { padding: 2px 3px; }
+  .lp-lang-switch span { display: none; }
+  .lp-nav-cta .btn { padding: 8px 10px; }
 }
 
 /* Til almashtirgich -- lp-nav va auth-card (login/signup) sarlavhalarida
@@ -465,21 +479,15 @@
 .lp-lang-switch span {
   color: var(--border);
 }
-.auth-lang-switch {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 14px;
-}
-.auth-lang-switch a {
-  color: var(--text-dim);
-  text-decoration: none;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.auth-lang-switch a.active {
-  color: var(--blue, #2563eb);
-  background: var(--blue-bg, #eef4ff);
-}
+
+/* 2026-10-01, PLAN 7-bosqich: "Kim uchun" -- ikki yo'l (biznes egasi / targetolog) */
+.lp-paths { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; max-width: 960px; margin: 0 auto; }
+.lp-path { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; }
+.lp-path-tag { align-self: flex-start; font-size: 12px; font-weight: 600; color: var(--blue, #2563eb); background: var(--blue-bg, rgba(37,99,235,.08)); border-radius: 999px; padding: 4px 10px; margin-bottom: 12px; }
+.lp-path h3 { font-size: 19px; margin: 0 0 14px; color: var(--ink); letter-spacing: -.01em; }
+.lp-path ul { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.lp-path li { display: flex; gap: 10px; font-size: 14.2px; color: var(--text-dim); line-height: 1.5; }
+.lp-path li svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--good, #16a34a); margin-top: 2px; }
+.lp-path-cta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.lp-path-link { font-size: 14px; font-weight: 600; color: var(--blue, #2563eb); text-decoration: none; }
+@media (max-width: 760px) { .lp-paths { grid-template-columns: 1fr; } .lp-path { padding: 20px; } }

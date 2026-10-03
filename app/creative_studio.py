@@ -1842,6 +1842,7 @@ def _draw_text_layer(canvas, layer, W, H):
     draw = ImageDraw.Draw(canvas)
     color = _hex_to_rgb(layer.get("color"))
     align = layer.get("align") or "left"
+    positions = []
     cy = y
     for ln in lines:
         lw = font.getlength(ln)
@@ -1851,8 +1852,20 @@ def _draw_text_layer(canvas, layer, W, H):
             lx = x + w - lw
         else:
             lx = x
-        draw.text((lx, cy), ln, font=font, fill=color + (255,))
+        positions.append((lx, cy, ln))
         cy += line_h
+    # 2026-10-01: och rangli matnga yengil soya -- surat ustida ham aniq
+    # o'qilsin (reklamalardagi standart usul). To'q matnga soya qo'yilmaydi.
+    if _rel_luminance(color) > 0.35 and not layer.get("no_shadow"):
+        from PIL import Image, ImageFilter
+        shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shadow)
+        off = max(1, int(size * 0.05))
+        for lx, ly, ln in positions:
+            sd.text((lx + off, ly + off), ln, font=font, fill=(0, 0, 0, 120))
+        canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=max(1, int(size * 0.08)))))
+    for lx, ly, ln in positions:
+        draw.text((lx, ly), ln, font=font, fill=color + (255,))
 
 
 def _draw_badge(canvas, layer, W, H):
@@ -1922,6 +1935,103 @@ def _draw_logo(canvas, layer, W, H, logo_path: "Path | None"):
     canvas.alpha_composite(logo, (lx, ly))
 
 
+def _rel_luminance(rgb) -> float:
+    def ch(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb[:3]
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def _contrast(l1: float, l2: float) -> float:
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+# 2026-10-01: matn surat ustida o'qilmay qolmasligi uchun avtomatik "scrim".
+# Matn qutisi ostidagi fon yetarli kontrast bermasa (WCAG < 4.5) yoki juda
+# "ola-bula" bo'lsa -- matn ortiga yumshoq (chetlari xira) qoraytirish yoki
+# yoritish chiziladi. Tekis rangli fonda hech narsa o'zgarmaydi.
+SCRIM_MIN_CONTRAST = 4.5
+SCRIM_BUSY_STDEV = 0.12
+
+
+def _scrim_need(canvas, layer, W, H):
+    """Matn qatlami uchun scrim kerak bo'lsa (qoraytirish?, alfa, y0, y1), aks holda None."""
+    import statistics
+    x, y = int(layer["x"] * W), int(layer["y"] * H)
+    w, h = max(1, int(layer["w"] * W)), max(1, int(layer["h"] * H))
+    region = canvas.crop((max(0, x), max(0, y), min(W, x + w), min(H, y + h))).convert("RGB").resize((16, 16))
+    pixels = list(region.getdata())
+    lums = [_rel_luminance(px) for px in pixels]
+    bg_lum = sum(lums) / len(lums)
+    busy = statistics.pstdev(lums) > SCRIM_BUSY_STDEV
+    text_lum = _rel_luminance(_hex_to_rgb(layer.get("color")))
+    if _contrast(text_lum, bg_lum) >= SCRIM_MIN_CONTRAST and not busy:
+        return None
+    dark = _contrast(text_lum, 0.0) >= _contrast(text_lum, 1.0)
+    scrim = (0, 0, 0) if dark else (255, 255, 255)
+    avg = tuple(sum(px[i] for px in pixels) / len(pixels) for i in range(3))
+    alpha = 0.35
+    while alpha < 0.85:
+        mixed = tuple(avg[i] * (1 - alpha) + scrim[i] * alpha for i in range(3))
+        if _contrast(text_lum, _rel_luminance(mixed)) >= SCRIM_MIN_CONTRAST + 1.5:
+            break
+        alpha += 0.05
+    if busy:
+        alpha = max(alpha, 0.68 if dark else 0.75)
+    return dark, min(alpha, 0.85), y, y + h
+
+
+def _auto_scrim(canvas, layers: list[dict], W: int, H: int) -> None:
+    """Pastdagi matnlar uchun -- pastdan, tepadagilar uchun -- tepadan
+    to'liq kenglikdagi silliq gradient (reklamalardagi kabi); o'rtadagilar
+    uchun -- yumshoq chetli tasma."""
+    from PIL import Image, ImageDraw, ImageFilter
+    needs = []
+    for layer in layers or []:
+        if layer.get("hidden") or layer.get("type") != "text" or layer.get("no_scrim"):
+            continue
+        text = (layer.get("text") or "").strip()
+        if not text or "{{" in text:
+            continue
+        r = _scrim_need(canvas, layer, W, H)
+        if r:
+            needs.append(r)
+    if not needs:
+        return
+    groups = {"top": [], "mid": [], "bottom": []}
+    for dark, alpha, y0, y1 in needs:
+        c = (y0 + y1) / 2 / H
+        groups["top" if c < 0.35 else ("bottom" if c > 0.55 else "mid")].append((dark, alpha, y0, y1))
+    feather = int(H * 0.16)
+    for pos, items in groups.items():
+        if not items:
+            continue
+        dark = sum(1 for i in items if i[0]) >= len(items) / 2
+        alpha = max(i[1] for i in items)
+        y0, y1 = min(i[2] for i in items), max(i[3] for i in items)
+        mask = Image.new("L", (1, H), 0)
+        md = mask.load()
+        for yy in range(H):
+            if pos == "bottom":
+                t = 1.0 if yy >= y0 - feather * 0.25 else max(0.0, 1 - (y0 - feather * 0.25 - yy) / feather)
+            elif pos == "top":
+                t = 1.0 if yy <= y1 + feather * 0.25 else max(0.0, 1 - (yy - y1 - feather * 0.25) / feather)
+            else:
+                pad = feather * 0.35
+                if y0 - pad <= yy <= y1 + pad:
+                    t = 1.0
+                else:
+                    dist = (y0 - pad - yy) if yy < y0 - pad else (yy - y1 - pad)
+                    t = max(0.0, 1 - dist / (feather * 0.7))
+            md[0, yy] = int(255 * alpha * (t * t * (3 - 2 * t)))  # smoothstep
+        mask = mask.resize((W, H))
+        color = Image.new("RGBA", (W, H), ((0, 0, 0) if dark else (255, 255, 255)) + (255,))
+        color.putalpha(mask)
+        canvas.alpha_composite(color)
+
+
 def render_composite(base_image_path: "Path", layers: list[dict], brand_kit, out_path: "Path", *, target_size: "tuple[int, int]") -> None:
     """Pillow orqali: base rasmni `target_size`ga 'cover' rejimida (nisbatni
     saqlab, markazdan kesib) moslaydi, so'ng har bir qatlamni chizadi:
@@ -1940,9 +2050,18 @@ def render_composite(base_image_path: "Path", layers: list[dict], brand_kit, out
         base = raw.convert("RGB")
     canvas = _cover_resize(base, (W, H)).convert("RGBA")
     logo_path = brand_logo_file_path(brand_kit)
+    scrim_done = False
     for layer in layers or []:
         if layer.get("hidden"):
             continue
+        if not scrim_done and layer.get("type") == "text":
+            # Panellar (agar oldinroq bo'lsa) chizilgandan keyin, birinchi
+            # matndan oldin -- matn qutilari ostini bir marta tekshiramiz.
+            try:
+                _auto_scrim(canvas, layers, W, H)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("creative_studio: scrim chizilmadi: %s", e)
+            scrim_done = True
         try:
             ltype = layer.get("type")
             if ltype == "panel":
@@ -1993,11 +2112,52 @@ def _render_asset(session, asset) -> None:
     asset.width, asset.height = size
 
 
+# 2026-09-30 (docs/PLAN.md, 3-bosqich): Instagram/Facebook Stories va Reels
+# (9:16) ekranining yuqori ~12% (profil nomi, yopish tugmasi) va pastki ~18%
+# (javob maydoni / "Batafsil" tugmasi) qismi platforma interfeysi bilan
+# yopiladi. Shablonlar 1:1 uchun chizilgan -- 9:16 da logotip/CTA shu
+# zonalarga tushib, ko'rinmay qolardi.
+STORY_SAFE_TOP = 0.12
+STORY_SAFE_BOTTOM = 0.82
+
+
+def adapt_layers_for_aspect(layers: list[dict], aspect: str) -> list[dict]:
+    """Shablon qatlamlarini formatga moslaydi (sof funksiya, kirishni
+    o'zgartirmaydi). 9:16 -- matn/logo/badge vertikal "xavfsiz zona"ga
+    siqiladi; chekkaga yopishgan fon panellari chekkada qoladi (dizayn
+    buzilmaydi), to'liq balandlikdagi panellarga tegilmaydi. Shrift o'lchami
+    ham siqilish nisbatida kichrayadi (balandlik 1:1 dagidan 1.78 baravar
+    katta). Boshqa formatlar -- o'zgarishsiz."""
+    if aspect != "9:16":
+        return [dict(l) for l in (layers or [])]
+    top, span = STORY_SAFE_TOP, STORY_SAFE_BOTTOM - STORY_SAFE_TOP
+    out = []
+    for layer in layers or []:
+        l = dict(layer)
+        y, h = float(l.get("y") or 0), float(l.get("h") or 0)
+        if l.get("type") == "panel":
+            if h >= 0.95:
+                out.append(l)
+                continue
+            new_y, new_bottom = top + y * span, top + (y + h) * span
+            if y <= 0.02:
+                new_y = 0.0
+            if y + h >= 0.98:
+                new_bottom = 1.0
+            l["y"], l["h"] = round(new_y, 4), round(max(0.01, new_bottom - new_y), 4)
+        else:
+            l["y"], l["h"] = round(top + y * span, 4), round(max(0.01, h * span), 4)
+            if l.get("size_ratio") is not None:
+                l["size_ratio"] = round(float(l["size_ratio"]) * span, 4)
+        out.append(l)
+    return out
+
+
 def _initial_layers_for(asset, ctx: dict, template: "dict | None", values: "dict | None" = None) -> list[dict]:
     if values is None:
         values = placeholder_values(ctx, asset.get_brief_answers(), template, use_ai=False)
     source = template["layers"] if template else select_default_layout(values, asset.id)
-    return resolve_layers(source, values)
+    return adapt_layers_for_aspect(resolve_layers(source, values), asset.aspect)
 
 
 def _run_generation(session, asset, company, plan_def, *, keep_layers: bool) -> "db.CreativeAsset":

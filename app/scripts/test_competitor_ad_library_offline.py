@@ -285,6 +285,22 @@ with mock.patch.object(meta_api, "search_ad_library", return_value=[]):
     r = client_a.get("/settings/competitors/live-search?q=Hechnarsa")
     check("live-search natija topilmasa bo'sh ro'yxat qaytaradi, xato emas", r.status_code == 200 and r.get_json() == {"results": []})
 
+# Meta "Application does not have permission" (Ad Library API ruxsati yo'q):
+# xom xato o'rniga tushuntirish + Ad Library sahifasiga tugma (q=brend nomi).
+with mock.patch.object(meta_api, "search_ad_library",
+                       side_effect=meta_api.MetaAPIError("Application does not have permission for this action")):
+    r = client_a.get("/settings/competitors?q=dunyabunya")
+    html = r.get_data(as_text=True)
+    check("Ad Library ruxsat xatosi -> tushuntirish matni", r.status_code == 200 and "Ad Library sahifasida" in html)
+    check("Ad Library ruxsat xatosi -> facebook.com/ads/library?q=dunyabunya tugmasi",
+          "facebook.com/ads/library/?" in html and "q=dunyabunya" in html)
+with mock.patch.object(meta_api, "search_ad_library", return_value=[]):
+    html = client_a.get("/settings/competitors?q=Hechnarsa").get_data(as_text=True)
+    check("natija yo'q -> baribir Ad Library havolasi", "q=Hechnarsa" in html)
+html = client_a.get("/settings/competitors").get_data(as_text=True)
+check("kuzatuvdagi raqobatchi kartasida video reklamalar havolasi (media_type=video)",
+      "cp-card-adlib" in html and "media_type=video" in html)
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

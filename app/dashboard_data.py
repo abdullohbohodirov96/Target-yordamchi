@@ -45,6 +45,7 @@ from sqlalchemy import func
 import meta_api
 import kpi_bonus
 import tz_utils
+import db
 from db import get_session, Lead, FunnelStage
 
 # MUHIM (2026-08, foydalanuvchi so'rovi: "sayt sekinlashib qoldi, tezroq
@@ -99,11 +100,12 @@ def _date_preset_bounds_utc(date_preset: str) -> tuple[dt.datetime, dt.datetime]
             days = int(date_preset[len("last_"):-1])
         except ValueError:
             return None
-        # Meta'ning "last_Nd" preseti bugungi kunni ham o'z ichiga oladi
-        # (aylanma N-kunlik oyna) -- shuning uchun tugash chegarasi ham
-        # "ertaga boshlanishi"gacha.
+        # Meta'ning "last_Nd" preseti BUGUNNI O'Z ICHIGA OLMAYDI: bugun-N
+        # .. kecha (aniq N kun). 2026-10-01 tuzatish: ilgari CRM tomoni
+        # bugunni ham qo'shib N+1 kun sanardi -> CPL past chiqib, yomon
+        # reklama pauza qilinmay qolardi.
         start_tashkent = today_start_tashkent - dt.timedelta(days=days)
-        end_tashkent = today_start_tashkent + dt.timedelta(days=1)
+        end_tashkent = today_start_tashkent
     # 2026-09, foydalanuvchi so'rovi: "bugun/shu hafta/o'tgan hafta/shu oy/
     # o'tgan oy/shu yil" bo'yicha ko'rish -- Meta'ning o'zi ishlatadigan
     # taqvim-preset nomlari (`target.html`dagi davr tugmalari shu nomlarni
@@ -342,7 +344,13 @@ def get_kpis(
     yuboriladi, CRM tomonida esa `custom_range_bounds_utc()` bilan mos
     filtr qo'yiladi. Berilmasa (None, None) -- eski xatti-harakat
     (`date_preset` orqali) o'zgarishsiz saqlanadi."""
-    cache_key = (level, date_preset, active_only, date_from or "", date_to or "", ad_account_id or "__default__")
+    # 2026-10-01 (audit): kalitda kompaniya va token ham -- natijada CRM lid/
+    # daromad raqamlari bor; bir xil reklama hisobini ikki kompaniya ulasa
+    # (agentlik) yoki B A'ning act_ ID'sini yozsa, bir-birining raqamini ko'rmasin.
+    import hashlib
+    token_tag = hashlib.sha256((access_token or "").encode()).hexdigest()[:12]
+    cache_key = (level, date_preset, active_only, date_from or "", date_to or "", ad_account_id or "__default__",
+                 db.get_current_company_id(), token_tag)
     now = time.monotonic()
     with _kpi_cache_lock:
         cached = _kpi_cache.get(cache_key)
@@ -427,10 +435,20 @@ def _get_kpis_uncached(
             # ko'rsatish uchun har bir kampaniyaning nechta ad set'i borligini
             # hisoblab, qatorga qo'shamiz (shablon shuni yozadi).
             adsets_per_campaign = defaultdict(int)
+            goals_per_campaign = defaultdict(lambda: defaultdict(int))
             for a in structure.get("adsets", []):
                 if a.get("campaign_id"):
                     adsets_per_campaign[a["campaign_id"]] += 1
+                    if a.get("optimization_goal"):
+                        goals_per_campaign[a["campaign_id"]][a["optimization_goal"]] += 1
             child_count_by_id = dict(adsets_per_campaign)
+            # 2026-10-01: kampaniya natijasi uning ad set'larining HAQIQIY
+            # optimization_goal'idan (eng ko'p uchraganidan) olinadi --
+            # objective'dan taxmin emas (masalan ENGAGEMENT kampaniyasi aslida
+            # xabarlar uchun bo'lsa, dashboard "post engagement" emas,
+            # Telegram hisobotidagi kabi "xabar" ko'rsatadi).
+            for cid, counts in goals_per_campaign.items():
+                goal_by_id[cid] = max(counts.items(), key=lambda kv: kv[1])[0]
         elif level == "adset":
             for a in structure.get("adsets", []):
                 goal_by_id[a["id"]] = a.get("optimization_goal", "") or ""
@@ -440,6 +458,19 @@ def _get_kpis_uncached(
                 goal_by_id[ad["id"]] = goal_by_adset.get(ad.get("adset_id"), "")
     except meta_api.MetaAPIError:
         pass
+
+    # 2026-10-01: Meta xarajatni REKLAMA HISOBI valyutasida beradi. So'mli
+    # hisobda ilgari 1 200 000 so'm "$1 200 000" bo'lib, ROI/ROAS/CPL
+    # minglab barobar buzilardi. Endi xarajat dollarga o'tkaziladi (kurs --
+    # Sozlamalar). Valyutani bilib bo'lmasa -- avvalgidek, o'zgartirilmaydi.
+    spend_factor = 1.0
+    try:
+        import orchestrator  # aylanma importdan qochish uchun shu yerda
+        factor, _note = orchestrator._spend_to_usd_factor(db.get_current_company_id(), access_token, ad_account_id)
+        if factor:
+            spend_factor = float(factor)
+    except Exception:  # noqa: BLE001 -- valyuta ixtiyoriy aniqlik
+        spend_factor = 1.0
 
     meta_by_id = {}
     for row in insight_rows:
@@ -455,7 +486,7 @@ def _get_kpis_uncached(
             "id": oid,
             "name": row.get(name_field, ""),
             "status": status_by_id.get(oid, ""),
-            "spend": float(row.get("spend", 0) or 0),
+            "spend": float(row.get("spend", 0) or 0) * spend_factor,
             "impressions": impressions,
             "reach": reach,
             "meta_leads": _extract_lead_count_from_actions(actions),
@@ -629,6 +660,9 @@ def _get_kpis_uncached(
     return {
         "rows": rows, "totals": totals, "goal_breakdown": goal_breakdown,
         "generated_at": dt.datetime.utcnow().isoformat(), "level": level,
+        # True -- spend allaqachon dollarga o'tkazilgan (CPL hard-kill qayta
+        # o'tkazmasligi uchun).
+        "spend_in_usd": spend_factor != 1.0,
     }
 
 

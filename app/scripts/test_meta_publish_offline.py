@@ -4,8 +4,9 @@ to'ldirmasligi kerak"): `meta_publish.py` -- BARCHA `meta_api` chaqiruvlari
 mock qilinadi (tarmoq yo'q):
 
   1. To'liq tasdiqlangan qoralama -> campaign -> adset -> creative -> ad
-     tartibida, standart ACTIVE (launch_active=True -> status "active"),
-     ID'lar bazada; launch_active=False -> hammasi PAUSED, status "published".
+     tartibida; standart PAUSED (2026-09-30) -- launch_active=False ->
+     hammasi PAUSED, status "published"; egasi "Darhol yoqilsin"ni tanlasa
+     (launch_active=True) -> ACTIVE, status "active".
   2. Idempotent/davom ettirish: birinchi urinish "adset"da yiqiladi
      (meta_campaign_id saqlanadi, status failed, publish_step="adset",
      friendly xato); ikkinchi urinishda `create_campaign` QAYTA
@@ -31,6 +32,7 @@ import tempfile
 import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("META_ACCESS_TOKEN", "test-dummy-token")
@@ -198,20 +200,23 @@ def test_full_publish_and_activate():
     try:
         c = _company(session)
         d = _draft(session, c)
-        # 2026-09, foydalanuvchi so'rovi ("srazu aktiv holatga chiqazadigan
-        # qilish kerak"): STANDART -- launch_active=True -> hammasi ACTIVE,
+        # 2026-09-30: STANDART endi PAUSED (launch_active=False, pul sarfi
+        # egasi qarori bilan). Bu test -- egasi review oynasida "Darhol
+        # yoqilsin"ni TANLAGAN holat: launch_active=True -> hammasi ACTIVE,
         # status darhol "active" (alohida activate qadami KERAK EMAS).
-        check("launch_active standart True", d.launch_active is True)
+        check("launch_active standart False (PAUSED)", d.launch_active is False)
+        d.launch_active = True
+        session.commit()
         with MetaMock() as m:
             res = meta_publish.publish_draft(session, d, c, manager_id=None)
             order = [name for name, *_ in m.calls]
             check("tartib campaign->adset->creative->ad", order == ["create_campaign", "create_adset", "create_ad_creative", "create_ad"])
-            check("standart: campaign ACTIVE bilan yaratildi", m.calls[0][1][2] == "ACTIVE")
-            check("standart: adset ACTIVE bilan yaratildi", m.calls[1][1][7] == "ACTIVE")
-            check("standart: ad ACTIVE bilan yaratildi", m.calls[3][1][3] == "ACTIVE")
-            check("standart: hammasi ACTIVE", all(v == "ACTIVE" for v in m.statuses.values()))
+            check("tanlangan ACTIVE: campaign ACTIVE bilan yaratildi", m.calls[0][1][2] == "ACTIVE")
+            check("tanlangan ACTIVE: adset ACTIVE bilan yaratildi", m.calls[1][1][7] == "ACTIVE")
+            check("tanlangan ACTIVE: ad ACTIVE bilan yaratildi", m.calls[3][1][3] == "ACTIVE")
+            check("tanlangan ACTIVE: hammasi ACTIVE", all(v == "ACTIVE" for v in m.statuses.values()))
             check("ID'lar bazada", (d.meta_campaign_id, d.meta_adset_id, d.meta_creative_id, d.meta_ad_id) == ("C1", "AS1", "CR1", "AD1"))
-            check("standart: status active, synced, step None", d.status == "active" and d.sync_status == "synced" and d.publish_step is None)
+            check("tanlangan ACTIVE: status active, synced, step None", d.status == "active" and d.sync_status == "synced" and d.publish_step is None)
             check("natija ID'lar", res["campaign_id"] == "C1" and res["ad_id"] == "AD1")
             # `_expected_snapshot` nashr paytida `launch_status`ni oladi --
             # aks holda "biz: PAUSED, Meta: ACTIVE" degan soxta ogohlantirish chiqardi
@@ -295,7 +300,7 @@ def test_resume_after_failure_idempotent():
                 check("adset xatosi PublishError", False)
             except meta_publish.PublishError as e:
                 check("adset xatosi PublishError", e.step == "adset")
-                check("friendly targeting xabari", e.friendly == "Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring.")
+                check("friendly targeting xabari", e.friendly.startswith("Tanlangan targeting Meta tomonidan qabul qilinmadi. Hudud/yosh/qiziqishlarni tekshirib qayta urinib ko'ring."))
             check("status failed, step adset", d.status == "failed" and d.publish_step == "adset")
             check("meta_campaign_id saqlangan", d.meta_campaign_id == "C1" and d.meta_adset_id is None)
             check("publish_error friendly, raw saqlangan", "targeting" in d.publish_error and "1487079" in d.last_meta_error_raw)
@@ -307,7 +312,7 @@ def test_resume_after_failure_idempotent():
             names = [n for n, *_ in m.calls]
             check("create_campaign ikki urinishda BIR MARTA", names.count("create_campaign") == 1)
             check("create_adset ikkinchi urinishda muvaffaqiyatli", names.count("create_adset") == 2 and d.meta_adset_id == "AS1")
-            check("qayta urinish yakunlandi (standart ACTIVE -> status active)", d.status == "active" and res["ad_id"] == "AD1")
+            check("qayta urinish yakunlandi (standart PAUSED -> status published)", d.status == "published" and res["ad_id"] == "AD1")
     finally:
         session.close()
 
@@ -330,7 +335,14 @@ def test_blocked_without_approvals_and_plan():
         c2 = _company(session, name="Trial Co", plan="trial")
         d2 = _draft(session, c2)
         msgs = meta_publish.validate_for_publish(d2, c2, ASSETS)
-        check("trial tarif bloklanadi", any("tarif" in x for x in msgs))
+        # 2026-09-30: sinovda Meta ulash OCHIQ (egasi qarori, docs/PLAN.md).
+        check("trial tarif endi bloklanmaydi", not any("tarif" in x for x in msgs))
+        # Tarif-to'sig'i mexanizmi baribir ishlaydi (Meta'siz tarif bo'lsa):
+        import dataclasses
+        import plans as plans_module
+        with mock.patch.dict(plans_module.PLANS, {"trial": dataclasses.replace(plans_module.PLANS["trial"], can_connect_meta_ads=False)}):
+            msgs = meta_publish.validate_for_publish(d2, c2, ASSETS)
+        check("Meta'siz tarif bloklanadi (mexanizm ishlaydi)", any("tarif" in x for x in msgs))
         d3 = _draft(session, c)
         s = d3.get_state()
         s["ad"]["page_id"] = "STRANGER"

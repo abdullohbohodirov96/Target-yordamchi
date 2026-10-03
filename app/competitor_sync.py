@@ -25,7 +25,8 @@ logger = logging.getLogger("competitor-sync")
 
 
 def is_configured() -> bool:
-    return bool(meta_api.ACCESS_TOKEN)
+    import adlib_scraper
+    return bool(meta_api.ACCESS_TOKEN) or adlib_scraper.is_enabled()
 
 
 def _parse_dt(raw):

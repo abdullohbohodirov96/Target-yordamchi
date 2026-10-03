@@ -34,7 +34,7 @@
     <div class="field">
       <select name="plan">
         {% for p in plans %}
-        <option value="{{ p.key }}" {{ 'selected' if plan.key == p.key }}>{{ p.name }} — ${{ p.price_usd }}/{{ t('payment.per_month') }}</option>
+        <option value="{{ p.key }}" {{ 'selected' if plan.key == p.key }}>{{ p.name }} — ${{ p.price_usd }} (≈ {{ price_uzs(p.price_usd) }})/{{ t('payment.per_month') }}</option>
         {% endfor %}
       </select>
     </div>
@@ -51,7 +51,7 @@
   </h2>
   {% if payme_card_masked %}
   <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.bound_card') }}: <b style="font-family:monospace">{{ payme_card_masked }}</b></p>
-  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.autopay_charge_note', price=plan.price_usd) }}{% if not payme_autopay_enabled %} — {{ t('payment.currently_disabled') }}{% endif %}.</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.autopay_charge_note', price=plan.price_usd, uzs=price_uzs(plan.price_usd)) }}{% if not payme_autopay_enabled %} — {{ t('payment.currently_disabled') }}{% endif %}.</p>
   <form method="post" action="{{ url_for('payme_autopay_toggle') }}" style="display:inline-block; margin-right:8px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="enabled" value="{{ '0' if payme_autopay_enabled else '1' }}">
@@ -91,7 +91,7 @@
   <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--ink)">{{ t('payment.manual_pay_toggle') }}</summary>
   <div style="margin-top:14px">
     {% if payme_card %}
-    <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd) }}</p>
+    <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd, uzs=price_uzs(plan.price_usd)) }}</p>
     <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
       <div><b>{{ t('payment.card_label') }}:</b> {{ payme_card }}</div>
       {% if payme_card_holder %}<div><b>{{ t('payment.card_holder_label') }}:</b> {{ payme_card_holder }}</div>{% endif %}
@@ -112,7 +112,7 @@
 <div class="card" style="max-width:480px">
   <h2>{{ t('payment.manual_pay_title') }}</h2>
   {% if payme_card %}
-  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd) }}</p>
+  <p class="page-subtitle" style="margin-top:-6px">{{ t('payment.transfer_note', price=plan.price_usd, uzs=price_uzs(plan.price_usd)) }}</p>
   <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px; font-size:14px">
     <div><b>{{ t('payment.card_label') }}:</b> {{ payme_card }}</div>
     {% if payme_card_holder %}<div><b>{{ t('payment.card_holder_label') }}:</b> {{ payme_card_holder }}</div>{% endif %}

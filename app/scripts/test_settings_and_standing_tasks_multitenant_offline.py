@@ -35,6 +35,7 @@ import tempfile
 import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("REPLIX_TEST_DEFAULT_UNSCOPED", "1")  # test skripti bazani to'g'ridan-to'g'ri tayyorlaydi (db.py, fail-closed rejim)
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("FLASK_SECRET_KEY", "test-secret")
@@ -147,7 +148,8 @@ def test_enforce_cpl_hard_kill_uses_each_companys_own_threshold():
         with mock.patch.object(dashboard_data, "get_kpis", side_effect=fake_get_kpis), \
              mock.patch("meta_api.set_status", side_effect=fake_set_status), \
              mock.patch("meta_api.get_object_status", side_effect=fake_get_object_status), \
-             mock.patch("meta_api.get_account_structure", return_value={"campaigns": [], "adsets": [], "ads": []}):
+             mock.patch("meta_api.get_account_structure", return_value={"campaigns": [], "adsets": [], "ads": []}), \
+             mock.patch("meta_api.get_ad_account_info", return_value={"currency": "USD"}):
             result_owner = orchestrator.enforce_cpl_hard_kill(company=owner_creds)
             result_a = orchestrator.enforce_cpl_hard_kill(company=company_a_creds)
 
@@ -241,7 +243,9 @@ def test_vazifa_off_cannot_deactivate_another_companys_task():
             assert task_a_after.is_active, "Kompaniya B, Kompaniya A'ning vazifasini bekor qila OLMASLIGI kerak"
         finally:
             session.close()
-        assert any("topilmadi" in t for _, t in sent), f"Kompaniya B'ga 'topilmadi' javobi kelishi kerak: {sent}"
+        # 2026-10-01: reklama jadvalini (T) faqat egasi bekor qila oladi --
+        # B'ga "topilmadi" YOKI "faqat egasi" rad javobi keladi.
+        assert any("topilmadi" in t or t == app_module._NOT_OWNER_TEXT for _, t in sent), f"Kompaniya B'ga rad javobi kelishi kerak: {sent}"
     print("OK: /vazifa_off endi boshqa kompaniyaning vazifasini ID bo'yicha bekor qilishga yo'l qo'ymaydi (egalik tekshiruvi qo'shildi)")
 
 
