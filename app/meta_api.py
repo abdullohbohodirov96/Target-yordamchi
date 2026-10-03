@@ -132,6 +132,8 @@ def friendly_meta_error(err: dict, step: "str | None" = None) -> "str | None":
         return "Meta ulanishi muddati tugagan -- \"Hisoblarni ulash\" sahifasidan Facebook'ni qayta ulang." + suffix
     if subcode == 4834011 or "is_adset_budget_sharing_enabled" in text:
         return "Meta kampaniya byudjeti sozlamasini (Ad Set byudjetini bo'lishish) talab qildi -- yangilangan tizim buni avtomatik yuboradi, qayta urinib ko'ring." + suffix
+    if subcode == 2332002:
+        return "Ad Library API ruxsati yo'q (shaxs tasdiqlangan akkauntning tokeni kerak)." + suffix
     if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
         return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering." + suffix
     if code in (4, 17, 32, 613, 80000, 80004) or ("rate" in text and "limit" in text) or "too many calls" in text:
@@ -1574,6 +1576,7 @@ def search_ad_library(search_terms: str, countries: tuple[str, ...] = ("UZ",), l
             return adlib_scraper.search(search_terms, country=countries[0] if countries else "UZ", limit=limit)
         except adlib_scraper.AdLibraryBlocked as e:
             logger.warning("Ad Library sahifasidan o'qib bo'lmadi (%s), rasmiy API'ga qaytilmoqda", e)
+            adlib_scraper.last_error = str(e)[:200]
     data = _get("ads_archive", {
         "search_terms": search_terms,
         "ad_reached_countries": list(countries),

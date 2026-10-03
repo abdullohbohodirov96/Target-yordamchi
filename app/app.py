@@ -10098,6 +10098,16 @@ def _search_grouped_competitor_ads(query_term, session, limit=20):
     return search_results, None
 
 
+def _adlib_status() -> str:
+    """Qidiruv xatosida: Ad Library sahifasini o'qish nega ishlamadi."""
+    import adlib_scraper
+    if not adlib_scraper.is_enabled():
+        return "Ad Library sahifasidan o'qish o'chiq (Render → Environment: ADLIB_SCRAPER=1 qo'shing)."
+    if adlib_scraper.last_error:
+        return f"Ad Library sahifasini o'qib bo'lmadi: {adlib_scraper.last_error}"
+    return ""
+
+
 def _ad_library_url(username: str, name: "str | None" = None, media_type: str = "all") -> str:
     """Meta Ad Library'ning rasmiy sahifasi -- raqobatchining BARCHA faol
     reklamalari (O'zbekistondagi tijoriy reklamalar ham) ko'rinadi.
@@ -10226,6 +10236,7 @@ def competitors_settings():
         "competitors.html", competitors=rows, query_term=query_term,
         search_results=search_results, search_error=search_error,
         ad_library_url=_ad_library_url(query_term) if query_term else None,
+        adlib_status=_adlib_status() if search_error else None,
         ad_library_video_url=_ad_library_url(query_term, media_type="video") if query_term else None,
         rotation_days=competitor_analytics.ROTATION_DAYS,
         competitor_limit=competitor_limit,

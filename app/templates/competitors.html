@@ -48,6 +48,7 @@
     <a class="btn" style="display:inline-block; margin-top:10px" href="{{ ad_library_url }}" target="_blank" rel="noopener">{{ t('competitors.open_ad_library', q=query_term) }}</a>
     <a class="btn-outline" style="display:inline-block; margin-top:10px; margin-left:6px; border-radius:var(--radius); text-decoration:none" href="{{ ad_library_video_url }}" target="_blank" rel="noopener">▶ {{ t('competitors.adlib_videos') }}</a>
     <div class="text-faint" style="font-size:12px; margin-top:8px">{{ t('competitors.search_error', error=search_error) }}</div>
+    {% if adlib_status %}<div class="text-faint" style="font-size:12px; margin-top:4px">{{ adlib_status }}</div>{% endif %}
   </div>
   {% elif search_results is not none %}
     {% if search_results %}

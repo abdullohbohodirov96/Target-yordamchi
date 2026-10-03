@@ -26,6 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # kutubxonalari. Brauzer faqat ADLIB_SCRAPER=1 bo'lsa va qidiruv paytida ishga
 # tushadi, so'rovdan keyin darhol yopiladi.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Production'da standart YOQILGAN (token kerak emas). O'chirish uchun Render →
+# Environment: ADLIB_SCRAPER=0.
+ENV ADLIB_SCRAPER=1
 RUN playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 
 COPY app/ ./
