@@ -43,6 +43,9 @@ USER_AGENT = (
 )
 _RESULTS_KEY = '"search_results_connection":'
 
+# Oxirgi muvaffaqiyatsiz o'qish sababi -- sahifada diagnostika uchun.
+last_error: "str | None" = None
+
 _lock = threading.Lock()
 _cache: dict = {}
 
@@ -232,6 +235,8 @@ def search(terms: str, country: str = "UZ", limit: int = 30) -> list[dict]:
         if len(_cache) >= CACHE_MAX_ENTRIES:
             _cache.pop(min(_cache, key=lambda k: _cache[k][0]), None)
         _cache[key] = (time.time(), ads)
+        global last_error
+        last_error = None
         return ads
     finally:
         _lock.release()
