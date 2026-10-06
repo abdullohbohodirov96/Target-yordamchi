@@ -1698,6 +1698,7 @@ _APP_STRINGS = [
     ("analytics.call_suspicious", "Shubhali", "Подозрительные", "Suspicious"),
     ("analytics.call_detail_prefix", "Batafsil tahlil:", "Подробный анализ:", "Detailed analysis:"),
     ("analytics.call_detail_link", "Audio →", "Аудио →", "Audio →"),
+    ("analytics.last_success", "Oxirgi muvaffaqiyatli", "Последний успешный", "Last successful"),
     ("analytics.lead_sync_title", "Lead-sync holati", "Статус синхронизации лидов", "Lead-sync status"),
     ("analytics.lead_sync_paren", "(Instant Form → CRM)", "(Instant Form → CRM)", "(Instant Form → CRM)"),
     ("analytics.lead_sync_desc", "Meta'dan lidlarni avtomatik tortib olish jarayonining oxirgi ishga tushishi — \"lead kelgan, lekin CRM'da yo'q\" holatini shu yerdan tekshiring.", "Последний запуск процесса автоматического забора лидов из Meta — здесь проверяйте случаи «лид пришёл, но его нет в CRM».", "The latest run of the process that pulls leads from Meta automatically — check here for \"lead arrived but isn't in the CRM\" cases."),

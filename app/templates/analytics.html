@@ -127,6 +127,7 @@
   {% else %}
   <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:14px">
     <div class="kpi-card"><div class="kpi-label">{{ t('analytics.last_check') }}</div><div class="kpi-value" style="font-size:14px">{{ lead_sync_status.last_run_at[:16].replace('T',' ') if lead_sync_status.last_run_at else '—' }} UTC</div></div>
+    {% if lead_sync_status.errors %}<div class="kpi-card"><div class="kpi-label">{{ t('analytics.last_success') }}</div><div class="kpi-value bad" style="font-size:14px">{{ lead_sync_status.last_success_at[:16].replace('T',' ') ~ ' UTC' if lead_sync_status.last_success_at else '—' }}</div></div>{% endif %}
     <div class="kpi-card"><div class="kpi-label">{{ t('analytics.new_leads_last') }}</div><div class="kpi-value {{ 'good' if lead_sync_status.new_leads }}">{{ lead_sync_status.new_leads }}</div></div>
     <div class="kpi-card"><div class="kpi-label">{{ t('analytics.forms_checked') }}</div><div class="kpi-value">{{ lead_sync_status.forms_checked }}</div></div>
   </div>
