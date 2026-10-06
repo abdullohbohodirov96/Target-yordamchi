@@ -172,17 +172,25 @@
   </div>
 </div>
 
+<form method="post" action="{{ url_for('leads_bulk_delete') }}" id="leadsBulkForm" onsubmit="return confirm({{ t('leads.bulk_delete_confirm')|tojson|forceescape }});">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="next" value="{{ request.full_path }}">
+<div class="leads-bulkbar" id="leadsBulkBar" hidden>
+  <span id="leadsBulkCount"></span>
+  <button type="submit" style="background:var(--bad-fill)">{{ t('leads.bulk_delete_btn') }}</button>
+</div>
 <div class="panel">
   <div class="table-scroll">
   <table>
     <thead>
       <tr>
-        <th>{{ t('leads.th_name') }}</th><th>{{ t('leads.th_phone') }}</th><th>{{ t('leads.th_target') }}</th><th>{{ t('leads.th_form') }}</th><th>{{ t('leads.th_source') }}</th><th>{{ t('leads.th_status') }}</th><th>{{ t('leads.th_manager') }}</th><th>{{ t('leads.th_date') }}</th>
+        <th class="lead-chk"><input type="checkbox" id="leadsChkAll" aria-label="{{ t('leads.select_all') }}" title="{{ t('leads.select_all') }}"></th><th>{{ t('leads.th_name') }}</th><th>{{ t('leads.th_phone') }}</th><th>{{ t('leads.th_target') }}</th><th>{{ t('leads.th_form') }}</th><th>{{ t('leads.th_source') }}</th><th>{{ t('leads.th_status') }}</th><th>{{ t('leads.th_manager') }}</th><th>{{ t('leads.th_date') }}</th>
       </tr>
     </thead>
     <tbody>
       {% for l in leads %}
       <tr class="rowlink" onclick="window.location='{{ url_for('lead_detail', lead_id=l.id) }}'">
+        <td class="lead-chk" onclick="event.stopPropagation()"><input type="checkbox" name="lead_ids" value="{{ l.id }}" class="lead-chk-box" aria-label="{{ l.full_name or l.phone or l.id }}"></td>
         <td>{{ l.full_name or '—' }}</td>
         <td class="text-dim">{{ l.phone or '—' }}{% if l.phone2 %} <span class="text-faint" title="{{ t('leads.extra_phone_title', phone=l.phone2) }}">+1</span>{% endif %}</td>
         <td class="text-dim">
@@ -195,7 +203,7 @@
         <td class="text-faint">{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr class="empty-row"><td colspan="8">{{ t('leads.empty') }}</td></tr>
+      <tr class="empty-row"><td colspan="9">{{ t('leads.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -214,6 +222,7 @@
   </div>
   {% endif %}
 </div>
+</form>
 <script>
 (function () {
   var wrap = document.getElementById('leadsFilterDp');
@@ -221,6 +230,28 @@
   var trigger = document.getElementById('leadsFilterTrigger');
   trigger.addEventListener('click', function (e) { e.stopPropagation(); wrap.classList.toggle('open'); });
   document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) wrap.classList.remove('open'); });
+})();
+</script>
+<style>
+  .lead-chk { width:34px; padding-right:0 !important; }
+  .lead-chk input { width:16px; height:16px; margin:0; cursor:pointer; }
+  .leads-bulkbar { position:sticky; top:8px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; margin-bottom:10px; border:1px solid var(--bad); background:var(--bad-bg); border-radius:var(--radius); font-weight:600; font-size:13.5px; }
+  .leads-bulkbar[hidden] { display:none; }
+  .leads-bulkbar button { margin:0; }
+</style>
+<script>
+(function () {
+  var all = document.getElementById('leadsChkAll'), bar = document.getElementById('leadsBulkBar'), cnt = document.getElementById('leadsBulkCount');
+  if (!all) return;
+  var tpl = {{ t('leads.bulk_selected', n='__N__')|tojson }};
+  function boxes() { return Array.prototype.slice.call(document.querySelectorAll('.lead-chk-box')); }
+  function sync() {
+    var n = boxes().filter(function (b) { return b.checked; }).length;
+    bar.hidden = n === 0; cnt.textContent = tpl.replace('__N__', n);
+    all.checked = n > 0 && n === boxes().length; all.indeterminate = n > 0 && n < boxes().length;
+  }
+  all.addEventListener('change', function () { boxes().forEach(function (b) { b.checked = all.checked; }); sync(); });
+  document.addEventListener('change', function (e) { if (e.target.classList && e.target.classList.contains('lead-chk-box')) sync(); });
 })();
 </script>
 {% endblock %}
