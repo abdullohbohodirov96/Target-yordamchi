@@ -46,7 +46,10 @@ tekshiruvdan boshlab ENDI yaratiladigan lidlar tortiladi.
 import json
 import logging
 import re
+import threading
 import datetime as dt
+
+from sqlalchemy.exc import IntegrityError
 
 import meta_api
 import kv_store
@@ -61,7 +64,22 @@ logger = logging.getLogger("lead_sync")
 # atrofidagi lead yo'qolib qolmasligi uchun (meta_lead_id dublikat
 # tekshiruvi bor, shuning uchun overlap xavfsiz -- eng ko'pi bilan bir xil
 # lead ikki marta tekshiriladi, lekin ikki marta YOZILMAYDI).
-_SYNC_OVERLAP_SECONDS = 600
+# 2026-10: 600 s -> 2 soat. Meta ba'zan lidni API'da yaratilganidan 10+
+# daqiqa keyin ko'rsatadi -- tor oyna bunday lidlarni butunlay o'tkazib
+# yuborardi ("lidlar ba'zan tushmay qoladi"). Dublikat tekshiruvi bor, shuning
+# uchun keng oyna faqat bir xil lidlarni qayta TEKSHIRADI, qayta yozmaydi.
+_SYNC_OVERLAP_SECONDS = 2 * 3600
+
+# Bir kompaniya uchun bir vaqtda faqat BITTA sync (ulanishdan keyingi darhol
+# sync + 15 daqiqalik cron bir vaqtga to'g'ri kelsa, ikkalasi bir xil lidni
+# yozishga urinib IntegrityError bilan yiqilardi).
+_company_locks: dict = {}
+_company_locks_guard = threading.Lock()
+
+
+def _company_lock(company_id) -> threading.Lock:
+    with _company_locks_guard:
+        return _company_locks.setdefault(company_id, threading.Lock())
 
 
 # 2026-09 multi-tenant: har bir kompaniyaning O'Z cursor/holat kaliti bo'lishi
@@ -86,6 +104,14 @@ def _backlog_key(company_id: "int | None") -> str:
 
 def _status_key(company_id: "int | None") -> str:
     return "lead_sync_status" if company_id is None else f"lead_sync_status:{company_id}"
+
+
+def _form_since_key(company_id: "int | None") -> str:
+    # 2026-10: har bir forma uchun ALOHIDA cursor ({form_id: unix}). Ilgari
+    # bitta umumiy cursor bor edi va biror forma xato bersa ham u oldinga
+    # surilardi -- o'sha formadagi lidlar butunlay yo'qolardi. Endi xato bergan
+    # formaning cursori joyida qoladi va keyingi safar shu oynadan qayta o'qiladi.
+    return "lead_sync_form_since" if company_id is None else f"lead_sync_form_since:{company_id}"
 
 # Meta forma savollari ko'pincha standart ingliz kalitlari bilan keladi
 # (full_name, phone_number, email), lekin ADMIN o'zi qo'shgan maxsus savol
@@ -258,8 +284,22 @@ def other_form_answers(raw_field_data_json: "str | None", *, exclude_values: "li
     return out
 
 
-@db.company_scoped
 def sync_once(company=None) -> dict:
+    """Kompaniya bo'yicha qulf bilan `_sync_once_impl` -- izohi o'sha yerda."""
+    company_id = company.id if company else None
+    lock = _company_lock(company_id)
+    if not lock.acquire(blocking=False):
+        return {"new_leads": 0, "forms_checked": 0, "errors": [], "form_diagnostics": [],
+                "notices": ["Bu kompaniya uchun boshqa sinxronizatsiya hozir ishlayapti -- bu safar o'tkazib yuborildi."],
+                "skipped": True}
+    try:
+        return _sync_once_impl(company=company)
+    finally:
+        lock.release()
+
+
+@db.company_scoped
+def _sync_once_impl(company=None) -> dict:
     """Bitta sinxronizatsiya tsiklini bajaradi. `company` berilsa (yengil
     `_CompanyCreds` yoki `db.Company` qatori) -- O'SHA kompaniyaning O'Z
     `meta_page_id`/`meta_access_token`/`meta_ad_account_id`i bilan, natija
@@ -364,16 +404,32 @@ def sync_once(company=None) -> dict:
             for a in structure.get("ads", []):
                 ad_name_by_id[a["id"]] = a.get("name", "")
         except meta_api.MetaAPIError as e:
-            result["errors"].append(f"Kampaniya nomlarini olishda xatolik (davom etamiz): {meta_api.safe_error_message(e)}")
+            # Lidlar baribir to'liq yoziladi (faqat kampaniya NOMI bo'sh qoladi) --
+            # shuning uchun bu "xato" emas, ogohlantirish.
+            result["notices"].append(f"Kampaniya nomlarini olib bo'lmadi (lidlar baribir yozildi): {meta_api.safe_error_message(e)}")
+
+    form_since_key = _form_since_key(company_id)
+    form_cursors = kv_store.get_json(form_since_key, default=None) or {}
+    if not isinstance(form_cursors, dict):
+        form_cursors = {}
+    new_cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
 
     session = get_session()
     try:
         for form in forms:
             form_id = form["id"]
             result["forms_checked"] += 1
+            # Formaning o'z cursori (oldin xato bergan bo'lsa -- eski joyida);
+            # yangi forma -- umumiy cursordan.
+            form_since = form_cursors.get(form_id, since_unix)
             try:
-                leads = meta_api.get_leads(form_id, since=since_unix, access_token=access_token, page_id=page_id)
+                form_since = min(int(form_since), int(since_unix))
+            except (TypeError, ValueError):
+                form_since = since_unix
+            try:
+                leads = meta_api.get_leads(form_id, since=form_since, access_token=access_token, page_id=page_id)
             except meta_api.MetaAPIError as e:
+                form_cursors[form_id] = form_since  # cursor joyida qoladi -- lidlar yo'qolmaydi
                 safe_msg = meta_api.safe_error_message(e)
                 result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {safe_msg}")
                 result["form_diagnostics"].append({
@@ -385,13 +441,21 @@ def sync_once(company=None) -> dict:
 
             new_for_this_form = 0
             newly_created_leads = []  # 2026-09: commit'dan KEYIN "Lead" CAPI hodisasini yuborish uchun
+            # Dublikat tekshiruvi BIR so'rovda va BUTUN baza bo'yicha (tenant
+            # filtrisiz): `meta_lead_id` global unique -- boshqa kompaniyada
+            # bor lidni yozishga urinish IntegrityError bilan BUTUN sync'ni
+            # har safar yiqitib, lidlar oqimini to'xtatib qo'yardi.
+            ids = [str(r.get("id")) for r in leads if r.get("id")]
+            existing_ids = set()
+            with db.unscoped():
+                for i in range(0, len(ids), 500):
+                    chunk = ids[i:i + 500]
+                    existing_ids.update(x for (x,) in session.query(Lead.meta_lead_id).filter(Lead.meta_lead_id.in_(chunk)))
             for raw in leads:
                 meta_lead_id = raw.get("id")
-                if not meta_lead_id:
-                    continue
-                existing = session.query(Lead).filter_by(meta_lead_id=meta_lead_id).first()
-                if existing:
+                if not meta_lead_id or str(meta_lead_id) in existing_ids:
                     continue  # allaqachon bazada bor -- dublikat qilinmaydi
+                existing_ids.add(str(meta_lead_id))
 
                 fd = _field_data_to_dict(raw.get("field_data"))
                 name, phone, phone2, email = _extract_name_phone_email(fd)
@@ -434,7 +498,18 @@ def sync_once(company=None) -> dict:
                 result["new_leads"] += 1
                 new_for_this_form += 1
 
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                # Juda kam holat (parallel yozuv). Shu forma bo'yicha hech narsa
+                # yo'qolmasin: rollback, cursor joyida qoladi, keyingi safar qayta.
+                session.rollback()
+                logger.warning("Lead sync: IntegrityError (company_id=%s, form=%s) -- keyingi safar qayta", company_id, form_id)
+                result["new_leads"] -= new_for_this_form
+                form_cursors[form_id] = form_since
+                result["notices"].append(f"Forma '{form.get('name', form_id)}': parallel yozuv, keyingi tekshiruvda qayta o'qiladi.")
+                continue
+            form_cursors[form_id] = new_cursor
 
             # 2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
             # yangi lead CRM'ga tushgach, shu HAQIQATNI Meta'ga "Lead" CAPI
@@ -474,18 +549,27 @@ def sync_once(company=None) -> dict:
     # keyingi safar YANA shu (yangi) cursor bilan tekshiriladi -- agar ular
     # orasida chegaraga to'g'ri kelib qolgan lead bo'lsa, bu holatda
     # qo'lda `/api/trigger/lead-sync`ni qayta ishga tushirish kifoya.
-    new_cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
     kv_store.set_json(since_key, new_cursor)
+    # Faqat hozir mavjud formalar saqlanadi (o'chirilgan formalar to'planib qolmasin).
+    live_ids = {f["id"] for f in forms}
+    kv_store.set_json(form_since_key, {k: v for k, v in form_cursors.items() if k in live_ids})
 
     _save_status(result, company_id=company_id)
     return result
 
 
 def _save_status(result: dict, *, company_id: "int | None" = None) -> None:
+    """Natija + `last_success_at` (oxirgi XATOSIZ sync) + `consecutive_failures`
+    (ketma-ket xatoli sync'lar soni -- Telegram ogohlantirishi shunga qaraydi)."""
     try:
+        prev = kv_store.get_json(_status_key(company_id), default=None) or {}
+        now = dt.datetime.utcnow().isoformat()
+        failed = bool(result.get("errors"))
         kv_store.set_json(_status_key(company_id), {
             **result,
-            "last_run_at": dt.datetime.utcnow().isoformat(),
+            "last_run_at": now,
+            "last_success_at": prev.get("last_success_at") if failed else now,
+            "consecutive_failures": (int(prev.get("consecutive_failures") or 0) + 1) if failed else 0,
         })
     except Exception:
         logger.exception("lead_sync_status'ni kv_store'ga yozishda xato (o'zi kritik emas)")
@@ -555,6 +639,7 @@ def sync_all_companies() -> dict:
             # ham -- ko'rsatiladigan) tushishi mumkin, va bu xabar
             # `analytics.html`da to'g'ridan-to'g'ri ko'rsatiladi.
             per_company[c["id"]] = {"errors": [f"Kutilmagan xato: {meta_api.safe_error_message(e)}"]}
+            _save_status(dict(per_company[c["id"]]), company_id=c["id"])  # ketma-ket xatolar hisobi uchun
     return {"companies_synced": len(companies), "per_company": per_company}
 
 

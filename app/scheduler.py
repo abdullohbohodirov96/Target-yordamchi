@@ -875,10 +875,72 @@ def job_lead_sync() -> dict:
     (`job_ig_dm_sync`dan farqli o'laroq -- lead sync o'zi xabar yubormaydi,
     faqat bazaga yozadi)."""
     try:
-        return lead_sync.sync_all_companies()
+        overall = lead_sync.sync_all_companies()
     except Exception as e:
         logger.exception("Lead sync xatosi")
         return {"error": str(e)}
+    try:
+        _lead_sync_alerts(overall)
+    except Exception:
+        logger.exception("Lead sync ogohlantirishini yuborishda xato")
+    return overall
+
+
+# 2026-10, foydalanuvchi so'rovi ("web crm ga leadlani avtomatik aniq
+# tortvotimi bir uzilib qovoti"): sync ketma-ket xato bersa (token tugagan,
+# ruxsat olib qo'yilgan, sahifa uzilgan) bu ILGARI faqat Analitika sahifasida
+# ko'rinardi -- endi kompaniyaning Telegram guruhiga xabar boradi (6 soatda
+# ko'pi bilan bir marta) va tiklanganda "tiklandi" xabari.
+LEAD_SYNC_ALERT_AFTER_FAILURES = 2          # 2 x 15 daqiqa = 30 daqiqa uzilish
+LEAD_SYNC_ALERT_REPEAT_SECONDS = 6 * 3600
+
+
+def _company_group_chat(company_id) -> "int | None":
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            company = session.query(db.Company).get(company_id)
+        raw = getattr(company, "telegram_group_id", None) if company else None
+    finally:
+        session.close()
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _lead_sync_alerts(overall: dict) -> None:
+    import time as _time
+    for company_id, result in (overall.get("per_company") or {}).items():
+        if result.get("skipped"):
+            continue
+        status = lead_sync.get_last_status(company_id) or {}
+        alert_key = f"lead_sync_alert_at:{company_id}"
+        last_alert = kv_store.get_json(alert_key, default=None)
+        failures = int(status.get("consecutive_failures") or 0)
+        if failures >= LEAD_SYNC_ALERT_AFTER_FAILURES:
+            if last_alert and _time.time() - float(last_alert) < LEAD_SYNC_ALERT_REPEAT_SECONDS:
+                continue
+            chat_id = _company_group_chat(company_id)
+            if chat_id is None:
+                continue
+            errs = (result.get("errors") or status.get("errors") or ["noma'lum xato"])[:2]
+            last_ok = (status.get("last_success_at") or "")[:16].replace("T", " ")
+            text = (
+                "⚠️ Lidlar CRM'ga tushmayapti — Meta'dan lid tortish "
+                f"{failures * 15} daqiqadan beri xato bermoqda.\n"
+                + "".join(f"\n• {e}" for e in errs)
+                + (f"\n\nOxirgi muvaffaqiyatli tekshiruv: {last_ok} (UTC)." if last_ok else "")
+                + "\n\nYechim: Sozlamalar → Hisoblarni ulash → Facebook'ni qayta ulang. "
+                "Tiklangach, shu vaqt oralig'idagi lidlar avtomatik tortib olinadi."
+            )
+            if _tg_send(chat_id, text).get("ok"):
+                kv_store.set_json(alert_key, _time.time())
+        elif failures == 0 and last_alert:
+            chat_id = _company_group_chat(company_id)
+            if chat_id is not None:
+                _tg_send(chat_id, "✅ Lid sinxronizatsiyasi tiklandi — uzilish vaqtidagi lidlar CRM'ga tortib olindi.")
+            kv_store.set_json(alert_key, None)
 
 
 def job_deliver_webhooks() -> dict:
