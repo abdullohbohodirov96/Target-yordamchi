@@ -4906,6 +4906,41 @@ def lead_new():
     return render_template("lead_new.html")
 
 
+def _delete_leads(session, leads) -> dict:
+    """Lidlarni bog'langan yozuvlari bilan TO'G'RI o'chiradi (2026-10 tuzatish:
+    ilgari faqat izohlar o'chirilardi -- holat tarixi (`LeadStatusEvent`, har
+    holat o'zgarganda yoziladi), qo'ng'iroq, Meta hodisasi yoki IG suhbatiga
+    bog'langan lidni PostgreSQL FK cheklovi o'chirtirmasdi va menejer xato
+    ko'rardi).
+      - izohlar, holat tarixi, bot eslatmalari -- lid bilan birga o'chadi;
+      - qo'ng'iroqlar, Meta hodisalari, IG suhbatlari -- SAQLANADI, faqat lidga
+        bog'lanishi uziladi (statistika buzilmaydi);
+      - SOTUV bor lid o'chirilmaydi (pul/KPI yozuvi) -- `kept_with_sale`.
+    Commit chaqiruvchida."""
+    stats = {"deleted": 0, "kept_with_sale": 0}
+    ids = [l.id for l in leads]
+    if not ids:
+        return stats
+    with_sale = {x for (x,) in session.query(Sale.lead_id).filter(Sale.lead_id.in_(ids)).distinct()}
+    del_ids = [i for i in ids if i not in with_sale]
+    stats["kept_with_sale"] = len(with_sale)
+    if not del_ids:
+        return stats
+    session.query(LeadNote).filter(LeadNote.lead_id.in_(del_ids)).delete(synchronize_session=False)
+    session.query(LeadStatusEvent).filter(LeadStatusEvent.lead_id.in_(del_ids)).delete(synchronize_session=False)
+    session.query(BotPrompt).filter(BotPrompt.lead_id.in_(del_ids)).delete(synchronize_session=False)
+    session.query(CallRecord).filter(CallRecord.lead_id.in_(del_ids)).update({"lead_id": None}, synchronize_session=False)
+    session.query(MetaEventLog).filter(MetaEventLog.lead_id.in_(del_ids)).update({"lead_id": None}, synchronize_session=False)
+    session.query(IgDmConversation).filter(IgDmConversation.linked_lead_id.in_(del_ids)).update({"linked_lead_id": None}, synchronize_session=False)
+    for lead in leads:
+        if lead.id in del_ids:
+            session.delete(lead)
+    stats["deleted"] = len(del_ids)
+    logger.info("Lidlar o'chirildi: %s ta (user=%s, company=%s, ids=%s)",
+                len(del_ids), getattr(current_user, "username", "?"), getattr(current_user, "company_id", None), del_ids[:50])
+    return stats
+
+
 @app.route("/leads/<int:lead_id>/delete", methods=["POST"])
 @login_required
 @module_required("leads")
@@ -4914,15 +4949,46 @@ def lead_delete(lead_id):
     try:
         lead = session.get(Lead, lead_id)
         if lead:
-            session.query(LeadNote).filter_by(lead_id=lead.id).delete()
-            session.delete(lead)
+            stats = _delete_leads(session, [lead])
             session.commit()
+            if stats["kept_with_sale"]:
+                flash(lang_module.translate("crm.lead_delete_has_sale", g.lang), "error")
+                return redirect(url_for("lead_detail", lead_id=lead_id))
             flash(lang_module.translate("crm.lead_deleted_flash", g.lang), "success")
         else:
             flash(lang_module.translate("crm.lead_not_found_flash", g.lang), "error")
     finally:
         session.close()
     return redirect(url_for("leads_list"))
+
+
+@app.route("/leads/bulk-delete", methods=["POST"])
+@login_required
+@module_required("leads")
+def leads_bulk_delete():
+    """Ro'yxatda belgilangan lidlarni o'chirish (2026-10, foydalanuvchi so'rovi:
+    "leadlani o'chirish huquqini berish kerak managerlarga"). Faqat joriy
+    kompaniyaning lidlari (tenant filtri), bir martada ko'pi bilan 500 ta."""
+    raw_ids = request.form.getlist("lead_ids")
+    ids = [int(x) for x in raw_ids if str(x).isdigit()][:500]
+    back = request.form.get("next") or url_for("leads_list")
+    if not back.startswith("/") or back.startswith("//") or "\\" in back:
+        back = url_for("leads_list")
+    if not ids:
+        flash(lang_module.translate("crm.bulk_delete_none", g.lang), "error")
+        return redirect(back)
+    session = get_session()
+    try:
+        leads = session.query(Lead).filter(Lead.id.in_(ids)).all()
+        stats = _delete_leads(session, leads)
+        session.commit()
+    finally:
+        session.close()
+    if stats["deleted"]:
+        flash(lang_module.translate("crm.bulk_deleted", g.lang, n=stats["deleted"]), "success")
+    if stats["kept_with_sale"]:
+        flash(lang_module.translate("crm.bulk_kept_sale", g.lang, n=stats["kept_with_sale"]), "error")
+    return redirect(back)
 
 
 ALLOWED_IMPORT_EXTENSIONS = (".xlsx", ".xlsm", ".csv")
