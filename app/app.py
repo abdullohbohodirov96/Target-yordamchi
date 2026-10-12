@@ -4460,6 +4460,7 @@ def analytics_page():
         kpi_selected_manager = request.args.get("kpi_manager", "all")
         sales_managers = []
         lead_sync_status = None
+        lead_sync_setup = None
         if current_user.role == "admin":
             sales_managers = session.query(Manager).filter_by(role="manager", is_active=True).order_by(Manager.full_name).all()
             now = dt.datetime.utcnow()
@@ -4480,6 +4481,14 @@ def analytics_page():
             # holati bu yerda ko'rsatilmasligi kerak.
             _analytics_company = _current_company()
             lead_sync_status = lead_sync.get_last_status(_analytics_company.id if _analytics_company else None)
+            # Lidlar umuman tortilmasligining eng ko'p sababi -- sahifa yoki
+            # token ulanmagan (bunday kompaniya sync ro'yxatiga kirmaydi va
+            # ilgari buni hech narsa ko'rsatmasdi).
+            lead_sync_setup = {
+                "page": bool(getattr(_analytics_company, "meta_page_id", None)),
+                "token": bool(getattr(_analytics_company, "meta_access_token", None)),
+                "active": bool(getattr(_analytics_company, "is_active", True)),
+            }
     finally:
         session.close()
 
@@ -4498,6 +4507,7 @@ def analytics_page():
         kpi_selected_manager=kpi_selected_manager,
         sales_managers=sales_managers,
         lead_sync_status=lead_sync_status,
+        lead_sync_setup=lead_sync_setup,
     )
 
 
@@ -4939,6 +4949,36 @@ def _delete_leads(session, leads) -> dict:
     logger.info("Lidlar o'chirildi: %s ta (user=%s, company=%s, ids=%s)",
                 len(del_ids), getattr(current_user, "username", "?"), getattr(current_user, "company_id", None), del_ids[:50])
     return stats
+
+
+@app.route("/analitika/lead-sync-now", methods=["POST"])
+@login_required
+@admin_required
+def lead_sync_now():
+    """Analitika -> "Lead-sync holati" -> "Hozir tekshirish": joriy kompaniya
+    uchun lid sinxronizatsiyasini DARHOL ishga tushiradi va natijani ko'rsatadi
+    (15 daqiqalik navbatni kutmasdan tashxis qo'yish uchun)."""
+    company = _current_company()
+    if company is None or not company.meta_page_id or not company.meta_access_token:
+        flash(lang_module.translate("analytics.sync_not_connected", g.lang), "error")
+        return redirect(url_for("analytics_page") + "#lead-sync")
+    creds = lead_sync._CompanyCreds(
+        id=company.id, meta_page_id=company.meta_page_id,
+        meta_access_token=company.get_meta_access_token(), meta_ad_account_id=company.meta_ad_account_id,
+    )
+    try:
+        res = lead_sync.sync_once(company=creds)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Qo'lda lead sync xatosi (company_id=%s)", company.id)
+        flash(lang_module.translate("analytics.sync_failed", g.lang, error=meta_api.safe_error_message(e)), "error")
+        return redirect(url_for("analytics_page") + "#lead-sync")
+    if res.get("skipped"):
+        flash(lang_module.translate("analytics.sync_busy", g.lang), "info")
+    elif res.get("errors"):
+        flash(lang_module.translate("analytics.sync_done_errors", g.lang, n=res.get("new_leads", 0)), "error")
+    else:
+        flash(lang_module.translate("analytics.sync_done", g.lang, n=res.get("new_leads", 0), forms=res.get("forms_checked", 0)), "success")
+    return redirect(url_for("analytics_page") + "#lead-sync")
 
 
 @app.route("/leads/<int:lead_id>/delete", methods=["POST"])

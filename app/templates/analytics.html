@@ -112,7 +112,7 @@
   {% endif %}
 </div>
 
-<details class="card" style="margin-bottom:20px" {{ 'open' if lead_sync_status and lead_sync_status.errors }}>
+<details class="card" id="lead-sync" style="margin-bottom:20px" {{ 'open' if (lead_sync_status and lead_sync_status.errors) or (lead_sync_setup and not (lead_sync_setup.page and lead_sync_setup.token)) }}>
   <summary style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px">
     <span>
       <strong>{{ t('analytics.lead_sync_title') }}</strong> <span class="text-faint" style="font-weight:400">{{ t('analytics.lead_sync_paren') }}</span>
@@ -122,6 +122,16 @@
   </summary>
   <div style="margin-top:12px">
   <p class="page-subtitle" style="margin-top:-6px">{{ t('analytics.lead_sync_desc') }}</p>
+  {% if lead_sync_setup and not (lead_sync_setup.page and lead_sync_setup.token) %}
+  <div class="flash flash-error" style="margin-bottom:14px">
+    {{ t('analytics.sync_setup_missing') }}
+    <a href="{{ url_for('connect_facebook_start') }}" style="font-weight:700; margin-left:6px">{{ t('shared.reconnect_fb_btn') }} →</a>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('lead_sync_now') }}" style="margin:0 0 14px" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent={{ t('analytics.sync_running')|tojson|forceescape }};">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn-outline" style="border-radius:var(--radius)">↻ {{ t('analytics.sync_now') }}</button>
+  </form>
   {% if not lead_sync_status %}
   <p class="text-faint" style="margin:0">{{ t('analytics.lead_sync_never') }}</p>
   {% else %}
