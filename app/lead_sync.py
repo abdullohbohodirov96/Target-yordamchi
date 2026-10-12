@@ -75,11 +75,38 @@ _SYNC_OVERLAP_SECONDS = 2 * 3600
 # yozishga urinib IntegrityError bilan yiqilardi).
 _company_locks: dict = {}
 _company_locks_guard = threading.Lock()
+# Bitta sync bundan uzoq "ishlayotgan" bo'lsa -- u qotib qolgan deb hisoblanadi
+# va keyingi sync'lar uni kutmaydi (aks holda bitta qotgan sync shu kompaniyaning
+# lidlarini ABADIY to'xtatib qo'yardi).
+_LOCK_STALE_SECONDS = 15 * 60
 
 
 def _company_lock(company_id) -> threading.Lock:
     with _company_locks_guard:
-        return _company_locks.setdefault(company_id, threading.Lock())
+        entry = _company_locks.get(company_id)
+        if entry is None:
+            entry = _company_locks[company_id] = {"lock": threading.Lock(), "since": None}
+        return entry["lock"]
+
+
+def _acquire_company_lock(company_id) -> "threading.Lock | None":
+    """Qulfni oladi; band bo'lsa va eskirgan bo'lsa -- yangisini yaratadi."""
+    import time as _time
+    lock = _company_lock(company_id)
+    if lock.acquire(blocking=False):
+        _company_locks[company_id]["since"] = _time.monotonic()
+        return lock
+    with _company_locks_guard:
+        entry = _company_locks[company_id]
+        since = entry.get("since")
+        if since is not None and _time.monotonic() - since > _LOCK_STALE_SECONDS:
+            logger.warning("Lead sync (company_id=%s): oldingi sync %s s'dan beri tugamagan -- qotgan deb hisoblanadi",
+                           company_id, int(_time.monotonic() - since))
+            entry["lock"] = threading.Lock()
+            entry["lock"].acquire()
+            entry["since"] = _time.monotonic()
+            return entry["lock"]
+    return None
 
 
 # 2026-09 multi-tenant: har bir kompaniyaning O'Z cursor/holat kaliti bo'lishi
@@ -287,15 +314,18 @@ def other_form_answers(raw_field_data_json: "str | None", *, exclude_values: "li
 def sync_once(company=None) -> dict:
     """Kompaniya bo'yicha qulf bilan `_sync_once_impl` -- izohi o'sha yerda."""
     company_id = company.id if company else None
-    lock = _company_lock(company_id)
-    if not lock.acquire(blocking=False):
+    lock = _acquire_company_lock(company_id)
+    if lock is None:
         return {"new_leads": 0, "forms_checked": 0, "errors": [], "form_diagnostics": [],
                 "notices": ["Bu kompaniya uchun boshqa sinxronizatsiya hozir ishlayapti -- bu safar o'tkazib yuborildi."],
                 "skipped": True}
     try:
         return _sync_once_impl(company=company)
     finally:
-        lock.release()
+        try:
+            lock.release()
+        except RuntimeError:
+            pass
 
 
 @db.company_scoped
