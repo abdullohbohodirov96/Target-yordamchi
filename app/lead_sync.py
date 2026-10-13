@@ -637,6 +637,34 @@ class _MergeIndex:
         return None
 
 
+_DELETED_KEEP = 20000
+
+
+def _deleted_key(company_id) -> str:
+    return f"lead_sync_deleted_meta_ids:{company_id}"
+
+
+def remember_deleted_meta_ids(company_id, meta_ids) -> None:
+    """2026-10: menejer "kerak emas" deb O'CHIRGAN Meta lidi keyingi sync'da
+    (2 soatlik overlap oynasi yoki webhook qayta kelishi) QAYTA tortilib
+    kelmasligi uchun -- o'chirilgan `meta_lead_id`lar eslab qolinadi."""
+    ids = [str(x) for x in meta_ids if x]
+    if not ids or company_id is None:
+        return
+    key = _deleted_key(company_id)
+    cur = kv_store.get_json(key, default=None) or []
+    if not isinstance(cur, list):
+        cur = []
+    seen = set(cur)
+    cur.extend(i for i in ids if i not in seen)
+    kv_store.set_json(key, cur[-_DELETED_KEEP:])
+
+
+def _deleted_ids(company_id) -> set:
+    cur = kv_store.get_json(_deleted_key(company_id), default=None) or []
+    return set(cur) if isinstance(cur, list) else set()
+
+
 def _ingest_raw_leads(session, raws, *, form_id, form_name, company_id, names) -> tuple:
     """Meta lidlarini bazaga yozadi (commit chaqiruvchida). Qaytaradi:
     (yangi yaratilganlar, mavjud qo'lda/import lidga birlashtirilganlar)."""
@@ -649,6 +677,7 @@ def _ingest_raw_leads(session, raws, *, form_id, form_name, company_id, names) -
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
             existing_ids.update(x for (x,) in session.query(Lead.meta_lead_id).filter(Lead.meta_lead_id.in_(chunk)))
+    existing_ids |= _deleted_ids(company_id)  # menejer o'chirgan lidlar qaytmaydi
     created, merged = [], []
     merge_index = _MergeIndex(session, company_id)
     for raw in raws:

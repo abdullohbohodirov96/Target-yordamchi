@@ -248,6 +248,20 @@ with db.unscoped():
     check("begona sahifa lidi hech qayerga yozilmadi", s2.query(db.Lead).filter_by(meta_lead_id="MLX").count() == 0)
 s2.close()
 
+# ---------------------------------------------------------------- 5b. Menejer o'chirgan lid qaytmaydi
+mgr_c = app_module.app.test_client()
+mgr_c.post("/login", data={"username": "b_mgr", "password": PW})
+victim = next(l for l in leads_b() if l.meta_lead_id == "ML10")
+r_del = mgr_c.post(f"/leads/{victim.id}/delete")
+check("menejer lidni o'chira oladi", r_del.status_code == 302 and "ML10" not in {l.meta_lead_id for l in leads_b()})
+with mock.patch.object(meta_api, "get_lead_forms", return_value=[{"id": "fB", "name": "Asosiy forma"}]), \
+     mock.patch.object(meta_api, "get_ad_account_lead_form_ids", return_value={"fB"}), \
+     mock.patch.object(meta_api, "get_leads", return_value=[raw(10, "fB", phone="+998991230000")]), \
+     mock.patch.object(meta_api, "get_account_structure", return_value=STRUCT), \
+     mock.patch("meta_events.dispatch_lead_event"):
+    rr = lead_sync.sync_once(company=credsB)
+check("o'chirilgan Meta lidi keyingi sync'da qaytib kelmaydi", rr["new_leads"] == 0 and "ML10" not in {l.meta_lead_id for l in leads_b()}, str(rr))
+
 # ---------------------------------------------------------------- 6. Egasi B CRM'ida qo'lda lid
 TG_SENT.clear()
 oc = app_module.app.test_client()

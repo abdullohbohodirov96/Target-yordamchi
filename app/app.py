@@ -4995,6 +4995,15 @@ def _notify_new_leads_safe(company_id, lead_ids) -> None:
         logger.exception("Yangi lid bildirishnomasi xatosi (company_id=%s)", company_id)
 
 
+def _remember_deleted(stats: dict) -> None:
+    """O'chirilgan Meta lidlari keyingi sync'da qaytib kelmasin (commit'dan keyin)."""
+    for cid, mids in (stats.get("meta_ids_by_company") or {}).items():
+        try:
+            lead_sync.remember_deleted_meta_ids(cid, mids)
+        except Exception:  # noqa: BLE001
+            logger.exception("O'chirilgan Meta lid ID'larini eslab qolishda xato (company_id=%s)", cid)
+
+
 def _delete_leads(session, leads) -> dict:
     """Lidlarni bog'langan yozuvlari bilan TO'G'RI o'chiradi (2026-10 tuzatish:
     ilgari faqat izohlar o'chirilardi -- holat tarixi (`LeadStatusEvent`, har
@@ -5021,6 +5030,11 @@ def _delete_leads(session, leads) -> dict:
     session.query(CallRecord).filter(CallRecord.lead_id.in_(del_ids)).update({"lead_id": None}, synchronize_session=False)
     session.query(MetaEventLog).filter(MetaEventLog.lead_id.in_(del_ids)).update({"lead_id": None}, synchronize_session=False)
     session.query(IgDmConversation).filter(IgDmConversation.linked_lead_id.in_(del_ids)).update({"linked_lead_id": None}, synchronize_session=False)
+    by_company: dict = {}
+    for lead in leads:
+        if lead.id in del_ids and lead.meta_lead_id:
+            by_company.setdefault(lead.company_id, []).append(lead.meta_lead_id)
+    stats["meta_ids_by_company"] = by_company  # commit'dan KEYIN `_remember_deleted` bilan eslab qolinadi
     for lead in leads:
         if lead.id in del_ids:
             session.delete(lead)
@@ -5070,6 +5084,7 @@ def lead_delete(lead_id):
         if lead:
             stats = _delete_leads(session, [lead])
             session.commit()
+            _remember_deleted(stats)
             if stats["kept_with_sale"]:
                 flash(lang_module.translate("crm.lead_delete_has_sale", g.lang), "error")
                 return redirect(url_for("lead_detail", lead_id=lead_id))
@@ -5101,6 +5116,7 @@ def leads_bulk_delete():
         leads = session.query(Lead).filter(Lead.id.in_(ids)).all()
         stats = _delete_leads(session, leads)
         session.commit()
+        _remember_deleted(stats)
     finally:
         session.close()
     if stats["deleted"]:
