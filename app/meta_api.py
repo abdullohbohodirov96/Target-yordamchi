@@ -134,6 +134,10 @@ def friendly_meta_error(err: dict, step: "str | None" = None) -> "str | None":
         return "Meta kampaniya byudjeti sozlamasini (Ad Set byudjetini bo'lishish) talab qildi -- yangilangan tizim buni avtomatik yuboradi, qayta urinib ko'ring." + suffix
     if subcode == 2332002:
         return "Ad Library API ruxsati yo'q (shaxs tasdiqlangan akkauntning tokeni kerak)." + suffix
+    if step == "lead" and (code in (10, 200, 294) or "permission" in text):
+        return ("Meta lidlarni o'qishga ruxsat bermadi -- \"Hisoblarni ulash\" sahifasida "
+                "\"Facebook bilan qayta ulash\"ni bosing va oynada barcha belgilarni (ayniqsa "
+                "lidlar/leads_retrieval va sahifa reklamalari) yoqilgan holda qoldiring." + suffix)
     if code in (10, 200, 294) or "permission" in text or "ads_management" in text:
         return "Meta ruxsati yetarli emas -- Facebook'ni qayta ulab, reklama boshqaruvi (ads_management) ruxsatini bering." + suffix
     if code in (4, 17, 32, 613, 80000, 80004) or ("rate" in text and "limit" in text) or "too many calls" in text:
@@ -843,6 +847,20 @@ def oauth_configured() -> bool:
     return bool(META_APP_ID and META_APP_SECRET)
 
 
+# Instant Form lidlarini o'qish va real-vaqt `leadgen` webhook uchun kerakli ruxsatlar.
+LEAD_SCOPES = ("leads_retrieval", "pages_manage_ads", "pages_manage_metadata")
+
+
+def get_granted_permissions(user_token: str) -> set:
+    """Token haqiqatan BERILGAN (status=granted) ruxsatlar to'plami
+    (`GET /me/permissions`). Xato bo'lsa -- bo'sh to'plam (tashxis uchun)."""
+    try:
+        data = _get("me/permissions", {"limit": 200}, token=user_token)
+    except Exception:  # noqa: BLE001
+        return set()
+    return {p.get("permission") for p in data.get("data", []) if p.get("status") == "granted"}
+
+
 def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> str:
     """Foydalanuvchini Facebook'ning o'zining "ruxsat berish" oynasiga
     yo'naltirish uchun URL. `include_ads_scope=True` bo'lsa (kompaniya
@@ -897,6 +915,15 @@ def oauth_dialog_url(redirect_uri: str, state: str, include_ads_scope: bool) -> 
     from urllib.parse import urlencode
 
     scopes = ["pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_manage_messages"]
+    # 2026-10 TUZATISH (jonli: "Lead-sync -- Formalarni olishda xatolik ... kod 200",
+    # oxirgi muvaffaqiyatli sync HECH QACHON bo'lmagan): Instant Form lidlarini
+    # o'qish uchun Meta `leads_retrieval` + `pages_manage_ads` talab qiladi,
+    # real-vaqt `leadgen` webhook obunasi uchun esa `pages_manage_metadata`.
+    # Bular hech qachon so'ralmagan edi -- shuning uchun "qayta ulash" ham
+    # yordam bermasdi. Favqulodda holat ("Invalid Scopes" -- ruxsat App
+    # Dashboard'da hali qo'shilmagan): Render'da META_OAUTH_SKIP_LEAD_SCOPES=1.
+    if os.environ.get("META_OAUTH_SKIP_LEAD_SCOPES", "").strip() not in ("1", "true", "yes"):
+        scopes += list(LEAD_SCOPES)
     if include_ads_scope:
         scopes += ["ads_management", "ads_read", "business_management"]
     params = {
@@ -2021,6 +2048,69 @@ def send_instagram_message(recipient_ig_id: str, text: str, *, page_id: str | No
 # funksiya esa AVTOMATLASHTIRISH MUMKIN bo'lgan ikkinchi qadamni bajaradi:
 # har bir Page'ni ilovaning webhook'iga OBUNA QILISH (`subscribed_apps`).
 # ---------------------------------------------------------------------------
+
+def subscribe_page_to_webhooks(page_id: str, user_access_token: str,
+                               fields: tuple = ("messages", "leadgen")) -> dict:
+    """2026-10: Page'ni ilova webhook'iga `messages` VA `leadgen` (Instant Form
+    lidlari, REAL-VAQT) hodisalari uchun obuna qiladi. `subscribed_apps`
+    PAGE Access Token talab qiladi (ilgari foydalanuvchi tokeni bilan
+    chaqirilgani uchun obuna jim muvaffaqiyatsiz bo'lardi). `leadgen` rad
+    etilsa (ruxsat yo'q) -- hech bo'lmasa `messages` obunasi saqlanadi."""
+    page_token = _get_page_access_token(page_id=page_id, user_access_token=user_access_token)
+    try:
+        return _post(f"{page_id}/subscribed_apps", {"subscribed_fields": ",".join(fields)}, token=page_token)
+    except MetaAPIError:
+        if "leadgen" in fields and len(fields) > 1:
+            rest = tuple(f for f in fields if f != "leadgen")
+            _post(f"{page_id}/subscribed_apps", {"subscribed_fields": ",".join(rest)}, token=page_token)
+        raise
+
+
+def get_lead_by_id(leadgen_id: str, *, page_id: str, access_token: "str | None") -> dict:
+    """Bitta lidni ID bo'yicha o'qiydi (real-vaqt `leadgen` webhook'idan keyin)."""
+    page_token = _get_page_access_token(page_id=page_id, user_access_token=access_token)
+    return _get(str(leadgen_id), {"fields": "id,created_time,ad_id,adset_id,campaign_id,form_id,field_data"}, token=page_token)
+
+
+def get_lead_form_info(form_id: str, *, access_token: "str | None") -> dict:
+    """Formaning nomi va QAYSI sahifaga tegishliligi (`page{id}`). Foydalanuvchi
+    tokeni bilan o'qiladi -- forma boshqa sahifada bo'lsa ham topiladi."""
+    return _get(str(form_id), {"fields": "id,name,status,leads_count,page{id,name}"}, token=access_token)
+
+
+def _collect_form_ids(obj, out: set) -> None:
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in ("lead_gen_form_id", "lead_form_id") and v:
+                out.add(str(v))
+            else:
+                _collect_form_ids(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _collect_form_ids(v, out)
+
+
+def get_ad_account_lead_form_ids(*, access_token: "str | None", ad_account_id: "str | None") -> set:
+    """2026-10, foydalanuvchi so'rovi ("qaysi instant forma bo'lsa, HAMMASIDAN
+    tortib olish kerak"): reklama hisobidagi reklamalar ishlatgan BARCHA
+    Instant Form ID'lari -- forma ulangan asosiy sahifada bo'lmasa ham
+    (boshqa sahifa/Instagram orqali reklama). Reklama kreativi ichidagi
+    `call_to_action.value.lead_gen_form_id` (oddiy, karusel, dinamik
+    `asset_feed_spec`) yig'iladi."""
+    acct = ad_account_id or AD_ACCOUNT_ID
+    if not acct:
+        return set()
+    ads = _get_all_pages(
+        f"{acct}/ads",
+        {"fields": "id,creative{object_story_spec,asset_feed_spec}", "limit": 200,
+         "filtering": [{"field": "effective_status", "operator": "IN",
+                        "value": ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES", "PENDING_REVIEW"]}]},
+        token=access_token,
+    )
+    out: set = set()
+    _collect_form_ids(ads, out)
+    return out
+
 
 def subscribe_page_to_messaging_webhook(page_id: str, access_token: str) -> dict:
     """`POST /{page_id}/subscribed_apps?subscribed_fields=messages` --

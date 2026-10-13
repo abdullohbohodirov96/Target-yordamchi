@@ -364,6 +364,57 @@ def job_admin_report() -> dict:
     return results
 
 
+_LEAD_QUALITY_GUARD_KEY = "lead_quality_report_last_sent_date"
+LEAD_QUALITY_REPORT_HOUR = int(os.environ.get("LEAD_QUALITY_REPORT_HOUR", "20") or 20)
+
+
+def job_lead_quality_report() -> dict:
+    """2026-10, foydalanuvchi so'rovi: "lid sifatini menga har kuni hisobot
+    qilib berib tursin -- bugun buncha lid tushdi, buncha sifatli, buncha
+    sifatsiz, aniq son bilan". Har kuni kechqurun (standart 20:00 Toshkent,
+    `LEAD_QUALITY_REPORT_HOUR`) BUGUN tushgan lidlar bo'yicha aniq sonlar.
+    Meta ulanmagan (faqat CRM) kompaniyalarga ham yuboriladi. Har kompaniya
+    FAQAT o'z guruhiga; kuniga bir marta (guard kaliti bilan)."""
+    import lead_notify
+    today = tz_utils.today_local()
+    today_str = today.isoformat()
+    default_company_id = db.get_default_company_id()
+    session = db.get_session()
+    try:
+        with db.unscoped():
+            rows = session.query(db.Company).filter(db.Company.is_active.is_(True), db.company_paid_up_clause()).all()
+            companies = [{"id": c.id, "name": c.name, "group": c.telegram_group_id} for c in rows]
+    finally:
+        session.close()
+
+    results: dict = {}
+    for c in companies:
+        if c["id"] == default_company_id:
+            targets = _daily_summary_targets()
+        else:
+            try:
+                targets = [int(c["group"])] if c["group"] else []
+            except (TypeError, ValueError):
+                targets = []
+        if not targets:
+            results[c["id"]] = "guruh ulanmagan -- o'tkazib yuborildi"
+            continue
+        guard_key = f"{_LEAD_QUALITY_GUARD_KEY}:{c['id']}"
+        if kv_store.get_json(guard_key) == today_str:
+            results[c["id"]] = "bugun allaqachon yuborilgan"
+            continue
+        try:
+            text = lead_notify.build_lead_quality_report(c["id"], today)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Lid sifati hisoboti xatosi (company_id=%s)", c["id"])
+            results[c["id"]] = f"xato: {type(e).__name__}"
+            continue
+        sends = [_tg_send(t, text) for t in targets]
+        kv_store.set_json(guard_key, today_str)
+        results[c["id"]] = "yuborildi" if all(r["ok"] for r in sends) else f"rad etildi: {sends}"
+    return results
+
+
 _PAYME_AUTOPAY_LOOKAHEAD_DAYS = 1   # muddat tugashidan necha kun OLDIN urinib ko'radi
 _PAYME_AUTOPAY_RETRY_GRACE_DAYS = 3  # muddat o'tgach ham necha kun QAYTA urinadi (kartani darhol bloklamaslik uchun)
 
@@ -891,7 +942,7 @@ def job_lead_sync() -> dict:
 # ruxsat olib qo'yilgan, sahifa uzilgan) bu ILGARI faqat Analitika sahifasida
 # ko'rinardi -- endi kompaniyaning Telegram guruhiga xabar boradi (6 soatda
 # ko'pi bilan bir marta) va tiklanganda "tiklandi" xabari.
-LEAD_SYNC_ALERT_AFTER_FAILURES = 2          # 2 x 15 daqiqa = 30 daqiqa uzilish
+LEAD_SYNC_ALERT_AFTER_FAILURES = 6          # 6 x 5 daqiqa = 30 daqiqa uzilish
 LEAD_SYNC_ALERT_REPEAT_SECONDS = 6 * 3600
 
 
@@ -1639,6 +1690,7 @@ JOBS = {
     "watch": job_watch_cycle,
     "budget": job_budget_check,
     "lead-sync": job_lead_sync,
+    "lead-quality-report": job_lead_quality_report,
     "crm-webhook-out": job_deliver_webhooks,
     "lead-cleanup": job_lead_cleanup,
     "standing-tasks": job_standing_tasks,
@@ -1685,7 +1737,9 @@ def start_scheduler(app) -> None:
     scheduler.add_job(job_watch_cycle, CronTrigger(minute=5, timezone=TIMEZONE), id="watch")  # har soatning 5-daqiqasida
     scheduler.add_job(job_budget_check, CronTrigger(hour="*/4", minute=10, timezone=TIMEZONE), id="budget")
     scheduler.add_job(job_cpl_hard_kill, CronTrigger(minute="*/15", timezone=TIMEZONE), id="cpl-hard-kill")  # LLM'siz, tez CPL xavfsizlik qatlami
-    scheduler.add_job(job_lead_sync, CronTrigger(minute="*/15", timezone=TIMEZONE), id="lead-sync")
+    # 2026-10: real-vaqt `leadgen` webhook asosiy yo'l; polling zaxira -- 15 -> 5 daqiqa.
+    scheduler.add_job(job_lead_sync, CronTrigger(minute="*/5", timezone=TIMEZONE), id="lead-sync")
+    scheduler.add_job(job_lead_quality_report, CronTrigger(hour=LEAD_QUALITY_REPORT_HOUR, minute=0, timezone=TIMEZONE), id="lead-quality-report")
     scheduler.add_job(job_deliver_webhooks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="crm-webhook-out")  # 2026-09, "Marketplace" -- AI xarajatisiz, tez-tez xavfsiz
     scheduler.add_job(job_standing_tasks, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-tasks")
     scheduler.add_job(job_standing_reports, CronTrigger(minute="*/5", timezone=TIMEZONE), id="standing-reports")

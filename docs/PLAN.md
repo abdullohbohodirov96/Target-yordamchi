@@ -99,3 +99,19 @@
 3. **Sinov 7 kun** (avval 5) — Meta "o'rganish davri" 3–5 kun, mijoz natijani ko'rib ulgursin. Barcha matnlar `{trial_days}`dan. (Bajarildi.)
 4. **Sinovda Meta reklama hisobini ulash ochiq** — asosiy qiymat (o'z natijalari + lidlar) sinovda ko'rinsin; AI kvotalari o'zgarmadi. (Bajarildi.)
 5. **Karusel → Avtopilot (Meta karusel reklamasi)** — HA, lekin 4-bosqich (CPL himoyasi) tugagach; faqat PAUSED, birinchi sinov egasi bilan real akkauntda. (Rejada: 4-bosqichdan keyin.)
+
+## Tezkor tuzatishlar (2026-10-13)
+- [x] Lead-sync HECH QACHON ishlamagan edi ("kod 200 -- ruxsat yetarli emas", oxirgi muvaffaqiyatli: yo'q, Meta lidlari 02.09 dan beri tushmagan).
+  - Sabab: Facebook ulash oynasi `leads_retrieval` / `pages_manage_ads` / `pages_manage_metadata` ruxsatlarini umuman so'ramagan.
+  - Endi so'raladi; xato bo'lsa tokenda qaysi ruxsat yetishmayotgani aniq yoziladi. Favqulodda o'chirish: `META_OAUTH_SKIP_LEAD_SCOPES=1`.
+  - ⚠️ Egasi: deploydan keyin "Facebook bilan qayta ulash" SHART.
+- [x] Barcha Instant Form'lar: sahifadagilar + reklama hisobidagi reklamalar ishlatgan (boshqa sahifadagi) formalar.
+- [x] Real-vaqt: Page webhook `leadgen` -> lid soniyalarda CRM'ga. Obuna Page tokeni bilan (ilgari user token -- jim ishlamagan). Polling zaxira: 15 -> 5 daqiqa.
+- [x] Qo'lda/import lid bilan bir xil telefonli Meta lidi -- dublikat emas, mavjud lidga biriktiriladi (60 kun).
+- [x] Cursor server vaqt zonasiga bog'liq xatosi (`utcnow().timestamp()`) tuzatildi.
+- [x] Yangi lid -> menejerga Telegram (biriktirilgan bo'lsa unga, aks holda barcha menejerlarga). Qo'lda lidda mas'ul menejer tanlanadi.
+- [x] Platforma egasi boshqa kompaniya CRM'ida "+ Yangi lead" -- lid o'sha kompaniyaga yoziladi (ilgari egasinikiga tushib, menejerlar ko'rmasdi).
+- [x] Kunlik lid sifati hisoboti (20:00, `LEAD_QUALITY_REPORT_HOUR`): bugun tushgan / sifatli / sifatsiz / bog'lanilgan / yangi, forma va menejer bo'yicha + bugungi sotuvlar (qachon tushgan -> qachon sotilgan, summa, menejer).
+- [x] 09:00 hisobotida "kecha tushgan lidlar sifati" alohida qator.
+- [x] CAPI: sotuv yozuvi bor lid "Sotildi"ga qayta o'tkazilsa ortiqcha Purchase yuborilmaydi.
+- Dalil: `scripts/test_leads_realtime_quality_offline.py`, `scripts/test_lead_sync_reliability_offline.py`.

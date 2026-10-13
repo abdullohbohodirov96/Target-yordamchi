@@ -30,7 +30,7 @@
     {% set cdp_date_to = date_to %}
     {% include "_calendar_date_picker.html" %}
     <a href="{{ url_for('leads_import') }}" class="btn" style="background:var(--card); color:var(--ink); border:1px solid var(--border)">{{ t('leads.excel_import') }}</a>
-    <a href="{{ url_for('lead_new') }}" class="btn">{{ t('leads.new_lead') }}</a>
+    <a href="{{ url_for('lead_new', company_id=viewing_company.id) if viewing_company else url_for('lead_new') }}" class="btn">{{ t('leads.new_lead') }}</a>
   </div>
 </div>
 
