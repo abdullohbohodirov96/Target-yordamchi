@@ -15,6 +15,16 @@
     <div class="field"><label>{{ t('lead_new.campaign') }}</label><input type="text" name="campaign_name"></div>
     <div class="field"><label>{{ t('lead_new.adset') }}</label><input type="text" name="adset_name"></div>
     <div class="field"><label>{{ t('lead_new.ad') }}</label><input type="text" name="ad_name"></div>
+    {% if managers %}
+    <div class="field"><label>{{ t('lead_new.manager') }}</label>
+      <select name="assigned_manager_id">
+        <option value="">{{ t('lead_new.manager_none') }}</option>
+        {% for m in managers %}<option value="{{ m.id }}" {{ 'selected' if m.id == default_manager_id }}>{{ m.name }}</option>{% endfor %}
+      </select>
+      <div class="muted" style="font-size:12px;margin-top:4px">{{ t('lead_new.manager_hint') }}</div>
+    </div>
+    {% endif %}
+    {% if company_id_param %}<input type="hidden" name="company_id" value="{{ company_id_param }}">{% endif %}
     <button type="submit" class="block">{{ t('common.add') }}</button>
   </form>
 </div>

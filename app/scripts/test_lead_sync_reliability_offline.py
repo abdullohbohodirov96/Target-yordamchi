@@ -145,15 +145,18 @@ finally:
 # 6. Kampaniya nomi xatosi -- ogohlantirish, xato emas
 credsA2 = lead_sync._CompanyCreds(id=A, meta_page_id="pageA", meta_access_token="tokA", meta_ad_account_id="act_1")
 with mock.patch.object(meta_api, "get_lead_forms", return_value=FORMS), \
-     mock.patch.object(meta_api, "get_leads", return_value=[]), \
+     mock.patch.object(meta_api, "get_leads", side_effect=lambda form_id, **kw: [{**lead(60, "f1"), "campaign_id": "c1"}] if form_id == "f1" else []), \
+     mock.patch.object(meta_api, "get_ad_account_lead_form_ids", return_value=set()), \
+     mock.patch("meta_events.dispatch_lead_event"), \
      mock.patch.object(meta_api, "get_account_structure", side_effect=meta_api.MetaAPIError({"message": "x"})):
+    # 2026-10: nomlar faqat YANGI lid bo'lganda so'raladi (yengil sync)
     r6 = lead_sync.sync_once(company=credsA2)
 check("kampaniya nomlari xatosi -> notice, errors bo'sh", not r6["errors"] and any("Kampaniya nomlari" in n for n in r6["notices"]))
 
 # 7. Telegram ogohlantirish
 sent = []
 with mock.patch.object(scheduler, "_tg_send", side_effect=lambda chat, text: sent.append((chat, text)) or {"ok": True}):
-    for i in range(2):
+    for i in range(scheduler.LEAD_SYNC_ALERT_AFTER_FAILURES):  # 2026-10: 6 x 5 daqiqa = 30 daqiqa
         with mock.patch.object(meta_api, "get_lead_forms", side_effect=meta_api.MetaAPIError({"message": "Error validating access token", "code": 190})):
             with mock.patch.object(lead_sync, "sync_all_companies", side_effect=lambda: {"per_company": {A: lead_sync.sync_once(company=credsA), B: {"skipped": True}}}):
                 scheduler.job_lead_sync()

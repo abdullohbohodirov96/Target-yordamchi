@@ -2866,12 +2866,29 @@ def _leads_summary_lines(company_id: "int | None") -> list:
         if lead.status == "new":
             not_contacted += 1
 
+    # 2026-10: hisobot ertalab 9:00da KECHAGI kun uchun -- shuning uchun
+    # kecha tushgan lidlarning sifati alohida, aniq sonlar bilan.
+    try:
+        import lead_notify
+        y = (now - dt.timedelta(days=1)).date()
+        ys, ye = lead_notify._day_bounds_utc(y)
+        yc = lead_notify.lead_quality_counts(company_id, ys, ye)
+        yesterday_line = (
+            f"   Kecha tushgan: {yc['total']} | Sifatli: {yc['qualified'] + yc['sold']} | "
+            f"Sifatsiz: {yc['unqualified']} | Hali gaplashilmagan: {yc['new']}"
+        )
+    except Exception:  # noqa: BLE001
+        yesterday_line = None
     lines = [
         "",
         "\U0001F4CB Lidlar (CRM):",
-        f"   Bugun kelgan: {new_today} | Umumiy (hammasi): {total}",
-        f"   Ishlangan: {total - not_contacted} | Hali gaplashilmagan: {not_contacted}",
-        f"   Sifatli: {category_counts.get('qualified', 0)} | Sifatsiz: {category_counts.get('unqualified', 0)} | Sotilgan: {category_counts.get('sold', 0)}",
+    ]
+    if yesterday_line:
+        lines.append(yesterday_line)
+    lines += [
+        f"   Bugun (hozirgacha): {new_today} | Umumiy bazada: {total}",
+        f"   Umumiy -- ishlangan: {total - not_contacted} | Hali gaplashilmagan: {not_contacted}",
+        f"   Umumiy -- sifatli: {category_counts.get('qualified', 0)} | Sifatsiz: {category_counts.get('unqualified', 0)} | Sotilgan: {category_counts.get('sold', 0)}",
     ]
     if stage_counts:
         ranked = sorted(stage_counts.items(), key=lambda kv: -kv[1])

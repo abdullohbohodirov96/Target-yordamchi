@@ -47,6 +47,7 @@ import json
 import logging
 import re
 import threading
+import time
 import datetime as dt
 
 from sqlalchemy.exc import IntegrityError
@@ -366,7 +367,7 @@ def _sync_once_impl(company=None) -> dict:
     # bo'lishi kerak (aks holda backlog muammosi allaqachon ko'rinardi) --
     # ya'ni "hozirgacha" bazadagi barcha meta-lead'lar hali ham eski backlog.
     if kv_store.get_json(backlog_key, default=None) is None:
-        kv_store.set_json(backlog_key, int(sync_started_at.timestamp()))
+        kv_store.set_json(backlog_key, int(time.time()))
 
     since_unix = kv_store.get_json(since_key, default=None)
     if since_unix is None:
@@ -376,7 +377,7 @@ def _sync_once_impl(company=None) -> dict:
         # "shu vaqtdan keyingilarini kuzataman" degan boshlang'ich chegarani
         # qo'yamiz. Keyingi tekshiruvdan boshlab ENDI yaratiladigan lidlar
         # normal tortiladi.
-        cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
+        cursor = int(time.time()) - _SYNC_OVERLAP_SECONDS
         kv_store.set_json(since_key, cursor)
         result["notices"].append(
             "Lead-sync uchun boshlang'ich chegara o'rnatildi -- eski tarixiy "
@@ -392,58 +393,30 @@ def _sync_once_impl(company=None) -> dict:
         _save_status(result, company_id=company_id)
         return result
 
-    try:
-        forms = meta_api.get_lead_forms(page_id, access_token=access_token)
-    except meta_api.MetaAPIError as e:
-        result["errors"].append(f"Formalarni olishda xatolik: {meta_api.safe_error_message(e)}")
-        _save_status(result, company_id=company_id)
-        return result
-
+    forms = _discover_forms(page_id, access_token, ad_account_id, company, result, company_id=company_id)
     if not forms:
-        # Bu ENG KO'P uchraydigan "lead kelmayapti" sababi bo'lishi mumkin --
-        # META_PAGE_ID noto'g'ri sahifaga ko'rsatayotgan bo'lishi ehtimoli
-        # baland (masalan reklama boshqa Page/Instagram orqali yuritilsa).
-        # Bu holda davom etishning hojati yo'q -- tortib olinadigan lead yo'q.
-        result["errors"].append(
-            "Bu META_PAGE_ID uchun BIRORTA HAM Instant Form topilmadi. "
-            "Agar target ishlayotgan bo'lsa-yu lead kelmasa, ehtimol META_PAGE_ID "
-            "noto'g'ri sahifaga ko'rsatib turibdi yoki forma boshqa Page'da."
-        )
+        if not result["errors"]:
+            # Bu ENG KO'P uchraydigan "lead kelmayapti" sababi bo'lishi mumkin --
+            # META_PAGE_ID noto'g'ri sahifaga ko'rsatayotgan bo'lishi ehtimoli
+            # baland (masalan reklama boshqa Page/Instagram orqali yuritilsa).
+            result["errors"].append(
+                "Bu META_PAGE_ID uchun BIRORTA HAM Instant Form topilmadi. "
+                "Agar target ishlayotgan bo'lsa-yu lead kelmasa, ehtimol META_PAGE_ID "
+                "noto'g'ri sahifaga ko'rsatib turibdi yoki forma boshqa Page'da."
+            )
+        _add_permission_hint(result, access_token)
         _save_status(result, company_id=company_id)
         return result
 
-    # Kampaniya/adset/ad ID -> NOM xaritalari (dashboard/CRM'da "qaysi target,
-    # qaysi video/reklamadan kelgan" to'liq ko'rinishi uchun -- ad_name ko'pincha
-    # ishlatilgan video/kreativ nomiga mos qilib qo'yiladi).
-    # 2026-09 multi-tenant: agar `company` berilgan bo'lsa-yu, u hali O'Z
-    # reklama hisobini ulamagan bo'lsa (`meta_ad_account_id` yo'q), bu boyitish
-    # ATAYLAB o'tkazib yuboriladi -- aks holda global (boshqa kompaniyaning)
-    # hisob strukturasi noto'g'ri ishlatilib, nomlar aralashib ketishi mumkin
-    # edi. Lead'ning o'zi baribir ID'lar bilan to'liq saqlanadi, faqat NOM
-    # ustunlari bo'sh qoladi.
-    campaign_name_by_id: dict[str, str] = {}
-    adset_name_by_id: dict[str, str] = {}
-    ad_name_by_id: dict[str, str] = {}
-    if company is None or ad_account_id:
-        try:
-            structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
-            for c in structure.get("campaigns", []):
-                campaign_name_by_id[c["id"]] = c.get("name", "")
-            for a in structure.get("adsets", []):
-                adset_name_by_id[a["id"]] = a.get("name", "")
-            for a in structure.get("ads", []):
-                ad_name_by_id[a["id"]] = a.get("name", "")
-        except meta_api.MetaAPIError as e:
-            # Lidlar baribir to'liq yoziladi (faqat kampaniya NOMI bo'sh qoladi) --
-            # shuning uchun bu "xato" emas, ogohlantirish.
-            result["notices"].append(f"Kampaniya nomlarini olib bo'lmadi (lidlar baribir yozildi): {meta_api.safe_error_message(e)}")
+    names = _NameMaps(company, access_token, ad_account_id, result)
 
     form_since_key = _form_since_key(company_id)
     form_cursors = kv_store.get_json(form_since_key, default=None) or {}
     if not isinstance(form_cursors, dict):
         form_cursors = {}
-    new_cursor = int(sync_started_at.timestamp()) - _SYNC_OVERLAP_SECONDS
+    new_cursor = int(time.time()) - _SYNC_OVERLAP_SECONDS
 
+    all_new_ids: list = []
     session = get_session()
     try:
         for form in forms:
@@ -457,10 +430,11 @@ def _sync_once_impl(company=None) -> dict:
             except (TypeError, ValueError):
                 form_since = since_unix
             try:
-                leads = meta_api.get_leads(form_id, since=form_since, access_token=access_token, page_id=page_id)
+                leads = meta_api.get_leads(form_id, since=form_since, access_token=access_token,
+                                           page_id=form.get("_page_id") or page_id)
             except meta_api.MetaAPIError as e:
                 form_cursors[form_id] = form_since  # cursor joyida qoladi -- lidlar yo'qolmaydi
-                safe_msg = meta_api.safe_error_message(e)
+                safe_msg = _lead_error_text(e)
                 result["errors"].append(f"Forma '{form.get('name', form_id)}' lidlarini olishda xatolik: {safe_msg}")
                 result["form_diagnostics"].append({
                     "form_id": form_id, "form_name": form.get("name"),
@@ -469,123 +443,324 @@ def _sync_once_impl(company=None) -> dict:
                 })
                 continue
 
-            new_for_this_form = 0
-            newly_created_leads = []  # 2026-09: commit'dan KEYIN "Lead" CAPI hodisasini yuborish uchun
-            # Dublikat tekshiruvi BIR so'rovda va BUTUN baza bo'yicha (tenant
-            # filtrisiz): `meta_lead_id` global unique -- boshqa kompaniyada
-            # bor lidni yozishga urinish IntegrityError bilan BUTUN sync'ni
-            # har safar yiqitib, lidlar oqimini to'xtatib qo'yardi.
-            ids = [str(r.get("id")) for r in leads if r.get("id")]
-            existing_ids = set()
-            with db.unscoped():
-                for i in range(0, len(ids), 500):
-                    chunk = ids[i:i + 500]
-                    existing_ids.update(x for (x,) in session.query(Lead.meta_lead_id).filter(Lead.meta_lead_id.in_(chunk)))
-            for raw in leads:
-                meta_lead_id = raw.get("id")
-                if not meta_lead_id or str(meta_lead_id) in existing_ids:
-                    continue  # allaqachon bazada bor -- dublikat qilinmaydi
-                existing_ids.add(str(meta_lead_id))
-
-                fd = _field_data_to_dict(raw.get("field_data"))
-                name, phone, phone2, email = _extract_name_phone_email(fd)
-                campaign_id = raw.get("campaign_id")
-                adset_id = raw.get("adset_id")
-                ad_id = raw.get("ad_id")
-                created_time = raw.get("created_time")
-                try:
-                    created_dt = dt.datetime.strptime(created_time[:19], "%Y-%m-%dT%H:%M:%S") if created_time else None
-                except ValueError:
-                    created_dt = None
-
-                lead = Lead(
-                    meta_lead_id=meta_lead_id,
-                    campaign_id=campaign_id,
-                    campaign_name=campaign_name_by_id.get(campaign_id, ""),
-                    adset_id=adset_id,
-                    adset_name=adset_name_by_id.get(adset_id, ""),
-                    ad_id=ad_id,
-                    ad_name=ad_name_by_id.get(ad_id, ""),
-                    form_id=form_id,
-                    form_name=form.get("name"),
-                    source="meta",
-                    full_name=name,
-                    phone=phone,
-                    phone2=phone2,
-                    email=email,
-                    raw_field_data=json.dumps(fd, ensure_ascii=False),
-                    status="new",
-                    lead_created_time=created_dt,
-                    # 2026-09 multi-tenant 3-bosqich: endi Meta ulanishi
-                    # kompaniya bo'yicha bo'lgani uchun, yangi lead ANIQ
-                    # O'SHA kompaniyaga (`sync_once(company=...)`ni chaqirgan
-                    # kompaniya) yoziladi -- `company=None` chaqirilsa
-                    # (eski, global CLI holati) standart kompaniyaga tushadi.
-                    company_id=company_id,
-                )
-                session.add(lead)
-                newly_created_leads.append(lead)
-                result["new_leads"] += 1
-                new_for_this_form += 1
-
             try:
+                created, merged = _ingest_raw_leads(session, leads, form_id=form_id, form_name=form.get("name"),
+                                                    company_id=company_id, names=names)
                 session.commit()
             except IntegrityError:
-                # Juda kam holat (parallel yozuv). Shu forma bo'yicha hech narsa
-                # yo'qolmasin: rollback, cursor joyida qoladi, keyingi safar qayta.
+                # Juda kam holat (parallel yozuv -- masalan real-vaqt webhook
+                # bir vaqtda yozdi). Shu forma bo'yicha hech narsa yo'qolmasin:
+                # rollback, cursor joyida qoladi, keyingi safar qayta.
                 session.rollback()
                 logger.warning("Lead sync: IntegrityError (company_id=%s, form=%s) -- keyingi safar qayta", company_id, form_id)
-                result["new_leads"] -= new_for_this_form
                 form_cursors[form_id] = form_since
                 result["notices"].append(f"Forma '{form.get('name', form_id)}': parallel yozuv, keyingi tekshiruvda qayta o'qiladi.")
                 continue
             form_cursors[form_id] = new_cursor
+            result["new_leads"] += len(created)
+            result["merged_leads"] = result.get("merged_leads", 0) + len(merged)
 
-            # 2026-09, "production-ready Meta Ads + CAPI integration" so'rovi:
-            # yangi lead CRM'ga tushgach, shu HAQIQATNI Meta'ga "Lead" CAPI
-            # hodisasi sifatida qaytarib yuboramiz (algoritm o'xshash
-            # odamlarni topishni shu signal orqali ham o'rganadi). Har bir
-            # yuborish o'z ichida xato-chidamli (try/except) -- bitta
-            # muvaffaqiyatsiz hodisa qolgan sinxronizatsiyani to'xtatmasligi
-            # kerak.
-            if newly_created_leads:
-                import meta_events
-                for lead in newly_created_leads:
-                    try:
-                        meta_events.dispatch_lead_event(session, lead)
-                    except Exception:
-                        logger.exception("Lead CAPI hodisasini yuborishda xatolik (lead_id=%s)", lead.id)
+            # Yangi lead CRM'ga tushgach -- Meta'ga "Lead" CAPI hodisasi
+            # (har biri o'z ichida xato-chidamli).
+            _dispatch_capi(session, created + merged)
+            all_new_ids.extend(l.id for l in created)
 
             db_count_for_form = session.query(Lead).filter_by(form_id=form_id).count()
             meta_count = form.get("leads_count")
             diag = {
                 "form_id": form_id, "form_name": form.get("name"),
                 "meta_leads_count": meta_count, "db_leads_count": db_count_for_form,
-                "new_this_run": new_for_this_form,
+                "new_this_run": len(created),
             }
-            # Meta "leads_count" -- shu forma umr bo'yi olgan lead soni; bizning
-            # bazamizda esa faqat form_id TO'LDIRILGAN (shu tuzatishdan keyingi)
-            # yozuvlar bor -- shuning uchun katta farq FAQAT ikkalasi ham
-            # nolga yaqin bo'lmaganda ma'noli signal beradi.
             if isinstance(meta_count, int) and meta_count > 0 and db_count_for_form == 0:
                 diag["warning"] = "Meta'da bu formada lidlar bor, lekin bazada BITTASI HAM yo'q -- token/ruxsat yoki sync muammosi bo'lishi mumkin."
             result["form_diagnostics"].append(diag)
     finally:
         session.close()
 
-    # Cursor'ni oldinga suramiz -- keyingi tekshiruv endi shu safargi
-    # boshlanish vaqtidan (kichik overlap bilan) keyingi lidlarnigina so'raydi.
-    # Muvaffaqiyatsiz bo'lgan alohida formalar (yuqorida "continue" bo'lgan)
-    # keyingi safar YANA shu (yangi) cursor bilan tekshiriladi -- agar ular
-    # orasida chegaraga to'g'ri kelib qolgan lead bo'lsa, bu holatda
-    # qo'lda `/api/trigger/lead-sync`ni qayta ishga tushirish kifoya.
     kv_store.set_json(since_key, new_cursor)
-    # Faqat hozir mavjud formalar saqlanadi (o'chirilgan formalar to'planib qolmasin).
     live_ids = {f["id"] for f in forms}
     kv_store.set_json(form_since_key, {k: v for k, v in form_cursors.items() if k in live_ids})
 
+    if all_new_ids:
+        _notify(company_id, all_new_ids)
     _save_status(result, company_id=company_id)
     return result
+
+
+# ---------------------------------------------------------------------------
+# 2026-10 yordamchilar: barcha formalarni topish, lidni yozish (telefon
+# bo'yicha birlashtirish bilan), real-vaqt webhook lidi.
+# ---------------------------------------------------------------------------
+
+# Qo'lda/Excel'dan kiritilgan lid shu muddat ichida bo'lsa va telefoni mos
+# kelsa -- Meta'dan kelgan xuddi shu lid YANGI qator bo'lib qo'shilmaydi,
+# mavjud qatorga Meta ma'lumoti (kampaniya, forma, meta_lead_id) biriktiriladi.
+_MERGE_WINDOW_DAYS = 60
+
+
+def _lead_error_text(e: Exception) -> str:
+    err = getattr(e, "error", None) or (e.args[0] if getattr(e, "args", None) else None)
+    friendly = meta_api.friendly_meta_error(err, step="lead") if isinstance(err, dict) else None
+    return friendly or meta_api.safe_error_message(e)
+
+
+def _add_permission_hint(result: dict, access_token) -> None:
+    """Ruxsat xatosi bo'lsa -- tokenda QAYSI ruxsat yetishmayotganini aniq aytadi."""
+    if not access_token or not any("ruxsat" in (x or "") for x in result.get("errors", [])):
+        return
+    granted = meta_api.get_granted_permissions(access_token)
+    if not granted:
+        return
+    missing = [p for p in meta_api.LEAD_SCOPES if p not in granted]
+    if missing:
+        result["errors"].append(
+            "Tokenda yetishmayotgan ruxsatlar: " + ", ".join(missing)
+            + ". \"Hisoblarni ulash\" -> \"Facebook bilan qayta ulash\" bosing va oynadagi barcha belgilarni yoqilgan holda qoldiring."
+        )
+
+
+_AD_FORMS_TTL_SECONDS = 3600
+
+
+def _ad_account_extra_forms(company_id, page_id, access_token, ad_account_id, known, result) -> list:
+    """Reklamalardagi (boshqa sahifadagi) formalar -- 1 soat keshlanadi
+    (reklama kreativlarini har 5 daqiqada so'rash ortiqcha og'ir)."""
+    import time as _time
+    key = f"lead_sync_ad_forms:{company_id}"
+    cached = kv_store.get_json(key, default=None)
+    if isinstance(cached, dict) and _time.time() - float(cached.get("ts") or 0) < _AD_FORMS_TTL_SECONDS:
+        return [f for f in (cached.get("forms") or []) if f.get("id") not in known]
+    try:
+        ad_form_ids = meta_api.get_ad_account_lead_form_ids(access_token=access_token, ad_account_id=ad_account_id)
+    except Exception as e:  # noqa: BLE001
+        result["notices"].append(f"Reklamalardagi formalarni aniqlab bo'lmadi: {meta_api.safe_error_message(e)}")
+        return []
+    extra = []
+    for fid in sorted(ad_form_ids - known):
+        try:
+            info = meta_api.get_lead_form_info(fid, access_token=access_token)
+        except Exception:  # noqa: BLE001
+            continue
+        fpage = ((info.get("page") or {}).get("id")) or page_id
+        extra.append({"id": fid, "name": info.get("name"), "leads_count": info.get("leads_count"),
+                      "status": info.get("status"), "_page_id": fpage})
+    kv_store.set_json(key, {"ts": _time.time(), "forms": extra})
+    return extra
+
+
+def _discover_forms(page_id, access_token, ad_account_id, company, result, *, company_id=None) -> list:
+    """Sahifadagi BARCHA formalar + reklama hisobidagi reklamalar ishlatgan,
+    lekin BOSHQA sahifada turgan formalar (`_page_id` bilan)."""
+    forms: list = []
+    try:
+        forms = list(meta_api.get_lead_forms(page_id, access_token=access_token))
+    except meta_api.MetaAPIError as e:
+        result["errors"].append(f"Formalarni olishda xatolik: {_lead_error_text(e)}")
+    except Exception as e:  # noqa: BLE001
+        result["errors"].append(f"Formalarni olishda xatolik: {meta_api.safe_error_message(e)}")
+    known = {f["id"] for f in forms}
+    if (company is None or ad_account_id) and access_token:
+        forms.extend(_ad_account_extra_forms(company_id, page_id, access_token, ad_account_id, known, result))
+    return forms
+
+
+class _NameMaps:
+    """Kampaniya/adset/reklama NOMLARI -- faqat yangi lid bo'lganda (bir marta)
+    Meta'dan olinadi (har sync'da og'ir so'rov yubormaslik uchun)."""
+
+    def __init__(self, company, access_token, ad_account_id, result):
+        self._args = (company, access_token, ad_account_id)
+        self._result = result
+        self._loaded = False
+        self.campaign, self.adset, self.ad = {}, {}, {}
+
+    def _load(self):
+        self._loaded = True
+        company, access_token, ad_account_id = self._args
+        if company is not None and not ad_account_id:
+            return
+        try:
+            structure = meta_api.get_account_structure(active_only=False, access_token=access_token, ad_account_id=ad_account_id)
+        except Exception as e:  # noqa: BLE001
+            if self._result is not None:
+                self._result["notices"].append(
+                    f"Kampaniya nomlarini olib bo'lmadi (lidlar baribir yozildi): {meta_api.safe_error_message(e)}")
+            return
+        self.campaign = {c["id"]: c.get("name", "") for c in structure.get("campaigns", [])}
+        self.adset = {a["id"]: a.get("name", "") for a in structure.get("adsets", [])}
+        self.ad = {a["id"]: a.get("name", "") for a in structure.get("ads", [])}
+
+    def get(self, kind: str, obj_id):
+        if not obj_id:
+            return ""
+        if not self._loaded:
+            self._load()
+        return getattr(self, kind).get(obj_id, "")
+
+
+class _MergeIndex:
+    """Shu kompaniyada yaqinda QO'LDA/IMPORT qilingan, Meta ID'si yo'q lidlar --
+    telefonning oxirgi 9 raqami bo'yicha (yozilish formatidan qat'iy nazar:
+    "+998 90 111-22-33" ham, "901112233" ham). Bir sync uchun bir marta yuklanadi."""
+
+    def __init__(self, session, company_id):
+        self._session, self._company_id = session, company_id
+        self._by_key = None
+
+    def _load(self):
+        from phone_utils import phone_key9
+        self._by_key = {}
+        cutoff = dt.datetime.utcnow() - dt.timedelta(days=_MERGE_WINDOW_DAYS)
+        rows = (
+            self._session.query(Lead)
+            .filter(Lead.company_id == self._company_id, Lead.meta_lead_id.is_(None),
+                    Lead.source.in_(("manual", "import")), Lead.created_at >= cutoff)
+            .order_by(Lead.created_at.asc())
+            .all()
+        )
+        for r in rows:  # eng yangisi oxirida yoziladi -> ustun turadi
+            for k in (phone_key9(r.phone), phone_key9(r.phone2)):
+                if k and len(k) == 9:
+                    self._by_key[k] = r
+
+    def pop(self, phone, phone2):
+        from phone_utils import phone_key9
+        if self._by_key is None:
+            self._load()
+        for k in (phone_key9(phone), phone_key9(phone2)):
+            if k and len(k) == 9 and k in self._by_key:
+                target = self._by_key.pop(k)
+                for kk in [x for x, v in self._by_key.items() if v is target]:
+                    self._by_key.pop(kk, None)
+                return target
+        return None
+
+
+def _ingest_raw_leads(session, raws, *, form_id, form_name, company_id, names) -> tuple:
+    """Meta lidlarini bazaga yozadi (commit chaqiruvchida). Qaytaradi:
+    (yangi yaratilganlar, mavjud qo'lda/import lidga birlashtirilganlar)."""
+    ids = [str(r.get("id")) for r in raws if r.get("id")]
+    existing_ids = set()
+    # Dublikat tekshiruvi BUTUN baza bo'yicha (tenant filtrisiz): `meta_lead_id`
+    # global unique -- boshqa kompaniyada bor lidni yozishga urinish
+    # IntegrityError bilan butun sync'ni yiqitardi.
+    with db.unscoped():
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            existing_ids.update(x for (x,) in session.query(Lead.meta_lead_id).filter(Lead.meta_lead_id.in_(chunk)))
+    created, merged = [], []
+    merge_index = _MergeIndex(session, company_id)
+    for raw in raws:
+        meta_lead_id = raw.get("id")
+        if not meta_lead_id or str(meta_lead_id) in existing_ids:
+            continue
+        existing_ids.add(str(meta_lead_id))
+        fd = _field_data_to_dict(raw.get("field_data"))
+        name, phone, phone2, email = _extract_name_phone_email(fd)
+        campaign_id, adset_id, ad_id = raw.get("campaign_id"), raw.get("adset_id"), raw.get("ad_id")
+        created_time = raw.get("created_time")
+        try:
+            created_dt = dt.datetime.strptime(created_time[:19], "%Y-%m-%dT%H:%M:%S") if created_time else None
+        except ValueError:
+            created_dt = None
+        meta_fields = dict(
+            meta_lead_id=str(meta_lead_id),
+            campaign_id=campaign_id, campaign_name=names.get("campaign", campaign_id),
+            adset_id=adset_id, adset_name=names.get("adset", adset_id),
+            ad_id=ad_id, ad_name=names.get("ad", ad_id),
+            form_id=raw.get("form_id") or form_id, form_name=form_name,
+            raw_field_data=json.dumps(fd, ensure_ascii=False),
+            lead_created_time=created_dt,
+        )
+        target = merge_index.pop(phone, phone2)
+        if target is not None:
+            # Qo'lda/import kiritilgan o'sha odam -- yangi qator emas, Meta
+            # ma'lumoti biriktiriladi (holat, menejer, izohlar saqlanadi).
+            for k, v in meta_fields.items():
+                if k == "lead_created_time" and target.lead_created_time:
+                    continue
+                setattr(target, k, v)
+            target.full_name = target.full_name or name
+            target.email = target.email or email
+            merged.append(target)
+            continue
+        lead = Lead(
+            source="meta", status="new", full_name=name, phone=phone, phone2=phone2, email=email,
+            company_id=company_id, **meta_fields,
+        )
+        session.add(lead)
+        created.append(lead)
+    session.flush()
+    return created, merged
+
+
+def _dispatch_capi(session, leads) -> None:
+    if not leads:
+        return
+    import meta_events
+    for lead in leads:
+        try:
+            meta_events.dispatch_lead_event(session, lead)
+        except Exception:
+            logger.exception("Lead CAPI hodisasini yuborishda xatolik (lead_id=%s)", lead.id)
+
+
+def _notify(company_id, lead_ids) -> None:
+    try:
+        import lead_notify
+        lead_notify.notify_new_leads(company_id, lead_ids)
+    except Exception:
+        logger.exception("Yangi lid bildirishnomasida xato (company_id=%s)", company_id)
+
+
+def ingest_webhook_lead(page_id: str, leadgen_id: str, form_id: "str | None" = None) -> dict:
+    """REAL-VAQT: Meta `leadgen` webhook'i (forma to'ldirilgan zahoti) --
+    shu sahifa ulangan kompaniyani topib, lidni ID bo'yicha o'qib, darhol
+    CRM'ga yozadi. 15 daqiqalik polling zaxira bo'lib qoladi (webhook
+    kelmay qolsa ham lid yo'qolmaydi)."""
+    from db import Company
+    session = get_session()
+    try:
+        with db.unscoped():
+            c = session.query(Company).filter_by(meta_page_id=str(page_id), is_active=True).first()
+            if c is None:
+                return {"ok": False, "reason": "sahifa hech bir kompaniyaga ulanmagan"}
+            company = _CompanyCreds(id=c.id, meta_page_id=c.meta_page_id,
+                                    meta_access_token=c.get_meta_access_token(), meta_ad_account_id=c.meta_ad_account_id)
+    finally:
+        session.close()
+    return _ingest_webhook_for_company(company, leadgen_id, form_id)
+
+
+@db.company_scoped
+def _ingest_webhook_for_company(company, leadgen_id, form_id) -> dict:
+    token = company.get_meta_access_token()
+    raw = meta_api.get_lead_by_id(leadgen_id, page_id=company.meta_page_id, access_token=token)
+    fid = raw.get("form_id") or form_id
+    form_name = None
+    if fid:
+        try:
+            form_name = meta_api.get_lead_form_info(fid, access_token=token).get("name")
+        except Exception:  # noqa: BLE001
+            form_name = None
+    names = _NameMaps(company, token, company.meta_ad_account_id, None)
+    session = get_session()
+    try:
+        try:
+            created, merged = _ingest_raw_leads(session, [raw], form_id=fid, form_name=form_name,
+                                                company_id=company.id, names=names)
+            session.commit()
+        except IntegrityError:
+            session.rollback()  # polling bir vaqtda yozdi -- lid baribir bazada
+            return {"ok": True, "duplicate": True}
+        _dispatch_capi(session, created + merged)
+        new_ids = [l.id for l in created]
+    finally:
+        session.close()
+    if new_ids:
+        _notify(company.id, new_ids)
+    return {"ok": True, "created": len(new_ids), "merged": len(merged)}
 
 
 def _save_status(result: dict, *, company_id: "int | None" = None) -> None:

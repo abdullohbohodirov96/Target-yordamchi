@@ -808,6 +808,9 @@ _APP_STRINGS = [
     ("lead_new.campaign", "Kampaniya nomi (ixtiyoriy)", "Название кампании (необязательно)", "Campaign name (optional)"),
     ("lead_new.adset", "Adset nomi (ixtiyoriy)", "Название адсета (необязательно)", "Ad set name (optional)"),
     ("lead_new.ad", "Reklama / video nomi (ixtiyoriy)", "Название объявления / видео (необязательно)", "Ad / video name (optional)"),
+    ("lead_new.manager", "Mas'ul menejer", "Ответственный менеджер", "Assigned manager"),
+    ("lead_new.manager_none", "— Biriktirilmagan (hamma menejer ko'radi) —", "— Не назначен (видят все менеджеры) —", "— Unassigned (all managers see it) —"),
+    ("lead_new.manager_hint", "Tanlangan menejerga Telegram orqali darhol xabar boradi.", "Выбранному менеджеру сразу придёт уведомление в Telegram.", "The chosen manager gets an instant Telegram notification."),
 
     # ---- leads_import.html ----
     ("leads_import.title", "Excel import", "Импорт из Excel", "Excel import"),

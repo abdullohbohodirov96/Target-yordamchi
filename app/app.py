@@ -2112,6 +2112,18 @@ def _handle_telegram_message(chat_id: int, chat_type: str, text: str, message: d
 # SHART EMAS, har doim tezkor 200 qaytariladi.
 # ---------------------------------------------------------------------------
 
+def _ingest_leadgen_events(events) -> None:
+    """Fon oqimi: real-vaqt `leadgen` lidlarini CRM'ga yozadi. Xato bo'lsa
+    lid yo'qolmaydi -- polling (har 15 daqiqa) uni baribir topadi."""
+    for page_id, leadgen_id, form_id in events:
+        try:
+            res = lead_sync.ingest_webhook_lead(page_id, leadgen_id, form_id)
+            logger.info("Leadgen webhook: page=%s lead=%s -> %s", page_id, leadgen_id, res)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Leadgen webhook: lidni yozib bo'lmadi (page=%s, lead=%s): %s -- polling zaxirada",
+                           page_id, leadgen_id, meta_api.safe_error_message(e))
+
+
 @app.route("/webhooks/instagram", methods=["GET"])
 def instagram_webhook_verify():
     """Meta'ning webhook VERIFIKATSIYA handshake'i -- Callback URL Meta App
@@ -2174,6 +2186,23 @@ def instagram_webhook_receive():
         channel = "facebook"
     else:
         return jsonify({"ok": True})
+
+    # 2026-10, foydalanuvchi so'rovi ("instant formadan lidlar srazu srazu
+    # tushsin"): Page webhook'ining `leadgen` hodisasi -- forma to'ldirilgan
+    # ZAHOTI keladi. Meta tez 200 kutadi, shuning uchun lidni o'qish/yozish
+    # fon oqimida. 15 daqiqalik polling zaxira bo'lib qoladi.
+    if object_type == "page":
+        leadgen_events = [
+            (str(entry.get("id") or (ch.get("value") or {}).get("page_id") or ""),
+             str((ch.get("value") or {}).get("leadgen_id") or ""),
+             (ch.get("value") or {}).get("form_id"))
+            for entry in payload.get("entry", [])
+            for ch in (entry.get("changes") or [])
+            if ch.get("field") == "leadgen"
+        ]
+        leadgen_events = [e for e in leadgen_events if e[0] and e[1]]
+        if leadgen_events:
+            threading.Thread(target=_ingest_leadgen_events, args=(leadgen_events,), daemon=True).start()
 
     session = get_session()
     try:
@@ -2871,7 +2900,8 @@ def _save_facebook_connection(token: str, page: dict, account: dict | None, *,
         # so'rovni rad etadi, LEKIN bu asosiy Facebook ulanishini
         # TO'XTATMASLIGI kerak (shuning uchun xato jim yutiladi).
         try:
-            meta_api.subscribe_page_to_messaging_webhook(page["id"], token)
+            # 2026-10: Page tokeni bilan, `messages` + `leadgen` (real-vaqt lidlar).
+            meta_api.subscribe_page_to_webhooks(page["id"], token)
         except Exception:
             logger.exception(
                 "Instagram webhook: Page'ni obuna qilishda xato (page_id=%s) -- "
@@ -4888,32 +4918,81 @@ def sold_customers_list():
 @login_required
 @module_required("leads")
 def lead_new():
+    # 2026-10 TUZATISH ("lid qo'shsam menejerlarga ko'rinmayapti"): platforma
+    # egasi BOSHQA kompaniyaning CRM'ini (`/leads?company_id=X`) ko'rib turib
+    # "+ Yangi lead" bossa, lid ILGARI egasining O'Z kompaniyasiga yozilardi --
+    # X kompaniyasining menejerlari uni hech qachon ko'rmasdi. Endi lid aynan
+    # ko'rilayotgan kompaniyaga yoziladi, mas'ul menejer tanlanadi va unga
+    # (yoki biriktirilmagan bo'lsa -- barcha menejerlarga) Telegram xabari boradi.
+    target_company_id = current_user.company_id
+    requested = request.values.get("company_id", type=int)
+    if requested and _is_platform_owner():
+        target_company_id = requested
     session = get_session()
     try:
-        if request.method == "POST":
-            full_name = request.form.get("full_name", "").strip()
-            phone = request.form.get("phone", "").strip()
-            phone2 = request.form.get("phone2", "").strip()
-            email = request.form.get("email", "").strip()
-            campaign_name = request.form.get("campaign_name", "").strip()
-            adset_name = request.form.get("adset_name", "").strip()
-            ad_name = request.form.get("ad_name", "").strip()
-            if not full_name and not phone:
-                flash(lang_module.translate("crm.err_name_or_phone_required", g.lang), "error")
-            else:
-                lead = Lead(
-                    company_id=current_user.company_id,
-                    full_name=full_name or None, phone=phone or None, phone2=phone2 or None, email=email or None,
-                    campaign_name=campaign_name or None, adset_name=adset_name or None, ad_name=ad_name or None,
-                    source="manual", status="new",
-                )
-                session.add(lead)
-                session.commit()
-                flash(lang_module.translate("crm.lead_added_flash", g.lang), "success")
-                return redirect(url_for("lead_detail", lead_id=lead.id))
+        with db.scoped_as(target_company_id):
+            managers = (
+                session.query(Manager)
+                .filter(Manager.company_id == target_company_id, Manager.is_active.is_(True))
+                .order_by(Manager.role.desc(), Manager.full_name.asc())
+                .all()
+            )
+            manager_opts = [{"id": m.id, "name": m.full_name or m.username} for m in managers]
+            valid_ids = {m.id for m in managers}
+            me = next((m for m in managers if m.username == current_user.username), None)
+            default_manager_id = me.id if (me is not None and me.role != "admin") else None
+            if request.method == "POST":
+                full_name = request.form.get("full_name", "").strip()
+                phone = request.form.get("phone", "").strip()
+                phone2 = request.form.get("phone2", "").strip()
+                email = request.form.get("email", "").strip()
+                campaign_name = request.form.get("campaign_name", "").strip()
+                adset_name = request.form.get("adset_name", "").strip()
+                ad_name = request.form.get("ad_name", "").strip()
+                assigned = request.form.get("assigned_manager_id", type=int)
+                if assigned not in valid_ids:
+                    assigned = default_manager_id
+                if not full_name and not phone:
+                    flash(lang_module.translate("crm.err_name_or_phone_required", g.lang), "error")
+                else:
+                    lead = Lead(
+                        company_id=target_company_id,
+                        full_name=full_name or None, phone=phone or None, phone2=phone2 or None, email=email or None,
+                        campaign_name=campaign_name or None, adset_name=adset_name or None, ad_name=ad_name or None,
+                        source="manual", status=_default_new_stage_key(session), assigned_manager_id=assigned,
+                    )
+                    session.add(lead)
+                    session.commit()
+                    lead_id = lead.id
+                    threading.Thread(target=_notify_new_leads_safe, args=(target_company_id, [lead_id]), daemon=True).start()
+                    flash(lang_module.translate("crm.lead_added_flash", g.lang), "success")
+                    if target_company_id != current_user.company_id:
+                        return redirect(url_for("leads_list", company_id=target_company_id))
+                    return redirect(url_for("lead_detail", lead_id=lead_id))
     finally:
         session.close()
-    return render_template("lead_new.html")
+    return render_template(
+        "lead_new.html", managers=manager_opts, default_manager_id=default_manager_id,
+        company_id_param=target_company_id if target_company_id != current_user.company_id else None,
+    )
+
+
+def _default_new_stage_key(session) -> str:
+    """Voronkaning birinchi ("yangi") bosqichi -- admin "new"ni qayta nomlagan
+    bo'lsa ham lid to'g'ri ustunga tushsin."""
+    try:
+        keys = lead_analytics._new_stage_keys(session)
+        return next(iter(keys)) if keys else "new"
+    except Exception:  # noqa: BLE001
+        return "new"
+
+
+def _notify_new_leads_safe(company_id, lead_ids) -> None:
+    try:
+        import lead_notify
+        lead_notify.notify_new_leads(company_id, lead_ids)
+    except Exception:  # noqa: BLE001
+        logger.exception("Yangi lid bildirishnomasi xatosi (company_id=%s)", company_id)
 
 
 def _delete_leads(session, leads) -> dict:
@@ -5723,7 +5802,11 @@ def lead_detail(lead_id):
             if new_status in stage_by_key and new_category != old_category:
                 if new_category == "qualified":
                     meta_events.dispatch_qualified_lead_event(session, lead)
-                elif new_category == "sold":
+                elif new_category == "sold" and not session.query(Sale).filter_by(lead_id=lead.id).count():
+                    # 2026-10: har bir `Sale` qo'shilganda Purchase ALLAQACHON
+                    # (o'z event_id bilan) yuborilgan -- holatni qayta "Sotildi"ga
+                    # o'tkazish ikkinchi, ortiqcha Purchase yubormasin (Meta'da
+                    # sotuvlar soni/daromad ikki baravar ko'rinardi).
                     meta_events.dispatch_purchase_event(session, lead, value=lead.sale_amount)
 
             flash(lang_module.translate("common.saved_flash", g.lang), "success")
